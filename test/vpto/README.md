@@ -1,12 +1,12 @@
-# VPTO Host Validation
+# PTO Host Validation
 
-`test/vpto` provides an end-to-end A5 validation path for hand-curated VPTO
-cases whose input `kernel.pto` is already A5VM MLIR.
+`test/pto` provides an end-to-end A5 validation path for hand-curated PTO
+cases whose input `kernel.pto` is already PTO MLIR.
 
 The driver script is:
 
 ```bash
-bash test/vpto/scripts/run_host_vpto_validation.sh
+bash test/pto/scripts/run_host_pto_validation.sh
 ```
 
 ## Required Environment
@@ -20,14 +20,13 @@ export WORK_SPACE=/path/to/workspace
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
 ```
 
-`test/vpto` uses the installed PTO headers under `${ASCEND_HOME_PATH}/include`.
+`test/pto` uses the installed PTO headers under `${ASCEND_HOME_PATH}/include`.
 It does not require sourcing the repo-local `env.sh`.
 
 Optional overrides:
 
 ```bash
 export PTOAS_FLAGS="--pto-arch a5"
-export A5VM_FLAGS="--pto-backend=a5vm --a5vm-emit-hivm-llvm"
 export AICORE_ARCH=dav-c310-vec
 export HOST_RUNNER="ssh root@localhost"
 export CASE_NAME=abs
@@ -53,17 +52,17 @@ different CANN installs or SoC variants.
 ## Case Discovery
 
 The runner automatically discovers every first-level subdirectory under
-`test/vpto/cases/`.
+`test/pto/cases/`.
 
 - If `CASE_NAME` is unset, all cases are run.
-- If `CASE_NAME=<name>` is set, only `test/vpto/cases/<name>/` is run.
+- If `CASE_NAME=<name>` is set, only `test/pto/cases/<name>/` is run.
 
 ## Case Layout
 
 Each case directory must use these fixed file names:
 
 ```text
-test/vpto/cases/<case-name>/
+test/pto/cases/<case-name>/
   kernel.pto
   stub.cpp
   launch.cpp
@@ -74,7 +73,7 @@ test/vpto/cases/<case-name>/
 
 File roles:
 
-- `kernel.pto`: A5VM MLIR input consumed by `ptoas`
+- `kernel.pto`: PTO MLIR input consumed by `ptoas`
 - `stub.cpp`: host-side fatobj stub that exports the final kernel symbol
 - `launch.cpp`: kernel launch wrapper
 - `main.cpp`: host executable entry for validation
@@ -98,29 +97,29 @@ Run all cases:
 
 ```bash
 source /usr/local/Ascend/cann-9.0.0/set_env.sh
-export WORK_SPACE=$(mktemp -d /tmp/vpto.XXXXXX)
+export WORK_SPACE=$(mktemp -d /tmp/pto.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
-bash test/vpto/scripts/run_host_vpto_validation.sh
+bash test/pto/scripts/run_host_pto_validation.sh
 ```
 
 Run a single case:
 
 ```bash
 source /usr/local/Ascend/cann-9.0.0/set_env.sh
-export WORK_SPACE=$(mktemp -d /tmp/vpto-abs.XXXXXX)
+export WORK_SPACE=$(mktemp -d /tmp/pto-abs.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
 export CASE_NAME=abs
-bash test/vpto/scripts/run_host_vpto_validation.sh
+bash test/pto/scripts/run_host_pto_validation.sh
 ```
 
 Run a single case on simulator:
 
 ```bash
 source /usr/local/Ascend/cann-9.0.0/set_env.sh
-export WORK_SPACE=$(mktemp -d /tmp/vpto-abs-sim.XXXXXX)
+export WORK_SPACE=$(mktemp -d /tmp/pto-abs-sim.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
 export CASE_NAME=abs
 export DEVICE=SIM
 export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3102/lib
-bash test/vpto/scripts/run_host_vpto_validation.sh
+bash test/pto/scripts/run_host_pto_validation.sh
 ```
