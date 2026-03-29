@@ -1068,13 +1068,13 @@ int main(int argc, char **argv) {
     prepPM.addNestedPass<func::FuncOp>(createPTOVPTOExpandBridgeOpsPass());
     prepPM.addPass(createCSEPass());
     if (failed(prepPM.run(*module))) {
-      diagOS << "VPTO LLVM emission failed: bridge-op expansion prep failed\n";
-      return nullptr;
+      llvm::errs() << "Error: VPTO bridge-op expansion prep failed.\n";
+      return 1;
     }
 
     if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
                      !vptoEmitHIVMOfficialBitcode)) {
-      emissionModule->print(outputFile.os());
+      module->print(outputFile.os());
       outputFile.os() << "\n";
       outputFile.keep();
       return 0;
