@@ -1063,14 +1063,6 @@ int main(int argc, char **argv) {
   }
 
   if (effectiveBackend == PTOBackend::VPTO) {
-    if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
-                     !vptoEmitHIVMOfficialBitcode)) {
-      module->print(outputFile.os());
-      outputFile.os() << "\n";
-      outputFile.keep();
-      return 0;
-    }
-
     PassManager prepPM(module->getContext());
     prepPM.enableVerifier();
     prepPM.addNestedPass<func::FuncOp>(createPTOVPTOExpandBridgeOpsPass());
@@ -1078,6 +1070,14 @@ int main(int argc, char **argv) {
     if (failed(prepPM.run(*module))) {
       diagOS << "VPTO LLVM emission failed: bridge-op expansion prep failed\n";
       return nullptr;
+    }
+
+    if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
+                     !vptoEmitHIVMOfficialBitcode)) {
+      emissionModule->print(outputFile.os());
+      outputFile.os() << "\n";
+      outputFile.keep();
+      return 0;
     }
 
     pto::VPTOEmissionOptions options;
