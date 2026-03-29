@@ -1,4 +1,4 @@
-//===- A5VMLLVMEmitter.cpp - A5VM to official LLVM IR text emitter -------===//
+//===- VPTOLLVMEmitter.cpp - VPTO to official LLVM IR text emitter -------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,12 +6,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PTO/Transforms/A5VMLLVMEmitter.h"
+#include "PTO/Transforms/VPTOLLVMEmitter.h"
 
-#include "PTO/IR/A5VM.h"
 #include "PTO/IR/PTO.h"
-#include "PTO/Transforms/A5VMLowering.h"
+#include "PTO/IR/PTO.h"
+#include "PTO/Transforms/VPTOLowering.h"
 #include "PTO/Transforms/HIVMIntrinsicNaming.h"
+#include "PTO/Transforms/Passes.h"
 
 #include "mlir/Conversion/LLVMCommon/MemRefBuilder.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -31,6 +32,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -428,12 +430,12 @@ static std::optional<uint64_t> parseStoreDistImmediate(Type valueType,
   return std::nullopt;
 }
 
-static Type convertA5VMType(Type type, Builder &builder) {
-  if (auto vecType = dyn_cast<a5vm::VecType>(type))
+static Type convertVPTOType(Type type, Builder &builder) {
+  if (auto vecType = dyn_cast<pto::VecType>(type))
     return VectorType::get({vecType.getElementCount()}, vecType.getElementType());
-  if (isa<a5vm::MaskType>(type))
+  if (isa<pto::MaskType>(type))
     return VectorType::get({256}, builder.getI1Type());
-  if (isa<a5vm::AlignType>(type))
+  if (isa<pto::AlignType>(type))
     return VectorType::get({32}, builder.getIntegerType(8));
   if (auto ptrType = dyn_cast<pto::PtrType>(type)) {
     return LLVM::LLVMPointerType::get(
@@ -616,7 +618,7 @@ static LogicalResult normalizePtoMemRefSpaces(ModuleOp module,
   patterns.add<ConvertPtoMemRefSpaceCarrierOp>(typeConverter, context);
 
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
-    diagOS << "A5VM LLVM emission failed: memref address-space normalization "
+    diagOS << "VPTO LLVM emission failed: memref address-space normalization "
               "failed\n";
     return failure();
   }
@@ -640,7 +642,7 @@ static LogicalResult normalizePtoMemRefSpaces(ModuleOp module,
   WalkResult leftover = module.walk([&](Operation *op) {
     if (hasPtoMemRefMemorySpace(op->getOperandTypes()) ||
         hasPtoMemRefMemorySpace(op->getResultTypes())) {
-      diagOS << "A5VM LLVM emission failed: residual PTO memref address space on op "
+      diagOS << "VPTO LLVM emission failed: residual PTO memref address space on op "
              << op->getName().getStringRef() << "\n";
       op->print(diagOS);
       diagOS << "\n";
@@ -913,7 +915,7 @@ static LogicalResult normalizePtoPtrsToLLVM(ModuleOp module, llvm::raw_ostream &
   patterns.add<ConvertPtoPtrCarrierOp>(typeConverter, context);
 
   if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
-    diagOS << "A5VM LLVM emission failed: pto.ptr normalization failed\n";
+    diagOS << "VPTO LLVM emission failed: pto.ptr normalization failed\n";
     return failure();
   }
 
@@ -937,7 +939,7 @@ static LogicalResult normalizePtoPtrsToLLVM(ModuleOp module, llvm::raw_ostream &
 }
 
 static Type getElementTypeFromVectorLike(Type type) {
-  if (auto vecType = dyn_cast<a5vm::VecType>(type))
+  if (auto vecType = dyn_cast<pto::VecType>(type))
     return vecType.getElementType();
   if (auto vecType = dyn_cast<VectorType>(type))
     return vecType.getElementType();
@@ -945,7 +947,7 @@ static Type getElementTypeFromVectorLike(Type type) {
 }
 
 static std::optional<int64_t> getElementCountFromVectorLike(Type type) {
-  if (auto vecType = dyn_cast<a5vm::VecType>(type))
+  if (auto vecType = dyn_cast<pto::VecType>(type))
     return vecType.getElementCount();
   if (auto vecType = dyn_cast<VectorType>(type)) {
     if (vecType.getRank() != 1)
@@ -1003,6 +1005,19 @@ static FailureOr<Value> convertElementOffsetToBytes(Operation *anchor, Value off
       .getResult();
 }
 
+static FailureOr<Value> requirePointerABIAddress(Operation *anchor, Value address,
+                                                 llvm::raw_ostream &diagOS) {
+  if (isa<LLVM::LLVMPointerType>(address.getType()))
+    return address;
+
+  diagOS << "VPTO LLVM emission failed: expected pointer-ABI address after "
+            "pre-emit canonicalization, but saw "
+         << address.getType() << " on op ";
+  anchor->print(diagOS);
+  diagOS << "\n";
+  return failure();
+}
+
 static Value getI64Constant(OpBuilder &builder, Location loc, uint64_t value) {
   return builder.create<arith::ConstantOp>(loc, builder.getI64IntegerAttr(value))
       .getResult();
@@ -1042,7 +1057,7 @@ static FailureOr<Value> buildPltB32Mask(IRRewriter &builder, ModuleOp module,
 }
 
 static FailureOr<Value> buildPsetB32Mask(IRRewriter &builder, Location loc,
-                                         ModuleOp module, a5vm::PsetB32Op pset,
+                                         ModuleOp module, pto::PsetB32Op pset,
                                          llvm::raw_ostream &diagOS) {
   StringRef pattern = pset.getPattern();
   if (pattern == "PAT_ALL")
@@ -1052,7 +1067,7 @@ static FailureOr<Value> buildPsetB32Mask(IRRewriter &builder, Location loc,
     // pset_b32(PAT_ALL) -> __builtin_cce_pset_b32.
     return buildPltB32Mask(builder, module, loc, /*laneCount=*/64, diagOS);
 
-  diagOS << "A5VM LLVM emission failed: unsupported pset_b32 pattern "
+  diagOS << "VPTO LLVM emission failed: unsupported pset_b32 pattern "
          << pattern << "\n";
   return failure();
 }
@@ -1090,7 +1105,7 @@ static FailureOr<Value> packLoopSize(Operation *anchor, Value loop2, Value loop1
 }
 
 static FailureOr<Value>
-packCopyGmToUbConfig0(Operation *anchor, a5vm::CopyGmToUbufOp op,
+packCopyGmToUbConfig0(Operation *anchor, pto::CopyGmToUbufOp op,
                       ValueRange operands) {
   if (operands.size() != 11)
     return failure();
@@ -1193,37 +1208,37 @@ static func::FuncOp getOrCreateExternalFunc(ModuleOp module, StringRef name,
 }
 
 static FailureOr<std::string> getConfirmedCallee(Operation *op) {
-  if (isa<a5vm::SetLoop2StrideOutToUbOp>(op))
+  if (isa<pto::SetLoop2StrideOutToUbOp>(op))
     return std::string("llvm.hivm.SET.LOOP2.STRIDE.OUTTOUB");
-  if (isa<a5vm::SetLoop1StrideOutToUbOp>(op))
+  if (isa<pto::SetLoop1StrideOutToUbOp>(op))
     return std::string("llvm.hivm.SET.LOOP1.STRIDE.OUTTOUB");
-  if (isa<a5vm::SetLoopSizeOutToUbOp>(op))
+  if (isa<pto::SetLoopSizeOutToUbOp>(op))
     return std::string("llvm.hivm.SET.LOOP.SIZE.OUTTOUB");
-  if (isa<a5vm::SetLoop2StrideUbToOutOp>(op))
+  if (isa<pto::SetLoop2StrideUbToOutOp>(op))
     return std::string("llvm.hivm.SET.LOOP2.STRIDE.UBTOOUT");
-  if (isa<a5vm::SetLoop1StrideUbToOutOp>(op))
+  if (isa<pto::SetLoop1StrideUbToOutOp>(op))
     return std::string("llvm.hivm.SET.LOOP1.STRIDE.UBTOOUT");
-  if (isa<a5vm::SetLoopSizeUbToOutOp>(op))
+  if (isa<pto::SetLoopSizeUbToOutOp>(op))
     return std::string("llvm.hivm.SET.LOOP.SIZE.UBTOOUT");
-  if (isa<a5vm::CopyGmToUbufOp>(op)) {
+  if (isa<pto::CopyGmToUbufOp>(op)) {
     std::string elem = getCopyElementFragment(op->getOperand(0).getType());
     if (elem.empty())
       elem = "f32";
     return "llvm.hivm.MOV.OUT.TO.UB.ALIGN.V2." + elem + ".DV";
   }
-  if (isa<a5vm::CopyUbufToGmOp>(op))
+  if (isa<pto::CopyUbufToGmOp>(op))
     return std::string("llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2.DV");
-  if (isa<a5vm::SetFlagOp>(op))
+  if (isa<pto::SetFlagOp>(op))
     return std::string("llvm.hivm.SET.FLAG.IMM");
-  if (isa<a5vm::WaitFlagOp>(op))
+  if (isa<pto::WaitFlagOp>(op))
     return std::string("llvm.hivm.WAIT.FLAG.IMM");
-  if (isa<a5vm::PipeBarrierOp>(op))
+  if (isa<pto::BarrierOp>(op))
     return std::string("llvm.hivm.BARRIER");
-  if (isa<a5vm::PltB32Op>(op))
+  if (isa<pto::PltB32Op>(op))
     return std::string("llvm.hivm.plt.b32.v300");
-  if (isa<a5vm::VldasOp>(op))
+  if (isa<pto::VldasOp>(op))
     return std::string("llvm.hivm.vldas");
-  if (auto vldus = dyn_cast<a5vm::VldusOp>(op)) {
+  if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
     std::string vec = getElementTypeFragment(
         getElementTypeFromVectorLike(vldus.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vldus.getResult().getType());
@@ -1231,7 +1246,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vldus.v" + std::to_string(*lanes) + vec;
   }
-  if (auto vlds = dyn_cast<a5vm::VldsOp>(op)) {
+  if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
     std::string vec = getElementTypeFragment(getElementTypeFromVectorLike(vlds.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vlds.getResult().getType());
     if (vec.empty() || !lanes)
@@ -1240,7 +1255,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     name += ".v" + std::to_string(*lanes) + vec;
     return name;
   }
-  if (auto vldsPost = dyn_cast<a5vm::VldsPostOp>(op)) {
+  if (auto vldsPost = dyn_cast<pto::VldsPostOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vldsPost.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vldsPost.getResult().getType());
@@ -1248,7 +1263,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vldsx1.post.v" + std::to_string(*lanes) + vec;
   }
-  if (auto vldsPost = dyn_cast<a5vm::VldsPostOp>(op)) {
+  if (auto vldsPost = dyn_cast<pto::VldsPostOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vldsPost.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vldsPost.getResult().getType());
@@ -1256,9 +1271,9 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vldsx1.post.v" + std::to_string(*lanes) + vec;
   }
-  if (isa<a5vm::VabsOp>(op))
+  if (isa<pto::VabsOp>(op))
     return std::string("llvm.hivm.vabs.v64f32.x");
-  if (auto vexp = dyn_cast<a5vm::VexpOp>(op)) {
+  if (auto vexp = dyn_cast<pto::VexpOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vexp.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vexp.getResult().getType());
@@ -1266,24 +1281,24 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vexp.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto vdup = dyn_cast<a5vm::VdupOp>(op)) {
+  if (auto vdup = dyn_cast<pto::VdupOp>(op)) {
     Type inputType = vdup.getInput().getType();
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vdup.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vdup.getResult().getType());
     if (vec.empty() || !lanes)
       return failure();
-    if (isa<VectorType, a5vm::VecType>(inputType))
+    if (isa<VectorType, pto::VecType>(inputType))
       return "llvm.hivm.vdup.v" + std::to_string(*lanes) + vec + ".z";
     return "llvm.hivm.vdups.v" + std::to_string(*lanes) + vec + ".z";
   }
-  if (auto vbr = dyn_cast<a5vm::VbrOp>(op)) {
+  if (auto vbr = dyn_cast<pto::VbrOp>(op)) {
     std::string scalar = getVbrScalarFragment(vbr.getValue().getType());
     if (scalar.empty())
       return failure();
     return "llvm.hivm.vbr." + scalar + ".v300";
   }
-  if (auto binary = dyn_cast<a5vm::VaddOp>(op)) {
+  if (auto binary = dyn_cast<pto::VaddOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1291,7 +1306,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vadd.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VsubOp>(op)) {
+  if (auto binary = dyn_cast<pto::VsubOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1299,7 +1314,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vsub.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VmulOp>(op)) {
+  if (auto binary = dyn_cast<pto::VmulOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1307,7 +1322,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vmul.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VmulsOp>(op)) {
+  if (auto binary = dyn_cast<pto::VmulsOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1315,7 +1330,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vmuls.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VaddsOp>(op)) {
+  if (auto binary = dyn_cast<pto::VaddsOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1323,7 +1338,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vadds.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VmaxsOp>(op)) {
+  if (auto binary = dyn_cast<pto::VmaxsOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1331,7 +1346,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vmaxs.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VminsOp>(op)) {
+  if (auto binary = dyn_cast<pto::VminsOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1339,7 +1354,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vmins.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VlreluOp>(op)) {
+  if (auto binary = dyn_cast<pto::VlreluOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1347,7 +1362,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vlrelu.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VdivOp>(op)) {
+  if (auto binary = dyn_cast<pto::VdivOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1355,7 +1370,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vdiv.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<a5vm::VmaxOp>(op)) {
+  if (auto binary = dyn_cast<pto::VmaxOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
@@ -1363,7 +1378,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vmax.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto unary = dyn_cast<a5vm::VcaddOp>(op)) {
+  if (auto unary = dyn_cast<pto::VcaddOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(unary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(unary.getResult().getType());
@@ -1371,7 +1386,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vcadd.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto unary = dyn_cast<a5vm::VcmaxOp>(op)) {
+  if (auto unary = dyn_cast<pto::VcmaxOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(unary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(unary.getResult().getType());
@@ -1379,7 +1394,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vcmax.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto unary = dyn_cast<a5vm::VcminOp>(op)) {
+  if (auto unary = dyn_cast<pto::VcminOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(unary.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(unary.getResult().getType());
@@ -1387,7 +1402,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vcmin.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto vtrc = dyn_cast<a5vm::VtrcOp>(op)) {
+  if (auto vtrc = dyn_cast<pto::VtrcOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vtrc.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vtrc.getResult().getType());
@@ -1395,7 +1410,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vtrc." + vec + ".x";
   }
-  if (auto vsts = dyn_cast<a5vm::VstsOp>(op)) {
+  if (auto vsts = dyn_cast<pto::VstsOp>(op)) {
     std::string vec = getElementTypeFragment(getElementTypeFromVectorLike(vsts.getValue().getType()));
     auto lanes = getElementCountFromVectorLike(vsts.getValue().getType());
     if (vec.empty() || !lanes)
@@ -1404,7 +1419,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     name += ".v" + std::to_string(*lanes) + vec;
     return name;
   }
-  if (auto vstsPost = dyn_cast<a5vm::VstsPostOp>(op)) {
+  if (auto vstsPost = dyn_cast<pto::VstsPostOp>(op)) {
     std::string vec = getElementTypeFragment(
         getElementTypeFromVectorLike(vstsPost.getValue().getType()));
     auto lanes = getElementCountFromVectorLike(vstsPost.getValue().getType());
@@ -1412,7 +1427,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vstsx1.post.v" + std::to_string(*lanes) + vec;
   }
-  if (auto vstsPost = dyn_cast<a5vm::VstsPostOp>(op)) {
+  if (auto vstsPost = dyn_cast<pto::VstsPostOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vstsPost.getValue().getType()));
     auto lanes = getElementCountFromVectorLike(vstsPost.getValue().getType());
@@ -1420,32 +1435,51 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vstsx1.post.v" + std::to_string(*lanes) + vec;
   }
-  if (auto vcmp = dyn_cast<a5vm::VcmpOp>(op)) {
+  if (auto vcmp = dyn_cast<pto::VcmpOp>(op)) {
     std::string elem = getElementTypeFragment(getElementTypeFromVectorLike(vcmp.getSrc0().getType()));
     if (elem.empty())
       return failure();
     return "llvm.hivm.vcmp." + vcmp.getCmpMode().str() + "." + elem + ".z";
   }
-  if (auto vcmps = dyn_cast<a5vm::VcmpsOp>(op)) {
+  if (auto vcmps = dyn_cast<pto::VcmpsOp>(op)) {
     std::string elem = getElementTypeFragment(getElementTypeFromVectorLike(vcmps.getSrc().getType()));
     if (elem.empty())
       return failure();
     return "llvm.hivm.vcmps." + vcmps.getCmpMode().str() + "." + elem + ".z";
   }
-  if (isa<a5vm::PdintlvB8Op>(op))
+  if (isa<pto::PdintlvB8Op>(op))
     return std::string("llvm.hivm.pdintlv.b8");
-  if (isa<a5vm::PstsOp>(op))
+  if (isa<pto::PstsOp>(op))
     return std::string("llvm.hivm.psts.b8");
   return failure();
 }
 
-static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
+static LogicalResult
+guardNoMemRefIntrinsicArgs(Operation *op, StringRef calleeName,
+                           ValueRange callArgs, llvm::raw_ostream &diagOS) {
+  if (calleeName != "llvm.hivm.vldsx1" && calleeName != "llvm.hivm.vstsx1")
+    return success();
+
+  for (auto [idx, arg] : llvm::enumerate(callArgs)) {
+    Type argType = arg.getType();
+    if (!isa<MemRefType, UnrankedMemRefType>(argType))
+      continue;
+    diagOS << "VPTO LLVM emission failed: intrinsic ABI guard rejected memref "
+              "argument #"
+           << idx << " for " << calleeName << " from "
+           << op->getName().getStringRef() << " (" << argType << ")\n";
+    return failure();
+  }
+  return success();
+}
+
+static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
                                    llvm::raw_ostream &diagOS) {
   IRRewriter builder(op->getContext());
   builder.setInsertionPoint(op);
   Location loc = op->getLoc();
 
-  if (auto pset = dyn_cast<a5vm::PsetB32Op>(op)) {
+  if (auto pset = dyn_cast<pto::PsetB32Op>(op)) {
     auto mask = buildPsetB32Mask(builder, loc, module, pset, diagOS);
     if (failed(mask))
       return failure();
@@ -1453,18 +1487,18 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     return success();
   }
 
-  if (auto vbr = dyn_cast<a5vm::VbrOp>(op)) {
+  if (auto vbr = dyn_cast<pto::VbrOp>(op)) {
     auto calleeName = getConfirmedCallee(op);
     if (failed(calleeName)) {
-      diagOS << "A5VM LLVM emission failed: unsupported op "
+      diagOS << "VPTO LLVM emission failed: unsupported op "
              << op->getName().getStringRef() << "\n";
       return failure();
     }
 
-    Type resultType = convertA5VMType(vbr.getResult().getType(), builder);
+    Type resultType = convertVPTOType(vbr.getResult().getType(), builder);
     Type scalarType = vbr.getValue().getType();
     if (!resultType || !scalarType) {
-      diagOS << "A5VM LLVM emission failed: could not materialize vbr types\n";
+      diagOS << "VPTO LLVM emission failed: could not materialize vbr types\n";
       return failure();
     }
 
@@ -1478,29 +1512,29 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
 
   auto calleeName = getConfirmedCallee(op);
   if (failed(calleeName)) {
-    diagOS << "A5VM LLVM emission failed: unsupported op "
+    diagOS << "VPTO LLVM emission failed: unsupported op "
            << op->getName().getStringRef() << "\n";
     return failure();
   }
 
   SmallVector<Type> resultTypes;
   for (Type type : op->getResultTypes())
-    resultTypes.push_back(convertA5VMType(type, builder));
+    resultTypes.push_back(convertVPTOType(type, builder));
 
   SmallVector<Value> callArgs;
 
-  if (isa<a5vm::SetLoop2StrideOutToUbOp, a5vm::SetLoop1StrideOutToUbOp,
-          a5vm::SetLoop2StrideUbToOutOp, a5vm::SetLoop1StrideUbToOutOp>(op)) {
+  if (isa<pto::SetLoop2StrideOutToUbOp, pto::SetLoop1StrideOutToUbOp,
+          pto::SetLoop2StrideUbToOutOp, pto::SetLoop1StrideUbToOutOp>(op)) {
     auto packed = packLoopPair(op, op->getOperand(0), op->getOperand(1));
     if (failed(packed))
       return failure();
     callArgs.push_back(*packed);
-  } else if (isa<a5vm::SetLoopSizeOutToUbOp, a5vm::SetLoopSizeUbToOutOp>(op)) {
+  } else if (isa<pto::SetLoopSizeOutToUbOp, pto::SetLoopSizeUbToOutOp>(op)) {
     auto packed = packLoopSize(op, op->getOperand(0), op->getOperand(1));
     if (failed(packed))
       return failure();
     callArgs.push_back(*packed);
-  } else if (auto copy = dyn_cast<a5vm::CopyGmToUbufOp>(op)) {
+  } else if (auto copy = dyn_cast<pto::CopyGmToUbufOp>(op)) {
     auto config0 = packCopyGmToUbConfig0(op, copy, op->getOperands());
     auto config1 = packCopyGmToUbConfig1(op, op->getOperands());
     if (failed(config0) || failed(config1))
@@ -1509,7 +1543,7 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(op->getOperand(0));
     callArgs.push_back(*config0);
     callArgs.push_back(*config1);
-  } else if (isa<a5vm::CopyUbufToGmOp>(op)) {
+  } else if (isa<pto::CopyUbufToGmOp>(op)) {
     auto config0 = packCopyUbToGmConfig0(op, op->getOperands());
     auto config1 = packCopyUbToGmConfig1(op, op->getOperands());
     if (failed(config0) || failed(config1))
@@ -1518,51 +1552,58 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(op->getOperand(0));
     callArgs.push_back(*config0);
     callArgs.push_back(*config1);
-  } else if (auto setFlag = dyn_cast<a5vm::SetFlagOp>(op)) {
-    auto src = parsePipeImmediate(setFlag.getSrcPipe());
-    auto dst = parsePipeImmediate(setFlag.getDstPipe());
-    auto event = parseEventImmediate(setFlag.getEventId());
+  } else if (auto setFlag = dyn_cast<pto::SetFlagOp>(op)) {
+    auto src = parsePipeImmediate(stringifyPIPE(setFlag.getSrcPipe().getPipe()));
+    auto dst = parsePipeImmediate(stringifyPIPE(setFlag.getDstPipe().getPipe()));
+    auto event = parseEventImmediate(stringifyEVENT(setFlag.getEventId().getEvent()));
     if (!src || !dst || !event)
       return failure();
     callArgs.push_back(getI64Constant(builder, loc, *src));
     callArgs.push_back(getI64Constant(builder, loc, *dst));
     callArgs.push_back(getI64Constant(builder, loc, *event));
-  } else if (auto waitFlag = dyn_cast<a5vm::WaitFlagOp>(op)) {
-    auto src = parsePipeImmediate(waitFlag.getSrcPipe());
-    auto dst = parsePipeImmediate(waitFlag.getDstPipe());
-    auto event = parseEventImmediate(waitFlag.getEventId());
+  } else if (auto waitFlag = dyn_cast<pto::WaitFlagOp>(op)) {
+    auto src =
+        parsePipeImmediate(stringifyPIPE(waitFlag.getSrcPipe().getPipe()));
+    auto dst =
+        parsePipeImmediate(stringifyPIPE(waitFlag.getDstPipe().getPipe()));
+    auto event =
+        parseEventImmediate(stringifyEVENT(waitFlag.getEventId().getEvent()));
     if (!src || !dst || !event)
       return failure();
     callArgs.push_back(getI64Constant(builder, loc, *src));
     callArgs.push_back(getI64Constant(builder, loc, *dst));
     callArgs.push_back(getI64Constant(builder, loc, *event));
-  } else if (auto barrier = dyn_cast<a5vm::PipeBarrierOp>(op)) {
-    auto pipe = parsePipeImmediate(barrier.getPipe());
+  } else if (auto barrier = dyn_cast<pto::BarrierOp>(op)) {
+    auto pipe = parsePipeImmediate(stringifyPIPE(barrier.getPipe().getPipe()));
     if (!pipe)
       return failure();
     callArgs.push_back(getI64Constant(builder, loc, *pipe));
-  } else if (isa<a5vm::PltB32Op>(op)) {
+  } else if (isa<pto::PltB32Op>(op)) {
     Value laneCount = castIntegerLikeTo(op, op->getOperand(0), builder.getI32Type());
     if (!laneCount)
       return failure();
     callArgs.push_back(laneCount);
-  } else if (auto vldas = dyn_cast<a5vm::VldasOp>(op)) {
+  } else if (auto vldas = dyn_cast<pto::VldasOp>(op)) {
     callArgs.push_back(vldas.getSource());
-  } else if (auto vldus = dyn_cast<a5vm::VldusOp>(op)) {
+  } else if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
     callArgs.push_back(vldus.getSource());
     callArgs.push_back(vldus.getAlign());
-  } else if (auto vlds = dyn_cast<a5vm::VldsOp>(op)) {
+  } else if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vlds.getResult().getType());
     auto offsetBytes = convertElementOffsetToBytes(
         op, op->getOperand(1), elementType);
+    auto basePtr = requirePointerABIAddress(op, op->getOperand(0), diagOS);
     auto dist = parseLoadDistImmediate(vlds.getDist().value_or("NORM"));
-    if (!elementType || failed(offsetBytes) || !dist)
+    if (!elementType || failed(offsetBytes) || failed(basePtr) || !dist) {
+      if (elementType && succeeded(basePtr) && !dist)
+        diagOS << "VPTO LLVM emission failed: unsupported vlds dist immediate\n";
       return failure();
+    }
     callArgs.push_back(op->getOperand(0));
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
-  } else if (auto vldsPost = dyn_cast<a5vm::VldsPostOp>(op)) {
+  } else if (auto vldsPost = dyn_cast<pto::VldsPostOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vldsPost.getResult().getType());
     auto offsetBytes = convertElementOffsetToBytes(
         op, vldsPost.getOffset(), elementType);
@@ -1573,37 +1614,37 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 1));
-  } else if (auto vabs = dyn_cast<a5vm::VabsOp>(op)) {
+  } else if (auto vabs = dyn_cast<pto::VabsOp>(op)) {
     Value input = op->getOperand(0);
     Value mask = op->getOperand(1);
     Type vecType = resultTypes.front();
-    Type maskType = convertA5VMType(mask.getType(), builder);
+    Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
-      diagOS << "A5VM LLVM emission failed: unexpected vabs operand types\n";
+      diagOS << "VPTO LLVM emission failed: unexpected vabs operand types\n";
       return failure();
     }
     callArgs.push_back(input);
     callArgs.push_back(mask);
-  } else if (auto vexp = dyn_cast<a5vm::VexpOp>(op)) {
+  } else if (auto vexp = dyn_cast<pto::VexpOp>(op)) {
     Value input = vexp.getInput();
     Value mask = vexp.getMask();
     Type vecType = resultTypes.front();
-    Type maskType = convertA5VMType(mask.getType(), builder);
+    Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
-      diagOS << "A5VM LLVM emission failed: unexpected vexp operand types\n";
+      diagOS << "VPTO LLVM emission failed: unexpected vexp operand types\n";
       return failure();
     }
     callArgs.push_back(input);
     callArgs.push_back(mask);
-  } else if (auto vdup = dyn_cast<a5vm::VdupOp>(op)) {
+  } else if (auto vdup = dyn_cast<pto::VdupOp>(op)) {
     Type scalarType = getElementTypeFromVectorLike(vdup.getResult().getType());
-    bool vectorInput = isa<VectorType, a5vm::VecType>(vdup.getInput().getType());
+    bool vectorInput = isa<VectorType, pto::VecType>(vdup.getInput().getType());
     if (!vectorInput && (!scalarType || vdup.getInput().getType() != scalarType)) {
-      diagOS << "A5VM LLVM emission failed: unexpected vdup operand types\n";
+      diagOS << "VPTO LLVM emission failed: unexpected vdup operand types\n";
       return failure();
     }
     if (vectorInput && vdup.getInput().getType() != resultTypes.front()) {
-      diagOS << "A5VM LLVM emission failed: vector-input vdup requires matching result type\n";
+      diagOS << "VPTO LLVM emission failed: vector-input vdup requires matching result type\n";
       return failure();
     }
     auto mask = buildPltB32Mask(builder, module, loc, /*laneCount=*/64, diagOS);
@@ -1612,17 +1653,17 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(vdup.getInput());
     callArgs.push_back(*mask);
     callArgs.push_back(getI32Constant(builder, loc, 1));
-  } else if (isa<a5vm::VaddOp, a5vm::VsubOp, a5vm::VmulOp, a5vm::VdivOp, a5vm::VmaxOp,
-                 a5vm::VminOp, a5vm::VandOp, a5vm::VorOp, a5vm::VxorOp, a5vm::VshlOp,
-                 a5vm::VshrOp>(op)) {
+  } else if (isa<pto::VaddOp, pto::VsubOp, pto::VmulOp, pto::VdivOp, pto::VmaxOp,
+                 pto::VminOp, pto::VandOp, pto::VorOp, pto::VxorOp, pto::VshlOp,
+                 pto::VshrOp>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
-  } else if (isa<a5vm::VmulsOp, a5vm::VaddsOp, a5vm::VmaxsOp, a5vm::VminsOp,
-                 a5vm::VlreluOp>(op)) {
+  } else if (isa<pto::VmulsOp, pto::VaddsOp, pto::VmaxsOp, pto::VminsOp,
+                 pto::VlreluOp>(op)) {
     callArgs.push_back(op->getOperand(0));
     callArgs.push_back(op->getOperand(1));
     auto laneCount = getElementCountFromVectorLike(op->getResult(0).getType());
     if (!laneCount) {
-      diagOS << "A5VM LLVM emission failed: could not determine lane count for "
+      diagOS << "VPTO LLVM emission failed: could not determine lane count for "
              << op->getName().getStringRef() << "\n";
       return failure();
     }
@@ -1630,19 +1671,19 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     if (failed(mask))
       return failure();
     callArgs.push_back(*mask);
-  } else if (isa<a5vm::VcaddOp, a5vm::VcmaxOp, a5vm::VcminOp>(op)) {
+  } else if (isa<pto::VcaddOp, pto::VcmaxOp, pto::VcminOp>(op)) {
     callArgs.push_back(op->getOperand(0));
     callArgs.push_back(op->getOperand(1));
-  } else if (auto vtrc = dyn_cast<a5vm::VtrcOp>(op)) {
+  } else if (auto vtrc = dyn_cast<pto::VtrcOp>(op)) {
     auto roundMode = parseRoundModeImmediate(vtrc.getRoundMode());
     if (!roundMode) {
-      diagOS << "A5VM LLVM emission failed: unsupported round mode "
+      diagOS << "VPTO LLVM emission failed: unsupported round mode "
              << vtrc.getRoundMode() << "\n";
       return failure();
     }
     auto laneCount = getElementCountFromVectorLike(vtrc.getResult().getType());
     if (!laneCount) {
-      diagOS << "A5VM LLVM emission failed: could not determine lane count for "
+      diagOS << "VPTO LLVM emission failed: could not determine lane count for "
              << op->getName().getStringRef() << "\n";
       return failure();
     }
@@ -1652,21 +1693,25 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(vtrc.getInput());
     callArgs.push_back(getI32Constant(builder, loc, *roundMode));
     callArgs.push_back(*mask);
-  } else if (auto vsts = dyn_cast<a5vm::VstsOp>(op)) {
+  } else if (auto vsts = dyn_cast<pto::VstsOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vsts.getValue().getType());
     auto offsetBytes = convertElementOffsetToBytes(
         op, op->getOperand(2), elementType);
+    auto basePtr = requirePointerABIAddress(op, op->getOperand(1), diagOS);
     auto dist = parseStoreDistImmediate(vsts.getValue().getType(),
                                         vsts.getDist().value_or(""));
-    if (!elementType || failed(offsetBytes) || !dist)
+    if (!elementType || failed(offsetBytes) || failed(basePtr) || !dist) {
+      if (elementType && succeeded(basePtr) && !dist)
+        diagOS << "VPTO LLVM emission failed: unsupported vsts dist immediate\n";
       return failure();
+    }
     callArgs.push_back(op->getOperand(0));
     callArgs.push_back(op->getOperand(1));
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
     callArgs.push_back(op->getOperand(3));
-  } else if (auto vstsPost = dyn_cast<a5vm::VstsPostOp>(op)) {
+  } else if (auto vstsPost = dyn_cast<pto::VstsPostOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vstsPost.getValue().getType());
     auto offsetBytes = convertElementOffsetToBytes(op, vstsPost.getOffset(), elementType);
     auto dist = parseStoreDistImmediate(vstsPost.getValue().getType(),
@@ -1679,9 +1724,9 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 1));
     callArgs.push_back(vstsPost.getMask());
-  } else if (isa<a5vm::VcmpOp, a5vm::VcmpsOp, a5vm::PdintlvB8Op>(op)) {
+  } else if (isa<pto::VcmpOp, pto::VcmpsOp, pto::PdintlvB8Op>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
-  } else if (auto psts = dyn_cast<a5vm::PstsOp>(op)) {
+  } else if (auto psts = dyn_cast<pto::PstsOp>(op)) {
     Value offset = castIntegerLikeTo(op, psts.getOffset(), builder.getI32Type());
     if (!offset)
       return failure();
@@ -1691,7 +1736,7 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, 1));
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else {
-    diagOS << "A5VM LLVM emission failed: op lowering is not implemented for "
+    diagOS << "VPTO LLVM emission failed: op lowering is not implemented for "
            << op->getName().getStringRef() << "\n";
     return failure();
   }
@@ -1710,24 +1755,90 @@ static LogicalResult rewriteA5VMOp(Operation *op, ModuleOp module,
   return success();
 }
 
-static LogicalResult rewriteA5VMOps(ModuleOp module, llvm::raw_ostream &diagOS) {
+static LogicalResult rewriteVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) {
   SmallVector<Operation *> opsToRewrite;
   module.walk([&](Operation *op) {
-    if (op->getName().getDialectNamespace() == "a5vm")
+    if (op->getName().getDialectNamespace() == "pto")
       opsToRewrite.push_back(op);
   });
 
   for (Operation *op : opsToRewrite) {
-    if (failed(rewriteA5VMOp(op, module, diagOS)))
+    if (failed(rewriteVPTOOp(op, module, diagOS)))
       return failure();
   }
 
-  bool hasA5VM = false;
+  bool hasVPTO = false;
   module.walk([&](Operation *op) {
-    if (op->getName().getDialectNamespace() == "a5vm")
-      hasA5VM = true;
+    if (op->getName().getDialectNamespace() == "pto")
+      hasVPTO = true;
   });
-  return success(!hasA5VM);
+  return success(!hasVPTO);
+}
+
+static Type normalizeTypeForOfficialLLVMLowering(Type type, Builder &builder) {
+  type = convertVPTOType(type, builder);
+
+  if (auto memrefType = dyn_cast<MemRefType>(type)) {
+    auto addrAttr =
+        dyn_cast_or_null<pto::AddressSpaceAttr>(memrefType.getMemorySpace());
+    if (!addrAttr)
+      return type;
+    unsigned addrSpace = getExternalPointerAddressSpace(memrefType);
+    return MemRefType::get(memrefType.getShape(), memrefType.getElementType(),
+                           memrefType.getLayout(),
+                           builder.getI64IntegerAttr(addrSpace));
+  }
+
+  if (auto memrefType = dyn_cast<UnrankedMemRefType>(type)) {
+    auto addrAttr =
+        dyn_cast_or_null<pto::AddressSpaceAttr>(memrefType.getMemorySpace());
+    if (!addrAttr)
+      return type;
+    // Official MemRef-to-LLVM conversion requires integer memory spaces.
+    return UnrankedMemRefType::get(memrefType.getElementType(),
+                                   builder.getI64IntegerAttr(
+                                       static_cast<int64_t>(AddressSpace::GM)));
+  }
+
+  return type;
+}
+
+static void normalizeFuncSignaturesForOfficialLLVMLowering(ModuleOp module) {
+  Builder builder(module.getContext());
+
+  for (func::FuncOp funcOp : module.getOps<func::FuncOp>()) {
+    FunctionType oldType = funcOp.getFunctionType();
+    SmallVector<Type> newInputs;
+    SmallVector<Type> newResults;
+    bool changed = false;
+
+    newInputs.reserve(oldType.getNumInputs());
+    for (Type input : oldType.getInputs()) {
+      Type normalized = normalizeTypeForOfficialLLVMLowering(input, builder);
+      changed |= (normalized != input);
+      newInputs.push_back(normalized);
+    }
+
+    newResults.reserve(oldType.getNumResults());
+    for (Type result : oldType.getResults()) {
+      Type normalized = normalizeTypeForOfficialLLVMLowering(result, builder);
+      changed |= (normalized != result);
+      newResults.push_back(normalized);
+    }
+
+    if (!changed)
+      continue;
+
+    auto newType = builder.getFunctionType(newInputs, newResults);
+    funcOp.setFunctionTypeAttr(TypeAttr::get(newType));
+
+    if (funcOp.isExternal())
+      continue;
+    Block &entry = funcOp.getBody().front();
+    for (auto [arg, newType] : llvm::zip(entry.getArguments(), newInputs))
+      if (arg.getType() != newType)
+        arg.setType(newType);
+  }
 }
 
 static llvm::StringMap<unsigned>
@@ -1769,7 +1880,7 @@ static bool satisfiesAIVectorScopeLatchPostcondition(llvm::Loop *loop) {
 // the latch. Even if the condition later folds to a constant, the exported LLVM
 // CFG can still violate the Bisheng-only latch contract.
 //
-// Therefore A5VM LLVM emission treats this as a required postcondition instead
+// Therefore VPTO LLVM emission treats this as a required postcondition instead
 // of a best-effort cleanup:
 //   - if the loop already satisfies the contract, keep it as-is
 //   - otherwise normalize all latch predecessors through a dummy block
@@ -1785,13 +1896,13 @@ static LogicalResult ensureDummyPredForAIVectorScopeLatch(llvm::Loop *loop,
 
   llvm::BasicBlock *latch = loop->getLoopLatch();
   if (!latch) {
-    diagOS << "A5VM LLVM emission failed: aivscope loop is missing a latch\n";
+    diagOS << "VPTO LLVM emission failed: aivscope loop is missing a latch\n";
     return failure();
   }
 
   llvm::SmallVector<llvm::BasicBlock *, 4> preds(llvm::predecessors(latch));
   if (preds.empty()) {
-    diagOS << "A5VM LLVM emission failed: aivscope latch has no predecessor\n";
+    diagOS << "VPTO LLVM emission failed: aivscope latch has no predecessor\n";
     return failure();
   }
 
@@ -1799,13 +1910,13 @@ static LogicalResult ensureDummyPredForAIVectorScopeLatch(llvm::Loop *loop,
       latch, preds, "aivscope.dummy", static_cast<llvm::DominatorTree *>(nullptr),
       static_cast<llvm::LoopInfo *>(nullptr), nullptr, /*PreserveLCSSA=*/false);
   if (!dummy) {
-    diagOS << "A5VM LLVM emission failed: failed to normalize aivscope latch "
+    diagOS << "VPTO LLVM emission failed: failed to normalize aivscope latch "
               "predecessors\n";
     return failure();
   }
 
   if (!satisfiesAIVectorScopeLatchPostcondition(loop)) {
-    diagOS << "A5VM LLVM emission failed: normalized aivscope latch still does "
+    diagOS << "VPTO LLVM emission failed: normalized aivscope latch still does "
               "not satisfy the single-predecessor/single-successor contract\n";
     return failure();
   }
@@ -1835,7 +1946,7 @@ static LogicalResult attachAIVectorScopeMetadata(
     loopInfo.releaseMemory();
     loopInfo.analyze(dt);
     if (loopInfo.empty()) {
-      diagOS << "A5VM LLVM emission failed: aivscope loop disappeared after "
+      diagOS << "VPTO LLVM emission failed: aivscope loop disappeared after "
                 "latch normalization in function "
              << function.getName() << "\n";
       return failure();
@@ -1844,14 +1955,14 @@ static LogicalResult attachAIVectorScopeMetadata(
 
     llvm::BasicBlock *latch = loop->getLoopLatch();
     if (!latch) {
-      diagOS << "A5VM LLVM emission failed: aivscope loop has no latch after "
+      diagOS << "VPTO LLVM emission failed: aivscope loop has no latch after "
                 "normalization in function "
              << function.getName() << "\n";
       return failure();
     }
     auto *terminator = latch->getTerminator();
     if (!terminator) {
-      diagOS << "A5VM LLVM emission failed: aivscope latch has no terminator "
+      diagOS << "VPTO LLVM emission failed: aivscope latch has no terminator "
                 "in function "
              << function.getName() << "\n";
       return failure();
@@ -1913,13 +2024,13 @@ static FailureOr<std::string> extractQuotedLLVMFnAttr(llvm::StringRef ir,
 }
 
 static FailureOr<QueriedTargetAttrs>
-queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
+queryDefaultTargetAttrs(const VPTOEmissionOptions &options,
                         llvm::raw_ostream &diagOS) {
   static llvm::StringMap<QueriedTargetAttrs> cache;
 
   if (options.targetTriple.empty() || options.march.empty() ||
       options.aicoreArch.empty()) {
-    diagOS << "A5VM LLVM emission failed: missing target query options\n";
+    diagOS << "VPTO LLVM emission failed: missing target query options\n";
     return failure();
   }
 
@@ -1930,7 +2041,7 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
 
   auto bisheng = llvm::sys::findProgramByName("bisheng");
   if (!bisheng) {
-    diagOS << "A5VM LLVM emission failed: unable to find 'bisheng' in PATH\n";
+    diagOS << "VPTO LLVM emission failed: unable to find 'bisheng' in PATH\n";
     return failure();
   }
   const std::string &bishengPath = *bisheng;
@@ -1939,17 +2050,17 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
   llvm::SmallString<64> outputPath;
   int inputFD = -1;
   int outputFD = -1;
-  if (auto ec = llvm::sys::fs::createTemporaryFile("ptoas-a5vm-target-query",
+  if (auto ec = llvm::sys::fs::createTemporaryFile("ptoas-vpto-target-query",
                                                    "c", inputFD, inputPath)) {
-    diagOS << "A5VM LLVM emission failed: cannot create bisheng query input: "
+    diagOS << "VPTO LLVM emission failed: cannot create bisheng query input: "
            << ec.message() << "\n";
     return failure();
   }
-  if (auto ec = llvm::sys::fs::createTemporaryFile("ptoas-a5vm-target-query",
+  if (auto ec = llvm::sys::fs::createTemporaryFile("ptoas-vpto-target-query",
                                                    "ll", outputFD, outputPath)) {
     llvm::sys::fs::remove(inputPath);
     llvm::sys::Process::SafelyCloseFileDescriptor(inputFD);
-    diagOS << "A5VM LLVM emission failed: cannot create bisheng query output: "
+    diagOS << "VPTO LLVM emission failed: cannot create bisheng query output: "
            << ec.message() << "\n";
     return failure();
   }
@@ -1968,10 +2079,10 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
 
   llvm::SmallString<128> stderrPath;
   int stderrFD = -1;
-  if (auto ec = llvm::sys::fs::createTemporaryFile("ptoas-a5vm-target-query",
+  if (auto ec = llvm::sys::fs::createTemporaryFile("ptoas-vpto-target-query",
                                                    "stderr", stderrFD,
                                                    stderrPath)) {
-    diagOS << "A5VM LLVM emission failed: cannot create bisheng query stderr: "
+    diagOS << "VPTO LLVM emission failed: cannot create bisheng query stderr: "
            << ec.message() << "\n";
     return failure();
   }
@@ -2011,7 +2122,7 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
       stderrBuffer ? stderrBuffer.get()->getBuffer() : llvm::StringRef();
 
   if (execFailed || rc != 0) {
-    diagOS << "A5VM LLVM emission failed: bisheng target query failed\n";
+    diagOS << "VPTO LLVM emission failed: bisheng target query failed\n";
     diagOS << "Command:";
     for (llvm::StringRef arg : args)
       diagOS << " " << arg;
@@ -2025,7 +2136,7 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
 
   auto outputBuffer = llvm::MemoryBuffer::getFile(outputPath);
   if (!outputBuffer) {
-    diagOS << "A5VM LLVM emission failed: cannot read bisheng query output\n";
+    diagOS << "VPTO LLVM emission failed: cannot read bisheng query output\n";
     return failure();
   }
 
@@ -2034,7 +2145,7 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
   FailureOr<std::string> targetFeatures = extractQuotedLLVMFnAttr(
       outputBuffer.get()->getBuffer(), "target-features");
   if (failed(targetCPU) || failed(targetFeatures)) {
-    diagOS << "A5VM LLVM emission failed: cannot parse bisheng target attrs\n";
+    diagOS << "VPTO LLVM emission failed: cannot parse bisheng target attrs\n";
     diagOS << outputBuffer.get()->getBuffer() << "\n";
     return failure();
   }
@@ -2045,14 +2156,14 @@ queryDefaultTargetAttrs(const A5VMEmissionOptions &options,
 }
 
 static LogicalResult
-applyQueriedTargetAttrs(ModuleOp module, const A5VMEmissionOptions &options,
+applyQueriedTargetAttrs(ModuleOp module, const VPTOEmissionOptions &options,
                         llvm::raw_ostream &diagOS) {
   FailureOr<QueriedTargetAttrs> attrs = queryDefaultTargetAttrs(options, diagOS);
   if (failed(attrs)) {
     if (options.defaultTargetCPU.empty() ||
         options.defaultTargetFeatures.empty())
       return failure();
-    diagOS << "A5VM LLVM emission: falling back to configured default target attributes\n";
+    diagOS << "VPTO LLVM emission: falling back to configured default target attributes\n";
     attrs = QueriedTargetAttrs{options.defaultTargetCPU,
                                options.defaultTargetFeatures};
   }
@@ -2255,7 +2366,7 @@ static LogicalResult rewriteFunctionsToEmitCStyleABI(
     }
 
     if (!supported || oldArgCursor != function->arg_size()) {
-      diagOS << "A5VM LLVM emission warning: skipping ABI rewrite for "
+      diagOS << "VPTO LLVM emission warning: skipping ABI rewrite for "
              << function->getName()
              << " because the lowered signature does not match the seam spec\n";
       continue;
@@ -2290,7 +2401,7 @@ static LogicalResult rewriteFunctionsToEmitCStyleABI(
         llvm::Value *casted = castABIValue(
             builder, publicArg, function->getArg(oldBase)->getType());
         if (!casted) {
-          diagOS << "A5VM LLVM emission failed: cannot cast scalar arg for "
+          diagOS << "VPTO LLVM emission failed: cannot cast scalar arg for "
                  << originalName << "\n";
           return failure();
         }
@@ -2313,7 +2424,7 @@ static LogicalResult rewriteFunctionsToEmitCStyleABI(
       llvm::Value *stride = materializeABIExpr(
           builder, argSpec.memrefSpec.stride, replacement, oldStrideTy);
       if (!allocated || !aligned || !offset || !size || !stride) {
-        diagOS << "A5VM LLVM emission failed: cannot materialize direct ABI for "
+        diagOS << "VPTO LLVM emission failed: cannot materialize direct ABI for "
                << originalName << "\n";
         return failure();
       }
@@ -2333,7 +2444,7 @@ static LogicalResult rewriteFunctionsToEmitCStyleABI(
     llvm::BasicBlock *oldEntry = &replacement->getEntryBlock();
     llvm::BasicBlock *clonedEntry = oldEntry->getNextNode();
     if (!clonedEntry) {
-      diagOS << "A5VM LLVM emission failed: cloned function body is empty for "
+      diagOS << "VPTO LLVM emission failed: cloned function body is empty for "
              << originalName << "\n";
       return failure();
     }
@@ -2347,13 +2458,13 @@ static LogicalResult rewriteFunctionsToEmitCStyleABI(
 }
 
 static std::unique_ptr<llvm::Module>
-buildLLVMModuleFromA5VM(ModuleOp module, llvm::LLVMContext &llvmContext,
-                        const A5VMEmissionOptions &options,
+buildLLVMModuleFromVPTO(ModuleOp module, llvm::LLVMContext &llvmContext,
+                        const VPTOEmissionOptions &options,
                         llvm::raw_ostream &diagOS) {
   OwningOpRef<ModuleOp> cloned(cast<ModuleOp>(module->clone()));
   auto vecScopeCounts = collectVecScopeLoopCounts(*cloned);
 
-  if (failed(convertA5VMFunctionBoundariesToPtr(*cloned, &diagOS)))
+  if (failed(convertVPTOEmissionBoundaryToPtr(*cloned, &diagOS)))
     return nullptr;
 
   if (failed(normalizePtoMemRefSpaces(*cloned, diagOS)))
@@ -2362,8 +2473,8 @@ buildLLVMModuleFromA5VM(ModuleOp module, llvm::LLVMContext &llvmContext,
   if (failed(normalizePtoPtrsToLLVM(*cloned, diagOS)))
     return nullptr;
 
-  if (failed(rewriteA5VMOps(*cloned, diagOS))) {
-    diagOS << "A5VM LLVM emission failed: A5VM-to-call rewriting failed\n";
+  if (failed(rewriteVPTOOps(*cloned, diagOS))) {
+    diagOS << "VPTO LLVM emission failed: VPTO-to-call rewriting failed\n";
     return nullptr;
   }
 
@@ -2377,7 +2488,7 @@ buildLLVMModuleFromA5VM(ModuleOp module, llvm::LLVMContext &llvmContext,
   pm.addPass(createConvertControlFlowToLLVMPass());
   pm.addPass(createReconcileUnrealizedCastsPass());
   if (failed(pm.run(*cloned))) {
-    diagOS << "A5VM LLVM emission failed: official lowering pipeline failed\n";
+    diagOS << "VPTO LLVM emission failed: official lowering pipeline failed\n";
     return nullptr;
   }
 
@@ -2388,7 +2499,7 @@ buildLLVMModuleFromA5VM(ModuleOp module, llvm::LLVMContext &llvmContext,
   registerLLVMDialectTranslation(*cloned->getContext());
   auto llvmModule = translateModuleToLLVMIR(cloned.get(), llvmContext);
   if (!llvmModule) {
-    diagOS << "A5VM LLVM emission failed: LLVM IR export failed\n";
+    diagOS << "VPTO LLVM emission failed: LLVM IR export failed\n";
     return nullptr;
   }
 
@@ -2403,11 +2514,11 @@ buildLLVMModuleFromA5VM(ModuleOp module, llvm::LLVMContext &llvmContext,
 } // namespace
 
 LogicalResult
-translateA5VMModuleToLLVMText(ModuleOp module, llvm::raw_ostream &os,
-                              const A5VMEmissionOptions &options,
+translateVPTOModuleToLLVMText(ModuleOp module, llvm::raw_ostream &os,
+                              const VPTOEmissionOptions &options,
                               llvm::raw_ostream &diagOS) {
   llvm::LLVMContext llvmContext;
-  auto llvmModule = buildLLVMModuleFromA5VM(module, llvmContext, options, diagOS);
+  auto llvmModule = buildLLVMModuleFromVPTO(module, llvmContext, options, diagOS);
   if (!llvmModule)
     return failure();
   llvmModule->print(os, nullptr);
@@ -2415,11 +2526,11 @@ translateA5VMModuleToLLVMText(ModuleOp module, llvm::raw_ostream &os,
 }
 
 LogicalResult
-translateA5VMModuleToLLVMBitcode(ModuleOp module, llvm::raw_ostream &os,
-                                 const A5VMEmissionOptions &options,
+translateVPTOModuleToLLVMBitcode(ModuleOp module, llvm::raw_ostream &os,
+                                 const VPTOEmissionOptions &options,
                                  llvm::raw_ostream &diagOS) {
   llvm::LLVMContext llvmContext;
-  auto llvmModule = buildLLVMModuleFromA5VM(module, llvmContext, options, diagOS);
+  auto llvmModule = buildLLVMModuleFromVPTO(module, llvmContext, options, diagOS);
   if (!llvmModule)
     return failure();
   llvm::WriteBitcodeToFile(*llvmModule, os);

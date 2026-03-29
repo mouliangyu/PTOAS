@@ -1,4 +1,4 @@
-//===- A5VMTextEmitter.cpp - A5VM textual LLVM-like emitter --------------===//
+//===- VPTOTextEmitter.cpp - VPTO textual LLVM-like emitter --------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,9 +6,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PTO/Transforms/A5VMTextEmitter.h"
+#include "PTO/Transforms/VPTOTextEmitter.h"
 
-#include "PTO/IR/A5VM.h"
+#include "PTO/IR/PTO.h"
 #include "PTO/IR/PTO.h"
 #include "PTO/Transforms/HIVMIntrinsicNaming.h"
 
@@ -79,7 +79,7 @@ static std::string formatLocationString(Location loc) {
   return storage;
 }
 
-static LogicalResult writeReportFile(const A5VMEmissionOptions &options,
+static LogicalResult writeReportFile(const VPTOEmissionOptions &options,
                                      ArrayRef<UnresolvedEmissionRecord> records,
                                      llvm::raw_ostream &diagOS) {
   if (options.unresolvedReportPath.empty())
@@ -89,7 +89,7 @@ static LogicalResult writeReportFile(const A5VMEmissionOptions &options,
   llvm::raw_fd_ostream reportOS(options.unresolvedReportPath, ec,
                                 llvm::sys::fs::OF_Text);
   if (ec) {
-    diagOS << "A5VM emission failed: could not write unresolved report to '"
+    diagOS << "VPTO emission failed: could not write unresolved report to '"
            << options.unresolvedReportPath << "': " << ec.message() << "\n";
     return failure();
   }
@@ -102,7 +102,7 @@ static LogicalResult writeReportFile(const A5VMEmissionOptions &options,
 class LLVMTextEmitter {
 public:
   LLVMTextEmitter(ModuleOp sourceModule, llvm::raw_ostream &diagOS,
-                  const A5VMEmissionOptions &options)
+                  const VPTOEmissionOptions &options)
       : sourceModule(sourceModule), diagOS(diagOS), options(options),
         llvmModule(std::make_unique<llvm::Module>("ptoas.hivm", llvmContext)),
         builder(llvmContext) {}
@@ -133,7 +133,7 @@ public:
 private:
   ModuleOp sourceModule;
   llvm::raw_ostream &diagOS;
-  const A5VMEmissionOptions &options;
+  const VPTOEmissionOptions &options;
   llvm::LLVMContext llvmContext;
   std::unique_ptr<llvm::Module> llvmModule;
   llvm::IRBuilder<> builder;
@@ -244,7 +244,7 @@ private:
 
   std::optional<uint64_t> parseStoreDistImmediate(Type valueType,
                                                   llvm::StringRef dist) {
-    auto vecType = dyn_cast<a5vm::VecType>(valueType);
+    auto vecType = dyn_cast<pto::VecType>(valueType);
     if (!vecType)
       return std::nullopt;
 
@@ -316,13 +316,13 @@ private:
   }
 
   llvm::Type *convertType(Type type) {
-    if (auto vecType = dyn_cast<a5vm::VecType>(type))
+    if (auto vecType = dyn_cast<pto::VecType>(type))
       return llvm::FixedVectorType::get(
           convertScalarType(vecType.getElementType()), vecType.getElementCount());
 
-    if (isa<a5vm::MaskType>(type))
+    if (isa<pto::MaskType>(type))
       return llvm::FixedVectorType::get(getIntegerType(1), 256);
-    if (isa<a5vm::AlignType>(type))
+    if (isa<pto::AlignType>(type))
       return getIntegerType(64);
 
     if (auto ptrType = dyn_cast<LLVM::LLVMPointerType>(type))
@@ -378,7 +378,7 @@ private:
     for (Type argType : func.getFunctionType().getInputs()) {
       llvm::Type *llvmType = convertType(argType);
       if (!llvmType) {
-        diagOS << "A5VM emission failed: unsupported function argument type in "
+        diagOS << "VPTO emission failed: unsupported function argument type in "
                << func.getName() << "\n";
         return failure();
       }
@@ -399,7 +399,7 @@ private:
     builder.SetInsertPoint(entry);
 
     if (func.getBlocks().size() != 1) {
-      diagOS << "A5VM emission failed: only single-block func.func is currently "
+      diagOS << "VPTO emission failed: only single-block func.func is currently "
                 "supported for Abs path\n";
       return failure();
     }
@@ -517,7 +517,7 @@ private:
     llvm::Value *upper = lookup(op.getUpperBound());
     llvm::Value *step = lookup(op.getStep());
     if (!lower || !upper || !step) {
-      diagOS << "A5VM emission failed: unresolved loop bounds in scf.for\n";
+      diagOS << "VPTO emission failed: unresolved loop bounds in scf.for\n";
       return failure();
     }
 
@@ -556,7 +556,7 @@ private:
   LogicalResult emitIfOp(scf::IfOp op) {
     llvm::Value *cond = lookup(op.getCondition());
     if (!cond) {
-      diagOS << "A5VM emission failed: unresolved condition in scf.if\n";
+      diagOS << "VPTO emission failed: unresolved condition in scf.if\n";
       return failure();
     }
 
@@ -592,10 +592,10 @@ private:
     return success();
   }
 
-  LogicalResult emitA5VMCall(Operation *op) {
+  LogicalResult emitVPTOCall(Operation *op) {
     auto selectionOr = selectIntrinsic(op);
     if (failed(selectionOr)) {
-      diagOS << "A5VM emission failed: could not select intrinsic for "
+      diagOS << "VPTO emission failed: could not select intrinsic for "
              << op->getName().getStringRef() << "\n";
       return failure();
     }
@@ -611,7 +611,7 @@ private:
     for (Value operand : op->getOperands()) {
       llvm::Value *llvmOperand = lookup(operand);
       if (!llvmOperand) {
-        diagOS << "A5VM emission failed: unresolved operand for "
+        diagOS << "VPTO emission failed: unresolved operand for "
                << op->getName().getStringRef() << "\n";
         return failure();
       }
@@ -743,13 +743,13 @@ private:
     };
 
     auto appendSyncImmediateTriplet =
-        [&](llvm::StringRef srcPipe, llvm::StringRef dstPipe,
-            llvm::StringRef eventId) -> LogicalResult {
-      auto srcImm = parsePipeImmediate(srcPipe);
-      auto dstImm = parsePipeImmediate(dstPipe);
-      auto eventImm = parseEventImmediate(eventId);
+        [&](pto::PipeAttr srcPipe, pto::PipeAttr dstPipe,
+            pto::EventAttr eventId) -> LogicalResult {
+      auto srcImm = parsePipeImmediate(stringifyPIPE(srcPipe.getPipe()));
+      auto dstImm = parsePipeImmediate(stringifyPIPE(dstPipe.getPipe()));
+      auto eventImm = parseEventImmediate(stringifyEVENT(eventId.getEvent()));
       if (!srcImm || !dstImm || !eventImm) {
-        diagOS << "A5VM emission failed: could not encode sync immediates for "
+        diagOS << "VPTO emission failed: could not encode sync immediates for "
                << op->getName().getStringRef() << "\n";
         return failure();
       }
@@ -759,10 +759,10 @@ private:
       return success();
     };
 
-    auto appendBarrierImmediate = [&](llvm::StringRef pipe) -> LogicalResult {
-      auto pipeImm = parsePipeImmediate(pipe);
+    auto appendBarrierImmediate = [&](pto::PipeAttr pipe) -> LogicalResult {
+      auto pipeImm = parsePipeImmediate(stringifyPIPE(pipe.getPipe()));
       if (!pipeImm) {
-        diagOS << "A5VM emission failed: could not encode barrier immediate for "
+        diagOS << "VPTO emission failed: could not encode barrier immediate for "
                << op->getName().getStringRef() << "\n";
         return failure();
       }
@@ -770,128 +770,140 @@ private:
       return success();
     };
 
-    if (isa<a5vm::SetLoop2StrideOutToUbOp, a5vm::SetLoop1StrideOutToUbOp,
-            a5vm::SetLoop2StrideUbToOutOp, a5vm::SetLoop1StrideUbToOutOp>(op)) {
+    if (isa<pto::SetLoop2StrideOutToUbOp, pto::SetLoop1StrideOutToUbOp,
+            pto::SetLoop2StrideUbToOutOp, pto::SetLoop1StrideUbToOutOp>(op)) {
       if (rawOperands.size() != 2) {
-        diagOS << "A5VM emission failed: expected two operands for loop config op\n";
+        diagOS << "VPTO emission failed: expected two operands for loop config op\n";
         return failure();
       }
       appendArg(packLoopPair(rawOperands[0], rawOperands[1]));
-    } else if (isa<a5vm::SetLoopSizeOutToUbOp, a5vm::SetLoopSizeUbToOutOp>(op)) {
+    } else if (isa<pto::SetLoopSizeOutToUbOp, pto::SetLoopSizeUbToOutOp>(op)) {
       if (rawOperands.size() != 2) {
-        diagOS << "A5VM emission failed: expected two operands for loop size op\n";
+        diagOS << "VPTO emission failed: expected two operands for loop size op\n";
         return failure();
       }
       llvm::Value *packed = packLoopSize(rawOperands[0], rawOperands[1]);
       if (!packed) {
-        diagOS << "A5VM emission failed: could not pack loop size op\n";
+        diagOS << "VPTO emission failed: could not pack loop size op\n";
         return failure();
       }
       appendArg(packed);
-    } else if (isa<a5vm::CopyGmToUbufOp>(op)) {
+    } else if (isa<pto::CopyGmToUbufOp>(op)) {
       if (rawOperands.size() != 11) {
-        diagOS << "A5VM emission failed: expected eleven operands for copy_gm_to_ubuf\n";
+        diagOS << "VPTO emission failed: expected eleven operands for copy_gm_to_ubuf\n";
         return failure();
       }
       llvm::Value *config0 = packCopyGmToUbConfig0(rawOperands);
       llvm::Value *config1 = packCopyGmToUbConfig1(rawOperands);
       if (!config0 || !config1) {
-        diagOS << "A5VM emission failed: could not pack copy_gm_to_ubuf config\n";
+        diagOS << "VPTO emission failed: could not pack copy_gm_to_ubuf config\n";
         return failure();
       }
       appendArg(rawOperands[1]);
       appendArg(rawOperands[0]);
       appendArg(config0);
       appendArg(config1);
-    } else if (isa<a5vm::CopyUbufToGmOp>(op)) {
+    } else if (isa<pto::CopyUbufToGmOp>(op)) {
       if (rawOperands.size() != 8) {
-        diagOS << "A5VM emission failed: expected eight operands for copy_ubuf_to_gm\n";
+        diagOS << "VPTO emission failed: expected eight operands for copy_ubuf_to_gm\n";
         return failure();
       }
       llvm::Value *config0 = packCopyUbToGmConfig0(rawOperands);
       llvm::Value *config1 = packCopyUbToGmConfig1(rawOperands);
       if (!config0 || !config1) {
-        diagOS << "A5VM emission failed: could not pack copy_ubuf_to_gm config\n";
+        diagOS << "VPTO emission failed: could not pack copy_ubuf_to_gm config\n";
         return failure();
       }
       appendArg(rawOperands[1]);
       appendArg(rawOperands[0]);
       appendArg(config0);
       appendArg(config1);
-    } else if (auto setFlag = dyn_cast<a5vm::SetFlagOp>(op)) {
+    } else if (auto setFlag = dyn_cast<pto::SetFlagOp>(op)) {
       if (failed(appendSyncImmediateTriplet(setFlag.getSrcPipe(),
                                             setFlag.getDstPipe(),
                                             setFlag.getEventId())))
         return failure();
-    } else if (auto waitFlag = dyn_cast<a5vm::WaitFlagOp>(op)) {
+    } else if (auto waitFlag = dyn_cast<pto::WaitFlagOp>(op)) {
       if (failed(appendSyncImmediateTriplet(waitFlag.getSrcPipe(),
                                             waitFlag.getDstPipe(),
                                             waitFlag.getEventId())))
         return failure();
-    } else if (auto barrier = dyn_cast<a5vm::PipeBarrierOp>(op)) {
+    } else if (auto barrier = dyn_cast<pto::BarrierOp>(op)) {
       if (failed(appendBarrierImmediate(barrier.getPipe())))
         return failure();
-    } else if (isa<a5vm::PltB32Op>(op)) {
+    } else if (isa<pto::PltB32Op>(op)) {
       if (rawOperands.size() != 1) {
-        diagOS << "A5VM emission failed: expected one operand for plt_b32\n";
+        diagOS << "VPTO emission failed: expected one operand for plt_b32\n";
         return failure();
       }
       llvm::Value *laneCount = castIntegerLikeToI32(rawOperands[0]);
       if (!laneCount) {
-        diagOS << "A5VM emission failed: could not cast plt_b32 lane count\n";
+        diagOS << "VPTO emission failed: could not cast plt_b32 lane count\n";
         return failure();
       }
       appendArg(laneCount);
-    } else if (auto vlds = dyn_cast<a5vm::VldsOp>(op)) {
+    } else if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
       if (rawOperands.size() != 2) {
-        diagOS << "A5VM emission failed: expected two operands for vlds\n";
+        diagOS << "VPTO emission failed: expected two operands for vlds\n";
+        return failure();
+      }
+      if (!rawOperands[0]->getType()->isPointerTy()) {
+        diagOS << "VPTO emission failed: intrinsic ABI guard expected pointer "
+                  "base for vlds, got "
+               << *rawOperands[0]->getType() << "\n";
         return failure();
       }
       llvm::Value *offsetBytes =
           convertElementOffsetToBytes(rawOperands[1],
-                                      cast<a5vm::VecType>(vlds.getResult().getType())
+                                      cast<pto::VecType>(vlds.getResult().getType())
                                           .getElementType());
       auto distImm = parseLoadDistImmediate(vlds.getDistAttr() ? *vlds.getDist() : "");
       if (!offsetBytes || !distImm) {
-        diagOS << "A5VM emission failed: could not encode vlds offset/dist\n";
+        diagOS << "VPTO emission failed: could not encode vlds offset/dist\n";
         return failure();
       }
       appendArg(rawOperands[0]);
       appendArg(offsetBytes);
       appendArg(llvm::ConstantInt::get(getIntegerType(32), *distImm));
       appendArg(llvm::ConstantInt::get(getIntegerType(32), 0));
-    } else if (auto vldsPost = dyn_cast<a5vm::VldsPostOp>(op)) {
+    } else if (auto vldsPost = dyn_cast<pto::VldsPostOp>(op)) {
       if (rawOperands.size() != 2) {
-        diagOS << "A5VM emission failed: expected two operands for vlds_post\n";
+        diagOS << "VPTO emission failed: expected two operands for vlds_post\n";
         return failure();
       }
       llvm::Value *offsetBytes =
           convertElementOffsetToBytes(rawOperands[1],
-                                      cast<a5vm::VecType>(vldsPost.getResult().getType())
+                                      cast<pto::VecType>(vldsPost.getResult().getType())
                                           .getElementType());
       auto distImm =
           parseLoadDistImmediate(vldsPost.getDistAttr() ? *vldsPost.getDist() : "NORM");
       if (!offsetBytes || !distImm) {
-        diagOS << "A5VM emission failed: could not encode vlds_post offset/dist\n";
+        diagOS << "VPTO emission failed: could not encode vlds_post offset/dist\n";
         return failure();
       }
       appendArg(rawOperands[0]);
       appendArg(offsetBytes);
       appendArg(llvm::ConstantInt::get(getIntegerType(32), *distImm));
       appendArg(llvm::ConstantInt::get(getIntegerType(32), 1));
-    } else if (auto vsts = dyn_cast<a5vm::VstsOp>(op)) {
+    } else if (auto vsts = dyn_cast<pto::VstsOp>(op)) {
       if (rawOperands.size() != 4) {
-        diagOS << "A5VM emission failed: expected four operands for vsts\n";
+        diagOS << "VPTO emission failed: expected four operands for vsts\n";
+        return failure();
+      }
+      if (!rawOperands[1]->getType()->isPointerTy()) {
+        diagOS << "VPTO emission failed: intrinsic ABI guard expected pointer "
+                  "base for vsts, got "
+               << *rawOperands[1]->getType() << "\n";
         return failure();
       }
       llvm::Value *offsetBytes =
           convertElementOffsetToBytes(rawOperands[2],
-                                      cast<a5vm::VecType>(vsts.getValue().getType())
+                                      cast<pto::VecType>(vsts.getValue().getType())
                                           .getElementType());
       auto distImm = parseStoreDistImmediate(
           vsts.getValue().getType(), vsts.getDistAttr() ? *vsts.getDist() : "");
       if (!offsetBytes || !distImm) {
-        diagOS << "A5VM emission failed: could not encode vsts offset/dist\n";
+        diagOS << "VPTO emission failed: could not encode vsts offset/dist\n";
         return failure();
       }
       appendArg(rawOperands[0]);
@@ -900,20 +912,20 @@ private:
       appendArg(llvm::ConstantInt::get(getIntegerType(32), *distImm));
       appendArg(llvm::ConstantInt::get(getIntegerType(32), 0));
       appendArg(rawOperands[3]);
-    } else if (auto vstsPost = dyn_cast<a5vm::VstsPostOp>(op)) {
+    } else if (auto vstsPost = dyn_cast<pto::VstsPostOp>(op)) {
       if (rawOperands.size() != 4) {
-        diagOS << "A5VM emission failed: expected four operands for vsts_post\n";
+        diagOS << "VPTO emission failed: expected four operands for vsts_post\n";
         return failure();
       }
       llvm::Value *offsetBytes =
           convertElementOffsetToBytes(rawOperands[2],
-                                      cast<a5vm::VecType>(vstsPost.getValue().getType())
+                                      cast<pto::VecType>(vstsPost.getValue().getType())
                                           .getElementType());
       auto distImm = parseStoreDistImmediate(
           vstsPost.getValue().getType(),
           vstsPost.getDistAttr() ? *vstsPost.getDist() : "");
       if (!offsetBytes || !distImm) {
-        diagOS << "A5VM emission failed: could not encode vsts_post offset/dist\n";
+        diagOS << "VPTO emission failed: could not encode vsts_post offset/dist\n";
         return failure();
       }
       appendArg(rawOperands[0]);
@@ -936,9 +948,9 @@ private:
     };
 
     bool skipGenericAttrs =
-        isa<a5vm::CopyGmToUbufOp, a5vm::CopyUbufToGmOp, a5vm::SetFlagOp,
-            a5vm::WaitFlagOp, a5vm::PipeBarrierOp, a5vm::PltB32Op,
-            a5vm::VldsOp, a5vm::VldsPostOp, a5vm::VstsOp, a5vm::VstsPostOp>(op);
+        isa<pto::CopyGmToUbufOp, pto::CopyUbufToGmOp, pto::SetFlagOp,
+            pto::WaitFlagOp, pto::BarrierOp, pto::PltB32Op,
+            pto::VldsOp, pto::VldsPostOp, pto::VstsOp, pto::VstsPostOp>(op);
     for (NamedAttribute attr : op->getAttrs()) {
       if (skipGenericAttrs)
         continue;
@@ -948,20 +960,20 @@ private:
     }
 
     llvm::Type *resultType = nullptr;
-    if (auto plt = dyn_cast<a5vm::PltB32Op>(op)) {
+    if (auto plt = dyn_cast<pto::PltB32Op>(op)) {
       llvm::Type *maskType = convertType(plt.getMask().getType());
       llvm::Type *scalarOutType = convertType(plt.getScalarOut().getType());
       if (!maskType || !scalarOutType) {
-        diagOS << "A5VM emission failed: unsupported result type for "
+        diagOS << "VPTO emission failed: unsupported result type for "
                << op->getName().getStringRef() << "\n";
         return failure();
       }
       resultType = llvm::StructType::get(llvmContext, {maskType, scalarOutType});
-    } else if (auto vldsPost = dyn_cast<a5vm::VldsPostOp>(op)) {
+    } else if (auto vldsPost = dyn_cast<pto::VldsPostOp>(op)) {
       llvm::Type *vecType = convertType(vldsPost.getResult().getType());
       llvm::Type *ptrType = convertType(vldsPost.getUpdatedSource().getType());
       if (!vecType || !ptrType) {
-        diagOS << "A5VM emission failed: unsupported result type for "
+        diagOS << "VPTO emission failed: unsupported result type for "
                << op->getName().getStringRef() << "\n";
         return failure();
       }
@@ -969,12 +981,12 @@ private:
     } else if (op->getNumResults() == 1) {
       resultType = convertType(op->getResult(0).getType());
       if (!resultType) {
-        diagOS << "A5VM emission failed: unsupported result type for "
+        diagOS << "VPTO emission failed: unsupported result type for "
                << op->getName().getStringRef() << "\n";
         return failure();
       }
     } else if (op->getNumResults() > 1) {
-      diagOS << "A5VM emission failed: multi-result A5VM calls are not yet "
+      diagOS << "VPTO emission failed: multi-result VPTO calls are not yet "
                 "supported in the Abs path\n";
       return failure();
     } else {
@@ -985,10 +997,10 @@ private:
     llvm::Function *callee =
         getOrCreateDeclaration(selection.getEmittedCallee(), fnType);
     llvm::CallInst *call = builder.CreateCall(callee, argValues);
-    if (auto plt = dyn_cast<a5vm::PltB32Op>(op)) {
+    if (auto plt = dyn_cast<pto::PltB32Op>(op)) {
       bind(plt.getMask(), builder.CreateExtractValue(call, {0}));
       bind(plt.getScalarOut(), builder.CreateExtractValue(call, {1}));
-    } else if (auto vldsPost = dyn_cast<a5vm::VldsPostOp>(op)) {
+    } else if (auto vldsPost = dyn_cast<pto::VldsPostOp>(op)) {
       bind(vldsPost.getResult(), builder.CreateExtractValue(call, {0}));
       bind(vldsPost.getUpdatedSource(), builder.CreateExtractValue(call, {1}));
     } else if (op->getNumResults() == 1) {
@@ -1004,17 +1016,56 @@ private:
     if (auto constant = dyn_cast<arith::ConstantOp>(op)) {
       llvm::Value *value = emitConstant(constant);
       if (!value) {
-        diagOS << "A5VM emission failed: unsupported arith.constant in Abs path\n";
+        diagOS << "VPTO emission failed: unsupported arith.constant in Abs path\n";
         return failure();
       }
       bind(constant.getResult(), value);
       return success();
     }
 
+    if (auto pointerCast = dyn_cast<PointerCastOp>(op)) {
+      if (pointerCast.getAddrs().empty()) {
+        diagOS << "VPTO emission failed: pto.pointer_cast requires at least one "
+                  "address operand\n";
+        return failure();
+      }
+      if (pointerCast.getAddrs().size() != 1) {
+        diagOS << "VPTO emission failed: pto.pointer_cast with multiple address "
+                  "operands is not yet supported in Abs path\n";
+        return failure();
+      }
+      llvm::Value *addrValue = lookup(pointerCast.getAddrs().front());
+      llvm::Value *addrI64 = castIntegerLikeToI64(addrValue);
+      llvm::Type *dstType = convertType(pointerCast.getResult().getType());
+      if (!addrI64 || !dstType || !dstType->isPointerTy()) {
+        diagOS << "VPTO emission failed: unsupported pto.pointer_cast lowering "
+                  "to pointer ABI\n";
+        return failure();
+      }
+      bind(pointerCast.getResult(),
+           builder.CreateIntToPtr(addrI64, dstType, "pto.pointer_cast"));
+      return success();
+    }
+
+    if (auto bindTile = dyn_cast<BindTileOp>(op)) {
+      llvm::Value *source = lookup(bindTile.getSource());
+      llvm::Type *dstType = convertType(bindTile.getResult().getType());
+      if (!source || !dstType || !dstType->isPointerTy() ||
+          !source->getType()->isPointerTy()) {
+        diagOS << "VPTO emission failed: unsupported pto.bind_tile bridge to "
+                  "pointer ABI\n";
+        return failure();
+      }
+      if (source->getType() != dstType)
+        source = builder.CreateAddrSpaceCast(source, dstType, "pto.bind_tile");
+      bind(bindTile.getResult(), source);
+      return success();
+    }
+
     if (auto extract = dyn_cast<memref::ExtractAlignedPointerAsIndexOp>(op)) {
       llvm::Value *source = lookup(extract.getSource());
       if (!source) {
-        diagOS << "A5VM emission failed: unresolved memref source for "
+        diagOS << "VPTO emission failed: unresolved memref source for "
                   "extract_aligned_pointer_as_index\n";
         return failure();
       }
@@ -1039,7 +1090,7 @@ private:
       llvm::Value *input = lookup(cast.getIn());
       llvm::Value *result = emitCastLike(input, cast.getType());
       if (!result) {
-        diagOS << "A5VM emission failed: unsupported arith.index_castui\n";
+        diagOS << "VPTO emission failed: unsupported arith.index_castui\n";
         return failure();
       }
       bind(cast.getResult(), result);
@@ -1071,7 +1122,7 @@ private:
         predicate = llvm::CmpInst::ICMP_SLT;
         break;
       default:
-        diagOS << "A5VM emission failed: unsupported arith.cmpi predicate in Abs "
+        diagOS << "VPTO emission failed: unsupported arith.cmpi predicate in Abs "
                   "path\n";
         return failure();
       }
@@ -1118,13 +1169,13 @@ private:
 
     if (auto cast = dyn_cast<UnrealizedConversionCastOp>(op)) {
       if (cast->getNumOperands() != 1 || cast->getNumResults() != 1) {
-        diagOS << "A5VM emission failed: unsupported unrealized cast arity\n";
+        diagOS << "VPTO emission failed: unsupported unrealized cast arity\n";
         return failure();
       }
       llvm::Value *input = lookup(cast.getInputs().front());
       llvm::Type *resultType = convertType(cast.getResults().front().getType());
       if (!input || !resultType) {
-        diagOS << "A5VM emission failed: unsupported unrealized cast types\n";
+        diagOS << "VPTO emission failed: unsupported unrealized cast types\n";
         return failure();
       }
       if (input->getType() == resultType) {
@@ -1143,17 +1194,17 @@ private:
       llvm::Value *base = lookup(addPtr.getPtr());
       llvm::Value *offset = lookup(addPtr.getOffset());
       if (!base || !offset) {
-        diagOS << "A5VM emission failed: unresolved addptr operands\n";
+        diagOS << "VPTO emission failed: unresolved addptr operands\n";
         return failure();
       }
       llvm::Value *offsetI64 = castIntegerLikeToI64(offset);
       if (!offsetI64) {
-        diagOS << "A5VM emission failed: unsupported addptr offset type\n";
+        diagOS << "VPTO emission failed: unsupported addptr offset type\n";
         return failure();
       }
       auto ptrType = dyn_cast<pto::PtrType>(addPtr.getResult().getType());
       if (!ptrType) {
-        diagOS << "A5VM emission failed: addptr result must be !pto.ptr\n";
+        diagOS << "VPTO emission failed: addptr result must be !pto.ptr\n";
         return failure();
       }
       bind(addPtr.getResult(),
@@ -1165,12 +1216,12 @@ private:
     if (auto castPtr = dyn_cast<pto::CastPtrOp>(op)) {
       llvm::Value *input = lookup(castPtr.getInput());
       if (!input) {
-        diagOS << "A5VM emission failed: unresolved castptr operand\n";
+        diagOS << "VPTO emission failed: unresolved castptr operand\n";
         return failure();
       }
       llvm::Value *result = emitCastLike(input, castPtr.getResult().getType());
       if (!result) {
-        diagOS << "A5VM emission failed: unsupported castptr types\n";
+        diagOS << "VPTO emission failed: unsupported castptr types\n";
         return failure();
       }
       bind(castPtr.getResult(), result);
@@ -1189,10 +1240,10 @@ private:
       return success();
     }
 
-    if (op->getName().getDialectNamespace() == "a5vm")
-      return emitA5VMCall(op);
+    if (op->getName().getDialectNamespace() == "pto")
+      return emitVPTOCall(op);
 
-    diagOS << "A5VM emission failed: unsupported op in Abs path: "
+    diagOS << "VPTO emission failed: unsupported op in Abs path: "
            << op->getName().getStringRef() << "\n";
     return failure();
   }
@@ -1200,8 +1251,8 @@ private:
 
 } // namespace
 
-LogicalResult translateA5VMModuleToText(ModuleOp module, llvm::raw_ostream &os,
-                                        const A5VMEmissionOptions &options,
+LogicalResult translateVPTOModuleToText(ModuleOp module, llvm::raw_ostream &os,
+                                        const VPTOEmissionOptions &options,
                                         llvm::raw_ostream &diagOS) {
   LLVMTextEmitter emitter(module, diagOS, options);
   return emitter.emitTo(os);

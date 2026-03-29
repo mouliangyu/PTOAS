@@ -66,6 +66,8 @@ class PTO_DpsOp<string mnemonic, list<Trait> traits = []>
 class PTO_Op<string mnemonic, list<Trait> traits = []>
     : Op<PTO_Dialect, mnemonic, !listconcat(traits, [ ])>;
 
+include "PTO/IR/VPTOOps.td"
+
 //===----------------------------------------------------------------------===//
 // Pointer/View Ops (for your front-end IR)
 //===----------------------------------------------------------------------===//
@@ -1172,8 +1174,10 @@ def SetFlagOp : PTO_Op<"set_flag"> {
     PTO_EventAttr:$event_id
   );
   let results = (outs);
-  let assemblyFormat = [{
-    `[` $src_pipe `,` $dst_pipe `,` $event_id `]` attr-dict
+  let extraClassDeclaration = [{
+    void print(::mlir::OpAsmPrinter &p);
+    static ::mlir::ParseResult parse(::mlir::OpAsmParser &parser,
+                                     ::mlir::OperationState &result);
   }];
 }
 
@@ -1185,14 +1189,19 @@ def WaitFlagOp : PTO_Op<"wait_flag"> {
     PTO_EventAttr:$event_id
   );
   let results = (outs);
-  let assemblyFormat = [{
-    `[` $src_pipe `,` $dst_pipe `,` $event_id `]` attr-dict
+  let extraClassDeclaration = [{
+    void print(::mlir::OpAsmPrinter &p);
+    static ::mlir::ParseResult parse(::mlir::OpAsmParser &parser,
+                                     ::mlir::OperationState &result);
   }];
 }
 
 //===----------------------------------------------------------------------===//
 // Buffer-ID Synchronization (A5)
 //===----------------------------------------------------------------------===//
+
+def PTO_PipeLikeAttr
+    : AnyAttrOf<[PTO_PipeEventTypeAttr, PTO_SyncOpTypeAttr, PTO_PipeAttr]>;
 
 def GetBufOp : PTO_Op<"get_buf"> {
   let summary = "Acquire a buffer-id token for a sync op type (A5)";
@@ -1210,7 +1219,7 @@ def GetBufOp : PTO_Op<"get_buf"> {
   }];
 
   let arguments = (ins
-    PTO_PipeEventTypeLikeAttr:$op_type,
+    PTO_PipeLikeAttr:$op_type,
     I32Attr:$buf_id,
     DefaultValuedAttr<I32Attr, "0">:$mode
   );
@@ -1219,8 +1228,10 @@ def GetBufOp : PTO_Op<"get_buf"> {
 
   let hasVerifier = 1;
 
-  let assemblyFormat = [{
-    `[` $op_type `,` $buf_id `]` attr-dict
+  let extraClassDeclaration = [{
+    void print(::mlir::OpAsmPrinter &p);
+    static ::mlir::ParseResult parse(::mlir::OpAsmParser &parser,
+                                     ::mlir::OperationState &result);
   }];
 }
 
@@ -1234,7 +1245,7 @@ def RlsBufOp : PTO_Op<"rls_buf"> {
   }];
 
   let arguments = (ins
-    PTO_PipeEventTypeLikeAttr:$op_type,
+    PTO_PipeLikeAttr:$op_type,
     I32Attr:$buf_id,
     DefaultValuedAttr<I32Attr, "0">:$mode
   );
@@ -1243,8 +1254,10 @@ def RlsBufOp : PTO_Op<"rls_buf"> {
 
   let hasVerifier = 1;
 
-  let assemblyFormat = [{
-    `[` $op_type `,` $buf_id `]` attr-dict
+  let extraClassDeclaration = [{
+    void print(::mlir::OpAsmPrinter &p);
+    static ::mlir::ParseResult parse(::mlir::OpAsmParser &parser,
+                                     ::mlir::OperationState &result);
   }];
 }
 

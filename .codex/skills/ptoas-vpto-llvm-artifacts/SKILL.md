@@ -1,17 +1,17 @@
 ---
-name: ptoas-a5vm-llvm-artifacts
-description: Inspect PTOAS A5VM intermediate MLIR, export A5VM kernels as LLVM IR or LLVM bitcode, validate the bisheng handoff, and assemble device objects, fat objects, or shared kernel libraries. Use when the user asks for A5VM MLIR, an LLVM IR path build, LLVM BC export, bisheng compilation, or fatobj/lib.so assembly for A5.
+name: ptoas-vpto-llvm-artifacts
+description: Inspect PTOAS VPTO intermediate MLIR, export VPTO kernels as LLVM IR or LLVM bitcode, validate the bisheng handoff, and assemble device objects, fat objects, or shared kernel libraries. Use when the user asks for VPTO MLIR, an LLVM IR path build, LLVM BC export, bisheng compilation, or fatobj/lib.so assembly for A5.
 ---
 
-# PTOAS A5VM LLVM Artifacts
+# PTOAS VPTO LLVM Artifacts
 
 Use this skill when the task is specifically about:
-- printing or inspecting A5VM intermediate MLIR
-- exporting PTOAS A5 kernels as LLVM IR or LLVM bitcode through the A5VM backend
+- printing or inspecting VPTO intermediate MLIR
+- exporting PTOAS A5 kernels as LLVM IR or LLVM bitcode through the VPTO backend
 - checking whether the export is textual LLVM IR or real LLVM bitcode
 - compiling the exported artifact with `bisheng`
 - assembling a device object, fat relocatable object, or shared kernel library from the LLVM path
-- helping with an "LLVM IR path build", "LLVM IR path compile", or "A5VM MLIR" request
+- helping with an "LLVM IR path build", "LLVM IR path compile", or "VPTO MLIR" request
 
 ## Strong Rule
 
@@ -52,15 +52,15 @@ set -u
 Use the `set +u` form when the caller shell has `set -u`, because `env.sh`
 appends to variables such as `PYTHONPATH` and `LD_LIBRARY_PATH`.
 
-## Inspect A5VM MLIR
+## Inspect VPTO MLIR
 
-Use this when you need to look at the A5VM-stage IR before deciding whether to
+Use this when you need to look at the VPTO-stage IR before deciding whether to
 continue to textual LLVM IR, LLVM bitcode, or the full artifact assembly flow.
 
 Canonical flag:
 
 ```bash
---a5vm-print-ir
+--vpto-print-ir
 ```
 
 Example:
@@ -68,15 +68,15 @@ Example:
 ```bash
 source env.sh
 PTOAS_BIN="$PWD/build/tools/ptoas/ptoas" \
-PTOAS_OUT_DIR=/tmp/ptoas-a5vm-ir \
-PTOAS_FLAGS='--pto-arch a5 --pto-backend=a5vm --a5vm-print-ir' \
+PTOAS_OUT_DIR=/tmp/ptoas-vpto-ir \
+PTOAS_FLAGS='--pto-arch a5 --pto-backend=vpto --vpto-print-ir' \
 ./test/samples/runop.sh -t Abs
 ```
 
 Use this output to:
-- confirm the lowering has reached the A5VM dialect you expect
+- confirm the lowering has reached the VPTO dialect you expect
 - inspect whether a transformation issue appears before LLVM export
-- compare the A5VM MLIR path against the later LLVM IR or bitcode output
+- compare the VPTO MLIR path against the later LLVM IR or bitcode output
 
 ## Export Paths
 
@@ -85,7 +85,7 @@ Use this output to:
 Use:
 
 ```bash
---pto-backend=a5vm --a5vm-emit-hivm-bc
+--pto-backend=vpto --vpto-emit-hivm-bc
 ```
 
 Example:
@@ -93,14 +93,14 @@ Example:
 ```bash
 source env.sh
 PTOAS_BIN="$PWD/build/tools/ptoas/ptoas" \
-PTOAS_OUT_DIR=/tmp/ptoas-a5vm-hivm-bc \
-PTOAS_FLAGS='--pto-arch a5 --pto-backend=a5vm --a5vm-emit-hivm-bc' \
+PTOAS_OUT_DIR=/tmp/ptoas-vpto-hivm-bc \
+PTOAS_FLAGS='--pto-arch a5 --pto-backend=vpto --vpto-emit-hivm-bc' \
 ./test/samples/runop.sh -t Abs
 ```
 
 Typical outputs:
-- `/tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto-ir.pto`
-- `/tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto.cpp`
+- `/tmp/ptoas-vpto-hivm-bc/Abs/abs-pto-ir.pto`
+- `/tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.cpp`
 
 Important:
 - the payload is written to `*-pto.cpp` even in bitcode mode
@@ -109,9 +109,9 @@ Important:
 Bitcode checks:
 
 ```bash
-file /tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto.cpp
-xxd -l 16 /tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto.cpp
-"$LLVM_ROOT/bin/llvm-dis" /tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto.cpp -o - | sed -n '1,80p'
+file /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.cpp
+xxd -l 16 /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.cpp
+"$LLVM_ROOT/bin/llvm-dis" /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.cpp -o - | sed -n '1,80p'
 ```
 
 Expected signs:
@@ -124,7 +124,7 @@ Expected signs:
 Use:
 
 ```bash
---pto-backend=a5vm --a5vm-emit-hivm-llvm
+--pto-backend=vpto --vpto-emit-hivm-llvm
 ```
 
 Example:
@@ -132,22 +132,22 @@ Example:
 ```bash
 source env.sh
 PTOAS_BIN="$PWD/build/tools/ptoas/ptoas" \
-PTOAS_OUT_DIR=/tmp/ptoas-a5vm-hivm-llvm \
-PTOAS_FLAGS='--pto-arch a5 --pto-backend=a5vm --a5vm-emit-hivm-llvm' \
+PTOAS_OUT_DIR=/tmp/ptoas-vpto-hivm-llvm \
+PTOAS_FLAGS='--pto-arch a5 --pto-backend=vpto --vpto-emit-hivm-llvm' \
 ./test/samples/runop.sh -t Abs
 ```
 
 Typical output:
-- `/tmp/ptoas-a5vm-hivm-llvm/Abs/abs-pto.cpp`
+- `/tmp/ptoas-vpto-hivm-llvm/Abs/abs-pto.cpp`
 
 Important:
 - despite the `.cpp` suffix, this file is textual LLVM IR
 - compile it with `-x ir`
 
 Suggested progression:
-- start with `--a5vm-print-ir` when the user wants the intermediate A5VM form
-- use `--a5vm-emit-hivm-llvm` when the user wants textual LLVM IR
-- use `--a5vm-emit-hivm-bc` when the user wants real LLVM bitcode
+- start with `--vpto-print-ir` when the user wants the intermediate VPTO form
+- use `--vpto-emit-hivm-llvm` when the user wants textual LLVM IR
+- use `--vpto-emit-hivm-bc` when the user wants real LLVM bitcode
 
 ## Compile The Export With Bisheng
 
@@ -167,8 +167,8 @@ bisheng \
   -march=dav-c310-vec \
   --cce-aicore-arch=dav-c310-vec \
   --cce-aicore-only \
-  -c -x ir /tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto.cpp \
-  -o /tmp/ptoas-a5vm-hivm-bc/Abs/abs-pto.o
+  -c -x ir /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.cpp \
+  -o /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.o
 ```
 
 Alternative:
@@ -183,7 +183,7 @@ bisheng \
   -march=dav-c310-vec \
   --cce-aicore-arch=dav-c310-vec \
   --cce-aicore-only \
-  -c -x ir /tmp/ptoas-a5vm-hivm-llvm/Abs/abs-pto.cpp \
+  -c -x ir /tmp/ptoas-vpto-hivm-llvm/Abs/abs-pto.cpp \
   -o /tmp/abs_ir_path_artifacts/kernel_from_llvm_ir.o
 ```
 
@@ -286,8 +286,8 @@ with that library and validate outputs, switch back to `ptoas-npu-validation-a5`
 ## Failure Modes
 
 Report the first concrete blocker:
-- `--a5vm-print-ir`, `--a5vm-emit-hivm-bc`, or `--a5vm-emit-hivm-llvm` used without `--pto-backend=a5vm`
-- `--a5vm-emit-hivm-bc` or `--a5vm-emit-hivm-llvm` used without `--pto-backend=a5vm`
+- `--vpto-print-ir`, `--vpto-emit-hivm-bc`, or `--vpto-emit-hivm-llvm` used without `--pto-backend=vpto`
+- `--vpto-emit-hivm-bc` or `--vpto-emit-hivm-llvm` used without `--pto-backend=vpto`
 - `env.sh` was not sourced, or failed under `set -u`
 - `bisheng` was not found or CANN environment was not loaded
 - a bitcode payload was treated as source because it kept a misleading suffix
@@ -297,9 +297,9 @@ Report the first concrete blocker:
 ## Reporting Back
 
 When you use this skill, report:
-- whether the user-facing artifact of interest was A5VM MLIR, textual LLVM IR, or LLVM bitcode
+- whether the user-facing artifact of interest was VPTO MLIR, textual LLVM IR, or LLVM bitcode
 - the exact `ptoas` flags used
-- whether the export was A5VM MLIR, LLVM bitcode, or textual LLVM IR
+- whether the export was VPTO MLIR, LLVM bitcode, or textual LLVM IR
 - the exact output path that contains the exported payload
 - whether `llvm-dis`, `file`, or direct inspection confirmed the payload type
 - whether `bisheng` produced a device object

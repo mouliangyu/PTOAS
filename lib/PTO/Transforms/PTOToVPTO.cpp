@@ -1,4 +1,4 @@
-//===- PTOToA5VM.cpp - PTO to A5VM pass wiring ---------------------------===//
+//===- PTOToVPTO.cpp - PTO to VPTO pass wiring ---------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,10 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PTO/Transforms/A5VMLowering.h"
+#include "PTO/Transforms/VPTOLowering.h"
 #include "PTO/Transforms/Passes.h"
 
-#include "PTO/IR/A5VM.h"
+#include "PTO/IR/PTO.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -25,17 +25,18 @@
 namespace mlir {
 namespace pto {
 
-#define GEN_PASS_DEF_PTOTOA5VM
+#define GEN_PASS_DEF_PTOTOVPTO
 #include "PTO/Transforms/Passes.h.inc"
 
 namespace {
 
-FailureOr<A5VMLoweringStrategy>
-parseA5VMLoweringStrategy(StringRef strategyName) {
+
+FailureOr<VPTOLoweringStrategy>
+parseVPTOLoweringStrategy(StringRef strategyName) {
   if (strategyName == "post-update")
-    return A5VMLoweringStrategy::PostUpdate;
+    return VPTOLoweringStrategy::PostUpdate;
   if (strategyName == "no-post-update")
-    return A5VMLoweringStrategy::NoPostUpdate;
+    return VPTOLoweringStrategy::NoPostUpdate;
   return failure();
 }
 
@@ -44,42 +45,42 @@ LogicalResult lowerTLOADOp(TLoadOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTABSOp(TAbsOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTABS(op, rewriter, strategy);
 }
 
 LogicalResult lowerTADDOp(TAddOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTADD(op, rewriter, strategy);
 }
 
 LogicalResult lowerTSUBOp(TSubOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTSUB(op, rewriter, strategy);
 }
 
 LogicalResult lowerTMULOp(TMulOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTMUL(op, rewriter, strategy);
 }
 
 LogicalResult lowerTDIVOp(TDivOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTDIV(op, rewriter, strategy);
 }
 
 LogicalResult lowerTMAXOp(TMaxOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTMAX(op, rewriter, strategy);
 }
 
 LogicalResult lowerTMINOp(TMinOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTMIN(op, rewriter, strategy);
 }
 
 LogicalResult lowerTANDOp(TAndOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTAND(op, rewriter, strategy);
 }
 
@@ -88,7 +89,7 @@ LogicalResult lowerTANDSOp(TAndSOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTOROp(TOrOp op, PatternRewriter &rewriter,
-                         A5VMLoweringStrategy strategy) {
+                         VPTOLoweringStrategy strategy) {
   return lowerTOR(op, rewriter, strategy);
 }
 
@@ -97,7 +98,7 @@ LogicalResult lowerTORSOp(TOrSOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTXOROp(TXorOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTXOR(op, rewriter, strategy);
 }
 
@@ -106,17 +107,17 @@ LogicalResult lowerTXORSOp(TXorSOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTEXPOp(TExpOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTEXP(op, rewriter, strategy);
 }
 
 LogicalResult lowerTLOGOp(TLogOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTLOG(op, rewriter, strategy);
 }
 
 LogicalResult lowerTSQRTOp(TSqrtOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTSQRT(op, rewriter, strategy);
 }
 
@@ -125,17 +126,17 @@ LogicalResult lowerTRSQRTOp(TRsqrtOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTRECIPOp(TRecipOp op, PatternRewriter &rewriter,
-                            A5VMLoweringStrategy strategy) {
+                            VPTOLoweringStrategy strategy) {
   return lowerTRECIP(op, rewriter, strategy);
 }
 
 LogicalResult lowerTNEGOp(TNegOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTNEG(op, rewriter, strategy);
 }
 
 LogicalResult lowerTLRELUOp(TLReluOp op, PatternRewriter &rewriter,
-                            A5VMLoweringStrategy strategy) {
+                            VPTOLoweringStrategy strategy) {
   return lowerTLRELU(op, rewriter, strategy);
 }
 
@@ -164,7 +165,7 @@ LogicalResult lowerTAddCOp(TAddCOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTAddSOp(TAddSOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTAddS(op, rewriter, strategy);
 }
 
@@ -173,7 +174,7 @@ LogicalResult lowerTAddSCOp(TAddSCOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTMinSOp(TMinSOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTMinS(op, rewriter, strategy);
 }
 
@@ -182,7 +183,7 @@ LogicalResult lowerTSubCOp(TSubCOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTSubSOp(TSubSOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTSubS(op, rewriter, strategy);
 }
 
@@ -191,17 +192,17 @@ LogicalResult lowerTSubSCOp(TSubSCOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTMaxSOp(TMaxSOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTMaxS(op, rewriter, strategy);
 }
 
 LogicalResult lowerTDivSOp(TDivSOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTDivS(op, rewriter, strategy);
 }
 
 LogicalResult lowerTMulSOp(TMulSOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTMulS(op, rewriter, strategy);
 }
 
@@ -210,12 +211,12 @@ LogicalResult lowerTSelSOp(TSelSOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTRELUOp(TReluOp op, PatternRewriter &rewriter,
-                           A5VMLoweringStrategy strategy) {
+                           VPTOLoweringStrategy strategy) {
   return lowerTRELU(op, rewriter, strategy);
 }
 
 LogicalResult lowerTNOTOp(TNotOp op, PatternRewriter &rewriter,
-                          A5VMLoweringStrategy strategy) {
+                          VPTOLoweringStrategy strategy) {
   return lowerTNOT(op, rewriter, strategy);
 }
 
@@ -232,17 +233,17 @@ LogicalResult lowerTFILLPADExpandOp(TFillPadExpandOp op, PatternRewriter &rewrit
 }
 
 LogicalResult lowerTRowMaxOp(TRowMaxOp op, PatternRewriter &rewriter,
-                             A5VMLoweringStrategy strategy) {
+                             VPTOLoweringStrategy strategy) {
   return lowerTRowMax(op, rewriter, strategy);
 }
 
 LogicalResult lowerTRowMinOp(TRowMinOp op, PatternRewriter &rewriter,
-                             A5VMLoweringStrategy strategy) {
+                             VPTOLoweringStrategy strategy) {
   return lowerTRowMin(op, rewriter, strategy);
 }
 
 LogicalResult lowerTRowSumOp(TRowSumOp op, PatternRewriter &rewriter,
-                             A5VMLoweringStrategy strategy) {
+                             VPTOLoweringStrategy strategy) {
   return lowerTRowSum(op, rewriter, strategy);
 }
 
@@ -259,7 +260,7 @@ LogicalResult lowerTColSumOp(TColSumOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTRowExpandOp(TRowExpandOp op, PatternRewriter &rewriter,
-                                A5VMLoweringStrategy strategy) {
+                                VPTOLoweringStrategy strategy) {
   return lowerTRowExpand(op, rewriter, strategy);
 }
 
@@ -267,16 +268,19 @@ LogicalResult lowerTColExpandOp(TColExpandOp op, PatternRewriter &rewriter) {
   return lowerTColExpand(op, rewriter);
 }
 
-LogicalResult lowerTRowExpandMulOp(TRowExpandMulOp op, PatternRewriter &rewriter) {
-  return lowerTRowExpandMul(op, rewriter);
+LogicalResult lowerTRowExpandMulOp(TRowExpandMulOp op, PatternRewriter &rewriter,
+                                   VPTOLoweringStrategy strategy) {
+  return lowerTRowExpandMul(op, rewriter, strategy);
 }
 
-LogicalResult lowerTRowExpandDivOp(TRowExpandDivOp op, PatternRewriter &rewriter) {
-  return lowerTRowExpandDiv(op, rewriter);
+LogicalResult lowerTRowExpandDivOp(TRowExpandDivOp op, PatternRewriter &rewriter,
+                                   VPTOLoweringStrategy strategy) {
+  return lowerTRowExpandDiv(op, rewriter, strategy);
 }
 
-LogicalResult lowerTRowExpandSubOp(TRowExpandSubOp op, PatternRewriter &rewriter) {
-  return lowerTRowExpandSub(op, rewriter);
+LogicalResult lowerTRowExpandSubOp(TRowExpandSubOp op, PatternRewriter &rewriter,
+                                   VPTOLoweringStrategy strategy) {
+  return lowerTRowExpandSub(op, rewriter, strategy);
 }
 
 LogicalResult lowerTPartAddOp(TPartAddOp op, PatternRewriter &rewriter) {
@@ -340,7 +344,7 @@ LogicalResult lowerRlsBufOp(RlsBufOp op, PatternRewriter &rewriter) {
 }
 
 LogicalResult lowerTensorPipelineOp(Operation *op, PatternRewriter &rewriter,
-                                    A5VMLoweringStrategy strategy) {
+                                    VPTOLoweringStrategy strategy) {
   rewriter.setInsertionPoint(op);
 
   LogicalResult lowered = success();
@@ -445,11 +449,11 @@ LogicalResult lowerTensorPipelineOp(Operation *op, PatternRewriter &rewriter,
   else if (auto tcolexpand = dyn_cast<TColExpandOp>(op))
     lowered = lowerTColExpandOp(tcolexpand, rewriter);
   else if (auto trowexpandmul = dyn_cast<TRowExpandMulOp>(op))
-    lowered = lowerTRowExpandMulOp(trowexpandmul, rewriter);
+    lowered = lowerTRowExpandMulOp(trowexpandmul, rewriter, strategy);
   else if (auto trowexpanddiv = dyn_cast<TRowExpandDivOp>(op))
-    lowered = lowerTRowExpandDivOp(trowexpanddiv, rewriter);
+    lowered = lowerTRowExpandDivOp(trowexpanddiv, rewriter, strategy);
   else if (auto trowexpandsub = dyn_cast<TRowExpandSubOp>(op))
-    lowered = lowerTRowExpandSubOp(trowexpandsub, rewriter);
+    lowered = lowerTRowExpandSubOp(trowexpandsub, rewriter, strategy);
   else if (auto tpartadd = dyn_cast<TPartAddOp>(op))
     lowered = lowerTPartAddOp(tpartadd, rewriter);
   else if (auto tpartmax = dyn_cast<TPartMaxOp>(op))
@@ -506,22 +510,22 @@ LogicalResult lowerResidualPTOOp(Operation *op, PatternRewriter &rewriter) {
   return success();
 }
 
-struct PTOToA5VMPass : public impl::PTOToA5VMBase<PTOToA5VMPass> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PTOToA5VMPass)
+struct PTOToVPTOPass : public impl::PTOToVPTOBase<PTOToVPTOPass> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PTOToVPTOPass)
 
-  PTOToA5VMPass() = default;
+  PTOToVPTOPass() = default;
 
-  explicit PTOToA5VMPass(StringRef loweringStrategy) {
-    this->a5vmLoweringStrategy = loweringStrategy.str();
+  explicit PTOToVPTOPass(StringRef loweringStrategy) {
+    this->loweringStrategy = loweringStrategy.str();
   }
 
   void runOnOperation() override {
     ModuleOp module = getOperation();
-    FailureOr<A5VMLoweringStrategy> loweringStrategy =
-        parseA5VMLoweringStrategy(a5vmLoweringStrategy);
+    FailureOr<VPTOLoweringStrategy> loweringStrategy =
+        parseVPTOLoweringStrategy(this->loweringStrategy);
     if (failed(loweringStrategy)) {
       module.emitError()
-          << "unsupported a5vm-lowering-strategy: " << a5vmLoweringStrategy
+          << "unsupported pto-lowering-strategy: " << this->loweringStrategy
           << " (expected post-update or no-post-update)";
       signalPassFailure();
       return;
@@ -577,9 +581,9 @@ struct PTOToA5VMPass : public impl::PTOToA5VMBase<PTOToA5VMPass> {
       }
     }
 
-    if (!sawFailure &&
-        failed(convertA5VMFunctionBoundariesToPtr(module, &llvm::errs())))
-      sawFailure = true;
+    // Keep the backend mainline memref-first through PTOToVPTO. Pointer ABI
+    // bridging belongs to the emission boundary, where text/LLVM emitters can
+    // materialize the required ptr-only signature on a cloned module.
 
     if (sawFailure)
       signalPassFailure();
@@ -588,12 +592,12 @@ struct PTOToA5VMPass : public impl::PTOToA5VMBase<PTOToA5VMPass> {
 
 } // namespace
 
-std::unique_ptr<Pass> createLowerPTOToA5VMPass() {
-  return std::make_unique<PTOToA5VMPass>();
+std::unique_ptr<Pass> createLowerPTOToVPTOPass() {
+  return std::make_unique<PTOToVPTOPass>();
 }
 
-std::unique_ptr<Pass> createLowerPTOToA5VMPass(StringRef loweringStrategy) {
-  return std::make_unique<PTOToA5VMPass>(loweringStrategy);
+std::unique_ptr<Pass> createLowerPTOToVPTOPass(StringRef loweringStrategy) {
+  return std::make_unique<PTOToVPTOPass>(loweringStrategy);
 }
 
 } // namespace pto

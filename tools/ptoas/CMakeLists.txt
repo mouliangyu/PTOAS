@@ -55,5 +55,4 @@ target_link_libraries(pto-opt PRIVATE
 # "PTOOpsIncGen" 这个名字必须和你 include/PTO/IR/CMakeLists.txt 里定义的 add_public_tablegen_target 一致
 add_dependencies(pto-opt
   PTOOpsIncGen
-  A5VMOpsIncGen
 )

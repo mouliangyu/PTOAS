@@ -1,11 +1,11 @@
-// RUN: ./build/tools/ptoas/ptoas --pto-backend=a5vm --emit-a5vm %s -o - 2>/dev/null | FileCheck %s
+// RUN: ./build/tools/ptoas/ptoas --pto-backend=vpto --emit-vpto %s -o - 2>/dev/null | FileCheck %s
 
 // This fixture pins the expectation that scalar math and loop structure stay
-// in shared dialects even when the hardware-facing operation is an a5vm op.
+// in shared dialects even when the hardware-facing operation is an vpto op.
 // CHECK: arith.addi
 // CHECK: scf.for
 // CHECK: scf.yield
-// CHECK: a5vm.vabs
+// CHECK: pto.vabs
 module {
   func.func @shared_dialects(%src: !pto.ptr<f32, ub>, %dst: !pto.ptr<f32, ub>, %arg1: index, %arg2: index) -> index {
     %sum = arith.addi %arg1, %arg2 : index
@@ -13,10 +13,10 @@ module {
       %next = arith.addi %acc, %iv : index
       scf.yield %next : index
     }
-    %mask = a5vm.pset_b32 "PAT_ALL" : !a5vm.mask
-    %0 = a5vm.vlds %src[%arg1] : !pto.ptr<f32, ub> -> !a5vm.vec<64xf32>
-    %1 = a5vm.vabs %0, %mask : !a5vm.vec<64xf32>, !a5vm.mask -> !a5vm.vec<64xf32>
-    a5vm.vsts %1, %dst[%arg1], %mask : !a5vm.vec<64xf32>, !pto.ptr<f32, ub>, !a5vm.mask
+    %mask = pto.pset_b32 "PAT_ALL" : !pto.mask
+    %0 = pto.vlds %src[%arg1] : !pto.ptr<f32, ub> -> !pto.vec<64xf32>
+    %1 = pto.vabs %0, %mask : !pto.vec<64xf32>, !pto.mask -> !pto.vec<64xf32>
+    pto.vsts %1, %dst[%arg1], %mask : !pto.vec<64xf32>, !pto.ptr<f32, ub>, !pto.mask
     return %loop : index
   }
 }

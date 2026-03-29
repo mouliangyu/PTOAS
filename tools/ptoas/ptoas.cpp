@@ -6,11 +6,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PTO/IR/A5VM.h"
 #include "PTO/IR/PTO.h"
-#include "PTO/Transforms/A5VMLowering.h"
-#include "PTO/Transforms/A5VMTextEmitter.h"
-#include "PTO/Transforms/A5VMLLVMEmitter.h"
+#include "PTO/Transforms/VPTOLowering.h"
+#include "PTO/Transforms/VPTOTextEmitter.h"
+#include "PTO/Transforms/VPTOLLVMEmitter.h"
 #include "PTO/Transforms/Passes.h"
 #include "PTO/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/IR/MLIRContext.h"
@@ -137,20 +136,29 @@ static llvm::cl::opt<std::string> ptoBuildLevel(
 
 static llvm::cl::opt<std::string> ptoBackend(
     "pto-backend",
-    llvm::cl::desc("Final PTOAS backend: emitc or a5vm (default: emitc)"),
-    llvm::cl::value_desc("emitc|a5vm"),
-    llvm::cl::init("emitc"));
+    llvm::cl::desc("Final PTOAS backend: emitc or vpto (default: emitc)"),
+    llvm::cl::value_desc("emitc|vpto"), llvm::cl::init("emitc"));
 
-static llvm::cl::opt<bool> emitA5VM(
-    "emit-a5vm",
-    llvm::cl::desc("Write final post-pass A5VM IR to -o"),
+static llvm::cl::opt<bool> emitVPTO(
+    "emit-vpto",
+    llvm::cl::desc("Write final post-pass VPTO IR to -o"),
     llvm::cl::init(false));
 
-static llvm::cl::opt<std::string> a5vmLoweringStrategy(
-    "a5vm-lowering-strategy",
-    llvm::cl::desc("A5VM vector lowering strategy: post-update or no-post-update"),
+static llvm::cl::opt<bool> vptoPrintIR(
+    "vpto-print-ir",
+    llvm::cl::desc("Print post-pass VPTO backend IR to stderr"),
+    llvm::cl::init(false));
+
+static llvm::cl::opt<std::string> vptoLoweringStrategy(
+    "vpto-lowering-strategy",
+    llvm::cl::desc("VPTO vector lowering strategy: post-update or no-post-update"),
     llvm::cl::value_desc("post-update|no-post-update"),
     llvm::cl::init("post-update"));
+
+static llvm::cl::opt<bool> dumpVPTOIR(
+    "dump-vpto-ir",
+    llvm::cl::desc("Print post-pass VPTO backend IR to stderr"),
+    llvm::cl::init(false));
 
 static llvm::cl::opt<bool> ptoPrintSeamIR(
     "pto-print-seam-ir",
@@ -163,36 +171,39 @@ static llvm::cl::opt<std::string> ptoSeamIRFile(
     llvm::cl::value_desc("path"),
     llvm::cl::init(""));
 
-static llvm::cl::opt<bool> a5vmPrintIntrinsics(
-    "a5vm-print-intrinsics",
-    llvm::cl::desc("Print A5VM intrinsic selection decisions to stderr"),
+static llvm::cl::opt<bool> vptoPrintIntrinsics(
+    "vpto-print-intrinsics",
+    llvm::cl::desc("Print VPTO intrinsic selection decisions to stderr"),
     llvm::cl::init(false));
 
-static llvm::cl::opt<bool> a5vmEmitHIVMText(
-    "a5vm-emit-hivm-text",
-    llvm::cl::desc("After lowering to A5VM IR, emit textual LLVM/HIVM instead of raw A5VM IR"),
+static llvm::cl::opt<bool> vptoEmitHIVMText(
+    "vpto-emit-hivm-text",
+    llvm::cl::desc(
+        "After lowering to VPTO IR, emit textual LLVM/HIVM instead of raw "
+        "VPTO IR"),
     llvm::cl::init(false));
 
-static llvm::cl::opt<bool> a5vmEmitHIVMOfficialLLVM(
-    "a5vm-emit-hivm-llvm",
-    llvm::cl::desc("After lowering to A5VM IR, emit textual LLVM/HIVM via the official LLVM dialect export path"),
+static llvm::cl::opt<bool> vptoEmitHIVMOfficialLLVM(
+    "vpto-emit-hivm-llvm",
+    llvm::cl::desc("After lowering to VPTO IR, emit textual LLVM/HIVM via "
+                   "the official LLVM dialect export path"),
     llvm::cl::init(false));
 
-static llvm::cl::opt<bool> a5vmEmitHIVMOfficialBitcode(
-    "a5vm-emit-hivm-bc",
-    llvm::cl::desc("After lowering to A5VM IR, emit LLVM bitcode via the official LLVM dialect export path"),
+static llvm::cl::opt<bool> vptoEmitHIVMOfficialBitcode(
+    "vpto-emit-hivm-bc",
+    llvm::cl::desc("After lowering to VPTO IR, emit LLVM bitcode via the "
+                   "official LLVM dialect export path"),
     llvm::cl::init(false));
 
-static llvm::cl::opt<bool> a5vmAllowUnresolved(
-    "a5vm-allow-unresolved",
-    llvm::cl::desc("Emit explicit unresolved A5VM comments instead of failing"),
+static llvm::cl::opt<bool> vptoAllowUnresolved(
+    "vpto-allow-unresolved",
+    llvm::cl::desc("Emit explicit unresolved VPTO comments instead of failing"),
     llvm::cl::init(false));
 
-static llvm::cl::opt<std::string> a5vmUnresolvedReport(
-    "a5vm-unresolved-report",
-    llvm::cl::desc("Write unresolved A5VM mappings to a sidecar report"),
-    llvm::cl::value_desc("path"),
-    llvm::cl::init(""));
+static llvm::cl::opt<std::string> vptoUnresolvedReport(
+    "vpto-unresolved-report",
+    llvm::cl::desc("Write unresolved VPTO mappings to a sidecar report"),
+    llvm::cl::value_desc("path"), llvm::cl::init(""));
 
 static llvm::cl::opt<std::string> hivmUnresolvedReport(
     "hivm-unresolved-report",
@@ -208,7 +219,7 @@ enum class PTOBuildLevel {
 
 enum class PTOBackend {
   EmitC,
-  A5VM,
+  VPTO,
 };
 
 static PTOBuildLevel defaultBuildLevel() {
@@ -242,8 +253,8 @@ static bool parseBackend(llvm::StringRef backendStr, PTOBackend &out) {
     out = PTOBackend::EmitC;
     return true;
   }
-  if (s == "a5vm") {
-    out = PTOBackend::A5VM;
+  if (s == "vpto") {
+    out = PTOBackend::VPTO;
     return true;
   }
   return false;
@@ -279,8 +290,10 @@ static void addSharedPreBackendPasses(OpPassManager &pm,
 
 static void addBackendLoweringPasses(OpPassManager &pm,
                                      PTOBackend effectiveBackend) {
-  if (effectiveBackend == PTOBackend::A5VM) {
-    pm.addPass(pto::createLowerPTOToA5VMPass(a5vmLoweringStrategy));
+  if (effectiveBackend == PTOBackend::VPTO) {
+    pm.addPass(pto::createLowerPTOToVPTOPass(vptoLoweringStrategy));
+    pm.addNestedPass<mlir::func::FuncOp>(
+        pto::createPTOVPTOExpandBridgeOpsPass());
     pm.addPass(mlir::createCSEPass());
     return;
   }
@@ -323,6 +336,25 @@ static LogicalResult emitSharedPreBackendSeamIR(ModuleOp module,
   return success();
 }
 
+static bool containsVPTOIR(llvm::StringRef input) {
+  llvm::StringRef rest = input;
+  while (!rest.empty()) {
+    auto split = rest.split('\n');
+    llvm::StringRef line = split.first.trim();
+    if (!line.starts_with("//") &&
+        (line.contains("!pto.vec<") || line.contains("!pto.mask") ||
+         line.contains("!pto.align") || line.contains("pto.copy_") ||
+         line.contains("pto.set_loop") || line.contains("pto.v") ||
+         line.contains("pto.plt_") || line.contains("pto.pset_") ||
+         line.contains("pto.psts") || line.contains("pto.pdintlv_") ||
+         line.contains("pto.set_flag") || line.contains("pto.wait_flag") ||
+         line.contains("pto.pipe_barrier") || line.contains("pto.get_buf") ||
+         line.contains("pto.rls_buf")))
+      return true;
+    rest = split.second;
+  }
+  return false;
+}
 // --------------------------------------------------------------------------
 // Post-process C++ output: rewrite marker calls into Tile member calls.
 //
@@ -739,19 +771,6 @@ static void rewriteHoistedGlobalTensorDecls(std::string &cpp) {
   cpp.swap(out);
 }
 
-static bool containsA5VMIR(llvm::StringRef input) {
-  llvm::StringRef rest = input;
-  while (!rest.empty()) {
-    auto split = rest.split('\n');
-    llvm::StringRef line = split.first.trim();
-    if (!line.starts_with("//") &&
-        (line.contains("!a5vm.vec<") || line.contains("a5vm.")))
-      return true;
-    rest = split.second;
-  }
-  return false;
-}
-
 static llvm::SmallVector<llvm::StringRef> splitTopLevelModules(llvm::StringRef input) {
   llvm::SmallVector<llvm::StringRef> modules;
   size_t searchFrom = 0;
@@ -786,7 +805,7 @@ static llvm::SmallVector<llvm::StringRef> splitTopLevelModules(llvm::StringRef i
   return modules;
 }
 
-static bool emitA5VMParseBundle(llvm::StringRef inputFilename, llvm::StringRef input,
+static bool emitVPTOParseBundle(llvm::StringRef inputFilename, llvm::StringRef input,
                                 MLIRContext &context, llvm::raw_ostream &os) {
   llvm::SmallVector<llvm::StringRef> modules = splitTopLevelModules(input);
   if (modules.empty())
@@ -832,9 +851,8 @@ int main(int argc, char **argv) {
   registry.insert<mlir::bufferization::BufferizationDialect>();
   registry.insert<mlir::scf::SCFDialect>();
 
-  registry.insert<mlir::a5vm::A5VMDialect>();
   registry.insert<mlir::pto::PTODialect>();
-  //mlir::registerAllDialects(registry);
+  // mlir::registerAllDialects(registry);
   arith::registerBufferizableOpInterfaceExternalModels(registry);
   tensor::registerBufferizableOpInterfaceExternalModels(registry);
   //func::registerBufferizableOpInterfaceExternalModels(registry);
@@ -851,31 +869,32 @@ int main(int argc, char **argv) {
   PTOBackend effectiveBackend = PTOBackend::EmitC;
   if (!parseBackend(ptoBackend, effectiveBackend)) {
     llvm::errs() << "Error: invalid --pto-backend='" << ptoBackend
-                 << "'. Expected 'emitc' or 'a5vm'.\n";
+                 << "'. Expected 'emitc' or 'vpto'.\n";
     return 1;
   }
 
-  if (a5vmEmitHIVMOfficialLLVM && a5vmEmitHIVMOfficialBitcode) {
-    llvm::errs() << "Error: --a5vm-emit-hivm-llvm and --a5vm-emit-hivm-bc "
+  if (vptoEmitHIVMOfficialLLVM && vptoEmitHIVMOfficialBitcode) {
+    llvm::errs() << "Error: --vpto-emit-hivm-llvm and --vpto-emit-hivm-bc "
                     "cannot be used together.\n";
     return 1;
   }
 
-  if (emitA5VM &&
-      (a5vmEmitHIVMText || a5vmEmitHIVMOfficialLLVM ||
-       a5vmEmitHIVMOfficialBitcode)) {
-    llvm::errs() << "Error: --emit-a5vm cannot be used together with HIVM "
+  if (emitVPTO &&
+      (vptoEmitHIVMText || vptoEmitHIVMOfficialLLVM ||
+       vptoEmitHIVMOfficialBitcode)) {
+    llvm::errs() << "Error: --emit-vpto cannot be used together with HIVM "
                     "emission flags.\n";
     return 1;
   }
 
-  if (effectiveBackend != PTOBackend::A5VM &&
-      (a5vmEmitHIVMText || a5vmEmitHIVMOfficialLLVM ||
-       a5vmEmitHIVMOfficialBitcode || emitA5VM ||
-       a5vmPrintIntrinsics || a5vmAllowUnresolved ||
-       !a5vmUnresolvedReport.empty() || !hivmUnresolvedReport.empty())) {
-    llvm::errs() << "Error: A5VM-specific flags require "
-                    "--pto-backend=a5vm.\n";
+  if (effectiveBackend != PTOBackend::VPTO &&
+      (vptoEmitHIVMText || vptoEmitHIVMOfficialLLVM ||
+       vptoEmitHIVMOfficialBitcode || emitVPTO ||
+       vptoPrintIntrinsics || vptoAllowUnresolved ||
+       !vptoUnresolvedReport.empty() || !hivmUnresolvedReport.empty() ||
+       ptoPrintSeamIR || !ptoSeamIRFile.empty())) {
+    llvm::errs() << "Error: VPTO-specific flags require "
+                    "--pto-backend=vpto.\n";
     return 1;
   }
 
@@ -893,7 +912,6 @@ int main(int argc, char **argv) {
   context.allowUnregisteredDialects(true);
 
   context.getOrLoadDialect<emitc::EmitCDialect>();
-  context.getOrLoadDialect<mlir::a5vm::A5VMDialect>();
   context.getOrLoadDialect<mlir::pto::PTODialect>();
   context.getOrLoadDialect<func::FuncDialect>();
   context.getOrLoadDialect<arith::ArithDialect>();
@@ -903,8 +921,9 @@ int main(int argc, char **argv) {
 
   OwningOpRef<ModuleOp> module;
   llvm::StringRef buf = (*fileOrErr)->getBuffer();
-  const bool isPTOBC = (buf.size() >= 6 && std::memcmp(buf.data(), "PTOBC\0", 6) == 0);
-  const bool inputIsA5VMIR = containsA5VMIR(buf);
+  const bool isPTOBC =
+      (buf.size() >= 6 && std::memcmp(buf.data(), "PTOBC\0", 6) == 0);
+  const bool inputIsVPTOIR = containsVPTOIR(buf);
 
   if (isPTOBC) {
     // Decode PTO bytecode directly into an MLIR module.
@@ -924,14 +943,14 @@ int main(int argc, char **argv) {
       return 1;
     }
   } else {
-    if (effectiveBackend == PTOBackend::EmitC && inputIsA5VMIR) {
+    if (effectiveBackend == PTOBackend::EmitC && inputIsVPTOIR) {
       std::error_code ec;
       llvm::ToolOutputFile outputFile(outputFilename, ec, llvm::sys::fs::OF_None);
       if (ec) {
         llvm::errs() << ec.message() << "\n";
         return 1;
       }
-      if (!emitA5VMParseBundle(inputFilename, buf, context, outputFile.os())) {
+      if (!emitVPTOParseBundle(inputFilename, buf, context, outputFile.os())) {
         llvm::errs() << "Error: Failed to parse MLIR.\n";
         return 1;
       }
@@ -994,7 +1013,7 @@ int main(int argc, char **argv) {
   // pm.addNestedPass<mlir::func::FuncOp>(pto::createPTOConvertToDPSPass());
   // pm.addNestedPass<mlir::func::FuncOp>(pto::createPTOInsertLoadStoreForMixCVPass());
   const bool skipPreBackendPasses =
-      effectiveBackend == PTOBackend::A5VM && inputIsA5VMIR;
+      effectiveBackend == PTOBackend::VPTO && inputIsVPTOIR;
   if (!skipPreBackendPasses) {
     // bufferizationPipeline(pm);
     //pm.addPass(createInferPTOMemScopePass());
@@ -1023,7 +1042,7 @@ int main(int argc, char **argv) {
   if (ptoPrintSeamIR || !ptoSeamIRFile.empty()) {
     if (skipPreBackendPasses) {
       llvm::errs() << "Error: shared pre-backend seam IR is unavailable when "
-                      "the input is already A5VM IR.\n";
+                      "the input is already VPTO IR.\n";
       return 1;
     }
     if (ptoPrintSeamIR) {
@@ -1043,21 +1062,30 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (effectiveBackend == PTOBackend::A5VM) {
-    if (emitA5VM || (!a5vmEmitHIVMText && !a5vmEmitHIVMOfficialLLVM &&
-                     !a5vmEmitHIVMOfficialBitcode)) {
+  if (effectiveBackend == PTOBackend::VPTO) {
+    if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
+                     !vptoEmitHIVMOfficialBitcode)) {
       module->print(outputFile.os());
       outputFile.os() << "\n";
       outputFile.keep();
       return 0;
     }
 
-    pto::A5VMEmissionOptions options;
-    options.dumpA5VMIR = false;
-    options.printIntrinsicSelections = a5vmPrintIntrinsics;
-    options.allowUnresolved = a5vmAllowUnresolved;
+    PassManager prepPM(module->getContext());
+    prepPM.enableVerifier();
+    prepPM.addNestedPass<func::FuncOp>(createPTOVPTOExpandBridgeOpsPass());
+    prepPM.addPass(createCSEPass());
+    if (failed(prepPM.run(*module))) {
+      diagOS << "VPTO LLVM emission failed: bridge-op expansion prep failed\n";
+      return nullptr;
+    }
+
+    pto::VPTOEmissionOptions options;
+    options.dumpVPTOIR = false;
+    options.printIntrinsicSelections = vptoPrintIntrinsics;
+    options.allowUnresolved = vptoAllowUnresolved;
     options.unresolvedReportPath =
-        !hivmUnresolvedReport.empty() ? hivmUnresolvedReport : a5vmUnresolvedReport;
+        !hivmUnresolvedReport.empty() ? hivmUnresolvedReport : vptoUnresolvedReport;
     if (arch == "a5") {
       options.targetTriple = "hiipu64-hisilicon-cce";
       options.march = "dav-c310-vec";
@@ -1070,16 +1098,16 @@ int main(int argc, char **argv) {
     }
 
     LogicalResult emissionStatus =
-        a5vmEmitHIVMOfficialBitcode
-            ? pto::translateA5VMModuleToLLVMBitcode(*module, outputFile.os(),
+        vptoEmitHIVMOfficialBitcode
+            ? pto::translateVPTOModuleToLLVMBitcode(*module, outputFile.os(),
                                                     options, llvm::errs())
-            : a5vmEmitHIVMOfficialLLVM
-            ? pto::translateA5VMModuleToLLVMText(*module, outputFile.os(),
+            : vptoEmitHIVMOfficialLLVM
+            ? pto::translateVPTOModuleToLLVMText(*module, outputFile.os(),
                                                  options, llvm::errs())
-            : pto::translateA5VMModuleToText(*module, outputFile.os(), options,
+            : pto::translateVPTOModuleToText(*module, outputFile.os(), options,
                                              llvm::errs());
     if (failed(emissionStatus)) {
-      llvm::errs() << "Error: Failed to emit A5VM text.\n";
+      llvm::errs() << "Error: Failed to emit VPTO text.\n";
       return 1;
     }
     outputFile.keep();

@@ -1,5 +1,5 @@
-#ifndef MLIR_DIALECT_PTO_TRANSFORMS_A5VMTEXTEMITTER_H
-#define MLIR_DIALECT_PTO_TRANSFORMS_A5VMTEXTEMITTER_H
+#ifndef MLIR_DIALECT_PTO_TRANSFORMS_VPTOTEXTEMITTER_H
+#define MLIR_DIALECT_PTO_TRANSFORMS_VPTOTEXTEMITTER_H
 
 #include <string>
 
@@ -8,8 +8,8 @@
 
 namespace mlir::pto {
 
-struct A5VMEmissionOptions {
-  bool dumpA5VMIR = false;
+struct VPTOEmissionOptions {
+  bool dumpVPTOIR = false;
   bool printIntrinsicSelections = false;
   bool allowUnresolved = true;
   std::string unresolvedReportPath;
@@ -20,10 +20,10 @@ struct A5VMEmissionOptions {
   std::string defaultTargetFeatures;
 };
 
-LogicalResult translateA5VMModuleToText(ModuleOp module, llvm::raw_ostream &os,
-                                        const A5VMEmissionOptions &options,
+LogicalResult translateVPTOModuleToText(ModuleOp module, llvm::raw_ostream &os,
+                                        const VPTOEmissionOptions &options,
                                         llvm::raw_ostream &diagOS);
 
 } // namespace mlir::pto
 
-#endif // MLIR_DIALECT_PTO_TRANSFORMS_A5VMTEXTEMITTER_H
+#endif // MLIR_DIALECT_PTO_TRANSFORMS_VPTOTEXTEMITTER_H

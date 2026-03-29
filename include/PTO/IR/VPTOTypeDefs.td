@@ -1,4 +1,4 @@
-//===- A5VMTypes.td - A5VM type definitions -----------------*- tablegen -*-===//
+//===- VPTOTypeDefs.td ---------------------------------------*- tablegen -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,16 +6,15 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLIR_DIALECT_PTO_IR_A5VMTYPES
-#define MLIR_DIALECT_PTO_IR_A5VMTYPES
+#ifndef MLIR_DIALECT_PTO_IR_VPTOTYPEDEFS
+#define MLIR_DIALECT_PTO_IR_VPTOTYPEDEFS
 
-include "PTO/IR/A5VMDialect.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/BuiltinTypeInterfaces.td"
 
-def A5VM_VecType : TypeDef<A5VM_Dialect, "Vec"> {
+def VecType : TypeDef<PTO_Dialect, "Vec"> {
   let mnemonic = "vec";
-  let summary = "A 256-byte A5VM vector";
+  let summary = "A 256-byte PTO low-level vector";
 
   let parameters = (ins
     "int64_t":$elementCount,
@@ -26,14 +25,14 @@ def A5VM_VecType : TypeDef<A5VM_Dialect, "Vec"> {
   let genVerifyDecl = 1;
 }
 
-def A5VM_MaskType : TypeDef<A5VM_Dialect, "Mask"> {
+def MaskType : TypeDef<PTO_Dialect, "Mask"> {
   let mnemonic = "mask";
-  let summary = "An A5VM predicate/mask register";
+  let summary = "A PTO low-level predicate/mask register";
 }
 
-def A5VM_AlignType : TypeDef<A5VM_Dialect, "Align"> {
+def AlignType : TypeDef<PTO_Dialect, "Align"> {
   let mnemonic = "align";
-  let summary = "An A5VM vector_align carrier";
+  let summary = "A PTO low-level vector_align carrier";
 }
 
-#endif // MLIR_DIALECT_PTO_IR_A5VMTYPES
+#endif // MLIR_DIALECT_PTO_IR_VPTOTYPEDEFS

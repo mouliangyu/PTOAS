@@ -1,4 +1,4 @@
-//===- A5VMOps.td - A5VM operations -------------------------*- tablegen -*-===//
+//===- VPTOOps.td - PTO low-level operations ----------------*- tablegen -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,90 +6,26 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MLIR_DIALECT_PTO_IR_A5VMOPS
-#define MLIR_DIALECT_PTO_IR_A5VMOPS
+#ifndef MLIR_DIALECT_PTO_IR_VPTOOPS
+#define MLIR_DIALECT_PTO_IR_VPTOOPS
 
-include "PTO/IR/A5VMDialect.td"
-include "PTO/IR/A5VMTypes.td"
 include "mlir/IR/OpBase.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
-def A5VM_VectorType : Type<CPred<"::llvm::isa<::mlir::a5vm::VecType>($_self)">,
-                           "A5VM vector type">;
-def A5VM_MaskTypeConstraint : Type<CPred<"::llvm::isa<::mlir::a5vm::MaskType>($_self)">,
-                                   "A5VM mask type">;
-def A5VM_AlignTypeConstraint : Type<CPred<"::llvm::isa<::mlir::a5vm::AlignType>($_self)">,
-                                    "A5VM align type">;
+def PTO_VectorType : Type<CPred<"::llvm::isa<::mlir::pto::VecType>($_self)">,
+                           "PTO low-level vector type">;
+def PTO_MaskTypeConstraint : Type<CPred<"::llvm::isa<::mlir::pto::MaskType>($_self)">,
+                                   "PTO low-level mask type">;
+def PTO_AlignTypeConstraint : Type<CPred<"::llvm::isa<::mlir::pto::AlignType>($_self)">,
+                                    "PTO low-level align type">;
 
-def A5VM_BufferType : Type<
+def PTO_BufferType : Type<
   CPred<"::llvm::isa<::mlir::pto::PtrType>($_self)">,
   "pointer-like buffer type">;
+def PTO_BufferLikeType : AnyTypeOf<[AnyMemRef, PTO_BufferType],
+                                    "memref or pointer-like buffer type">;
 
-class A5VM_Op<string mnemonic, list<Trait> traits = []>
-    : Op<A5VM_Dialect, mnemonic, traits>;
-
-def A5VM_SetFlagOp : A5VM_Op<"set_flag"> {
-  let arguments = (ins
-    StrAttr:$src_pipe,
-    StrAttr:$dst_pipe,
-    StrAttr:$event_id
-  );
-
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    `[` $src_pipe `,` $dst_pipe `,` $event_id `]` attr-dict
-  }];
-}
-
-def A5VM_WaitFlagOp : A5VM_Op<"wait_flag"> {
-  let arguments = (ins
-    StrAttr:$src_pipe,
-    StrAttr:$dst_pipe,
-    StrAttr:$event_id
-  );
-
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    `[` $src_pipe `,` $dst_pipe `,` $event_id `]` attr-dict
-  }];
-}
-
-def A5VM_PipeBarrierOp : A5VM_Op<"pipe_barrier"> {
-  let arguments = (ins StrAttr:$pipe);
-
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = "$pipe attr-dict";
-}
-
-class A5VM_BufTokenOp<string mnemonic> : A5VM_Op<mnemonic> {
-  let arguments = (ins
-    StrAttr:$pipe,
-    I64:$buf_id,
-    I64:$mode
-  );
-
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $pipe `,` $buf_id `,` $mode attr-dict `:` type($buf_id) `,` type($mode)
-  }];
-}
-
-def A5VM_GetBufOp : A5VM_BufTokenOp<"get_buf">;
-def A5VM_RlsBufOp : A5VM_BufTokenOp<"rls_buf">;
-
-class A5VM_BinaryI64ConfigOp<string mnemonic> : A5VM_Op<mnemonic> {
+class PTO_BinaryI64ConfigOp<string mnemonic> : PTO_Op<mnemonic> {
   let arguments = (ins
     I64:$first,
     I64:$second
@@ -102,19 +38,19 @@ class A5VM_BinaryI64ConfigOp<string mnemonic> : A5VM_Op<mnemonic> {
   }];
 }
 
-def A5VM_SetLoop2StrideOutToUbOp : A5VM_BinaryI64ConfigOp<"set_loop2_stride_outtoub">;
-def A5VM_SetLoop1StrideOutToUbOp : A5VM_BinaryI64ConfigOp<"set_loop1_stride_outtoub">;
-def A5VM_SetLoopSizeOutToUbOp : A5VM_BinaryI64ConfigOp<"set_loop_size_outtoub">;
-def A5VM_SetLoop2StrideUbToOutOp : A5VM_BinaryI64ConfigOp<"set_loop2_stride_ubtoout">;
-def A5VM_SetLoop1StrideUbToOutOp : A5VM_BinaryI64ConfigOp<"set_loop1_stride_ubtoout">;
-def A5VM_SetLoopSizeUbToOutOp : A5VM_BinaryI64ConfigOp<"set_loop_size_ubtoout">;
+def PTO_SetLoop2StrideOutToUbOp : PTO_BinaryI64ConfigOp<"set_loop2_stride_outtoub">;
+def PTO_SetLoop1StrideOutToUbOp : PTO_BinaryI64ConfigOp<"set_loop1_stride_outtoub">;
+def PTO_SetLoopSizeOutToUbOp : PTO_BinaryI64ConfigOp<"set_loop_size_outtoub">;
+def PTO_SetLoop2StrideUbToOutOp : PTO_BinaryI64ConfigOp<"set_loop2_stride_ubtoout">;
+def PTO_SetLoop1StrideUbToOutOp : PTO_BinaryI64ConfigOp<"set_loop1_stride_ubtoout">;
+def PTO_SetLoopSizeUbToOutOp : PTO_BinaryI64ConfigOp<"set_loop_size_ubtoout">;
 
-def A5VM_CopyGmToUbufOp : A5VM_Op<"copy_gm_to_ubuf", [
+def PTO_CopyGmToUbufOp : PTO_Op<"copy_gm_to_ubuf", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_BufferType:$destination,
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
     I64:$sid,
     I64:$n_burst,
     I64:$len_burst,
@@ -139,10 +75,10 @@ def A5VM_CopyGmToUbufOp : A5VM_Op<"copy_gm_to_ubuf", [
   }];
 }
 
-def A5VM_CopyUbufToUbufOp : A5VM_Op<"copy_ubuf_to_ubuf"> {
+def PTO_CopyUbufToUbufOp : PTO_Op<"copy_ubuf_to_ubuf"> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_BufferType:$destination,
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
     I64:$sid,
     I64:$n_burst,
     I64:$len_burst,
@@ -161,16 +97,16 @@ def A5VM_CopyUbufToUbufOp : A5VM_Op<"copy_ubuf_to_ubuf"> {
   }];
 }
 
-def A5VM_VldsOp : A5VM_Op<"vlds", [
+def PTO_VldsOp : PTO_Op<"vlds", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     Index:$offset,
     OptionalAttr<StrAttr>:$dist
   );
 
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -179,16 +115,17 @@ def A5VM_VldsOp : A5VM_Op<"vlds", [
   }];
 }
 
-def A5VM_VldsPostOp : A5VM_Op<"vlds_post", [
+def PTO_VldsPostOp : PTO_Op<"vlds_post", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     Index:$offset,
     OptionalAttr<StrAttr>:$dist
   );
 
-  let results = (outs A5VM_VectorType:$result, A5VM_BufferType:$updated_source);
+  let results = (outs PTO_VectorType:$result,
+                      PTO_BufferLikeType:$updated_source);
 
   let hasVerifier = 1;
 
@@ -197,14 +134,14 @@ def A5VM_VldsPostOp : A5VM_Op<"vlds_post", [
   }];
 }
 
-def A5VM_VldasOp : A5VM_Op<"vldas", [
+def PTO_VldasOp : PTO_Op<"vldas", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source
+    PTO_BufferType:$source
   );
 
-  let results = (outs A5VM_AlignTypeConstraint:$result);
+  let results = (outs PTO_AlignTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -213,18 +150,18 @@ def A5VM_VldasOp : A5VM_Op<"vldas", [
   }];
 }
 
-def A5VM_VldusOp : A5VM_Op<"vldus", [
+def PTO_VldusOp : PTO_Op<"vldus", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_AlignTypeConstraint:$align
+    PTO_BufferType:$source,
+    PTO_AlignTypeConstraint:$align
   );
 
   let results = (outs
-    A5VM_VectorType:$result,
-    A5VM_AlignTypeConstraint:$updated_align,
-    A5VM_BufferType:$updated_source
+    PTO_VectorType:$result,
+    PTO_AlignTypeConstraint:$updated_align,
+    PTO_BufferType:$updated_source
   );
 
   let hasVerifier = 1;
@@ -234,9 +171,26 @@ def A5VM_VldusOp : A5VM_Op<"vldus", [
   }];
 }
 
-def A5VM_VbrOp : A5VM_Op<"vbr", [Pure]> {
+def PTO_UvldOp : PTO_Op<"uvld", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferLikeType:$source,
+    Index:$offset
+  );
+
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $source `[` $offset `]` attr-dict `:` type($source) `->` type($result)
+  }];
+}
+
+def PTO_VbrOp : PTO_Op<"vbr", [Pure]> {
   let arguments = (ins AnyType:$value);
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -245,12 +199,12 @@ def A5VM_VbrOp : A5VM_Op<"vbr", [Pure]> {
   }];
 }
 
-def A5VM_VdupOp : A5VM_Op<"vdup", [Pure]> {
+def PTO_VdupOp : PTO_Op<"vdup", [Pure]> {
   let arguments = (ins
     AnyType:$input,
     OptionalAttr<StrAttr>:$position
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -259,9 +213,9 @@ def A5VM_VdupOp : A5VM_Op<"vdup", [Pure]> {
   }];
 }
 
-def A5VM_PsetB8Op : A5VM_Op<"pset_b8", [Pure]> {
+def PTO_PsetB8Op : PTO_Op<"pset_b8", [Pure]> {
   let arguments = (ins StrAttr:$pattern);
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -270,9 +224,9 @@ def A5VM_PsetB8Op : A5VM_Op<"pset_b8", [Pure]> {
   }];
 }
 
-def A5VM_PsetB16Op : A5VM_Op<"pset_b16", [Pure]> {
+def PTO_PsetB16Op : PTO_Op<"pset_b16", [Pure]> {
   let arguments = (ins StrAttr:$pattern);
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -285,9 +239,9 @@ def A5VM_PsetB16Op : A5VM_Op<"pset_b16", [Pure]> {
 // unvalidated scaffolding. They are added to preserve missing CCE builtin
 // semantics at the dialect layer, but they have not yet been validated through
 // PTO lowering or end-to-end sample execution.
-def A5VM_PsetB32Op : A5VM_Op<"pset_b32", [Pure]> {
+def PTO_PsetB32Op : PTO_Op<"pset_b32", [Pure]> {
   let arguments = (ins StrAttr:$pattern);
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -296,9 +250,9 @@ def A5VM_PsetB32Op : A5VM_Op<"pset_b32", [Pure]> {
   }];
 }
 
-class A5VM_PgeOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
+class PTO_PgeOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins StrAttr:$pattern);
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -307,13 +261,13 @@ class A5VM_PgeOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
   }];
 }
 
-def A5VM_PgeB8Op : A5VM_PgeOp<"pge_b8">;
-def A5VM_PgeB16Op : A5VM_PgeOp<"pge_b16">;
-def A5VM_PgeB32Op : A5VM_PgeOp<"pge_b32">;
+def PTO_PgeB8Op : PTO_PgeOp<"pge_b8">;
+def PTO_PgeB16Op : PTO_PgeOp<"pge_b16">;
+def PTO_PgeB32Op : PTO_PgeOp<"pge_b32">;
 
-class A5VM_PltOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
+class PTO_PltOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins I32:$scalar);
-  let results = (outs A5VM_MaskTypeConstraint:$mask, I32:$scalar_out);
+  let results = (outs PTO_MaskTypeConstraint:$mask, I32:$scalar_out);
 
   let hasVerifier = 1;
 
@@ -322,13 +276,13 @@ class A5VM_PltOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
   }];
 }
 
-def A5VM_PltB8Op : A5VM_PltOp<"plt_b8">;
-def A5VM_PltB16Op : A5VM_PltOp<"plt_b16">;
-def A5VM_PltB32Op : A5VM_PltOp<"plt_b32">;
+def PTO_PltB8Op : PTO_PltOp<"plt_b8">;
+def PTO_PltB16Op : PTO_PltOp<"plt_b16">;
+def PTO_PltB32Op : PTO_PltOp<"plt_b32">;
 
-class A5VM_MaskUnaryOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
-  let arguments = (ins A5VM_MaskTypeConstraint:$input);
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+class PTO_MaskUnaryOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
+  let arguments = (ins PTO_MaskTypeConstraint:$input);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -337,26 +291,26 @@ class A5VM_MaskUnaryOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
   }];
 }
 
-def A5VM_PpackOp : A5VM_MaskUnaryOp<"ppack"> {
-  let arguments = (ins A5VM_MaskTypeConstraint:$input, StrAttr:$part);
+def PTO_PpackOp : PTO_MaskUnaryOp<"ppack"> {
+  let arguments = (ins PTO_MaskTypeConstraint:$input, StrAttr:$part);
   let assemblyFormat = [{
     $input `,` $part attr-dict `:` type($input) `->` type($result)
   }];
 }
 
-def A5VM_PunpackOp : A5VM_MaskUnaryOp<"punpack"> {
-  let arguments = (ins A5VM_MaskTypeConstraint:$input, StrAttr:$part);
+def PTO_PunpackOp : PTO_MaskUnaryOp<"punpack"> {
+  let arguments = (ins PTO_MaskTypeConstraint:$input, StrAttr:$part);
   let assemblyFormat = [{
     $input `,` $part attr-dict `:` type($input) `->` type($result)
   }];
 }
 
-def A5VM_PnotOp : A5VM_Op<"pnot", [Pure]> {
+def PTO_PnotOp : PTO_Op<"pnot", [Pure]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$input,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$input,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -365,13 +319,13 @@ def A5VM_PnotOp : A5VM_Op<"pnot", [Pure]> {
   }];
 }
 
-def A5VM_PselOp : A5VM_Op<"psel", [Pure]> {
+def PTO_PselOp : PTO_Op<"psel", [Pure]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$src0,
-    A5VM_MaskTypeConstraint:$src1,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$src0,
+    PTO_MaskTypeConstraint:$src1,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -380,15 +334,15 @@ def A5VM_PselOp : A5VM_Op<"psel", [Pure]> {
   }];
 }
 
-def A5VM_PldsOp : A5VM_Op<"plds", [
+def PTO_PldsOp : PTO_Op<"plds", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     Index:$offset,
     OptionalAttr<StrAttr>:$dist
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -399,15 +353,15 @@ def A5VM_PldsOp : A5VM_Op<"plds", [
 
 // NOTE: Unvalidated predicate load/store-family abstractions. Added to cover
 // direct CCE predicate memory builtins not yet end-to-end exercised.
-def A5VM_PldOp : A5VM_Op<"pld", [
+def PTO_PldOp : PTO_Op<"pld", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     Index:$offset,
     StrAttr:$dist
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -416,15 +370,15 @@ def A5VM_PldOp : A5VM_Op<"pld", [
   }];
 }
 
-def A5VM_PldiOp : A5VM_Op<"pldi", [
+def PTO_PldiOp : PTO_Op<"pldi", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     I32:$offset,
     StrAttr:$dist
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -433,12 +387,12 @@ def A5VM_PldiOp : A5VM_Op<"pldi", [
   }];
 }
 
-def A5VM_PstOp : A5VM_Op<"pst", [
+def PTO_PstOp : PTO_Op<"pst", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$value,
-    A5VM_BufferType:$destination,
+    PTO_MaskTypeConstraint:$value,
+    PTO_BufferLikeType:$destination,
     Index:$offset,
     StrAttr:$dist
   );
@@ -451,12 +405,12 @@ def A5VM_PstOp : A5VM_Op<"pst", [
   }];
 }
 
-def A5VM_PstiOp : A5VM_Op<"psti", [
+def PTO_PstiOp : PTO_Op<"psti", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$value,
-    A5VM_BufferType:$destination,
+    PTO_MaskTypeConstraint:$value,
+    PTO_BufferLikeType:$destination,
     I32:$offset,
     StrAttr:$dist
   );
@@ -469,12 +423,12 @@ def A5VM_PstiOp : A5VM_Op<"psti", [
   }];
 }
 
-def A5VM_VabsOp : A5VM_Op<"vabs", [Pure]> {
+def PTO_VabsOp : PTO_Op<"vabs", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$input,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$input,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -483,12 +437,12 @@ def A5VM_VabsOp : A5VM_Op<"vabs", [Pure]> {
   }];
 }
 
-class A5VM_UnaryVecOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
+class PTO_UnaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$input,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$input,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -497,23 +451,23 @@ class A5VM_UnaryVecOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
   }];
 }
 
-def A5VM_VexpOp : A5VM_UnaryVecOp<"vexp">;
-def A5VM_VlnOp : A5VM_UnaryVecOp<"vln">;
-def A5VM_VsqrtOp : A5VM_UnaryVecOp<"vsqrt">;
-def A5VM_VrecOp : A5VM_UnaryVecOp<"vrec">;
-def A5VM_VreluOp : A5VM_UnaryVecOp<"vrelu">;
-def A5VM_VnotOp : A5VM_UnaryVecOp<"vnot">;
-def A5VM_VcaddOp : A5VM_UnaryVecOp<"vcadd">;
-def A5VM_VcmaxOp : A5VM_UnaryVecOp<"vcmax">;
-def A5VM_VcminOp : A5VM_UnaryVecOp<"vcmin">;
+def PTO_VexpOp : PTO_UnaryVecOp<"vexp">;
+def PTO_VlnOp : PTO_UnaryVecOp<"vln">;
+def PTO_VsqrtOp : PTO_UnaryVecOp<"vsqrt">;
+def PTO_VrecOp : PTO_UnaryVecOp<"vrec">;
+def PTO_VreluOp : PTO_UnaryVecOp<"vrelu">;
+def PTO_VnotOp : PTO_UnaryVecOp<"vnot">;
+def PTO_VcaddOp : PTO_UnaryVecOp<"vcadd">;
+def PTO_VcmaxOp : PTO_UnaryVecOp<"vcmax">;
+def PTO_VcminOp : PTO_UnaryVecOp<"vcmin">;
 
-class A5VM_BinaryVecOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
+class PTO_BinaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -522,25 +476,25 @@ class A5VM_BinaryVecOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
   }];
 }
 
-def A5VM_VaddOp : A5VM_BinaryVecOp<"vadd">;
-def A5VM_VsubOp : A5VM_BinaryVecOp<"vsub">;
-def A5VM_VmulOp : A5VM_BinaryVecOp<"vmul">;
-def A5VM_VdivOp : A5VM_BinaryVecOp<"vdiv">;
-def A5VM_VmaxOp : A5VM_BinaryVecOp<"vmax">;
-def A5VM_VminOp : A5VM_BinaryVecOp<"vmin">;
-def A5VM_VandOp : A5VM_BinaryVecOp<"vand">;
-def A5VM_VorOp : A5VM_BinaryVecOp<"vor">;
-def A5VM_VxorOp : A5VM_BinaryVecOp<"vxor">;
+def PTO_VaddOp : PTO_BinaryVecOp<"vadd">;
+def PTO_VsubOp : PTO_BinaryVecOp<"vsub">;
+def PTO_VmulOp : PTO_BinaryVecOp<"vmul">;
+def PTO_VdivOp : PTO_BinaryVecOp<"vdiv">;
+def PTO_VmaxOp : PTO_BinaryVecOp<"vmax">;
+def PTO_VminOp : PTO_BinaryVecOp<"vmin">;
+def PTO_VandOp : PTO_BinaryVecOp<"vand">;
+def PTO_VorOp : PTO_BinaryVecOp<"vor">;
+def PTO_VxorOp : PTO_BinaryVecOp<"vxor">;
 
-def A5VM_VaddcOp : A5VM_Op<"vaddc", [Pure]> {
+def PTO_VaddcOp : PTO_Op<"vaddc", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs
-    A5VM_VectorType:$result,
-    A5VM_MaskTypeConstraint:$carry
+    PTO_VectorType:$result,
+    PTO_MaskTypeConstraint:$carry
   );
 
   let hasVerifier = 1;
@@ -550,15 +504,15 @@ def A5VM_VaddcOp : A5VM_Op<"vaddc", [Pure]> {
   }];
 }
 
-def A5VM_VsubcOp : A5VM_Op<"vsubc", [Pure]> {
+def PTO_VsubcOp : PTO_Op<"vsubc", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs
-    A5VM_VectorType:$result,
-    A5VM_MaskTypeConstraint:$carry
+    PTO_VectorType:$result,
+    PTO_MaskTypeConstraint:$carry
   );
 
   let hasVerifier = 1;
@@ -568,16 +522,16 @@ def A5VM_VsubcOp : A5VM_Op<"vsubc", [Pure]> {
   }];
 }
 
-def A5VM_VaddcsOp : A5VM_Op<"vaddcs", [Pure]> {
+def PTO_VaddcsOp : PTO_Op<"vaddcs", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$carry_in,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$carry_in,
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs
-    A5VM_VectorType:$result,
-    A5VM_MaskTypeConstraint:$carry
+    PTO_VectorType:$result,
+    PTO_MaskTypeConstraint:$carry
   );
 
   let hasVerifier = 1;
@@ -587,16 +541,16 @@ def A5VM_VaddcsOp : A5VM_Op<"vaddcs", [Pure]> {
   }];
 }
 
-def A5VM_VsubcsOp : A5VM_Op<"vsubcs", [Pure]> {
+def PTO_VsubcsOp : PTO_Op<"vsubcs", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$carry_in,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$carry_in,
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs
-    A5VM_VectorType:$result,
-    A5VM_MaskTypeConstraint:$carry
+    PTO_VectorType:$result,
+    PTO_MaskTypeConstraint:$carry
   );
 
   let hasVerifier = 1;
@@ -606,19 +560,19 @@ def A5VM_VsubcsOp : A5VM_Op<"vsubcs", [Pure]> {
   }];
 }
 
-def A5VM_VbcntOp : A5VM_UnaryVecOp<"vbcnt">;
-def A5VM_VclsOp : A5VM_UnaryVecOp<"vcls">;
+def PTO_VbcntOp : PTO_UnaryVecOp<"vbcnt">;
+def PTO_VclsOp : PTO_UnaryVecOp<"vcls">;
 
-def A5VM_VshlOp : A5VM_BinaryVecOp<"vshl">;
-def A5VM_VshrOp : A5VM_BinaryVecOp<"vshr">;
+def PTO_VshlOp : PTO_BinaryVecOp<"vshl">;
+def PTO_VshrOp : PTO_BinaryVecOp<"vshr">;
 
-def A5VM_VselOp : A5VM_Op<"vsel", [Pure]> {
+def PTO_VselOp : PTO_Op<"vsel", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$src0,
-    A5VM_VectorType:$src1,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -627,14 +581,14 @@ def A5VM_VselOp : A5VM_Op<"vsel", [Pure]> {
   }];
 }
 
-def A5VM_VcmpOp : A5VM_Op<"vcmp", [Pure]> {
+def PTO_VcmpOp : PTO_Op<"vcmp", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$src0,
-    A5VM_VectorType:$src1,
-    A5VM_MaskTypeConstraint:$mask,
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1,
+    PTO_MaskTypeConstraint:$mask,
     StrAttr:$cmp_mode
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -643,14 +597,14 @@ def A5VM_VcmpOp : A5VM_Op<"vcmp", [Pure]> {
   }];
 }
 
-def A5VM_VcmpsOp : A5VM_Op<"vcmps", [Pure]> {
+def PTO_VcmpsOp : PTO_Op<"vcmps", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$src,
+    PTO_VectorType:$src,
     AnyType:$scalar,
-    A5VM_MaskTypeConstraint:$mask,
+    PTO_MaskTypeConstraint:$mask,
     StrAttr:$cmp_mode
   );
-  let results = (outs A5VM_MaskTypeConstraint:$result);
+  let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
@@ -659,14 +613,14 @@ def A5VM_VcmpsOp : A5VM_Op<"vcmps", [Pure]> {
   }];
 }
 
-def A5VM_PdintlvB8Op : A5VM_Op<"pdintlv_b8", [Pure]> {
+def PTO_PdintlvB8Op : PTO_Op<"pdintlv_b8", [Pure]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$lhs,
-    A5VM_MaskTypeConstraint:$rhs
+    PTO_MaskTypeConstraint:$lhs,
+    PTO_MaskTypeConstraint:$rhs
   );
   let results = (outs
-    A5VM_MaskTypeConstraint:$low,
-    A5VM_MaskTypeConstraint:$high
+    PTO_MaskTypeConstraint:$low,
+    PTO_MaskTypeConstraint:$high
   );
 
   let hasVerifier = 1;
@@ -676,14 +630,14 @@ def A5VM_PdintlvB8Op : A5VM_Op<"pdintlv_b8", [Pure]> {
   }];
 }
 
-def A5VM_PintlvB16Op : A5VM_Op<"pintlv_b16", [Pure]> {
+def PTO_PintlvB16Op : PTO_Op<"pintlv_b16", [Pure]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$lhs,
-    A5VM_MaskTypeConstraint:$rhs
+    PTO_MaskTypeConstraint:$lhs,
+    PTO_MaskTypeConstraint:$rhs
   );
   let results = (outs
-    A5VM_MaskTypeConstraint:$low,
-    A5VM_MaskTypeConstraint:$high
+    PTO_MaskTypeConstraint:$low,
+    PTO_MaskTypeConstraint:$high
   );
 
   let hasVerifier = 1;
@@ -693,12 +647,12 @@ def A5VM_PintlvB16Op : A5VM_Op<"pintlv_b16", [Pure]> {
   }];
 }
 
-class A5VM_VecScalarOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
+class PTO_VecScalarOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$input,
+    PTO_VectorType:$input,
     AnyType:$scalar
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -707,26 +661,26 @@ class A5VM_VecScalarOp<string mnemonic> : A5VM_Op<mnemonic, [Pure]> {
   }];
 }
 
-def A5VM_VtrcOp : A5VM_Op<"vtrc", [Pure]> {
+def PTO_VtrcOp : PTO_Op<"vtrc", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$input,
+    PTO_VectorType:$input,
     StrAttr:$round_mode
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let assemblyFormat = [{
     $input `,` $round_mode attr-dict `:` type($input) `->` type($result)
   }];
 }
 
-def A5VM_VcvtOp : A5VM_Op<"vcvt", [Pure]> {
+def PTO_VcvtOp : PTO_Op<"vcvt", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$input,
+    PTO_VectorType:$input,
     OptionalAttr<StrAttr>:$round_mode,
     OptionalAttr<StrAttr>:$sat,
     OptionalAttr<StrAttr>:$part
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -735,12 +689,12 @@ def A5VM_VcvtOp : A5VM_Op<"vcvt", [Pure]> {
   }];
 }
 
-def A5VM_VciOp : A5VM_Op<"vci", [Pure]> {
+def PTO_VciOp : PTO_Op<"vci", [Pure]> {
   let arguments = (ins
     AnyInteger:$index,
     OptionalAttr<StrAttr>:$order
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -749,11 +703,11 @@ def A5VM_VciOp : A5VM_Op<"vci", [Pure]> {
   }];
 }
 
-def A5VM_VbitsortOp : A5VM_Op<"vbitsort"> {
+def PTO_VbitsortOp : PTO_Op<"vbitsort"> {
   let arguments = (ins
-    A5VM_BufferType:$destination,
-    A5VM_BufferType:$source,
-    A5VM_BufferType:$indices,
+    PTO_BufferType:$destination,
+    PTO_BufferType:$source,
+    PTO_BufferType:$indices,
     Index:$repeat_times
   );
 
@@ -767,13 +721,13 @@ def A5VM_VbitsortOp : A5VM_Op<"vbitsort"> {
   }];
 }
 
-def A5VM_Vmrgsort4Op : A5VM_Op<"vmrgsort4"> {
+def PTO_Vmrgsort4Op : PTO_Op<"vmrgsort4"> {
   let arguments = (ins
-    A5VM_BufferType:$destination,
-    A5VM_BufferType:$source0,
-    A5VM_BufferType:$source1,
-    A5VM_BufferType:$source2,
-    A5VM_BufferType:$source3,
+    PTO_BufferType:$destination,
+    PTO_BufferType:$source0,
+    PTO_BufferType:$source1,
+    PTO_BufferType:$source2,
+    PTO_BufferType:$source3,
     I64:$count,
     I64:$config
   );
@@ -789,15 +743,15 @@ def A5VM_Vmrgsort4Op : A5VM_Op<"vmrgsort4"> {
   }];
 }
 
-def A5VM_Vgather2Op : A5VM_Op<"vgather2", [
+def PTO_Vgather2Op : PTO_Op<"vgather2", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_VectorType:$offsets,
+    PTO_BufferType:$source,
+    PTO_VectorType:$offsets,
     Index:$active_lanes
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -806,15 +760,15 @@ def A5VM_Vgather2Op : A5VM_Op<"vgather2", [
   }];
 }
 
-def A5VM_VgatherbOp : A5VM_Op<"vgatherb", [
+def PTO_VgatherbOp : PTO_Op<"vgatherb", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_VectorType:$offsets,
+    PTO_BufferType:$source,
+    PTO_VectorType:$offsets,
     Index:$active_lanes
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -825,15 +779,15 @@ def A5VM_VgatherbOp : A5VM_Op<"vgatherb", [
 
 // NOTE: Unvalidated new gather/select/interleave-family abstractions. Added to
 // cover CCE builtin families not yet exercised through end-to-end PTO seams.
-def A5VM_Vgather2BcOp : A5VM_Op<"vgather2_bc", [
+def PTO_Vgather2BcOp : PTO_Op<"vgather2_bc", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_VectorType:$offsets,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_BufferType:$source,
+    PTO_VectorType:$offsets,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -842,24 +796,24 @@ def A5VM_Vgather2BcOp : A5VM_Op<"vgather2_bc", [
   }];
 }
 
-def A5VM_VmulsOp : A5VM_VecScalarOp<"vmuls">;
-def A5VM_VaddsOp : A5VM_VecScalarOp<"vadds">;
-def A5VM_VmaxsOp : A5VM_VecScalarOp<"vmaxs">;
-def A5VM_VminsOp : A5VM_VecScalarOp<"vmins">;
-def A5VM_VlreluOp : A5VM_VecScalarOp<"vlrelu">;
-def A5VM_VshlsOp : A5VM_VecScalarOp<"vshls">;
-def A5VM_VshrsOp : A5VM_VecScalarOp<"vshrs">;
+def PTO_VmulsOp : PTO_VecScalarOp<"vmuls">;
+def PTO_VaddsOp : PTO_VecScalarOp<"vadds">;
+def PTO_VmaxsOp : PTO_VecScalarOp<"vmaxs">;
+def PTO_VminsOp : PTO_VecScalarOp<"vmins">;
+def PTO_VlreluOp : PTO_VecScalarOp<"vlrelu">;
+def PTO_VshlsOp : PTO_VecScalarOp<"vshls">;
+def PTO_VshrsOp : PTO_VecScalarOp<"vshrs">;
 
-def A5VM_VsldOp : A5VM_Op<"vsld", [
+def PTO_VsldOp : PTO_Op<"vsld", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     Index:$offset,
     StrAttr:$stride
   );
 
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -868,15 +822,15 @@ def A5VM_VsldOp : A5VM_Op<"vsld", [
   }];
 }
 
-def A5VM_VstsOp : A5VM_Op<"vsts", [
+def PTO_VstsOp : PTO_Op<"vsts", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$destination,
+    PTO_VectorType:$value,
+    PTO_BufferLikeType:$destination,
     Index:$offset,
     OptionalAttr<StrAttr>:$dist,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$mask
   );
 
   let results = (outs);
@@ -888,18 +842,18 @@ def A5VM_VstsOp : A5VM_Op<"vsts", [
   }];
 }
 
-def A5VM_VstsPostOp : A5VM_Op<"vsts_post", [
+def PTO_VstsPostOp : PTO_Op<"vsts_post", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$destination,
+    PTO_VectorType:$value,
+    PTO_BufferLikeType:$destination,
     Index:$offset,
     OptionalAttr<StrAttr>:$dist,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$mask
   );
 
-  let results = (outs A5VM_BufferType:$updated_destination);
+  let results = (outs PTO_BufferLikeType:$updated_destination);
 
   let hasVerifier = 1;
 
@@ -908,13 +862,13 @@ def A5VM_VstsPostOp : A5VM_Op<"vsts_post", [
   }];
 }
 
-def A5VM_VscatterOp : A5VM_Op<"vscatter", [
+def PTO_VscatterOp : PTO_Op<"vscatter", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$destination,
-    A5VM_VectorType:$offsets,
+    PTO_VectorType:$value,
+    PTO_BufferType:$destination,
+    PTO_VectorType:$offsets,
     Index:$active_lanes
   );
 
@@ -927,12 +881,12 @@ def A5VM_VscatterOp : A5VM_Op<"vscatter", [
   }];
 }
 
-def A5VM_PstsOp : A5VM_Op<"psts", [
+def PTO_PstsOp : PTO_Op<"psts", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_MaskTypeConstraint:$value,
-    A5VM_BufferType:$destination,
+    PTO_MaskTypeConstraint:$value,
+    PTO_BufferLikeType:$destination,
     Index:$offset
   );
 
@@ -947,12 +901,12 @@ def A5VM_PstsOp : A5VM_Op<"psts", [
 
 // NOTE: Unvalidated new store-family abstraction. Added for missing CCE
 // `vsst` semantics, but not yet exercised through end-to-end PTO lowering.
-def A5VM_VsstOp : A5VM_Op<"vsst", [
+def PTO_VsstOp : PTO_Op<"vsst", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$destination,
+    PTO_VectorType:$value,
+    PTO_BufferLikeType:$destination,
     Index:$offset,
     StrAttr:$stride
   );
@@ -966,12 +920,12 @@ def A5VM_VsstOp : A5VM_Op<"vsst", [
   }];
 }
 
-def A5VM_CopyUbufToGmOp : A5VM_Op<"copy_ubuf_to_gm", [
+def PTO_CopyUbufToGmOp : PTO_Op<"copy_ubuf_to_gm", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
-    A5VM_BufferType:$destination,
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
     I64:$sid,
     I64:$n_burst,
     I64:$len_burst,
@@ -995,12 +949,12 @@ def A5VM_CopyUbufToGmOp : A5VM_Op<"copy_ubuf_to_gm", [
 
 // NOTE: Unvalidated new x2 / pair / align-store-family abstractions. Added to
 // reflect CCE builtin families but not yet end-to-end validated.
-def A5VM_VselrOp : A5VM_Op<"vselr", [Pure]> {
+def PTO_VselrOp : PTO_Op<"vselr", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$src0,
-    A5VM_VectorType:$src1
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -1009,12 +963,12 @@ def A5VM_VselrOp : A5VM_Op<"vselr", [Pure]> {
   }];
 }
 
-def A5VM_Vselrv2Op : A5VM_Op<"vselrv2", [Pure]> {
+def PTO_Vselrv2Op : PTO_Op<"vselrv2", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$src0,
-    A5VM_VectorType:$src1
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -1023,12 +977,12 @@ def A5VM_Vselrv2Op : A5VM_Op<"vselrv2", [Pure]> {
   }];
 }
 
-def A5VM_VintlvOp : A5VM_Op<"vintlv", [Pure]> {
+def PTO_VintlvOp : PTO_Op<"vintlv", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs
   );
-  let results = (outs A5VM_VectorType:$low, A5VM_VectorType:$high);
+  let results = (outs PTO_VectorType:$low, PTO_VectorType:$high);
 
   let hasVerifier = 1;
 
@@ -1037,12 +991,12 @@ def A5VM_VintlvOp : A5VM_Op<"vintlv", [Pure]> {
   }];
 }
 
-def A5VM_VdintlvOp : A5VM_Op<"vdintlv", [Pure]> {
+def PTO_VdintlvOp : PTO_Op<"vdintlv", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs
   );
-  let results = (outs A5VM_VectorType:$low, A5VM_VectorType:$high);
+  let results = (outs PTO_VectorType:$low, PTO_VectorType:$high);
 
   let hasVerifier = 1;
 
@@ -1051,13 +1005,13 @@ def A5VM_VdintlvOp : A5VM_Op<"vdintlv", [Pure]> {
   }];
 }
 
-def A5VM_Vintlvv2Op : A5VM_Op<"vintlvv2", [Pure]> {
+def PTO_Vintlvv2Op : PTO_Op<"vintlvv2", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
     StrAttr:$part
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -1066,13 +1020,13 @@ def A5VM_Vintlvv2Op : A5VM_Op<"vintlvv2", [Pure]> {
   }];
 }
 
-def A5VM_Vdintlvv2Op : A5VM_Op<"vdintlvv2", [Pure]> {
+def PTO_Vdintlvv2Op : PTO_Op<"vdintlvv2", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
     StrAttr:$part
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -1081,13 +1035,13 @@ def A5VM_Vdintlvv2Op : A5VM_Op<"vdintlvv2", [Pure]> {
   }];
 }
 
-def A5VM_VmullOp : A5VM_Op<"vmull", [Pure]> {
+def PTO_VmullOp : PTO_Op<"vmull", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$low, A5VM_VectorType:$high);
+  let results = (outs PTO_VectorType:$low, PTO_VectorType:$high);
 
   let hasVerifier = 1;
 
@@ -1096,14 +1050,14 @@ def A5VM_VmullOp : A5VM_Op<"vmull", [Pure]> {
   }];
 }
 
-def A5VM_VmulaOp : A5VM_Op<"vmula", [Pure]> {
+def PTO_VmulaOp : PTO_Op<"vmula", [Pure]> {
   let arguments = (ins
-    A5VM_VectorType:$acc,
-    A5VM_VectorType:$lhs,
-    A5VM_VectorType:$rhs,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_VectorType:$acc,
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs,
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -1112,15 +1066,15 @@ def A5VM_VmulaOp : A5VM_Op<"vmula", [Pure]> {
   }];
 }
 
-def A5VM_Vldx2Op : A5VM_Op<"vldx2", [
+def PTO_Vldx2Op : PTO_Op<"vldx2", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     Index:$offset,
     StrAttr:$dist
   );
-  let results = (outs A5VM_VectorType:$low, A5VM_VectorType:$high);
+  let results = (outs PTO_VectorType:$low, PTO_VectorType:$high);
 
   let hasVerifier = 1;
 
@@ -1129,16 +1083,16 @@ def A5VM_Vldx2Op : A5VM_Op<"vldx2", [
   }];
 }
 
-def A5VM_Vstx2Op : A5VM_Op<"vstx2", [
+def PTO_Vstx2Op : PTO_Op<"vstx2", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_VectorType:$low,
-    A5VM_VectorType:$high,
-    A5VM_BufferType:$destination,
+    PTO_VectorType:$low,
+    PTO_VectorType:$high,
+    PTO_BufferLikeType:$destination,
     Index:$offset,
     StrAttr:$dist,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs);
 
@@ -1149,15 +1103,15 @@ def A5VM_Vstx2Op : A5VM_Op<"vstx2", [
   }];
 }
 
-def A5VM_VsldbOp : A5VM_Op<"vsldb", [
+def PTO_VsldbOp : PTO_Op<"vsldb", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_BufferType:$source,
+    PTO_BufferLikeType:$source,
     I32:$offset,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$mask
   );
-  let results = (outs A5VM_VectorType:$result);
+  let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
@@ -1166,14 +1120,14 @@ def A5VM_VsldbOp : A5VM_Op<"vsldb", [
   }];
 }
 
-def A5VM_VsstbOp : A5VM_Op<"vsstb", [
+def PTO_VsstbOp : PTO_Op<"vsstb", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$destination,
+    PTO_VectorType:$value,
+    PTO_BufferLikeType:$destination,
     I32:$offset,
-    A5VM_MaskTypeConstraint:$mask
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs);
 
@@ -1184,12 +1138,12 @@ def A5VM_VsstbOp : A5VM_Op<"vsstb", [
   }];
 }
 
-def A5VM_VstaOp : A5VM_Op<"vsta", [
+def PTO_VstaOp : PTO_Op<"vsta", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$value,
-    A5VM_BufferType:$destination,
+    PTO_AlignTypeConstraint:$value,
+    PTO_BufferLikeType:$destination,
     Index:$offset
   );
   let results = (outs);
@@ -1201,12 +1155,12 @@ def A5VM_VstaOp : A5VM_Op<"vsta", [
   }];
 }
 
-def A5VM_VstasOp : A5VM_Op<"vstas", [
+def PTO_VstasOp : PTO_Op<"vstas", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$value,
-    A5VM_BufferType:$destination,
+    PTO_AlignTypeConstraint:$value,
+    PTO_BufferLikeType:$destination,
     I32:$offset
   );
   let results = (outs);
@@ -1218,12 +1172,12 @@ def A5VM_VstasOp : A5VM_Op<"vstas", [
   }];
 }
 
-def A5VM_VstarOp : A5VM_Op<"vstar", [
+def PTO_VstarOp : PTO_Op<"vstar", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$value,
-    A5VM_BufferType:$destination
+    PTO_AlignTypeConstraint:$value,
+    PTO_BufferLikeType:$destination
   );
   let results = (outs);
 
@@ -1237,15 +1191,17 @@ def A5VM_VstarOp : A5VM_Op<"vstar", [
 // NOTE: Unvalidated stateful store-family abstractions. These preserve
 // align/base/offset update results explicitly in SSA form instead of relying on
 // implicit CCE reference updates.
-def A5VM_PstuOp : A5VM_Op<"pstu", [
+// Keep `base/base_out` pointer-only (`PTO_BufferType`): memref semantics for
+// stateful post-update addresses are intentionally out of scope in this change.
+def PTO_PstuOp : PTO_Op<"pstu", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$align_in,
-    A5VM_MaskTypeConstraint:$value,
-    A5VM_BufferType:$base
+    PTO_AlignTypeConstraint:$align_in,
+    PTO_MaskTypeConstraint:$value,
+    PTO_BufferType:$base
   );
-  let results = (outs A5VM_AlignTypeConstraint:$align_out, A5VM_BufferType:$base_out);
+  let results = (outs PTO_AlignTypeConstraint:$align_out, PTO_BufferType:$base_out);
 
   let hasVerifier = 1;
 
@@ -1254,17 +1210,17 @@ def A5VM_PstuOp : A5VM_Op<"pstu", [
   }];
 }
 
-def A5VM_VstuOp : A5VM_Op<"vstu", [
+def PTO_VstuOp : PTO_Op<"vstu", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$align_in,
+    PTO_AlignTypeConstraint:$align_in,
     Index:$offset_in,
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$base,
+    PTO_VectorType:$value,
+    PTO_BufferType:$base,
     StrAttr:$mode
   );
-  let results = (outs A5VM_AlignTypeConstraint:$align_out, Index:$offset_out);
+  let results = (outs PTO_AlignTypeConstraint:$align_out, Index:$offset_out);
 
   let hasVerifier = 1;
 
@@ -1273,17 +1229,17 @@ def A5VM_VstuOp : A5VM_Op<"vstu", [
   }];
 }
 
-def A5VM_VstusOp : A5VM_Op<"vstus", [
+def PTO_VstusOp : PTO_Op<"vstus", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$align_in,
+    PTO_AlignTypeConstraint:$align_in,
     I32:$offset,
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$base,
+    PTO_VectorType:$value,
+    PTO_BufferType:$base,
     StrAttr:$mode
   );
-  let results = (outs A5VM_AlignTypeConstraint:$align_out, A5VM_BufferType:$base_out);
+  let results = (outs PTO_AlignTypeConstraint:$align_out, PTO_BufferType:$base_out);
 
   let hasVerifier = 1;
 
@@ -1292,16 +1248,16 @@ def A5VM_VstusOp : A5VM_Op<"vstus", [
   }];
 }
 
-def A5VM_VsturOp : A5VM_Op<"vstur", [
+def PTO_VsturOp : PTO_Op<"vstur", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    A5VM_AlignTypeConstraint:$align_in,
-    A5VM_VectorType:$value,
-    A5VM_BufferType:$base,
+    PTO_AlignTypeConstraint:$align_in,
+    PTO_VectorType:$value,
+    PTO_BufferType:$base,
     StrAttr:$mode
   );
-  let results = (outs A5VM_AlignTypeConstraint:$align_out);
+  let results = (outs PTO_AlignTypeConstraint:$align_out);
 
   let hasVerifier = 1;
 
@@ -1310,4 +1266,4 @@ def A5VM_VsturOp : A5VM_Op<"vstur", [
   }];
 }
 
-#endif // MLIR_DIALECT_PTO_IR_A5VMOPS
+#endif // MLIR_DIALECT_PTO_IR_VPTOOPS

@@ -1,4 +1,4 @@
-//===- A5VM.cpp - A5VM dialect -------------------------------------------===//
+//===- VPTO.cpp - VPTO dialect -------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -6,7 +6,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PTO/IR/A5VM.h"
 #include "PTO/IR/PTO.h"
 
 #include "mlir/IR/BuiltinTypeInterfaces.h"
@@ -23,17 +22,12 @@
 #include <optional>
 
 using namespace mlir;
-using namespace mlir::a5vm;
-
-#define GET_TYPEDEF_CLASSES
-#include "PTO/IR/A5VMTypes.cpp.inc"
-
-#include "PTO/IR/A5VMDialect.cpp.inc"
+using namespace mlir::pto;
 
 static std::string formatVecType(int64_t elementCount, Type elementType) {
   std::string storage;
   llvm::raw_string_ostream os(storage);
-  os << "!a5vm.vec<" << elementCount << "x" << elementType << ">";
+  os << "!pto.vec<" << elementCount << "x" << elementType << ">";
   return storage;
 }
 
@@ -41,7 +35,7 @@ static LogicalResult verifyVecTypeLike(Operation *op, Type type,
                                        StringRef roleDescription) {
   auto vecType = dyn_cast<VecType>(type);
   if (!vecType)
-    return op->emitOpError() << roleDescription << " must be !a5vm.vec<...>";
+    return op->emitOpError() << roleDescription << " must be !pto.vec<...>";
 
   return VecType::verify(
       [&]() { return op->emitOpError() << roleDescription << " "; },
@@ -51,14 +45,14 @@ static LogicalResult verifyVecTypeLike(Operation *op, Type type,
 static LogicalResult verifyMaskTypeLike(Operation *op, Type type,
                                         StringRef roleDescription) {
   if (!isa<MaskType>(type))
-    return op->emitOpError() << roleDescription << " must be !a5vm.mask";
+    return op->emitOpError() << roleDescription << " must be !pto.mask";
   return success();
 }
 
 static LogicalResult verifyAlignTypeLike(Operation *op, Type type,
                                          StringRef roleDescription) {
   if (!isa<AlignType>(type))
-    return op->emitOpError() << roleDescription << " must be !a5vm.align";
+    return op->emitOpError() << roleDescription << " must be !pto.align";
   return success();
 }
 
@@ -203,13 +197,6 @@ static int64_t getPtrElementByteSize(Type type) {
   return 0;
 }
 
-static LogicalResult verifySyncToken(Operation *op, StringAttr token,
-                                     StringRef role) {
-  if (!token || token.getValue().empty())
-    return op->emitOpError() << "requires non-empty " << role;
-  return success();
-}
-
 template <typename CopyOp>
 static LogicalResult verifyCopyGmToUbufOp(CopyOp op, bool expectSourceGM) {
   auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
@@ -326,30 +313,6 @@ LogicalResult VecType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
-void A5VMDialect::initialize() {
-  addTypes<
-#define GET_TYPEDEF_LIST
-#include "PTO/IR/A5VMTypes.cpp.inc"
-      >();
-
-  addOperations<
-#define GET_OP_LIST
-#include "PTO/IR/A5VMOps.cpp.inc"
-      >();
-}
-
-Attribute A5VMDialect::parseAttribute(DialectAsmParser &parser,
-                                      Type type) const {
-  parser.emitError(parser.getCurrentLocation(),
-                   "A5VM dialect defines no custom attributes");
-  return {};
-}
-
-void A5VMDialect::printAttribute(Attribute attr,
-                                 DialectAsmPrinter &printer) const {
-  llvm_unreachable("A5VM dialect defines no custom attributes");
-}
-
 void CopyGmToUbufOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
@@ -404,7 +367,7 @@ LogicalResult VcminOp::verify() {
 LogicalResult VciOp::verify() {
   auto resultType = dyn_cast<VecType>(getResult().getType());
   if (!resultType)
-    return emitOpError("result must be !a5vm.vec<...>");
+    return emitOpError("result must be !pto.vec<...>");
   if (!isa<IntegerType>(resultType.getElementType()))
     return emitOpError("result element type must be integer");
   auto indexType = dyn_cast<IntegerType>(getIndex().getType());
@@ -431,7 +394,7 @@ LogicalResult Vgather2Op::verify() {
   auto offsetsType = dyn_cast<VecType>(getOffsets().getType());
   auto resultType = dyn_cast<VecType>(getResult().getType());
   if (!offsetsType || !resultType)
-    return emitOpError("offsets and result must be !a5vm.vec<...>");
+    return emitOpError("offsets and result must be !pto.vec<...>");
   if (!isa<IntegerType>(offsetsType.getElementType()))
     return emitOpError("offset vector must use integer element type");
   if (offsetsType.getElementCount() != resultType.getElementCount())
@@ -466,7 +429,7 @@ LogicalResult VgatherbOp::verify() {
   auto offsetsType = dyn_cast<VecType>(getOffsets().getType());
   auto resultType = dyn_cast<VecType>(getResult().getType());
   if (!offsetsType || !resultType)
-    return emitOpError("offsets and result must be !a5vm.vec<...>");
+    return emitOpError("offsets and result must be !pto.vec<...>");
   auto offsetsElemType = dyn_cast<IntegerType>(offsetsType.getElementType());
   if (!offsetsElemType)
     return emitOpError("offset vector must use integer element type");
@@ -496,7 +459,7 @@ LogicalResult Vgather2BcOp::verify() {
   auto offsetsType = dyn_cast<VecType>(getOffsets().getType());
   auto resultType = dyn_cast<VecType>(getResult().getType());
   if (!offsetsType || !resultType)
-    return emitOpError("offsets and result must be !a5vm.vec<...>");
+    return emitOpError("offsets and result must be !pto.vec<...>");
   auto offsetsElemType = dyn_cast<IntegerType>(offsetsType.getElementType());
   if (!offsetsElemType)
     return emitOpError("offset vector must use integer element type");
@@ -555,38 +518,6 @@ LogicalResult VminOp::verify() {
     return emitOpError("lhs, rhs, and result must have the same vector type");
   return success();
 }
-
-LogicalResult SetFlagOp::verify() {
-  if (failed(verifySyncToken(*this, getSrcPipeAttr(), "src_pipe")) ||
-      failed(verifySyncToken(*this, getDstPipeAttr(), "dst_pipe")) ||
-      failed(verifySyncToken(*this, getEventIdAttr(), "event_id")))
-    return failure();
-  return success();
-}
-
-LogicalResult WaitFlagOp::verify() {
-  if (failed(verifySyncToken(*this, getSrcPipeAttr(), "src_pipe")) ||
-      failed(verifySyncToken(*this, getDstPipeAttr(), "dst_pipe")) ||
-      failed(verifySyncToken(*this, getEventIdAttr(), "event_id")))
-    return failure();
-  return success();
-}
-
-LogicalResult PipeBarrierOp::verify() {
-  return verifySyncToken(*this, getPipeAttr(), "pipe");
-}
-
-template <typename BufOp>
-static LogicalResult verifyBufTokenOp(BufOp op) {
-  if (failed(verifySyncToken(op, op.getPipeAttr(), "pipe")))
-    return failure();
-  if (!isa<IntegerType>(op.getBufId().getType()) || !isa<IntegerType>(op.getMode().getType()))
-    return op.emitOpError("requires integer buf_id and mode operands");
-  return success();
-}
-
-LogicalResult GetBufOp::verify() { return verifyBufTokenOp(*this); }
-LogicalResult RlsBufOp::verify() { return verifyBufTokenOp(*this); }
 
 void VldsOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
@@ -677,10 +608,36 @@ LogicalResult VldusOp::verify() {
   return success();
 }
 
+void UvldOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+}
+
+LogicalResult UvldOp::verify() {
+  if (failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  if (!isBufferLike(getSource().getType()))
+    return emitOpError("requires a buffer-like source");
+  if (classifyMemoryRole(getSource().getType()) == MemoryRole::GM)
+    return emitOpError("requires a UB-backed source");
+
+  auto sourceMemRef = dyn_cast<BaseMemRefType>(getSource().getType());
+  if (!sourceMemRef)
+    return success();
+
+  Type sourceElementType = sourceMemRef.getElementType();
+  Type vectorElementType = cast<VRegType>(getResult().getType()).getElementType();
+  if (sourceElementType != vectorElementType)
+    return emitOpError(
+        "requires source element type to match vector element type");
+  return success();
+}
+
 LogicalResult VdupOp::verify() {
   auto resultType = dyn_cast<VecType>(getResult().getType());
   if (!resultType)
-    return emitOpError("result must be !a5vm.vec<...>");
+    return emitOpError("result must be !pto.vec<...>");
 
   Type inputType = getInput().getType();
   if (auto inputVecType = dyn_cast<VecType>(inputType)) {
@@ -857,7 +814,7 @@ static LogicalResult verifyVecScalarOpLike(OpTy op) {
   auto inputType = dyn_cast<VecType>(op.getInput().getType());
   auto resultType = dyn_cast<VecType>(op.getResult().getType());
   if (!inputType || !resultType)
-    return op.emitOpError("input and result must be !a5vm.vec<...>");
+    return op.emitOpError("input and result must be !pto.vec<...>");
   if (inputType != resultType)
     return op.emitOpError("input and result vector types must match");
   if (op.getScalar().getType() != inputType.getElementType())
@@ -1111,7 +1068,7 @@ LogicalResult VcvtOp::verify() {
   auto inputType = dyn_cast<VecType>(getInput().getType());
   auto resultType = dyn_cast<VecType>(getResult().getType());
   if (!inputType || !resultType)
-    return emitOpError("input and result must be !a5vm.vec<...>");
+    return emitOpError("input and result must be !pto.vec<...>");
 
   auto inputElemType = inputType.getElementType();
   auto resultElemType = resultType.getElementType();
@@ -1324,7 +1281,7 @@ LogicalResult VscatterOp::verify() {
   auto offsetsType = dyn_cast<VecType>(getOffsets().getType());
   auto valueType = dyn_cast<VecType>(getValue().getType());
   if (!offsetsType || !valueType)
-    return emitOpError("value and offsets must be !a5vm.vec<...>");
+    return emitOpError("value and offsets must be !pto.vec<...>");
   auto offsetsElemType = dyn_cast<IntegerType>(offsetsType.getElementType());
   if (!offsetsElemType)
     return emitOpError("offset vector must use integer element type");
@@ -1608,6 +1565,3 @@ void CopyUbufToGmOp::getEffects(
 LogicalResult CopyUbufToGmOp::verify() {
   return verifyCopyUbufToGmOp(*this, false);
 }
-
-#define GET_OP_CLASSES
-#include "PTO/IR/A5VMOps.cpp.inc"
