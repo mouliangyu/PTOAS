@@ -44,3 +44,7 @@ Use short, imperative commit subjects, for example `Fix explicit StringAttr bool
 
 ## Configuration Notes
 Build in the repository’s `build/` directory, not ad hoc paths under `/tmp`. Avoid committing local-only environment helpers unless they are meant to be shared project scripts.
+
+## Testing And Validation
+- 先跑最小相关验证，再扩大范围；不要默认全量重编译或全量回归。
+- 当任务涉及 `test/vpto/scripts/run_host_vpto_validation.sh`、`test/vpto` 上板验证、NPU runtime 故障定位、`aclrtSetDevice`、设备访问或板端 compare 时，必须使用 
