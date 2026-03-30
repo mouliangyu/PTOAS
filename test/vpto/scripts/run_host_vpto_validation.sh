@@ -118,14 +118,36 @@ mkdir -p "${WORK_SPACE}"
 WORK_SPACE="$(cd "${WORK_SPACE}" && pwd)"
 
 discover_cases() {
+  local required_files=(
+    kernel.pto
+    stub.cpp
+    launch.cpp
+    main.cpp
+    golden.py
+    compare.py
+  )
+
   if [[ -n "${CASE_NAME}" ]]; then
-    [[ -d "${CASES_ROOT}/${CASE_NAME}" ]] || die "unknown case: ${CASE_NAME}"
-    printf "%s\n" "${CASE_NAME}"
+    local requested_dir="${CASES_ROOT}/${CASE_NAME}"
+    [[ -d "${requested_dir}" ]] || die "unknown case: ${CASE_NAME}"
+    for f in "${required_files[@]}"; do
+      [[ -f "${requested_dir}/${f}" ]] || die "case ${CASE_NAME} is missing ${f}"
+    done
+    printf "%s\n" "${CASE_NAME#/}"
     return 0
   fi
 
-  find "${CASES_ROOT}" -mindepth 1 -maxdepth 1 -type d | sort | while read -r dir; do
-    basename "${dir}"
+  find "${CASES_ROOT}" -mindepth 1 -type d | sort | while read -r dir; do
+    local ok=1
+    for f in "${required_files[@]}"; do
+      if [[ ! -f "${dir}/${f}" ]]; then
+        ok=0
+        break
+      fi
+    done
+    [[ "${ok}" -eq 1 ]] || continue
+    local rel="${dir#${CASES_ROOT}/}"
+    printf "%s\n" "${rel}"
   done
 }
 
@@ -266,7 +288,7 @@ link_kernel_so() {
 }
 
 build_host_executable() {
-  local case_name="$1"
+  local case_token="$1"
   local case_dir="$2"
   local out_dir="$3"
   local extra_ldflags=()
@@ -291,24 +313,26 @@ build_host_executable() {
     "${extra_lib_dirs[@]}" \
     -Wl,-rpath,"${out_dir}" \
     -Wl,-rpath,"${ASCEND_HOME_PATH}/lib64" \
-    -o "${out_dir}/${case_name}" \
+    -o "${out_dir}/${case_token}" \
     "${extra_ldflags[@]}" \
     -lstdc++ -lascendcl -lm -ltiling_api -lplatform -lc_sec -ldl -lnnopbase \
-    -l"${case_name}_kernel"
+    -l"${case_token}_kernel"
 }
 
 build_one() {
   local case_name="$1"
   local case_dir="${CASES_ROOT}/${case_name}"
-  local out_dir="${WORK_SPACE}/${case_name}"
+  local case_token
+  case_token="$(printf '%s' "${case_name}" | sed 's#[/[:space:]]#_#g')"
+  local out_dir="${WORK_SPACE}/${case_token}"
   local case_module_id
   case_module_id="$(printf '%s' "${MODULE_ID}-${case_name}" | md5sum | cut -c1-16)"
-  local llvm_ir="${out_dir}/${case_name}.ll"
-  local device_obj="${out_dir}/${case_name}.o"
+  local llvm_ir="${out_dir}/${case_token}.ll"
+  local device_obj="${out_dir}/${case_token}.o"
   local launch_obj="${out_dir}/launch.o"
   local host_stub_obj="${out_dir}/kernel_host_from_llvm.o"
-  local repack_obj="${out_dir}/${case_name}_stub.cpp.o"
-  local repack_so="${out_dir}/lib${case_name}_kernel.so"
+  local repack_obj="${out_dir}/${case_token}_stub.cpp.o"
+  local repack_so="${out_dir}/lib${case_token}_kernel.so"
 
   [[ -f "${case_dir}/kernel.pto" ]] || die "missing kernel.pto for ${case_name}"
   [[ -f "${case_dir}/stub.cpp" ]] || die "missing stub.cpp for ${case_name}"
@@ -338,10 +362,10 @@ build_one() {
   build_host_stub "${case_dir}" "${device_obj}" "${host_stub_obj}" "${case_module_id}"
 
   log "[$case_name] step 4/6: link kernel shared library"
-  link_kernel_so "${case_name}" "${host_stub_obj}" "${launch_obj}" "${repack_obj}" "${repack_so}" "${case_module_id}"
+  link_kernel_so "${case_token}" "${host_stub_obj}" "${launch_obj}" "${repack_obj}" "${repack_so}" "${case_module_id}"
 
   log "[$case_name] step 5/6: build host executable and golden"
-  build_host_executable "${case_name}" "${case_dir}" "${out_dir}"
+  build_host_executable "${case_token}" "${case_dir}" "${out_dir}"
   (
     cd "${out_dir}"
     python3 "${case_dir}/golden.py"
@@ -353,7 +377,7 @@ build_one() {
 cd "${out_dir}" && \
 export ASCEND_HOME_PATH="${ASCEND_HOME_PATH}" && \
 if [ -f "\$ASCEND_HOME_PATH/set_env.sh" ]; then source "\$ASCEND_HOME_PATH/set_env.sh" >/dev/null 2>&1; fi && \
-LD_LIBRARY_PATH="${out_dir}:${SIM_LIB_DIR}:\$ASCEND_HOME_PATH/lib64:\${LD_LIBRARY_PATH:-}" "./${case_name}"
+LD_LIBRARY_PATH="${out_dir}:${SIM_LIB_DIR}:\$ASCEND_HOME_PATH/lib64:\${LD_LIBRARY_PATH:-}" "./${case_token}"
 EOF
 )
   run_remote "${remote_run_cmd}"
@@ -363,12 +387,12 @@ EOF
 cd "${out_dir}" && \
 export ASCEND_HOME_PATH="${ASCEND_HOME_PATH}" && \
 if [ -f "\$ASCEND_HOME_PATH/set_env.sh" ]; then source "\$ASCEND_HOME_PATH/set_env.sh" >/dev/null 2>&1; fi && \
-LD_LIBRARY_PATH="${out_dir}:${SIM_LIB_DIR}:\$ASCEND_HOME_PATH/lib64:\${LD_LIBRARY_PATH:-}" ldd "./${case_name}" | grep "lib${case_name}_kernel.so"
+LD_LIBRARY_PATH="${out_dir}:${SIM_LIB_DIR}:\$ASCEND_HOME_PATH/lib64:\${LD_LIBRARY_PATH:-}" ldd "./${case_token}" | grep "lib${case_token}_kernel.so"
 EOF
 )
   local ldd_output
   ldd_output="$(run_remote "${remote_ldd_cmd}")"
-  [[ "${ldd_output}" == *"${repack_so}"* || "${ldd_output}" == *"lib${case_name}_kernel.so"* ]] || \
+  [[ "${ldd_output}" == *"${repack_so}"* || "${ldd_output}" == *"lib${case_token}_kernel.so"* ]] || \
     die "${case_name} did not load expected kernel so: ${ldd_output}"
 
   (

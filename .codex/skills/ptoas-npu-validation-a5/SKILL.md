@@ -1,12 +1,14 @@
 ---
 name: ptoas-npu-validation-a5
-description: Generate and run PTOAS-based A5 test/npu_validation testcases, build the testcase binaries, and validate runtime output on NPU or simulator. Use when the user wants NPU run validation, golden/compare checks, or runtime troubleshooting for A5.
+description: Generate and run PTOAS-based A5 test/npu_validation or test/vpto validations, build the testcase binaries, and validate runtime output on NPU or simulator. Use when the user wants NPU run validation, golden/compare checks, or runtime troubleshooting for A5.
 ---
 
 # PTOAS NPU Validation A5
 
 Use this skill when the task is specifically about:
 - generating `test/npu_validation` projects from PTOAS output
+- running `test/vpto/scripts/run_host_vpto_validation.sh`
+- running `test/vpto` board validation or simulator validation
 - building testcase binaries for A5
 - running NPU or simulator validation
 - generating golden inputs and checking results with `compare.py`
@@ -67,6 +69,13 @@ In other words:
 Use these scripts as the default automation entry points instead of rebuilding
 the flow by hand:
 
+- `test/vpto/scripts/run_host_vpto_validation.sh`
+  - top-level driver for curated VPTO `kernel.pto` board/simulator validation
+  - consumes hand-authored VPTO cases under `test/vpto/cases/...`
+  - handles lowering, LLVM-path device object build, host build, golden, and compare
+  - is the default entry point when the user asks to run VPTO board validation directly
+  - when it fails at runtime, follow this skill's troubleshooting guidance instead of treating the first `aclrtSetDevice` failure as a final product regression
+
 - `test/npu_validation/scripts/run_host_npu_validation.sh`
   - top-level driver for host/NPU validation
   - automatically runs `test/samples/runop.sh` first
@@ -93,7 +102,7 @@ the flow by hand:
 
 ## Preconditions
 
-Before running `npu_validation`, make sure:
+Before running `npu_validation` or `test/vpto`, make sure:
 - `ptoas` is already built in `./build`
 - `bisheng` is in `PATH` or available through CANN `set_env.sh`
 - `PTO_ISA_ROOT` points to a `pto-isa` checkout with:
@@ -128,6 +137,13 @@ Interpretation:
 - `aclInit` succeeds
 - `aclrtGetDeviceCount` should report at least one device if the runtime can enumerate hardware
 - if `aclrtSetDevice(0)` fails with `507033` (`ACL_ERROR_RT_DEV_SETUP_ERROR`), the user context can see a device but cannot open a usable runtime context
+
+This interpretation applies equally to:
+
+- `test/npu_validation`
+- `test/vpto`
+
+When `test/vpto/scripts/run_host_vpto_validation.sh` hits `aclrtSetDevice`, do not immediately report a testcase regression. First treat it as a runtime-environment blocker and follow the checks in this skill.
 
 ## Canonical Flow
 
