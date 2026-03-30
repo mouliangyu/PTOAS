@@ -96,6 +96,7 @@ ninja -C build install
 ## Testing And Validation
 - 先跑最小相关验证，再扩大范围；不要默认全量重编译或全量回归。
 - `test/lit.cfg.py` 主要发现 `.mlir` 测试。pass/lowering 变更优先用 lit。
+- 当任务涉及 `test/vpto/scripts/run_host_vpto_validation.sh`、`test/vpto` 上板验证、NPU runtime 故障定位、`aclrtSetDevice`、设备访问或板端 compare 时，必须使用 `ptoas-npu-validation-a5` skill，并遵循其中的环境检查与故障分流约定，不要把首次 runtime 初始化失败直接当作产品回归结论。
 - 常用验证命令：
 
 ```bash

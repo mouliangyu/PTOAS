@@ -30,7 +30,7 @@ export PTOAS_FLAGS="--pto-arch a5"
 export VPTO_FLAGS="--pto-backend=vpto --vpto-emit-hivm-llvm"
 export AICORE_ARCH=dav-c310-vec
 export HOST_RUNNER="ssh root@localhost"
-export CASE_NAME=abs
+export CASE_NAME=tileop/abs
 export DEVICE=SIM
 export SIM_LIB_DIR=/path/to/camodel/lib
 ```
@@ -52,18 +52,26 @@ different CANN installs or SoC variants.
 
 ## Case Discovery
 
-The runner automatically discovers every first-level subdirectory under
-`test/vpto/cases/`.
+The runner automatically discovers every leaf case directory under
+`test/vpto/cases/`. A leaf case directory is any directory that contains:
+
+- `kernel.pto`
+- `stub.cpp`
+- `launch.cpp`
+- `main.cpp`
+- `golden.py`
+- `compare.py`
 
 - If `CASE_NAME` is unset, all cases are run.
-- If `CASE_NAME=<name>` is set, only `test/vpto/cases/<name>/` is run.
+- If `CASE_NAME=<relative-path>` is set, only `test/vpto/cases/<relative-path>/`
+  is run.
 
 ## Case Layout
 
 Each case directory must use these fixed file names:
 
 ```text
-test/vpto/cases/<case-name>/
+test/vpto/cases/tileop/<case-name>/
   kernel.pto
   stub.cpp
   launch.cpp
@@ -71,6 +79,26 @@ test/vpto/cases/<case-name>/
   golden.py
   compare.py
 ```
+
+The runner also supports grouped layouts such as:
+
+```text
+test/vpto/cases/micro-op/<family>/<case-name>/
+  kernel.pto
+  stub.cpp
+  launch.cpp
+  main.cpp
+  golden.py
+  compare.py
+```
+
+In that layout, set `CASE_NAME=micro-op/<family>/<case-name>` to run a single
+case.
+
+Current top-level layout:
+
+- `test/vpto/cases/tileop/`: tile-level or derived combination validations
+- `test/vpto/cases/micro-op/<family>/`: VPTO micro-op single-op validations
 
 File roles:
 
@@ -109,7 +137,17 @@ Run a single case:
 source /usr/local/Ascend/cann-9.0.0/set_env.sh
 export WORK_SPACE=$(mktemp -d /tmp/vpto-abs.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
-export CASE_NAME=abs
+export CASE_NAME=tileop/abs
+bash test/vpto/scripts/run_host_vpto_validation.sh
+```
+
+Run a single grouped case:
+
+```bash
+source /usr/local/Ascend/cann-9.0.0/set_env.sh
+export WORK_SPACE=$(mktemp -d /tmp/vpto-grouped.XXXXXX)
+export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
+export CASE_NAME=micro-op/binary-vector/vadd
 bash test/vpto/scripts/run_host_vpto_validation.sh
 ```
 
@@ -119,7 +157,7 @@ Run a single case on simulator:
 source /usr/local/Ascend/cann-9.0.0/set_env.sh
 export WORK_SPACE=$(mktemp -d /tmp/vpto-abs-sim.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
-export CASE_NAME=abs
+export CASE_NAME=tileop/abs
 export DEVICE=SIM
 export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3102/lib
 bash test/vpto/scripts/run_host_vpto_validation.sh
