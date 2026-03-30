@@ -313,6 +313,19 @@ LogicalResult VRegType::verify(function_ref<InFlightDiagnostic()> emitError,
   return success();
 }
 
+LogicalResult VecScopeOp::verify() {
+  Region &bodyRegion = getBody();
+  if (bodyRegion.empty())
+    return emitOpError("expects a non-empty body region");
+
+  Block &body = bodyRegion.front();
+  if (body.getNumArguments() != 0)
+    return emitOpError() << "expects body block to have no arguments, got "
+                         << body.getNumArguments();
+
+  return success();
+}
+
 void CopyGmToUbufOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {

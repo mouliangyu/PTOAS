@@ -126,8 +126,10 @@ void set_loop1_stride_ubtoout(Operation *copyOp, int64_t srcStride,
                               int64_t dstStride, Builder &builder);
 void set_loop_size_ubtoout(Operation *copyOp, int64_t loop2, int64_t loop1,
                            Builder &builder);
-
-                           Value materializeBufferPointer(Value value, Type elementType,
+FailureOr<pto::VecScopeOp>
+createLoopScopeRegion(Location loc, const VPTOLoopScopeContract &contract,
+                      PatternRewriter &rewriter);
+Value materializeBufferPointer(Value value, Type elementType,
                                Attribute memorySpace,
                                PatternRewriter &rewriter, Location loc);
 
