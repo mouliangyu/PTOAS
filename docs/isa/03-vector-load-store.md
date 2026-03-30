@@ -517,15 +517,15 @@ for (int i = 0; i < active_lanes; i++)
 ---
 
 ### `pto.vstu`
-- **syntax:** `%align_out, %base_out = pto.vstu %align_in, %base_in, %value, %dest, %mode : !pto.align, !pto.ptr<T, ub>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index -> !pto.align, !pto.ptr<T, ub>`
+- **syntax:** `%align_out, %base_out = pto.vstu %align_in, %base_in, %value, %dest : !pto.align, !pto.ptr<T, ub>, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, !pto.ptr<T, ub>`
 - **semantics:** Unaligned store with explicit threaded alignment/base state.
 - **inputs:**
   `%align_in` is the incoming store-alignment state, `%base_in` is the current
-  stream base, `%value` is the vector to store, `%dest` is the UB base pointer,
-  and `%mode` selects the post-update behavior.
+  stream base, `%value` is the vector to store, and `%dest` is the UB base
+  pointer.
 - **outputs:**
   `%align_out` is the updated buffered-tail state and `%base_out` is the
-  post-update base pointer state.
+  next base pointer state.
 - **constraints and limitations:**
   This op models a stateful unaligned-store sequence in SSA form. A final
   `pto.vsta` / `pto.vstas` / `pto.vstar` is still required to flush the trailing
@@ -570,7 +570,7 @@ These ops make reference-updated state explicit as SSA results.
 
 ### `pto.vstu`
 
-- **syntax:** `%align_out, %offset_out = pto.vstu %align_in, %offset_in, %value, %base, "MODE" : !pto.align, index, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, index`
+- **syntax:** `%align_out, %offset_out = pto.vstu %align_in, %offset_in, %value, %base : !pto.align, index, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, index`
 - **semantics:** Unaligned store with align + offset state update.
 - **inputs:**
   `%align_in` is the incoming store-alignment state, `%offset_in` is the current
@@ -578,20 +578,18 @@ These ops make reference-updated state explicit as SSA results.
   `%base` is the UB base pointer.
 - **outputs:**
   `%align_out` is the updated alignment/tail state and `%offset_out` is the
-  next offset after applying the selected post-update rule.
+  next offset state.
 - **constraints and limitations:**
   The alignment state MUST be threaded in program order. A terminating flush
   form such as `pto.vstar`/`pto.vstas` is still required to commit the buffered
   tail bytes.
 - **Latency:** **9** cycles.
 
-**Mode tokens:** `POST_UPDATE`, `NO_POST_UPDATE`
-
 ---
 
 ### `pto.vstus`
 
-- **syntax:** `%align_out, %base_out = pto.vstus %align_in, %offset, %value, %base, "MODE" : !pto.align, i32, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, !pto.ptr<T, ub>`
+- **syntax:** `%align_out, %base_out = pto.vstus %align_in, %offset, %value, %base : !pto.align, i32, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, !pto.ptr<T, ub>`
 - **semantics:** Unaligned store with scalar offset and state update.
 - **inputs:**
   `%align_in` is the incoming store-alignment state, `%offset` is the scalar
@@ -599,18 +597,18 @@ These ops make reference-updated state explicit as SSA results.
   pointer.
 - **outputs:**
   `%align_out` is the updated buffered-tail state and `%base_out` is the next
-  base pointer when the lowering chooses a post-update form.
+  base pointer state.
 - **constraints and limitations:**
   This is the scalar-offset stateful form of the unaligned store family. The
-  scalar offset width and update mode MUST match the selected form, and a later
-  flush op is still required.
+  scalar offset width MUST match the selected form, and a later flush op is
+  still required.
 - **Latency:** **9** cycles.
 
 ---
 
 ### `pto.vstur`
 
-- **syntax:** `%align_out = pto.vstur %align_in, %value, %base, "MODE" : !pto.align, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align`
+- **syntax:** `%align_out = pto.vstur %align_in, %value, %base : !pto.align, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align`
 - **semantics:** Unaligned store with residual flush and state update.
 - **inputs:**
   `%align_in` is the incoming store-alignment state, `%value` is the vector to
