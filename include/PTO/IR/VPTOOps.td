@@ -30,8 +30,8 @@ def VecScopeOp : PTO_Op<"vecscope", [SingleBlock, NoTerminator]> {
   let description = [{
     `pto.vecscope` marks a structured vector-scope interval without overloading
     a dummy carrier loop with scope metadata. Lowering and emission passes may
-    use the region boundary to preserve loop shape and to attach backend loop
-    metadata to loops emitted from the enclosed body.
+    use the region boundary to preserve loop shape while treating the enclosed
+    body as one VPTO vector interval.
   }];
 
   let regions = (region SizedRegion<1>:$body);
