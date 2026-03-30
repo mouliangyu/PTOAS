@@ -749,30 +749,30 @@ Address-form policy for this section:
   `vldus(...)`
   `__builtin_cce_vldus_*`, `__builtin_cce_vldus_post_*`
 
-### `pto.vplds`
+### `pto.plds`
 
 - syntax:
-  `%result = pto.vplds %source[%offset] {dist = "DIST"} : buf_like -> !pto.mask<b8>`
+  `%result = pto.plds %source[%offset] {dist = "DIST"} : buf_like -> !pto.mask<b8>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `plds(...)`
   `__builtin_cce_plds_b8`
 
-### `pto.vpld`
+### `pto.pld`
 
 - syntax:
-  `%result = pto.vpld %source[%offset], "DIST" : buf_like, index -> !pto.mask<b8>`
+  `%result = pto.pld %source[%offset], "DIST" : buf_like, index -> !pto.mask<b8>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pld(...)`
   `__builtin_cce_pld_b8`
 
-### `pto.vpldi`
+### `pto.pldi`
 
 - syntax:
-  `%result = pto.vpldi %source, %offset, "DIST" : buf_like, i32 -> !pto.mask<b8>`
+  `%result = pto.pldi %source, %offset, "DIST" : buf_like, i32 -> !pto.mask<b8>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -860,79 +860,79 @@ Address-form policy for this section:
   `vdup(...)`
   `__builtin_cce_vdup_*`
 
-### `pto.vpset_b8`
+### `pto.pset_b8`
 
 - syntax:
-  `%result = pto.vpset_b8 "PAT_*" : !pto.mask<b8>`
+  `%result = pto.pset_b8 "PAT_*" : !pto.mask<b8>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pset_b8(...)`
   `__builtin_cce_pset_b8`
 
-### `pto.vpset_b16`
+### `pto.pset_b16`
 
 - syntax:
-  `%result = pto.vpset_b16 "PAT_*" : !pto.mask<b16>`
+  `%result = pto.pset_b16 "PAT_*" : !pto.mask<b16>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pset_b16(...)`
   `__builtin_cce_pset_b16`
 
-### `pto.vpset_b32`
+### `pto.pset_b32`
 
 - syntax:
-  `%result = pto.vpset_b32 "PAT_*" : !pto.mask<b32>`
+  `%result = pto.pset_b32 "PAT_*" : !pto.mask<b32>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pset_b32(...)`
   `__builtin_cce_pset_b32`
 
-### `pto.vpge_b8`
+### `pto.pge_b8`
 
 - syntax:
-  `%result = pto.vpge_b8 "PAT_*" : !pto.mask<b8>`
+  `%result = pto.pge_b8 "PAT_*" : !pto.mask<b8>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pge_b8(...)`
   `__builtin_cce_pge_b8`
 
-### `pto.vpge_b16`
+### `pto.pge_b16`
 
 - syntax:
-  `%result = pto.vpge_b16 "PAT_*" : !pto.mask<b16>`
+  `%result = pto.pge_b16 "PAT_*" : !pto.mask<b16>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pge_b16(...)`
   `__builtin_cce_pge_b16`
 
-### `pto.vpge_b32`
+### `pto.pge_b32`
 
 - syntax:
-  `%result = pto.vpge_b32 "PAT_*" : !pto.mask<b32>`
+  `%result = pto.pge_b32 "PAT_*" : !pto.mask<b32>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pge_b32(...)`
   `__builtin_cce_pge_b32`
 
-### `pto.vppack`
+### `pto.ppack`
 
 - syntax:
-  `%result = pto.vppack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
+  `%result = pto.ppack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `ppack(...)`
 
-### `pto.vpunpack`
+### `pto.punpack`
 
 - syntax:
-  `%result = pto.vpunpack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
+  `%result = pto.punpack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1336,19 +1336,19 @@ Address-form policy for this section:
   `vcmps(...)`
   `__builtin_cce_vcmps_<op>_*_z`
 
-### `pto.vpnot`
+### `pto.pnot`
 
 - syntax:
-  `%result = pto.vpnot %input, %mask : !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
+  `%result = pto.pnot %input, %mask : !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pnot(...)`
 
-### `pto.vpsel`
+### `pto.psel`
 
 - syntax:
-  `%result = pto.vpsel %src0, %src1, %mask : !pto.mask<G>, !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
+  `%result = pto.psel %src0, %src1, %mask : !pto.mask<G>, !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1356,19 +1356,19 @@ Address-form policy for this section:
 
 ## 10. Pairing And Interleave
 
-### `pto.vpdintlv_b8`
+### `pto.pdintlv_b8`
 
 - syntax:
-  `%low, %high = pto.vpdintlv_b8 %lhs, %rhs : !pto.mask<b8>, !pto.mask<b8> -> !pto.mask<b8>, !pto.mask<b8>`
+  `%low, %high = pto.pdintlv_b8 %lhs, %rhs : !pto.mask<b8>, !pto.mask<b8> -> !pto.mask<b8>, !pto.mask<b8>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   predicate interleave/deinterleave family
 
-### `pto.vpintlv_b16`
+### `pto.pintlv_b16`
 
 - syntax:
-  `%low, %high = pto.vpintlv_b16 %lhs, %rhs : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>`
+  `%low, %high = pto.pintlv_b16 %lhs, %rhs : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1527,30 +1527,30 @@ Address-form policy for this section:
 - CCE correspondence:
   predicated vector store family
 
-### `pto.vpsts`
+### `pto.psts`
 
 - syntax:
-  `pto.vpsts %value, %destination[%offset] : !pto.mask<b8>, buf_like`
+  `pto.psts %value, %destination[%offset] : !pto.mask<b8>, buf_like`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `psts(...)`
   `__builtin_cce_psts_b8`, `__builtin_cce_psts_post_b8`
 
-### `pto.vpst`
+### `pto.pst`
 
 - syntax:
-  `pto.vpst %value, %destination[%offset], "DIST" : !pto.mask<b8>, buf_like, index`
+  `pto.pst %value, %destination[%offset], "DIST" : !pto.mask<b8>, buf_like, index`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `pst(...)`
   `__builtin_cce_pst_b8`
 
-### `pto.vpsti`
+### `pto.psti`
 
 - syntax:
-  `pto.vpsti %value, %destination, %offset, "DIST" : !pto.mask<b8>, buf_like, i32`
+  `pto.psti %value, %destination, %offset, "DIST" : !pto.mask<b8>, buf_like, i32`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1624,10 +1624,10 @@ Unlike stateless/predicate `vld*/vst*` families, stateful `%base/%base_out`
 remain pointer-only (`!llvm.ptr<AS>`), and `memref` is intentionally not
 accepted for these operands in the current contract.
 
-### `pto.vpstu`
+### `pto.pstu`
 
 - syntax:
-  `%align_out, %base_out = pto.vpstu %align_in, %value, %base : !pto.align, !pto.mask<G>, !llvm.ptr<AS> -> !pto.align, !llvm.ptr<AS>`
+  `%align_out, %base_out = pto.pstu %align_in, %value, %base : !pto.align, !pto.mask<G>, !llvm.ptr<AS> -> !pto.align, !llvm.ptr<AS>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1637,7 +1637,7 @@ accepted for these operands in the current contract.
 ### `pto.vstu`
 
 - syntax:
-  `%align_out, %offset_out = pto.vstu %align_in, %offset_in, %value, %base, "MODE" : !pto.align, index, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align, index`
+  `%align_out, %offset_out = pto.vstu %align_in, %offset_in, %value, %base : !pto.align, index, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align, index`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1647,7 +1647,7 @@ accepted for these operands in the current contract.
 ### `pto.vstus`
 
 - syntax:
-  `%align_out, %base_out = pto.vstus %align_in, %offset, %value, %base, "MODE" : !pto.align, i32, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align, !llvm.ptr<AS>`
+  `%align_out, %base_out = pto.vstus %align_in, %offset, %value, %base : !pto.align, i32, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align, !llvm.ptr<AS>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1657,7 +1657,7 @@ accepted for these operands in the current contract.
 ### `pto.vstur`
 
 - syntax:
-  `%align_out = pto.vstur %align_in, %value, %base, "MODE" : !pto.align, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align`
+  `%align_out = pto.vstur %align_in, %value, %base : !pto.align, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1798,8 +1798,8 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | 8 | [Vec-Scalar Ops](isa/08-vec-scalar-ops.md) | Vector-scalar operations | 8 | `pto.vadds`, `pto.vmuls`, `pto.vmaxs`, `pto.vmins`, `pto.vlrelu`, `pto.vshls`, `pto.vshrs`, `pto.vaddcs`, `pto.vsubcs` |
 | 9 | [Conversion Ops](isa/09-conversion-ops.md) | Type conversion with rounding/saturation control | 2 | `pto.vcvt`, `pto.vtrc` |
 | 10 | [Reduction Ops](isa/10-reduction-ops.md) | Vector reductions | 3 | `pto.vcadd`, `pto.vcmax`, `pto.vcmin` |
-| 11 | [Compare & Select](isa/11-compare-select.md) | Comparison and conditional selection | 5 | `pto.vcmp`, `pto.vcmps`, `pto.vsel`, `pto.vselr`, `pto.vselrv2` |
-| 12 | [Data Rearrangement](isa/12-data-rearrangement.md) | In-register data movement and permutation | 4 | `pto.vintlv`, `pto.vdintlv`, `pto.vintlvv2`, `pto.vdintlvv2` |
+| 11 | [Compare & Select](isa/11-compare-select.md) | Comparison and conditional selection | 4 (+1 not A5) | `pto.vcmp`, `pto.vcmps`, `pto.vsel`, `pto.vselr` (`pto.vselrv2` removed: not A5) |
+| 12 | [Data Rearrangement](isa/12-data-rearrangement.md) | In-register data movement and permutation | 2 (+2 not A5) | `pto.vintlv`, `pto.vdintlv` (`pto.vintlvv2`, `pto.vdintlvv2` removed: not A5) |
 | 13 | [DSA/SFU Ops](isa/13-dsa-sfu-ops.md) | Specialized ops, index generation, and sorting helpers | 5 | `pto.vmull`, `pto.vmula`, `pto.vci`, `pto.vbitsort`, `pto.vmrgsort4` |
 | 14 | [Arith (Shared MLIR Dialect)](isa/14-shared-arith.md) | Full scalar `arith` surface used around PTO ops; the companion page lists categories and representative examples | all scalar ops | `arith.constant`, `arith.addi`, `arith.addf`, `arith.cmpi`, `arith.cmpf`, `arith.select`, `arith.index_cast`, `arith.extsi`, `arith.trunci`, `arith.andi`, `arith.shli`, etc. |
 | 15 | [SCF (Shared MLIR Dialect)](isa/15-shared-scf.md) | Structured loops, branches, and loop-carried state around PTO regions | 5 | `scf.for`, `scf.if`, `scf.while`, `scf.condition`, `scf.yield` |
@@ -1838,7 +1838,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 |-----------|-------|-------------|
 | Type Conversion | 9 | `pto.vcvt` |
 | Interleave/Deinterleave | 12 | `pto.vintlv`, `pto.vdintlv` |
-| Interleave/Deinterleave | 12 | `pto.vintlv`, `pto.vdintlv`, `pto.vintlvv2`, `pto.vdintlvv2` |
+| Interleave/Deinterleave (not A5) | 12 | `pto.vintlvv2`, `pto.vdintlvv2` |
 
 ### Synchronization
 
@@ -2000,7 +2000,7 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 | # | Section | What Changed | Source |
 |---|---------|-------------|--------|
 | 1 | Sec 11: vcvt | **EXPANDED** — full A5 conversion pairs + width-changing pattern | a5_intrinsic_ir.md |
-| 2 | Sec 11: vtrc, vci, vbitsort | Kept from vpto-spec.md | vpto-spec.md |
+| 2 | Sec 11: vtrc, vci, vbitsort | Kept from vpto-spec.md (`vbitsort` lacks A5 oracle mapping today) | vpto-spec.md |
 | 3 | Sec 12: vmull | C semantics + A5 type info added | Both |
 | 4 | Sec 12: vmula | Kept from vpto-spec.md | vpto-spec.md |
 | 5 | Sec 12: vaddrelu, vsubrelu | **ADDED** fused add/sub+ReLU | a5_intrinsic_ir.md |
