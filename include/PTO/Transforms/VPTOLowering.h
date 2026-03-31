@@ -234,6 +234,9 @@ LogicalResult lowerGetBuf(GetBufOp op, PatternRewriter &rewriter);
 LogicalResult lowerRlsBuf(RlsBufOp op, PatternRewriter &rewriter);
 LogicalResult convertVPTOEmissionBoundaryToPtr(
     ModuleOp module, llvm::raw_ostream *diagOS = nullptr);
+FailureOr<OwningOpRef<ModuleOp>>
+prepareVPTOEmissionModule(ModuleOp sourceModule,
+                          llvm::raw_ostream *diagOS = nullptr);
 
 } // namespace pto
 } // namespace mlir

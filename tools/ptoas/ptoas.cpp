@@ -292,6 +292,7 @@ static void addBackendLoweringPasses(OpPassManager &pm,
                                      PTOBackend effectiveBackend) {
   if (effectiveBackend == PTOBackend::VPTO) {
     pm.addPass(pto::createLowerPTOToVPTOPass(vptoLoweringStrategy));
+    pm.addPass(pto::createPTOValidateVPTOIRPass());
     pm.addNestedPass<mlir::func::FuncOp>(
         pto::createPTOVPTOExpandBridgeOpsPass());
     pm.addPass(mlir::createCSEPass());
@@ -308,6 +309,14 @@ static void addBackendLoweringPasses(OpPassManager &pm,
   }
   pm.addPass(emitc::createFormExpressionsPass());
   pm.addPass(mlir::createCSEPass());
+}
+
+static LogicalResult runVPTOAuthoringValidation(MLIRContext &context,
+                                                ModuleOp module,
+                                                const llvm::StringSet<> &userFuncNames) {
+  PassManager validationPM(&context);
+  validationPM.addPass(pto::createPTOValidateVPTOIRPass());
+  return validationPM.run(module);
 }
 
 static LogicalResult emitSharedPreBackendSeamIR(ModuleOp module,
@@ -1123,6 +1132,33 @@ int main(int argc, char **argv) {
           "+ATOMIC,+ArchV130,+AregRedefinable,+ArithmeticBf16,+AtomicForB8 ,"
           "+F8e4m3,+F8e5m2,+F8e8m0,+FFTSBlk,+Fp4e1m2x2,+Fp4e2m1x2,+LDExtRefine,"
           "+MOVX8,+SPR7bits,+SyncV,+dav-c310-vec";
+    }
+
+    if (emitVPTO || vptoEmitHIVMText ||
+        (!vptoEmitHIVMOfficialLLVM && !vptoEmitHIVMOfficialBitcode)) {
+      FailureOr<OwningOpRef<ModuleOp>> emissionModule =
+          pto::prepareVPTOEmissionModule(*module, &llvm::errs());
+      if (failed(emissionModule)) {
+        llvm::errs() << "Error: VPTO emission preparation failed.\n";
+        return 1;
+      }
+
+      if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
+                       !vptoEmitHIVMOfficialBitcode)) {
+        (*emissionModule)->print(outputFile.os());
+        outputFile.os() << "\n";
+        outputFile.keep();
+        return 0;
+      }
+
+      if (failed(pto::translateVPTOModuleToText(**emissionModule,
+                                                outputFile.os(), options,
+                                                llvm::errs()))) {
+        llvm::errs() << "Error: Failed to emit VPTO text.\n";
+        return 1;
+      }
+      outputFile.keep();
+      return 0;
     }
 
     LogicalResult emissionStatus =

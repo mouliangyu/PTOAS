@@ -69,6 +69,8 @@ std::unique_ptr<mlir::Pass> createPTOInsertLoadStoreForMixCVPass();
 std::unique_ptr<Pass> createInferPTOLayoutPass();
 std::unique_ptr<Pass> createPTOVPTOExpandBridgeOpsPass();
 std::unique_ptr<Pass> createPTOVPTOPtrBoundaryPass();
+std::unique_ptr<Pass> createPTOValidateVPTOIRPass();
+std::unique_ptr<Pass> createPTOValidateVPTOEmissionIRPass();
 std::unique_ptr<Pass> createLowerPTOToVPTOPass();
 std::unique_ptr<Pass> createLowerPTOToVPTOPass(StringRef loweringStrategy);
 // Declare register function

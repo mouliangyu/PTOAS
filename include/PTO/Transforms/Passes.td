@@ -117,6 +117,39 @@ def PTOLoweringSyncToPipe : Pass<"pto-lowering-sync-to-pipe", "func::FuncOp"> {
   let dependentDialects = ["mlir::pto::PTODialect"];
 }
 
+def PTOValidateVPTOIR : Pass<"pto-validate-vpto-ir", "ModuleOp"> {
+  let summary =
+      "Validate authoring-stage VPTO legality before ptr-boundary canonicalization";
+  let description = [{
+    Runs the authoring-stage VPTO legality verifier on post-mainline VPTO IR.
+    This stage keeps the memref-first authoring surface legal, while checking
+    the shared structural contracts that must hold before emission-boundary
+    canonicalization.
+  }];
+  let constructor = "mlir::pto::createPTOValidateVPTOIRPass()";
+  let dependentDialects = ["mlir::func::FuncDialect",
+                           "mlir::pto::PTODialect",
+                           "mlir::memref::MemRefDialect",
+                           "mlir::scf::SCFDialect"];
+}
+
+def PTOValidateVPTOEmissionIR
+    : Pass<"pto-validate-vpto-emission-ir", "ModuleOp"> {
+  let summary =
+      "Validate emission-stage VPTO legality after ptr-boundary canonicalization";
+  let description = [{
+    Runs the emission-stage VPTO legality verifier on ptr-form VPTO IR after
+    `PTOVPTOPtrBoundary`. This stage re-checks the shared authoring contracts
+    and confirms the final emission surface no longer carries memref boundary
+    state or residual bridge scaffold.
+  }];
+  let constructor = "mlir::pto::createPTOValidateVPTOEmissionIRPass()";
+  let dependentDialects = ["mlir::func::FuncDialect",
+                           "mlir::pto::PTODialect",
+                           "mlir::memref::MemRefDialect",
+                           "mlir::scf::SCFDialect"];
+}
+
 def PTOVPTOExpandBridgeOps
     : Pass<"pto-vpto-expand-bridge-ops", "func::FuncOp"> {
   let summary =
