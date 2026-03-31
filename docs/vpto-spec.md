@@ -166,10 +166,10 @@ The execution model follows non-blocking fork semantics:
 
 ```mlir
 pto.vecscope {
-  %mask = pto.pset_b32 "PAT_ALL" : !pto.mask
+  %mask = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
   %v = pto.vlds %ub[%lane] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-  %abs = pto.vabs %v, %mask : !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
-  pto.vsts %abs, %ub_out[%lane], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask
+  %abs = pto.vabs %v, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
+  pto.vsts %abs, %ub_out[%lane], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
 }
 ```
 
@@ -206,10 +206,12 @@ pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
 pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
 
 pto.vecscope {
-  %mask = pto.pset_b32 "PAT_ALL" : !pto.mask
-  %v = pto.vlds %2[%lane] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-  %abs = pto.vabs %v, %mask : !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
-  pto.vsts %abs, %8[%lane], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask
+  scf.for %lane = %c0 to %9 step %c64 {
+    %mask = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+    %v = pto.vlds %2[%lane] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+    %abs = pto.vabs %v, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
+    pto.vsts %abs, %8[%lane], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
+  }
 }
 
 pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
@@ -273,6 +275,10 @@ PTO micro Instruction source programs are not restricted to `pto` operations alo
 | `f32` | 32 | IEEE 754 single precision |
 | `f8e4m3` | 8 | FP8 (4-bit exponent, 3-bit mantissa) |
 | `f8e5m2` | 8 | FP8 (5-bit exponent, 2-bit mantissa) |
+
+### Mask Types
+
+`mask<G>`: `!pto.mask<G>` Typed predicate-register view. `G` is one of `b8`, `b16`, `b32` and records the byte-granularity interpretation used by VPTO ops and verifiers.
 
 ### Address Space Conventions
 
@@ -339,10 +345,10 @@ The following lowered-style fragment shows how typed PTO pointers flow through p
 %1 = pto.addptr %0, %c1024 : !pto.ptr<f32, ub> -> !pto.ptr<f32, ub>
 pto.vecscope {
   %16 = scf.for %arg3 = %c0 to %11 step %c64 iter_args(%arg4 = %12) -> (i32) {
-    %mask, %scalar_out = pto.plt_b32 %arg4 : i32 -> !pto.mask, i32
+    %mask, %scalar_out = pto.plt_b32 %arg4 : i32 -> !pto.mask<b32>, i32
     %17 = pto.vlds %1[%arg3] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-    %18 = pto.vabs %17, %mask : !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
-    pto.vsts %18, %10[%arg3], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask
+    %18 = pto.vabs %17, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
+    pto.vsts %18, %10[%arg3], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
     scf.yield %scalar_out : i32
   }
 }
@@ -352,19 +358,39 @@ In this pattern, `pto.castptr` materializes a typed UB pointer, `pto.addptr` shi
 
 ### Special Types
 
-#### `!pto.mask`
+#### `!pto.mask<G>`
 
-`!pto.mask` models an A5 predicate register (256-bit), not an integer vector.
+`!pto.mask<G>` models an A5 predicate register (256-bit) under a typed granularity view, not an integer vector.
+
+`G` is part of the type and MUST be one of:
+
+- `b32`
+- `b16`
+- `b8`
+
+All three forms describe the same physical 256-bit predicate-register class. The type parameter does not encode how many lanes are currently active. Instead, it records how VPTO interprets the register when matching mask-producing ops, mask-consuming ops, and verifier legality rules.
+
+In the ISA chapters below, this document uses `!pto.mask<G>` as shorthand when a
+family is generic over granularity. For op families whose names already encode
+the granularity, such as `pset_b32`, `pge_b16`, `plt_b8`,
+`pdintlv_b8`, and `pintlv_b16`, examples use the corresponding concrete typed
+mask.
 
 **Mask Granularity:**
 
-The mask is 256 bits in length, where each bit controls 1 byte of data. This means mask granularity varies by element type:
+The predicate register is 256 bits in length, where each bit controls 1 byte of data. `G` therefore describes how many bytes form one logical element slot:
 
-| Element Type | Bits/Element | Mask Bits per Element |
-|--------------|--------------|----------------------|
-| `f32`/`i32` | 32 | 4 bits |
-| `f16`/`bf16`/`i16` | 16 | 2 bits |
-| `f8`/`i8` | 8 | 1 bit |
+| Mask Type | Bytes / Element Slot | Typical Element Family | Derived Logical Lanes |
+|-----------|----------------------|------------------------|-----------------------|
+| `!pto.mask<b32>` | 4 | `f32` / `i32` | 64 |
+| `!pto.mask<b16>` | 2 | `f16` / `bf16` / `i16` | 128 |
+| `!pto.mask<b8>` | 1 | 8-bit element family | 256 |
+
+This is intentionally different from a lane-vector model such as `mask<64xi1>`:
+
+- `!pto.mask<b32>` still denotes a 256-bit predicate register;
+- `64` is only the derived logical lane count for the `b32` view;
+- value-level patterns such as `PAT_VL32` describe which lanes are active, not a different type.
 
 **Predication Behavior (Zero-Merge):**
 
@@ -376,14 +402,14 @@ dst[i] = mask[i] ? op(src0[i], src1[i]) : 0    // ZEROING mode
 
 ```mlir
 // Predicated add: inactive lanes produce zero
-%mask = pto.pset_b32 "PAT_VL32" : !pto.mask   // first 32 lanes active
-%result = pto.vcmp %a, %b, %mask, "lt" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.mask
+%mask = pto.pset_b32 "PAT_VL32" : !pto.mask<b32>   // first 32 logical b32 lanes active
+%result = pto.vcmp %a, %b, %mask, "lt" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.mask<b32>
 ```
 
 ```mlir
 // Compare and select: generate mask from comparison, use for conditional select
-%mask = pto.vcmp %lhs, %rhs, %seed, "lt" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.mask
-%out = pto.vsel %x, %y, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
+%mask = pto.vcmp %lhs, %rhs, %seed, "lt" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.mask<b32>
+%out = pto.vsel %x, %y, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 ```
 
 #### `!pto.align`
@@ -444,13 +470,13 @@ pto.vsts %value, %destination[%offset] {dist = "DIST"} : !pto.vreg<NxT>, !pto.pt
 **Dual Store (two inputs, one interleaved store):**
 
 ```mlir
-pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask
+pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>
 ```
 
 **Compare (two vectors + seed mask in, mask out):**
 
 ```mlir
-%mask = pto.vcmp %src0, %src1, %seed, "CMP_MODE" : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask -> !pto.mask
+%mask = pto.vcmp %src0, %src1, %seed, "CMP_MODE" : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.mask<G>
 ```
 
 **Conversion (one vector in, different-typed vector out):**
@@ -462,8 +488,8 @@ pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg
 **Predicate construction:**
 
 ```mlir
-%mask = pto.pset_b32 "PAT_ALL" : !pto.mask
-%tail = pto.pge_b32 "PAT_VL16" : !pto.mask
+%mask = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+%tail = pto.pge_b32 "PAT_VL16" : !pto.mask<b32>
 ```
 
 **Sync operations:**
@@ -705,30 +731,30 @@ Group 14 covers the full scalar `arith` surface. The rows below list common PTO 
 
 ```mlir
 // 1. Find max
-%max_vec = pto.vcmax %logits, %mask : !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
-pto.vsts %max_vec, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask
+%max_vec = pto.vcmax %logits, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
+pto.vsts %max_vec, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
 %max_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // 2. exp(x - max) using fused op
 %exp = pto.vexpdiff %logits, %max_bc : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
 // 3. Sum
-%sum = pto.vcadd %exp, %mask : !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
-pto.vsts %sum, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask
+%sum = pto.vcadd %exp, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
+pto.vsts %sum, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
 %sum_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // 4. Divide
-%softmax = pto.vdiv %exp, %sum_bc, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
+%softmax = pto.vdiv %exp, %sum_bc, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 ```
 
 ### ReLU Variants
 
 ```mlir
 // Standard ReLU
-%relu = pto.vrelu %input, %mask : !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
+%relu = pto.vrelu %input, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 
 // Leaky ReLU (scalar alpha)
-%lrelu = pto.vlrelu %input, %alpha, %mask : !pto.vreg<64xf32>, f32, !pto.mask -> !pto.vreg<64xf32>
+%lrelu = pto.vlrelu %input, %alpha, %mask : !pto.vreg<64xf32>, f32, !pto.mask<b32> -> !pto.vreg<64xf32>
 
 // Parametric ReLU (per-element alpha)
 %prelu = pto.vprelu %input, %alpha_vec : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
@@ -744,7 +770,7 @@ pto.vsts %sum, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.
 %x, %y = pto.vldx2 %ub_xy[%offset], "DINTLV_B32" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
 
 // SoA → AoS (interleave)
-pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.ptr<f32, ub>, index, !pto.mask
+pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.ptr<f32, ub>, index, !pto.mask<b32>
 ```
 
 ---

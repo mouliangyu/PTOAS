@@ -31,6 +31,13 @@ static std::string formatVRegType(int64_t elementCount, Type elementType) {
   return storage;
 }
 
+static std::string formatMaskType(StringRef granularity) {
+  std::string storage;
+  llvm::raw_string_ostream os(storage);
+  os << "!pto.mask<" << granularity << ">";
+  return storage;
+}
+
 static LogicalResult verifyVRegTypeLike(Operation *op, Type type,
                                        StringRef roleDescription) {
   auto vecType = dyn_cast<VRegType>(type);
@@ -45,7 +52,20 @@ static LogicalResult verifyVRegTypeLike(Operation *op, Type type,
 static LogicalResult verifyMaskTypeLike(Operation *op, Type type,
                                         StringRef roleDescription) {
   if (!isa<MaskType>(type))
-    return op->emitOpError() << roleDescription << " must be !pto.mask";
+    return op->emitOpError() << roleDescription << " must be !pto.mask<...>";
+  return success();
+}
+
+static LogicalResult verifyMaskTypeWithGranularityLike(Operation *op, Type type,
+                                                       StringRef roleDescription,
+                                                       StringRef granularity) {
+  auto maskType = dyn_cast<MaskType>(type);
+  if (!maskType)
+    return op->emitOpError() << roleDescription << " must be !pto.mask<...>";
+  if (maskType.getGranularity() != granularity) {
+    return op->emitOpError()
+           << roleDescription << " must be " << formatMaskType(granularity);
+  }
   return success();
 }
 
@@ -347,7 +367,34 @@ LogicalResult StrictVecScopeOp::verify() {
                            << " to have type " << capture.getType()
                            << ", got " << blockArg.getType();
   }
+  return success();
+}
 
+bool MaskType::isSupportedGranularity(StringRef granularity) {
+  return granularity == "b8" || granularity == "b16" ||
+         granularity == "b32";
+}
+
+Type MaskType::parse(AsmParser &parser) {
+  auto loc = parser.getCurrentLocation();
+  StringRef granularity;
+  if (failed(parser.parseLess()) || failed(parser.parseKeyword(&granularity)) ||
+      failed(parser.parseGreater()))
+    return {};
+
+  return parser.getChecked<MaskType>(loc, parser.getContext(), granularity);
+}
+
+void MaskType::print(AsmPrinter &printer) const {
+  printer << "<" << getGranularity() << ">";
+}
+
+LogicalResult
+MaskType::verify(function_ref<InFlightDiagnostic()> emitError,
+                 StringRef granularity) {
+  if (!isSupportedGranularity(granularity))
+    return emitError() << "'" << formatMaskType(granularity)
+                       << "' expected granularity to be one of b8, b16, b32";
   return success();
 }
 
@@ -691,7 +738,8 @@ LogicalResult VdupOp::verify() {
 }
 
 LogicalResult PsetB8Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getResult().getType(),
+                                               "result type", "b8")))
     return failure();
 
   if (!isSupportedPredicatePattern(getPattern()))
@@ -700,7 +748,8 @@ LogicalResult PsetB8Op::verify() {
 }
 
 LogicalResult PsetB16Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getResult().getType(),
+                                               "result type", "b16")))
     return failure();
 
   if (!isSupportedPredicatePattern(getPattern()))
@@ -709,7 +758,8 @@ LogicalResult PsetB16Op::verify() {
 }
 
 LogicalResult PsetB32Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getResult().getType(),
+                                               "result type", "b32")))
     return failure();
   if (!isSupportedPredicatePattern(getPattern()))
     return emitOpError("requires a supported PAT_* predicate pattern");
@@ -717,7 +767,8 @@ LogicalResult PsetB32Op::verify() {
 }
 
 LogicalResult PgeB8Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getResult().getType(),
+                                               "result type", "b8")))
     return failure();
   if (!isSupportedPredicatePattern(getPattern()))
     return emitOpError("requires a supported PAT_* predicate pattern");
@@ -725,7 +776,8 @@ LogicalResult PgeB8Op::verify() {
 }
 
 LogicalResult PgeB16Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getResult().getType(),
+                                               "result type", "b16")))
     return failure();
   if (!isSupportedPredicatePattern(getPattern()))
     return emitOpError("requires a supported PAT_* predicate pattern");
@@ -733,7 +785,8 @@ LogicalResult PgeB16Op::verify() {
 }
 
 LogicalResult PgeB32Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getResult().getType(),
+                                               "result type", "b32")))
     return failure();
   if (!isSupportedPredicatePattern(getPattern()))
     return emitOpError("requires a supported PAT_* predicate pattern");
@@ -741,8 +794,10 @@ LogicalResult PgeB32Op::verify() {
 }
 
 template <typename PltOp>
-static LogicalResult verifyPredicateLaneCountOp(PltOp op) {
-  if (failed(verifyMaskTypeLike(op, op.getMask().getType(), "mask type")))
+static LogicalResult verifyPredicateLaneCountOp(PltOp op,
+                                                StringRef granularity) {
+  if (failed(verifyMaskTypeWithGranularityLike(op, op.getMask().getType(),
+                                               "mask type", granularity)))
     return failure();
   Type scalarType = op.getScalar().getType();
   auto scalarIntType = dyn_cast<IntegerType>(scalarType);
@@ -753,9 +808,13 @@ static LogicalResult verifyPredicateLaneCountOp(PltOp op) {
   return success();
 }
 
-LogicalResult PltB8Op::verify() { return verifyPredicateLaneCountOp(*this); }
-LogicalResult PltB16Op::verify() { return verifyPredicateLaneCountOp(*this); }
-LogicalResult PltB32Op::verify() { return verifyPredicateLaneCountOp(*this); }
+LogicalResult PltB8Op::verify() { return verifyPredicateLaneCountOp(*this, "b8"); }
+LogicalResult PltB16Op::verify() {
+  return verifyPredicateLaneCountOp(*this, "b16");
+}
+LogicalResult PltB32Op::verify() {
+  return verifyPredicateLaneCountOp(*this, "b32");
+}
 
 LogicalResult PpackOp::verify() {
   if (failed(verifyMaskTypeLike(*this, getInput().getType(), "input type")) ||
@@ -1140,19 +1199,27 @@ LogicalResult VcvtOp::verify() {
 }
 
 LogicalResult PdintlvB8Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getLhs().getType(), "lhs type")) ||
-      failed(verifyMaskTypeLike(*this, getRhs().getType(), "rhs type")) ||
-      failed(verifyMaskTypeLike(*this, getLow().getType(), "low type")) ||
-      failed(verifyMaskTypeLike(*this, getHigh().getType(), "high type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
+                                               "lhs type", "b8")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
+                                               "rhs type", "b8")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getLow().getType(),
+                                               "low type", "b8")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
+                                               "high type", "b8")))
     return failure();
   return success();
 }
 
 LogicalResult PintlvB16Op::verify() {
-  if (failed(verifyMaskTypeLike(*this, getLhs().getType(), "lhs type")) ||
-      failed(verifyMaskTypeLike(*this, getRhs().getType(), "rhs type")) ||
-      failed(verifyMaskTypeLike(*this, getLow().getType(), "low type")) ||
-      failed(verifyMaskTypeLike(*this, getHigh().getType(), "high type")))
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
+                                               "lhs type", "b16")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
+                                               "rhs type", "b16")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getLow().getType(),
+                                               "low type", "b16")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
+                                               "high type", "b16")))
     return failure();
   return success();
 }
