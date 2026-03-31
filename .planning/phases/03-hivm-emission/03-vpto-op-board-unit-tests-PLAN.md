@@ -4,6 +4,21 @@
 
 本轮目标是在现有 `test/vpto` 框架上，为文档化的 VPTO surface 构建可上板验证的单元测例集合。
 
+本轮首先追求“覆盖率完整”，不是“先把少量 case 跑通”。执行原则如下：
+
+- 先把 `matrix` 中的全部 case 推进到“已补充测例”的状态
+- 再集中处理这些 case 的实现缺陷、lowering 缺陷、板测失败和 blocker
+- 不因为某条 case 暂时跑不过，就中断同 family 或其他 family 的 case 补充工作
+- parser 失败、verifier 失败、lowering 失败、代码生成失败、本地构建失败、板测失败，均视为有效暴露问题的测试结论
+- 只要 case 已经被静态补充到仓库并能明确指向一个失败点或阻塞点，就不应把它当作“未完成”
+
+因此，本轮的阶段目标应区分为两层：
+
+- 第一层：覆盖率推进
+  - 要求 `matrix` 中所有 case 都有对应的静态测例或明确 blocker 结论
+- 第二层：通过率推进
+  - 在覆盖率完整的基础上，再逐步把 `planned/blocked/implemented` 收敛到更多 `board-passed`
+
 本轮不单独立项测试以下基础设施 op：
 
 - `set_flag` / `wait_flag`
@@ -53,16 +68,33 @@
 配套维护文件：
 
 - `03-vpto-op-board-test-scope.md`
+- `03-vpto-op-board-coverage-assessment.md`
 - `03-vpto-op-board-unit-tests-PLAN.md`
 - `03-vpto-op-board-unit-tests-matrix.md`
 
 维护关系约定：
 
-- `scope` 定义“测什么”与 case/scenario 命名口径
-- `matrix` 严格按 `scope` 已显式列出的 case 与覆盖标签登记
-- `PLAN` 只维护执行组织、目录约束和状态流转，不单独扩写 `scope` 之外的 case
-- 新增或调整测试范围时，先更新 `scope`
-- 进入测例构造、上板验证和回归阶段后，`scope` 视为只读；整体进度只在 `matrix` 中推进
+- `scope` 定义“测什么”，并细化到 in-scope op、family minimum、case inventory、case 目标和 `scenarios` 命名口径
+- `coverage assessment` 负责统计当前 coverage 缺口，并明确 `scope` 还需要继续细化哪些 family 与 case
+- `matrix` 严格按 `scope` 已显式列出的 case 与覆盖标签登记当前状态，不额外发明 `scope` 外的 case
+- `PLAN` 只维护执行组织、目录约束、文档协作顺序和状态流转，不单独扩写 `scope` 之外的 case
+- 新增或调整测试范围时，先更新 `coverage assessment`，再回写 `scope`，最后才更新 `matrix`
+- 进入测例构造、上板验证和回归阶段后，`scope` 不是绝对只读；只要 `coverage assessment` 仍显示 case 缺口或 case 目标缺失，就必须继续细化 `scope`
+
+文档职责边界：
+
+- `03-vpto-op-board-test-scope.md`
+  - 负责细化测试范围
+  - 回答“哪条 op 由哪些 case 覆盖、每个 case 的目标是什么”
+- `03-vpto-op-board-coverage-assessment.md`
+  - 负责 family 级统计与 coverage 缺口识别
+  - 回答“当前 coverage 还缺什么、这些缺口是否已经反映到 scope”
+- `03-vpto-op-board-unit-tests-matrix.md`
+  - 负责 case 状态台账
+  - 回答“这些已定义 case 目前做到哪一步”
+- `03-vpto-op-board-unit-tests-PLAN.md`
+  - 负责文档协作顺序与执行流程
+  - 回答“先更新哪份文档、再推进哪一步”
 
 其中 matrix 作为覆盖台账，至少记录：
 
@@ -87,6 +119,12 @@
   case 已完成上板验证
 - `blocked`
   当前存在明确阻塞，待后续补齐
+
+补充约定：
+
+- 本轮应优先消灭“只有 matrix 条目、但还没有对应静态测例”的空白状态
+- 对覆盖率推进而言，`implemented`、`blocked`、`board-passed` 都属于“已补充测例”
+- 只有 `planned` 才表示该 case 仍未被真正补充到仓库或尚未形成明确 blocker 结论
 
 ## Case Design Rules
 
@@ -160,21 +198,37 @@
 
 执行顺序固定为：
 
-1. 若本轮要新增或调整测试范围，先更新 `scope`，明确 case 与 `scenarios`
-2. 按 `scope` 回填 `matrix`
-3. 进入测例构造阶段后，`scope` 视为只读，新增或修改 case 目录与用例内容
-4. 每个 case 单独上板验证
-5. 仅在 `matrix` 中推进 `planned/implemented/board-passed/blocked` 状态
-6. 运行 `test/vpto` 全量板测回归
-7. 检查 `scope`、`matrix` 与 case 目录、板测结果保持一致
+1. 先更新 `coverage assessment`，重新统计 `matrix` 当前 coverage，并识别 `scope` 仍需细化的 family / case
+2. 按 `coverage assessment` 回写 `scope`，把缺口落实成明确的 case inventory、case 目标和覆盖维度
+3. 再按最新 `scope` 回填或修正 `matrix`
+4. 进入测例构造阶段后，新增或修改 case 目录与用例内容
+5. 每个 case 单独上板验证
+6. 仅在 `matrix` 中推进 `planned/implemented/board-passed/blocked` 状态
+7. 运行 `test/vpto` 全量板测回归
+8. 重新更新 `coverage assessment`，检查最新 `matrix` 是否仍存在 case 缺口或 scope/matrix 漂移
+9. 检查 `scope`、`coverage assessment`、`matrix` 与 case 目录、板测结果保持一致
 
-验收标准：
+实施策略补充：
 
-- 本轮 in-scope 的 VPTO op 都在 matrix 中有条目
-- 已实现 case 都能在 matrix 中找到映射
-- `matrix` 中不存在 `scope` 未显式列出的 case
-- `test/vpto` 全量板测通过
-- 无“既未覆盖、也未标注 blocker”的空白项
+1. 覆盖率推进阶段，不以“这条 case 是否已经板测通过”作为是否继续补例的前提
+2. 若在补例过程中遇到 parser / verifier / lowering / codegen / runtime 问题，应记录到对应 case，而不是中断整轮实施
+3. 单个 family 中已有 case 失败，不影响继续补齐该 family 的剩余 case
+4. 只有当 `matrix` 中所有 case 都已进入 `implemented`、`blocked` 或 `board-passed` 后，才进入“集中提通过率”的主阶段
+
+验收标准分两层：
+
+- 覆盖率阶段验收：
+  - 本轮 in-scope 的 VPTO op 都在 matrix 中有条目
+  - `coverage assessment` 中识别出的 scope 缺口，必须已经在 `scope` 中落实为明确 case 或明确 blocker
+  - 已补充 case 都能在 matrix 中找到映射
+  - `matrix` 中不存在 `scope` 未显式列出的 case
+  - 重新统计 coverage 时，不能跳过 `coverage assessment` 直接对 `scope` / `matrix` 下结论
+  - 在覆盖率阶段结束时，`matrix` 中不应再存在 `planned` 条目
+  - 无“既未覆盖、也未标注 blocker”的空白项
+
+- 整体阶段验收：
+  - 在覆盖率阶段完成后，再继续推进通过率
+  - `test/vpto` 全量板测通过，或未通过项已被显式转为 `blocked` 并写明原因
 
 ## Assumptions
 
