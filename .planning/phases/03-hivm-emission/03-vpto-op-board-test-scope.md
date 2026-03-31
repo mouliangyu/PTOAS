@@ -80,10 +80,10 @@ case scope 文档。它负责三件事：
 
 ## Source Of Truth
 
-测试范围必须建立在以下两类信息的交集上：
+测试范围必须首先建立在文档化语义之上：
 
 1. `docs/vpto-spec.md` 与 `docs/isa/*.md` 中文档化的 VPTO surface
-2. 当前 VPTO IR 类型系统、op verifier、lowering 和板端链路实际接受的形式
+2. case 是否可写、oracle 是否可定义，优先由上述文档判断
 
 文档查询范围固定为：
 
@@ -93,8 +93,9 @@ case scope 文档。它负责三件事：
 约束如下：
 
 - 文档未声明、但 IR 暂时能打印出来的形式，不直接纳入正式覆盖范围
-- 文档声明了、但当前 verifier 或 lowering 不接受的形式，记录为 `blocked`，不伪造用例
-- 类型、属性、参数列表、打印形式一律以“文档语义 + 当前实现可落地”的交集为准
+- 文档声明了且语义足够清楚时，应先把 case 写出来；即使当前 verifier 或 lowering 不接受，也不因此把条目标为 `blocked`
+- 只有当文档本身不足以写出语义明确的 case 或无法定义稳定 oracle 时，才允许标记 `blocked`
+- 类型、属性、参数列表、打印形式的“是否纳入 scope”以文档语义为准；实现链路失败属于后续 `implemented` 阶段的失败记录，而不是 scope 层 blocker
 
 ## Excluded Infrastructure
 

@@ -11,6 +11,8 @@
 - 不因为某条 case 暂时跑不过，就中断同 family 或其他 family 的 case 补充工作
 - parser 失败、verifier 失败、lowering 失败、代码生成失败、本地构建失败、板测失败，均视为有效暴露问题的测试结论
 - 只要 case 已经被静态补充到仓库并能明确指向一个失败点或阻塞点，就不应把它当作“未完成”
+- `blocked` 的含义需要严格收紧：它只表示“当前无法仅依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出一个语义明确、输入输出可定义的 case”
+- 因此，能依据文档把 case 写出来、但在 parser / verifier / lowering / codegen / runtime / board 阶段失败的条目，不应记为 `blocked`，而应记为 `implemented` 并在 `notes` 中记录失败点
 
 因此，本轮的阶段目标应区分为两层：
 
@@ -18,6 +20,14 @@
   - 要求 `matrix` 中所有 case 都有对应的静态测例或明确 blocker 结论
 - 第二层：通过率推进
   - 在覆盖率完整的基础上，再逐步把 `planned/blocked/implemented` 收敛到更多 `board-passed`
+
+停止条件收紧如下：
+
+- 覆盖率推进阶段的默认执行方式是“做完为止”，不是“做一批再停”
+- 只要 `matrix` 中仍存在 `planned` 条目，实施就不应因为阶段性同步、局部进展汇报或单个 family 暂未跑通而停止
+- 覆盖率推进阶段允许停止的唯一原因，是遇到必须和需求方确认的语义分歧、文档冲突或会改变测试范围定义的决策点
+- parser / verifier / lowering / codegen / runtime / board failure 不属于允许停下的理由；若 case 依据文档可写，则这些失败应沉淀为 `implemented` 结论并继续推进剩余 case
+- 因此，在覆盖率阶段内，进度同步只用于报告当前消灭了多少 `planned`，不构成暂停实施的节点
 
 本轮不单独立项测试以下基础设施 op：
 
@@ -114,17 +124,18 @@
 - `planned`
   已纳入本轮范围，但尚未落地 case
 - `implemented`
-  case 已实现，但尚未完成板测闭环
+  case 已实现，包含“静态 case 已补齐但编译/运行链路仍失败”的情形
 - `board-passed`
   case 已完成上板验证
 - `blocked`
-  当前存在明确阻塞，待后续补齐
+  当前无法仅依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出语义明确的 case；阻塞点来自文档缺口、文档冲突或文档未给出足够 oracle 信息，而不是实现链路失败
 
 补充约定：
 
 - 本轮应优先消灭“只有 matrix 条目、但还没有对应静态测例”的空白状态
 - 对覆盖率推进而言，`implemented`、`blocked`、`board-passed` 都属于“已补充测例”
-- 只有 `planned` 才表示该 case 仍未被真正补充到仓库或尚未形成明确 blocker 结论
+- 只有 `planned` 才表示该 case 仍未被真正补充到仓库，且也尚未形成“文档层面无法写 case”的明确 blocker 结论
+- `blocked` 不能用于表达“当前实现编不过/跑不过/还没接 lowering”；这些应保留为 `implemented`，并在 `notes` 中记录失败点
 
 ## Case Design Rules
 
@@ -211,9 +222,11 @@
 实施策略补充：
 
 1. 覆盖率推进阶段，不以“这条 case 是否已经板测通过”作为是否继续补例的前提
-2. 若在补例过程中遇到 parser / verifier / lowering / codegen / runtime 问题，应记录到对应 case，而不是中断整轮实施
+2. 若在补例过程中遇到 parser / verifier / lowering / codegen / runtime 问题，应记录到对应 case 的 `notes`，并保持为 `implemented`，而不是转成 `blocked`
 3. 单个 family 中已有 case 失败，不影响继续补齐该 family 的剩余 case
 4. 只有当 `matrix` 中所有 case 都已进入 `implemented`、`blocked` 或 `board-passed` 后，才进入“集中提通过率”的主阶段
+5. 覆盖率阶段中的中间汇报不改变执行状态；若 `planned` 未清零，则默认继续实施，而不是等待下一轮再推进
+6. 只有当 case 无法依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出时，才允许转为 `blocked`
 
 验收标准分两层：
 
@@ -225,6 +238,7 @@
   - 重新统计 coverage 时，不能跳过 `coverage assessment` 直接对 `scope` / `matrix` 下结论
   - 在覆盖率阶段结束时，`matrix` 中不应再存在 `planned` 条目
   - 无“既未覆盖、也未标注 blocker”的空白项
+  - `blocked` 条目必须对应文档层面的不可写原因，不能用实现链路失败替代
 
 - 整体阶段验收：
   - 在覆盖率阶段完成后，再继续推进通过率
