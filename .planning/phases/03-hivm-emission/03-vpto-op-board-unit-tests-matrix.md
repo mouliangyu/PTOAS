@@ -157,29 +157,29 @@
 | case | family | target_ops | scenarios | status | notes |
 | --- | --- | --- | --- | --- | --- |
 | `micro-op/binary-vector/vadd` | binary-vector | `pto.vadd` | `core-f32, full-mask` | board-passed | |
-| `micro-op/binary-vector/vadd-tail` | binary-vector | `pto.vadd` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vadd-tail` | binary-vector | `pto.vadd` | `core-f32, tail-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/binary-vector/vadd-f16` | binary-vector | `pto.vadd` | `core-f16, full-mask` | planned | |
 | `micro-op/binary-vector/vadd-bf16` | binary-vector | `pto.vadd` | `core-bf16, full-mask` | planned | |
 | `micro-op/binary-vector/vadd-i16-signed` | binary-vector | `pto.vadd` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/binary-vector/vadd-i16-unsigned` | binary-vector | `pto.vadd` | `core-i16-unsigned, full-mask` | planned | |
 | `micro-op/binary-vector/vadd-i16-signed-overflow` | binary-vector | `pto.vadd` | `core-i16-signed, full-mask, integer-overflow` | planned | 待补充；overflow oracle 需按 `docs/isa/07-binary-vector-ops.md` 与当前实现交集固化 |
 | `micro-op/binary-vector/vadd-i16-unsigned-overflow` | binary-vector | `pto.vadd` | `core-i16-unsigned, full-mask, integer-overflow` | planned | 待补充；overflow oracle 需按 `docs/isa/07-binary-vector-ops.md` 与当前实现交集固化 |
-| `micro-op/binary-vector/vadd-f32-exceptional` | binary-vector | `pto.vadd` | `core-f32, full-mask, exceptional-values` | planned | |
-| `micro-op/binary-vector/vsub` | binary-vector | `pto.vsub` | `core-f32, full-mask` | planned | |
-| `micro-op/binary-vector/vmul` | binary-vector | `pto.vmul` | `core-f32, full-mask` | planned | |
+| `micro-op/binary-vector/vadd-f32-exceptional` | binary-vector | `pto.vadd` | `core-f32, full-mask, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/binary-vector/vsub` | binary-vector | `pto.vsub` | `core-f32, full-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/binary-vector/vmul` | binary-vector | `pto.vmul` | `core-f32, full-mask` | implemented | |
 | `micro-op/binary-vector/vdiv` | binary-vector | `pto.vdiv` | `core-f32, full-mask` | board-passed | |
-| `micro-op/binary-vector/vdiv-tail` | binary-vector | `pto.vdiv` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vdiv-tail` | binary-vector | `pto.vdiv` | `core-f32, tail-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/binary-vector/vdiv-f16` | binary-vector | `pto.vdiv` | `core-f16, full-mask` | planned | |
 | `micro-op/binary-vector/vdiv-bf16` | binary-vector | `pto.vdiv` | `core-bf16, full-mask` | blocked | `docs/isa/07-binary-vector-ops.md` 当前未将 `bf16` 列入 `pto.vdiv` 的 A5 types |
-| `micro-op/binary-vector/vdiv-f32-exceptional` | binary-vector | `pto.vdiv` | `core-f32, full-mask, exceptional-values` | planned | |
-| `micro-op/binary-vector/vmax` | binary-vector | `pto.vmax` | `core-f32, full-mask` | planned | |
+| `micro-op/binary-vector/vdiv-f32-exceptional` | binary-vector | `pto.vdiv` | `core-f32, full-mask, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/binary-vector/vmax` | binary-vector | `pto.vmax` | `core-f32, full-mask` | implemented | |
 | `micro-op/binary-vector/vmin` | binary-vector | `pto.vmin` | `core-f32, full-mask` | board-passed | |
-| `micro-op/binary-vector/vmin-tail` | binary-vector | `pto.vmin` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vmin-tail` | binary-vector | `pto.vmin` | `core-f32, tail-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/binary-vector/vmin-f16` | binary-vector | `pto.vmin` | `core-f16, full-mask` | planned | |
 | `micro-op/binary-vector/vmin-bf16` | binary-vector | `pto.vmin` | `core-bf16, full-mask` | planned | |
 | `micro-op/binary-vector/vmin-i16-signed` | binary-vector | `pto.vmin` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/binary-vector/vmin-i16-unsigned` | binary-vector | `pto.vmin` | `core-i16-unsigned, full-mask` | planned | |
-| `micro-op/binary-vector/vmin-f32-exceptional` | binary-vector | `pto.vmin` | `core-f32, full-mask, exceptional-values` | planned | |
+| `micro-op/binary-vector/vmin-f32-exceptional` | binary-vector | `pto.vmin` | `core-f32, full-mask, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/binary-vector/vand` | binary-vector | `pto.vand` | `core-i16-unsigned, full-mask` | planned | |
 | `micro-op/binary-vector/vor` | binary-vector | `pto.vor` | `core-i16-unsigned, full-mask` | planned | |
 | `micro-op/binary-vector/vxor` | binary-vector | `pto.vxor` | `core-i16-unsigned, full-mask` | planned | |
@@ -188,18 +188,18 @@
 | `micro-op/binary-vector/vaddc` | binary-vector | `pto.vaddc` | `core-i16-unsigned, full-mask, carry-chain` | planned | |
 | `micro-op/binary-vector/vsubc` | binary-vector | `pto.vsubc` | `core-i16-unsigned, full-mask, carry-chain` | planned | |
 | `micro-op/vec-scalar/vadds` | vec-scalar | `pto.vadds` | `core-f32, full-mask, scalar-operand` | board-passed | |
-| `micro-op/vec-scalar/vadds-tail` | vec-scalar | `pto.vadds` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vadds-tail` | vec-scalar | `pto.vadds` | `core-f32, tail-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/vec-scalar/vadds-f16` | vec-scalar | `pto.vadds` | `core-f16, full-mask, scalar-operand` | blocked | `docs/isa/08-vec-scalar-ops.md` 仅给出通用 `T` 语法，尚未明确 `pto.vadds` 的 A5 type 集合 |
 | `micro-op/vec-scalar/vadds-bf16` | vec-scalar | `pto.vadds` | `core-bf16, full-mask, scalar-operand` | blocked | `docs/isa/08-vec-scalar-ops.md` 仅给出通用 `T` 语法，尚未明确 `pto.vadds` 的 A5 type 集合 |
 | `micro-op/vec-scalar/vadds-i16-signed` | vec-scalar | `pto.vadds` | `core-i16-signed, full-mask, scalar-operand` | blocked | signed integer legality 仍需 `docs/vpto-spec.md` 与 `docs/isa/08-vec-scalar-ops.md` 的交集进一步固化 |
 | `micro-op/vec-scalar/vadds-i16-unsigned` | vec-scalar | `pto.vadds` | `core-i16-unsigned, full-mask, scalar-operand` | blocked | unsigned integer legality 仍需 `docs/vpto-spec.md` 与 `docs/isa/08-vec-scalar-ops.md` 的交集进一步固化 |
-| `micro-op/vec-scalar/vadds-f32-exceptional` | vec-scalar | `pto.vadds` | `core-f32, full-mask, scalar-operand, exceptional-values` | planned | |
+| `micro-op/vec-scalar/vadds-f32-exceptional` | vec-scalar | `pto.vadds` | `core-f32, full-mask, scalar-operand, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/vec-scalar/vadds-i16-signed-overflow` | vec-scalar | `pto.vadds` | `core-i16-signed, full-mask, scalar-operand, integer-overflow` | blocked | `docs/isa/08-vec-scalar-ops.md` 尚未给出明确 A5 types 与 overflow 规则，暂不固化 oracle |
 | `micro-op/vec-scalar/vadds-i16-unsigned-overflow` | vec-scalar | `pto.vadds` | `core-i16-unsigned, full-mask, scalar-operand, integer-overflow` | blocked | `docs/isa/08-vec-scalar-ops.md` 尚未给出明确 A5 types 与 overflow 规则，暂不固化 oracle |
-| `micro-op/vec-scalar/vsubs` | vec-scalar | `pto.vsubs` | `core-f32, full-mask, scalar-operand` | planned | |
-| `micro-op/vec-scalar/vmuls` | vec-scalar | `pto.vmuls` | `core-f32, full-mask, scalar-operand` | planned | |
-| `micro-op/vec-scalar/vmaxs` | vec-scalar | `pto.vmaxs` | `core-f32, full-mask, scalar-operand` | planned | |
-| `micro-op/vec-scalar/vmins` | vec-scalar | `pto.vmins` | `core-f32, full-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vsubs` | vec-scalar | `pto.vsubs` | `core-f32, full-mask, scalar-operand` | implemented | |
+| `micro-op/vec-scalar/vmuls` | vec-scalar | `pto.vmuls` | `core-f32, full-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/vec-scalar/vmaxs` | vec-scalar | `pto.vmaxs` | `core-f32, full-mask, scalar-operand` | implemented | |
+| `micro-op/vec-scalar/vmins` | vec-scalar | `pto.vmins` | `core-f32, full-mask, scalar-operand` | implemented | |
 | `micro-op/vec-scalar/vands` | vec-scalar | `pto.vands` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
 | `micro-op/vec-scalar/vors` | vec-scalar | `pto.vors` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
 | `micro-op/vec-scalar/vxors` | vec-scalar | `pto.vxors` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
@@ -207,55 +207,55 @@
 | `micro-op/vec-scalar/vshrs` | vec-scalar | `pto.vshrs` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
 | `micro-op/vec-scalar/vaddcs` | vec-scalar | `pto.vaddcs` | `core-i16-unsigned, full-mask, scalar-operand, carry-chain` | planned | |
 | `micro-op/vec-scalar/vsubcs` | vec-scalar | `pto.vsubcs` | `core-i16-unsigned, full-mask, scalar-operand, carry-chain` | planned | |
-| `micro-op/unary-vector/vabs` | unary-vector | `pto.vabs` | `core-f32, full-mask` | planned | |
-| `micro-op/unary-vector/vabs-tail` | unary-vector | `pto.vabs` | `core-f32, tail-mask` | planned | |
+| `micro-op/unary-vector/vabs` | unary-vector | `pto.vabs` | `core-f32, full-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/unary-vector/vabs-tail` | unary-vector | `pto.vabs` | `core-f32, tail-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/unary-vector/vabs-f16` | unary-vector | `pto.vabs` | `core-f16, full-mask` | planned | |
 | `micro-op/unary-vector/vabs-bf16` | unary-vector | `pto.vabs` | `core-bf16, full-mask` | blocked | `docs/isa/06-unary-vector-ops.md` 当前未将 `bf16` 列入 `pto.vabs` 的 A5 types |
 | `micro-op/unary-vector/vabs-i16-signed` | unary-vector | `pto.vabs` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/unary-vector/vabs-i16-unsigned` | unary-vector | `pto.vabs` | `core-i16-unsigned, full-mask` | planned | |
-| `micro-op/unary-vector/vabs-f32-exceptional` | unary-vector | `pto.vabs` | `core-f32, full-mask, exceptional-values` | planned | |
+| `micro-op/unary-vector/vabs-f32-exceptional` | unary-vector | `pto.vabs` | `core-f32, full-mask, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/unary-vector/vabs-i16-signed-overflow-edge` | unary-vector | `pto.vabs` | `core-i16-signed, full-mask, integer-overflow` | planned | 待补充；重点检查最小负值绝对值等边界 |
-| `micro-op/unary-vector/vexp` | unary-vector | `pto.vexp` | `core-f32, full-mask` | planned | |
-| `micro-op/unary-vector/vexp-tail` | unary-vector | `pto.vexp` | `core-f32, tail-mask` | planned | |
+| `micro-op/unary-vector/vexp` | unary-vector | `pto.vexp` | `core-f32, full-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/unary-vector/vexp-tail` | unary-vector | `pto.vexp` | `core-f32, tail-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/unary-vector/vexp-f16` | unary-vector | `pto.vexp` | `core-f16, full-mask` | planned | |
 | `micro-op/unary-vector/vexp-bf16` | unary-vector | `pto.vexp` | `core-bf16, full-mask` | blocked | `docs/isa/06-unary-vector-ops.md` 当前未将 `bf16` 列入 `pto.vexp` 的 A5 types |
-| `micro-op/unary-vector/vexp-f32-exceptional` | unary-vector | `pto.vexp` | `core-f32, full-mask, exceptional-values` | planned | |
+| `micro-op/unary-vector/vexp-f32-exceptional` | unary-vector | `pto.vexp` | `core-f32, full-mask, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/unary-vector/vexp-f32-over-underflow` | unary-vector | `pto.vexp` | `core-f32, full-mask, floating-overflow-underflow` | planned | |
-| `micro-op/unary-vector/vneg` | unary-vector | `pto.vneg` | `core-f32, full-mask` | planned | |
-| `micro-op/unary-vector/vln` | unary-vector | `pto.vln` | `core-f32, full-mask, domain-positive` | planned | |
-| `micro-op/unary-vector/vsqrt` | unary-vector | `pto.vsqrt` | `core-f32, full-mask, domain-nonnegative` | planned | |
+| `micro-op/unary-vector/vneg` | unary-vector | `pto.vneg` | `core-f32, full-mask` | blocked | 当前 `include/PTO/IR/VPTOOps.td` 未定义 `pto.vneg`，VPTO parser 无法接受该 op |
+| `micro-op/unary-vector/vln` | unary-vector | `pto.vln` | `core-f32, full-mask, domain-positive` | blocked | 当前 `VPTOLLVMEmitter` 未接入 `pto.vln` lowering，step 1 即报 `unsupported op pto.vln` |
+| `micro-op/unary-vector/vsqrt` | unary-vector | `pto.vsqrt` | `core-f32, full-mask, domain-nonnegative` | blocked | 当前 `VPTOLLVMEmitter` 未接入 `pto.vsqrt` lowering，step 1 即报 `unsupported op pto.vsqrt` |
 | `micro-op/unary-vector/vrsqrt` | unary-vector | `pto.vrsqrt` | `core-f32, full-mask, exceptional-values` | planned | |
-| `micro-op/unary-vector/vrec` | unary-vector | `pto.vrec` | `core-f32, full-mask, exceptional-values` | planned | |
-| `micro-op/unary-vector/vrelu` | unary-vector | `pto.vrelu` | `core-f32, full-mask` | planned | |
+| `micro-op/unary-vector/vrec` | unary-vector | `pto.vrec` | `core-f32, full-mask, exceptional-values` | blocked | 当前 `VPTOLLVMEmitter` 未接入 `pto.vrec` lowering，step 1 即报 `unsupported op pto.vrec` |
+| `micro-op/unary-vector/vrelu` | unary-vector | `pto.vrelu` | `core-f32, full-mask` | blocked | 当前 `VPTOLLVMEmitter` 未接入 `pto.vrelu` lowering，step 1 即报 `unsupported op pto.vrelu` |
 | `micro-op/unary-vector/vnot` | unary-vector | `pto.vnot` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/unary-vector/vbcnt` | unary-vector | `pto.vbcnt` | `core-i16-unsigned, full-mask` | planned | |
 | `micro-op/unary-vector/vcls` | unary-vector | `pto.vcls` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/unary-vector/vmov` | unary-vector | `pto.vmov` | `core-f32, full-mask` | planned | |
-| `micro-op/compare-select/vcmp-eq` | compare-select | `pto.vcmp` | `core-f32, full-mask, relation-eq` | planned | |
-| `micro-op/compare-select/vcmp-lt` | compare-select | `pto.vcmp` | `core-f32, full-mask, relation-lt` | planned | |
-| `micro-op/compare-select/vcmp-tail` | compare-select | `pto.vcmp` | `core-f32, tail-mask` | planned | |
+| `micro-op/compare-select/vcmp-eq` | compare-select | `pto.vcmp` | `core-f32, full-mask, relation-eq` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/compare-select/vcmp-lt` | compare-select | `pto.vcmp` | `core-f32, full-mask, relation-lt` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/compare-select/vcmp-tail` | compare-select | `pto.vcmp` | `core-f32, tail-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/compare-select/vcmp-i16-signed` | compare-select | `pto.vcmp` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/compare-select/vcmp-i16-unsigned` | compare-select | `pto.vcmp` | `core-i16-unsigned, full-mask` | planned | |
-| `micro-op/compare-select/vcmp-f32-exceptional` | compare-select | `pto.vcmp` | `core-f32, full-mask, exceptional-values` | planned | |
-| `micro-op/compare-select/vsel` | compare-select | `pto.vsel` | `core-f32, full-mask` | planned | |
+| `micro-op/compare-select/vcmp-f32-exceptional` | compare-select | `pto.vcmp` | `core-f32, full-mask, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/compare-select/vsel` | compare-select | `pto.vsel` | `core-f32, full-mask` | blocked | 当前 `VPTOLLVMEmitter` 未接入 `pto.vsel` lowering，step 1 即报 `unsupported op pto.vsel` |
 | `micro-op/compare-select/vsel-tail` | compare-select | `pto.vsel` | `core-f32, tail-mask` | planned | |
 | `micro-op/compare-select/vsel-i16` | compare-select | `pto.vsel` | `core-i16-signed, full-mask` | planned | |
 | `micro-op/compare-select/vselr` | compare-select | `pto.vselr` | `core-f32, full-mask, reversed-select` | planned | |
-| `micro-op/compare-select/vcmps-f32` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand` | planned | |
-| `micro-op/compare-select/vcmps-tail` | compare-select | `pto.vcmps` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/compare-select/vcmps-f32` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/compare-select/vcmps-tail` | compare-select | `pto.vcmps` | `core-f32, tail-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/compare-select/vcmps-i16-signed` | compare-select | `pto.vcmps` | `core-i16-signed, full-mask, scalar-operand` | planned | |
 | `micro-op/compare-select/vcmps-i16-unsigned` | compare-select | `pto.vcmps` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
-| `micro-op/compare-select/vcmps-f32-exceptional` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand, exceptional-values` | planned | |
+| `micro-op/compare-select/vcmps-f32-exceptional` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/conversion/vcvt-f32-to-f16` | conversion | `pto.vcvt` | `f32-to-f16, full-mask` | planned | |
 | `micro-op/conversion/vcvt-f16-to-f32` | conversion | `pto.vcvt` | `f16-to-f32, full-mask` | planned | |
 | `micro-op/conversion/vcvt-tail` | conversion | `pto.vcvt` | `f32-to-f16, tail-mask` | planned | |
 | `micro-op/conversion/vcvt-f32-special` | conversion | `pto.vcvt` | `f32-to-f16, exceptional-values` | planned | |
 | `micro-op/conversion/vcvt-i32-to-i16-overflow` | conversion | `pto.vcvt` | `i32-to-i16, integer-overflow` | blocked | `docs/isa/09-conversion-ops.md` 当前未明确列出 `i32 -> i16` 这一 A5 conversion pair |
-| `micro-op/conversion/vtrc-f32-rounding` | conversion | `pto.vtrc` | `core-f32, round-r, round-z, round-f` | planned | |
-| `micro-op/conversion/vtrc-f32-special` | conversion | `pto.vtrc` | `core-f32, exceptional-values` | planned | |
-| `micro-op/materialization-predicate/vbr-f32` | materialization-predicate | `pto.vbr` | `core-f32, scalar-broadcast` | planned | |
-| `micro-op/materialization-predicate/vbr-i32` | materialization-predicate | `pto.vbr` | `core-i32-signed, scalar-broadcast` | planned | |
-| `micro-op/materialization-predicate/vdup-scalar` | materialization-predicate | `pto.vdup` | `core-f32, scalar-operand` | planned | |
+| `micro-op/conversion/vtrc-f32-rounding` | conversion | `pto.vtrc` | `core-f32, round-r, round-z, round-f` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/conversion/vtrc-f32-special` | conversion | `pto.vtrc` | `core-f32, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/materialization-predicate/vbr-f32` | materialization-predicate | `pto.vbr` | `core-f32, scalar-broadcast` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/materialization-predicate/vbr-i32` | materialization-predicate | `pto.vbr` | `core-i32-signed, scalar-broadcast` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/materialization-predicate/vdup-scalar` | materialization-predicate | `pto.vdup` | `core-f32, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/materialization-predicate/vdup-lane` | materialization-predicate | `pto.vdup` | `core-f32, lane-select` | planned | |
 | `micro-op/materialization-predicate/pset-pattern` | materialization-predicate | `pto.pset_b16`, `pto.pset_b32`, `pto.pset_b8` | `pattern-mask, pat-all, pat-vl` | planned | |
 | `micro-op/materialization-predicate/pge-tail-mask` | materialization-predicate | `pto.pge_b16`, `pto.pge_b32`, `pto.pge_b8` | `tail-mask` | planned | |
@@ -272,10 +272,10 @@
 | `micro-op/predicate-load-store/pst-pld` | predicate-load-store | `pto.pld`, `pto.pst` | `packed-predicate-roundtrip, areg-offset, load-store-pair-preservation, representative-logical-elements` | planned | |
 | `micro-op/predicate-load-store/psti-pldi` | predicate-load-store | `pto.pldi`, `pto.psti` | `packed-predicate-roundtrip, immediate-offset, load-store-pair-preservation, representative-logical-elements` | planned | |
 | `micro-op/predicate-load-store/pstu` | predicate-load-store | `pto.pstu` | `unaligned-packed-store, state-update, representative-logical-elements` | planned | |
-| `micro-op/reduction/vcadd` | reduction | `pto.vcadd` | `core-f32, result-placement` | planned | |
-| `micro-op/reduction/vcadd-tail` | reduction | `pto.vcadd` | `core-f32, tail-mask, result-placement` | planned | |
-| `micro-op/reduction/vcmax` | reduction | `pto.vcmax` | `core-f32, result-placement` | planned | |
-| `micro-op/reduction/vcmin` | reduction | `pto.vcmin` | `core-f32, result-placement` | planned | |
+| `micro-op/reduction/vcadd` | reduction | `pto.vcadd` | `core-f32, result-placement` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/reduction/vcadd-tail` | reduction | `pto.vcadd` | `core-f32, tail-mask, result-placement` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/reduction/vcmax` | reduction | `pto.vcmax` | `core-f32, result-placement` | blocked | 文档说明结果包含 value/index，但当前 `docs/isa/10-reduction-ops.md` 未固定低位 packing 细节，oracle 暂未固化 |
+| `micro-op/reduction/vcmin` | reduction | `pto.vcmin` | `core-f32, result-placement` | blocked | 文档说明结果包含 value/index，但当前 `docs/isa/10-reduction-ops.md` 未固定低位 packing 细节，oracle 暂未固化 |
 | `micro-op/reduction/vcgadd` | reduction | `pto.vcgadd` | `group-reduction, result-placement` | planned | |
 | `micro-op/reduction/vcgmax` | reduction | `pto.vcgmax` | `group-reduction, result-placement` | planned | |
 | `micro-op/reduction/vcgmin` | reduction | `pto.vcgmin` | `group-reduction, result-placement` | planned | |
@@ -309,8 +309,13 @@
 | `micro-op/rearrangement/vpack` | rearrangement | `pto.vpack` | `pack-unpack, narrowing` | planned | |
 | `micro-op/rearrangement/vsunpack` | rearrangement | `pto.vsunpack` | `pack-unpack, sign-extend` | planned | |
 | `micro-op/rearrangement/vzunpack` | rearrangement | `pto.vzunpack` | `pack-unpack, zero-extend` | planned | |
-| `micro-op/dsa-sfu/vlrelu-f32` | dsa-sfu | `pto.vlrelu` | `core-f32, scalar-operand, full-mask` | planned | |
-| `micro-op/dsa-sfu/vlrelu-tail` | dsa-sfu | `pto.vlrelu` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/rearrangement/vintlv-vdintlv-lane-boundary` | rearrangement | `pto.vdintlv`, `pto.vintlv` | `paired-roundtrip, lane-order` | planned | |
+| `micro-op/rearrangement/vslide-tail-window` | rearrangement | `pto.vslide` | `lane-order, slide-window, tail-mask` | planned | |
+| `micro-op/rearrangement/vshift-tail-zero-fill` | rearrangement | `pto.vshift` | `lane-order, zero-fill, tail-mask` | planned | |
+| `micro-op/rearrangement/vsqz-nontrivial-mask` | rearrangement | `pto.vsqz` | `predicate-driven-rearrangement, stable-order` | planned | |
+| `micro-op/rearrangement/vusqz-nontrivial-mask` | rearrangement | `pto.vusqz` | `predicate-driven-rearrangement, placement` | planned | |
+| `micro-op/dsa-sfu/vlrelu-f32` | dsa-sfu | `pto.vlrelu` | `core-f32, scalar-operand, full-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
+| `micro-op/dsa-sfu/vlrelu-tail` | dsa-sfu | `pto.vlrelu` | `core-f32, tail-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/dsa-sfu/vlrelu-f16` | dsa-sfu | `pto.vlrelu` | `core-f16, full-mask, scalar-operand` | planned | |
 | `micro-op/dsa-sfu/vprelu-f32` | dsa-sfu | `pto.vprelu` | `core-f32, vector-alpha` | planned | |
 | `micro-op/dsa-sfu/vexpdiff-f32` | dsa-sfu | `pto.vexpdiff` | `core-f32, fused-expdiff` | planned | |
@@ -324,6 +329,69 @@
 | `micro-op/dsa-sfu/vci` | dsa-sfu | `pto.vci` | `index-generation` | planned | |
 | `micro-op/dsa-sfu/vbitsort` | dsa-sfu | `pto.vbitsort` | `index-generation, layout-transform` | blocked | `docs/vpto-spec.md` 与 `docs/isa/13-dsa-sfu-ops.md` 目前只给出 surface/接口层信息，尚未形成可稳定闭环的 oracle 语义 |
 | `micro-op/dsa-sfu/vtranspose` | dsa-sfu | `pto.vtranspose` | `ub-to-ub, layout-transform, representative-config` | planned | |
+| `micro-op/vec-scalar/vsubs-tail` | vec-scalar | `pto.vsubs` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vmuls-tail` | vec-scalar | `pto.vmuls` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vmaxs-tail` | vec-scalar | `pto.vmaxs` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vmins-tail` | vec-scalar | `pto.vmins` | `core-f32, tail-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vands-mask-edge` | vec-scalar | `pto.vands` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vors-mask-edge` | vec-scalar | `pto.vors` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vxors-mask-edge` | vec-scalar | `pto.vxors` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vshls-shift-boundary` | vec-scalar | `pto.vshls` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vshrs-shift-boundary` | vec-scalar | `pto.vshrs` | `core-i16-unsigned, full-mask, scalar-operand` | planned | |
+| `micro-op/vec-scalar/vaddcs-carry-boundary` | vec-scalar | `pto.vaddcs` | `core-i16-unsigned, full-mask, scalar-operand, carry-chain` | planned | |
+| `micro-op/vec-scalar/vsubcs-borrow-boundary` | vec-scalar | `pto.vsubcs` | `core-i16-unsigned, full-mask, scalar-operand, carry-chain` | planned | |
+| `micro-op/unary-vector/vln-domain-boundary` | unary-vector | `pto.vln` | `core-f32, domain-positive, exceptional-values` | planned | |
+| `micro-op/unary-vector/vsqrt-domain-boundary` | unary-vector | `pto.vsqrt` | `core-f32, domain-nonnegative, exceptional-values` | planned | |
+| `micro-op/unary-vector/vrsqrt-zero-inf` | unary-vector | `pto.vrsqrt` | `core-f32, exceptional-values` | planned | |
+| `micro-op/unary-vector/vrec-zero-inf` | unary-vector | `pto.vrec` | `core-f32, exceptional-values` | planned | |
+| `micro-op/unary-vector/vneg-f32-exceptional` | unary-vector | `pto.vneg` | `core-f32, exceptional-values` | planned | |
+| `micro-op/unary-vector/vmov-tail` | unary-vector | `pto.vmov` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vsub-tail` | binary-vector | `pto.vsub` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vmul-tail` | binary-vector | `pto.vmul` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vmax-tail` | binary-vector | `pto.vmax` | `core-f32, tail-mask` | planned | |
+| `micro-op/binary-vector/vand-mask-edge` | binary-vector | `pto.vand` | `core-i16-unsigned, full-mask` | planned | |
+| `micro-op/binary-vector/vor-mask-edge` | binary-vector | `pto.vor` | `core-i16-unsigned, full-mask` | planned | |
+| `micro-op/binary-vector/vxor-mask-edge` | binary-vector | `pto.vxor` | `core-i16-unsigned, full-mask` | planned | |
+| `micro-op/binary-vector/vshl-shift-boundary` | binary-vector | `pto.vshl` | `core-i16-unsigned, full-mask` | planned | |
+| `micro-op/binary-vector/vshr-shift-boundary` | binary-vector | `pto.vshr` | `core-i16-unsigned, full-mask` | planned | |
+| `micro-op/binary-vector/vaddc-carry-boundary` | binary-vector | `pto.vaddc` | `core-i16-unsigned, full-mask, carry-chain` | planned | |
+| `micro-op/binary-vector/vsubc-borrow-boundary` | binary-vector | `pto.vsubc` | `core-i16-unsigned, full-mask, carry-chain` | planned | |
+| `micro-op/conversion/vcvt-f16-special` | conversion | `pto.vcvt` | `f16-to-f32, exceptional-values` | planned | |
+| `micro-op/conversion/vtrc-rounding-boundary` | conversion | `pto.vtrc` | `core-f32, round-r, round-z, round-f` | planned | |
+| `micro-op/conversion/vcvt-tail-special` | conversion | `pto.vcvt` | `f32-to-f16, tail-mask, exceptional-values` | planned | |
+| `micro-op/compare-select/vcmp-unordered-f32` | compare-select | `pto.vcmp` | `core-f32, full-mask, exceptional-values` | planned | |
+| `micro-op/compare-select/vcmps-unordered-f32` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand, exceptional-values` | planned | |
+| `micro-op/compare-select/vsel-predicate-edge` | compare-select | `pto.vsel` | `core-f32, full-mask` | planned | |
+| `micro-op/materialization-predicate/pset-pattern-fragment` | materialization-predicate | `pto.pset_b16`, `pto.pset_b32`, `pto.pset_b8` | `pattern-mask, pat-vl, representative-logical-elements` | planned | |
+| `micro-op/materialization-predicate/pge-tail-mask-boundary` | materialization-predicate | `pto.pge_b16`, `pto.pge_b32`, `pto.pge_b8` | `tail-mask, representative-logical-elements` | planned | |
+| `micro-op/materialization-predicate/plt-tail-mask-boundary` | materialization-predicate | `pto.plt_b16`, `pto.plt_b32`, `pto.plt_b8` | `tail-mask, scalar-carry-out, representative-logical-elements` | planned | |
+| `micro-op/materialization-predicate/ppack-punpack-nontrivial` | materialization-predicate | `pto.ppack`, `pto.punpack` | `pack-unpack-roundtrip, representative-logical-elements` | planned | |
+| `micro-op/materialization-predicate/pdintlv_b8-nontrivial` | materialization-predicate | `pto.pdintlv_b8` | `predicate-transform, lane-order` | planned | |
+| `micro-op/materialization-predicate/pintlv_b16-nontrivial` | materialization-predicate | `pto.pintlv_b16` | `predicate-transform, lane-order` | planned | |
+| `micro-op/materialization-predicate/psel-tail-predicate` | materialization-predicate | `pto.psel` | `predicate-transform, predicate-select, tail-mask` | planned | |
+| `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary` | predicate-load-store | `pto.plds`, `pto.psts` | `packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements` | planned | |
+| `micro-op/predicate-load-store/pstu-state-advance-boundary` | predicate-load-store | `pto.pstu` | `unaligned-packed-store, state-update, representative-logical-elements` | planned | |
+| `micro-op/reduction/vcgadd-tail` | reduction | `pto.vcgadd` | `group-reduction, tail-mask, result-placement` | planned | |
+| `micro-op/reduction/vcgmax-tie` | reduction | `pto.vcgmax` | `group-reduction, result-placement` | planned | |
+| `micro-op/reduction/vcgmin-tie` | reduction | `pto.vcgmin` | `group-reduction, result-placement` | planned | |
+| `micro-op/reduction/vcpadd-tail` | reduction | `pto.vcpadd` | `prefix-op, tail-mask` | planned | |
+| `micro-op/vector-load-store/vsts-tail` | vector-load-store | `pto.vsts` | `core-f32, contiguous, tail-mask, aligned, dist-norm` | planned | |
+| `micro-op/vector-load-store/vldas-vldus-state-chain` | vector-load-store | `pto.vldas`, `pto.vldus` | `core-f32, full-mask, unaligned, stream-state, state-update` | planned | |
+| `micro-op/vector-load-store/vldx2-layout-check` | vector-load-store | `pto.vldx2` | `core-f32, full-mask, paired-roundtrip, dintlv, lane-order` | planned | |
+| `micro-op/vector-load-store/vstx2-layout-check` | vector-load-store | `pto.vstx2` | `core-f32, full-mask, paired-roundtrip, dintlv, lane-order` | planned | |
+| `micro-op/vector-load-store/vsta-state-advance` | vector-load-store | `pto.vsta` | `core-f32, full-mask, aligned, state-update` | planned | |
+| `micro-op/vector-load-store/vstu-state-advance` | vector-load-store | `pto.vstu` | `core-f32, full-mask, unaligned, state-update` | planned | |
+| `micro-op/vector-load-store/vstas-vstus-offset-update` | vector-load-store | `pto.vstas`, `pto.vstus` | `core-f32, full-mask, immediate-offset, state-update` | planned | |
+| `micro-op/vector-load-store/vsld-vsst-stride-boundary` | vector-load-store | `pto.vsld`, `pto.vsst` | `core-f32, strided-load, strided-store, block-mask` | planned | |
+| `micro-op/gather-scatter/vgather2-duplicate-index` | gather-scatter | `pto.vgather2` | `core-f32, non-contiguous, explicit-index-pattern, load-effect-validation, no-alias` | planned | |
+| `micro-op/gather-scatter/vgather2_bc-sparse-mask` | gather-scatter | `pto.vgather2_bc` | `core-f32, masked-gather, load-effect-validation, no-alias` | planned | |
+| `micro-op/gather-scatter/vgatherb-block-boundary` | gather-scatter | `pto.vgatherb` | `core-f32, block-gather, aligned-base, load-effect-validation, no-alias` | planned | |
+| `micro-op/gather-scatter/vscatter-out-of-order-index` | gather-scatter | `pto.vscatter` | `core-f32, explicit-index-pattern, scatter-store, store-effect-validation, no-alias` | planned | |
+| `micro-op/dsa-sfu/vlrelu-f32-exceptional` | dsa-sfu | `pto.vlrelu` | `core-f32, scalar-operand, exceptional-values` | planned | |
+| `micro-op/dsa-sfu/vprelu-tail` | dsa-sfu | `pto.vprelu` | `core-f32, vector-alpha, tail-mask` | planned | |
+| `micro-op/dsa-sfu/vexpdiff-boundary` | dsa-sfu | `pto.vexpdiff` | `core-f32, fused-expdiff, exceptional-values, floating-overflow-underflow` | planned | |
+| `micro-op/dsa-sfu/vmula-accumulator-boundary` | dsa-sfu | `pto.vmula` | `core-f32, fused-op, accumulator` | planned | |
+| `micro-op/dsa-sfu/vtranspose-multi-config` | dsa-sfu | `pto.vtranspose` | `ub-to-ub, layout-transform, representative-config` | planned | |
 
 ## Notes
 

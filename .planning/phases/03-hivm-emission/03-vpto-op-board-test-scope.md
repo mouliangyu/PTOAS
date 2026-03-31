@@ -2,20 +2,81 @@
 
 ## Purpose
 
-本文件定义 `test/vpto` 中 VPTO 微指令板测的测试范围，用于约束：
+本文件定义 `test/vpto` 中 VPTO 微指令板测的测试范围，同时也是本轮微指令板测的
+case scope 文档。它负责三件事：
+
+- 定义哪些 VPTO op / op family 在本轮范围内
+- 列出这些 in-scope op 预期对应的 case 清单
+- 说明每个 case 需要验证的测试目标和覆盖场景
+
+具体来说，本文件用于约束：
 
 - 哪些 op family 在本轮范围内
 - 每类 op 至少需要覆盖哪些类型维度
 - 每类 op 至少需要覆盖哪些运行时场景
+- 每个 in-scope op 由哪些 case 承接
+- 每个 case 的测试目标、覆盖维度和命名预期
 - 哪些内容只作为基础设施复用，不单独立项
 - matrix 中的 `scenarios` 字段应如何描述
 
-本文件是“测什么”的范围文档；具体 case 目录、状态流转和执行顺序仍以：
+本文件回答的是“测什么、每条 op 由哪些 case 来测、这些 case 的目标是什么”。
+
+其中：
+
+- `scope` 负责定义 in-scope op、case inventory 和每个 case 的目标
+- `matrix` 负责记录这些 case 的当前状态、实现进度和验证结果
+- `plan` 负责记录执行顺序、阶段安排和推进策略
+- `coverage assessment` 负责记录 family 级统计、自评覆盖密度和 case 缺口
+
+因此，若需要回答“某条 op 有没有被纳入范围、应该由什么 case 覆盖、case 目标是什么”，
+应首先查看本文件；具体 case 目录状态流转和执行顺序仍以：
 
 - `03-vpto-op-board-unit-tests-PLAN.md`
 - `03-vpto-op-board-unit-tests-matrix.md`
+- `03-vpto-op-board-coverage-assessment.md`
 
 为准。
+
+## Document Contract
+
+本文件中的两个层次分别承担不同职责：
+
+- `Family Coverage Minimums`
+  - 回答某个 family 至少必须覆盖哪些维度
+  - 是判断“该 family 是否还能继续收口”的最低标准
+- `Case Inventory`
+  - 回答某条 op 由哪些 case 承接，以及每个 case 的测试目标是什么
+  - 是补充 `matrix` 和实现具体测例时的直接依据
+
+使用约束：
+
+- family 级覆盖合理性和 case 数缺口判断，先看 `03-vpto-op-board-coverage-assessment.md`
+- 若 assessment 显示某个 family 仍存在任何 case 缺口或 case 目标缺失，则本文件必须继续细化该 family 的 `Case Inventory`，直到能直接指导补 case
+- 新增或删除 case 前，先更新本文件的 `Case Inventory`
+- 调整 family 级目标数量或覆盖合理性判断前，先更新 `03-vpto-op-board-coverage-assessment.md`
+- `matrix` 只能记录本文件已经纳入范围的 case；不允许 `matrix` 先出现、`scope` 后补登记
+- 若实现或文档变化导致某 case 目标失效，应先修改本文件中的目标描述，再更新 `matrix` 状态
+
+与 assessment 的关系：
+
+- assessment 负责指出“哪一类需要继续细化”
+- 本文件负责把这种“需要细化”落成明确的 case inventory 和 case 目标
+- 因此，本文件允许持续增长和细化；只要 assessment 仍显示 family 缺口或 case 目标缺失，就不应把对应 family 视为 scope 已稳定
+
+## Exit Criteria
+
+以下规则用于判断某个 family 是否达到“首轮可接受覆盖”：
+
+- `Family Coverage Minimums` 中的 `mandatory` 维度已被 `Case Inventory` 中至少一个 case 明确承接
+- 对允许成组验证的 family
+  - 必须证明成组 case 确实覆盖了组内所有 op 的核心语义，而不是只借 round-trip 掩盖单边错误
+- family 级当前进度、case 缺口和覆盖合理性判断，以 `03-vpto-op-board-coverage-assessment.md` 为准
+
+以下情况不视为覆盖完成：
+
+- family 级 `mandatory` 维度在 `Case Inventory` 中没有明确落到具体 case
+- 只覆盖主路径，未覆盖该 family 明确要求的 tail、异常值、state-update、layout 或 packed round-trip 等关键维度
+- 仅通过组合 case 间接“碰到”某条 op，但没有为该 op 的核心语义提供可解释的 oracle
 
 ## Source Of Truth
 
@@ -606,6 +667,42 @@ applicable:
   - 状态：blocked
   - 备注：`docs/isa/08-vec-scalar-ops.md` 尚未给出明确 A5 types 与 overflow 规则，暂不固化 oracle
 
+assessment 驱动的补充 case：
+
+- `micro-op/vec-scalar/vsubs-tail`
+  - 目标：验证 `vsubs` 在 `tail-mask` 下的边界行为
+  - 覆盖：`core-f32, tail-mask, scalar-operand`
+- `micro-op/vec-scalar/vmuls-tail`
+  - 目标：验证 `vmuls` 在 `tail-mask` 下的边界行为
+  - 覆盖：`core-f32, tail-mask, scalar-operand`
+- `micro-op/vec-scalar/vmaxs-tail`
+  - 目标：验证 `vmaxs` 在 `tail-mask` 下的选择语义
+  - 覆盖：`core-f32, tail-mask, scalar-operand`
+- `micro-op/vec-scalar/vmins-tail`
+  - 目标：验证 `vmins` 在 `tail-mask` 下的选择语义
+  - 覆盖：`core-f32, tail-mask, scalar-operand`
+- `micro-op/vec-scalar/vands-mask-edge`
+  - 目标：验证 `vands` 在交错 bit-pattern 下的位运算结果
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand`
+- `micro-op/vec-scalar/vors-mask-edge`
+  - 目标：验证 `vors` 在交错 bit-pattern 下的位运算结果
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand`
+- `micro-op/vec-scalar/vxors-mask-edge`
+  - 目标：验证 `vxors` 在交错 bit-pattern 下的位运算结果
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand`
+- `micro-op/vec-scalar/vshls-shift-boundary`
+  - 目标：验证 `vshls` 在临界 shift 量下的逐 lane 左移语义
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand`
+- `micro-op/vec-scalar/vshrs-shift-boundary`
+  - 目标：验证 `vshrs` 在临界 shift 量下的逐 lane 右移语义
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand`
+- `micro-op/vec-scalar/vaddcs-carry-boundary`
+  - 目标：验证 `vaddcs` 在 carry 传播边界上的结果与 carry-out
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand, carry-chain`
+- `micro-op/vec-scalar/vsubcs-borrow-boundary`
+  - 目标：验证 `vsubcs` 在 borrow 传播边界上的结果与 borrow-out
+  - 覆盖：`core-i16-unsigned, full-mask, scalar-operand, carry-chain`
+
 ### Unary Vector Cases
 
 主语义：
@@ -710,6 +807,27 @@ applicable:
   - 目标：验证 masked register copy 主语义
   - 覆盖：`core-f32, full-mask`
 
+assessment 驱动的补充 case：
+
+- `micro-op/unary-vector/vln-domain-boundary`
+  - 目标：验证 `vln` 在接近 0 和大于 0 边界输入下的定义域行为
+  - 覆盖：`core-f32, domain-positive, exceptional-values`
+- `micro-op/unary-vector/vsqrt-domain-boundary`
+  - 目标：验证 `vsqrt` 在 0、正数边界和非法负值附近的行为
+  - 覆盖：`core-f32, domain-nonnegative, exceptional-values`
+- `micro-op/unary-vector/vrsqrt-zero-inf`
+  - 目标：验证 `vrsqrt` 对 0、Inf 和普通有限值的响应
+  - 覆盖：`core-f32, exceptional-values`
+- `micro-op/unary-vector/vrec-zero-inf`
+  - 目标：验证 `vrec` 对 0、Inf 和普通有限值的响应
+  - 覆盖：`core-f32, exceptional-values`
+- `micro-op/unary-vector/vneg-f32-exceptional`
+  - 目标：验证 `vneg` 对 `+0/-0/NaN/Inf` 的处理
+  - 覆盖：`core-f32, exceptional-values`
+- `micro-op/unary-vector/vmov-tail`
+  - 目标：验证 `vmov` 在 `tail-mask` 下的选择性复制
+  - 覆盖：`core-f32, tail-mask`
+
 ### Binary Vector Follow-up Cases
 
 除 `vadd` 外，`binary-vector` family 还需要按相同粒度为已优先实现的样板补齐明确清单。
@@ -792,6 +910,39 @@ applicable:
   - 目标：验证 sub-with-borrow 的结果与 borrow-out 主语义
   - 覆盖：`core-i16-unsigned, full-mask, carry-chain`
 
+assessment 驱动的补充 case：
+
+- `micro-op/binary-vector/vsub-tail`
+  - 目标：验证 `vsub` 在 `tail-mask` 下的边界行为
+  - 覆盖：`core-f32, tail-mask`
+- `micro-op/binary-vector/vmul-tail`
+  - 目标：验证 `vmul` 在 `tail-mask` 下的边界行为
+  - 覆盖：`core-f32, tail-mask`
+- `micro-op/binary-vector/vmax-tail`
+  - 目标：验证 `vmax` 在 `tail-mask` 下的选择语义
+  - 覆盖：`core-f32, tail-mask`
+- `micro-op/binary-vector/vand-mask-edge`
+  - 目标：验证 `vand` 在交错 bit-pattern 下的位运算结果
+  - 覆盖：`core-i16-unsigned, full-mask`
+- `micro-op/binary-vector/vor-mask-edge`
+  - 目标：验证 `vor` 在交错 bit-pattern 下的位运算结果
+  - 覆盖：`core-i16-unsigned, full-mask`
+- `micro-op/binary-vector/vxor-mask-edge`
+  - 目标：验证 `vxor` 在交错 bit-pattern 下的位运算结果
+  - 覆盖：`core-i16-unsigned, full-mask`
+- `micro-op/binary-vector/vshl-shift-boundary`
+  - 目标：验证 `vshl` 在临界 shift 量下的逐 lane 左移语义
+  - 覆盖：`core-i16-unsigned, full-mask`
+- `micro-op/binary-vector/vshr-shift-boundary`
+  - 目标：验证 `vshr` 在临界 shift 量下的逐 lane 右移语义
+  - 覆盖：`core-i16-unsigned, full-mask`
+- `micro-op/binary-vector/vaddc-carry-boundary`
+  - 目标：验证 `vaddc` 在 carry 传播边界上的结果与 carry-out
+  - 覆盖：`core-i16-unsigned, full-mask, carry-chain`
+- `micro-op/binary-vector/vsubc-borrow-boundary`
+  - 目标：验证 `vsubc` 在 borrow 传播边界上的结果与 borrow-out
+  - 覆盖：`core-i16-unsigned, full-mask, carry-chain`
+
 ### Compare/Select Cases
 
 `pto.vcmp` 作为 `compare-select` family 的首个展开样板，当前预期补齐以下 case：
@@ -864,6 +1015,18 @@ applicable:
   - 目标：验证特殊值输入在 rounding family 中的行为
   - 覆盖：`core-f32, exceptional-values`
 
+assessment 驱动的补充 case：
+
+- `micro-op/conversion/vcvt-f16-special`
+  - 目标：验证 `f16 -> f32` 扩宽路径上的特殊值保持
+  - 覆盖：`f16-to-f32, exceptional-values`
+- `micro-op/conversion/vtrc-rounding-boundary`
+  - 目标：验证临界舍入点附近的 `ROUND_R / ROUND_Z / ROUND_F` 行为
+  - 覆盖：`core-f32, round-r, round-z, round-f`
+- `micro-op/conversion/vcvt-tail-special`
+  - 目标：验证 `vcvt` 在 `tail-mask` 与特殊值同时出现时的结果
+  - 覆盖：`f32-to-f16, tail-mask, exceptional-values`
+
 ### Compare-Select Follow-up Cases
 
 `pto.vcmps` 已在 `docs/vpto-spec.md` 与 `docs/isa/11-compare-select.md` 中进入正式 surface，当前预期补齐以下 case：
@@ -883,6 +1046,18 @@ applicable:
 - `micro-op/compare-select/vcmps-f32-exceptional`
   - 目标：验证 float 特殊值 compare 路径
   - 覆盖：`core-f32, full-mask, scalar-operand, exceptional-values`
+
+assessment 驱动的补充 case：
+
+- `micro-op/compare-select/vcmp-unordered-f32`
+  - 目标：验证 `vcmp` 在 `NaN` 参与时的 unordered 比较路径
+  - 覆盖：`core-f32, full-mask, exceptional-values`
+- `micro-op/compare-select/vcmps-unordered-f32`
+  - 目标：验证 `vcmps` 在 `NaN` 参与时的 unordered 比较路径
+  - 覆盖：`core-f32, full-mask, scalar-operand, exceptional-values`
+- `micro-op/compare-select/vsel-predicate-edge`
+  - 目标：验证 `vsel` 在交错 predicate 下的元素选通行为
+  - 覆盖：`core-f32, full-mask`
 
 ### Materialization Predicate Cases
 
@@ -923,6 +1098,7 @@ applicable:
 - `micro-op/materialization-predicate/ppack-punpack`
   - 目标：验证 predicate pack/unpack round-trip
   - 覆盖：`pack-unpack-roundtrip`
+  - 承接：`pto.ppack` 负责逻辑 predicate 到 packed 形式的压缩；`pto.punpack` 负责 packed 结果恢复为逻辑 predicate
 - `micro-op/materialization-predicate/pdintlv_b8`
   - 目标：验证 predicate deinterleave
   - 覆盖：`predicate-transform, lane-order`
@@ -945,6 +1121,31 @@ applicable:
   - 目标：验证 predicate select
   - 覆盖：`predicate-transform, predicate-select`
 
+assessment 驱动的补充 case：
+
+- `micro-op/materialization-predicate/pset-pattern-fragment`
+  - 目标：验证非全量 pattern 在部分激活长度上的 mask 生成
+  - 覆盖：`pattern-mask, pat-vl, representative-logical-elements`
+- `micro-op/materialization-predicate/pge-tail-mask-boundary`
+  - 目标：验证 tail-mask 在临界长度附近的边界行为
+  - 覆盖：`tail-mask, representative-logical-elements`
+- `micro-op/materialization-predicate/plt-tail-mask-boundary`
+  - 目标：验证带 `scalar_out` 的 tail-mask 边界行为
+  - 覆盖：`tail-mask, scalar-carry-out, representative-logical-elements`
+- `micro-op/materialization-predicate/ppack-punpack-nontrivial`
+  - 目标：验证非平凡 predicate 模式的 pack / unpack round-trip
+  - 覆盖：`pack-unpack-roundtrip, representative-logical-elements`
+  - 承接：`pto.ppack` 验证非平凡 predicate 模式的打包结果；`pto.punpack` 验证对应恢复后的逻辑位置
+- `micro-op/materialization-predicate/pdintlv_b8-nontrivial`
+  - 目标：验证 `pdintlv_b8` 在非平凡 lane 模式下的顺序语义
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pintlv_b16-nontrivial`
+  - 目标：验证 `pintlv_b16` 在非平凡 lane 模式下的顺序语义
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/psel-tail-predicate`
+  - 目标：验证 predicate select 在部分激活 mask 下的选择语义
+  - 覆盖：`predicate-transform, predicate-select, tail-mask`
+
 ### Predicate Load/Store Cases
 
 `predicate-load-store` family 当前预期补齐以下 case：
@@ -952,14 +1153,27 @@ applicable:
 - `micro-op/predicate-load-store/psts-plds`
   - 目标：验证 scalar-offset predicate round-trip
   - 覆盖：`packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psts` 负责 scalar-offset packed predicate store；`pto.plds` 负责对应 load 后的 packed predicate 恢复
 - `micro-op/predicate-load-store/pst-pld`
   - 目标：验证 areg-offset predicate round-trip
   - 覆盖：`packed-predicate-roundtrip, areg-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.pst` 负责 areg-offset packed predicate store；`pto.pld` 负责对应 load 后的 packed predicate 恢复
 - `micro-op/predicate-load-store/psti-pldi`
   - 目标：验证 immediate-offset predicate round-trip
   - 覆盖：`packed-predicate-roundtrip, immediate-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psti` 负责 immediate-offset packed predicate store；`pto.pldi` 负责对应 load 后的 packed predicate 恢复
 - `micro-op/predicate-load-store/pstu`
   - 目标：验证 unaligned predicate store 的状态推进
+  - 覆盖：`unaligned-packed-store, state-update, representative-logical-elements`
+
+assessment 驱动的补充 case：
+
+- `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary`
+  - 目标：验证 packed predicate 在非整字节前缀长度下的落盘前缀保持
+  - 覆盖：`packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psts` 验证非整字节前缀长度下的 packed store；`pto.plds` 验证对应 load 后的前缀保持
+- `micro-op/predicate-load-store/pstu-state-advance-boundary`
+  - 目标：验证 `pstu` 在非整包长度下的地址推进和落盘边界
   - 覆盖：`unaligned-packed-store, state-update, representative-logical-elements`
 
 ### Reduction Cases
@@ -991,7 +1205,22 @@ applicable:
   - 目标：验证 prefix sum 语义
   - 覆盖：`prefix-op, full-mask`
 
-### Vector Load/Store / Gather/Scatter / Rearrangement Cases
+assessment 驱动的补充 case：
+
+- `micro-op/reduction/vcgadd-tail`
+  - 目标：验证 group reduction 在部分激活输入上的结果落位
+  - 覆盖：`group-reduction, tail-mask, result-placement`
+- `micro-op/reduction/vcgmax-tie`
+  - 目标：验证 group max 在并列极值下的稳定落位
+  - 覆盖：`group-reduction, result-placement`
+- `micro-op/reduction/vcgmin-tie`
+  - 目标：验证 group min 在并列极值下的稳定落位
+  - 覆盖：`group-reduction, result-placement`
+- `micro-op/reduction/vcpadd-tail`
+  - 目标：验证 prefix sum 在 `tail-mask` 下的前缀边界
+  - 覆盖：`prefix-op, tail-mask`
+
+### Vector Load/Store Cases
 
 主语义：
 
@@ -1021,18 +1250,17 @@ applicable:
 - `micro-op/vector-load-store/vldas-vldus`
   - 目标：验证 unaligned load stream
   - 覆盖：`core-f32, full-mask, unaligned, stream-state`
+  - 承接：`pto.vldas` 验证 aligned stream state 基础路径；`pto.vldus` 验证 unaligned stream state 基础路径
 - `micro-op/vector-load-store/vldx2-vstx2`
   - 目标：验证 deinterleave / interleave 成组 round-trip
   - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv`
+  - 承接：`pto.vldx2` 验证双路读取后的 deinterleave 布局；`pto.vstx2` 验证对应 interleave 写回布局
 - `micro-op/vector-load-store/vsld`
   - 目标：验证固定 stride load 主语义
   - 覆盖：`core-f32, full-mask, strided-load`
 - `micro-op/vector-load-store/vsldb`
   - 目标：验证 block-strided load 与 block mask
   - 覆盖：`core-f32, full-mask, block-strided-load, block-mask`
-- `micro-op/gather-scatter/vscatter`
-  - 目标：验证 indexed scatter 主语义
-  - 覆盖：`core-f32, full-mask, non-contiguous, explicit-index-pattern, scatter-store, store-effect-validation, no-alias`
 - `micro-op/vector-load-store/vsst`
   - 目标：验证 strided store 主语义
   - 覆盖：`core-f32, full-mask, strided-store`
@@ -1057,6 +1285,42 @@ applicable:
 - `micro-op/vector-load-store/vstur`
   - 目标：验证 reference-updated unaligned state store 主语义
   - 覆盖：`core-f32, full-mask, unaligned, state-update`
+
+assessment 驱动的补充 case：
+
+- `micro-op/vector-load-store/vsts-tail`
+  - 目标：验证 `vsts` 在 `tail-mask` 下的写回边界
+  - 覆盖：`core-f32, contiguous, tail-mask, aligned, dist-norm`
+- `micro-op/vector-load-store/vldas-vldus-state-chain`
+  - 目标：验证 stream load 连续调用时的状态推进
+  - 覆盖：`core-f32, full-mask, unaligned, stream-state, state-update`
+  - 承接：`pto.vldas` 验证连续调用下的 aligned stream state 推进；`pto.vldus` 验证连续调用下的 unaligned stream state 推进
+- `micro-op/vector-load-store/vldx2-layout-check`
+  - 目标：验证 `vldx2` 单边 deinterleave 后的 lane 布局
+  - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv, lane-order`
+- `micro-op/vector-load-store/vstx2-layout-check`
+  - 目标：验证 `vstx2` 单边 interleave 写回后的 lane 布局
+  - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv, lane-order`
+- `micro-op/vector-load-store/vsta-state-advance`
+  - 目标：验证 `vsta` 写回后的 aligned 地址推进
+  - 覆盖：`core-f32, full-mask, aligned, state-update`
+- `micro-op/vector-load-store/vstu-state-advance`
+  - 目标：验证 `vstu` 写回后的 unaligned 地址推进
+  - 覆盖：`core-f32, full-mask, unaligned, state-update`
+- `micro-op/vector-load-store/vstas-vstus-offset-update`
+  - 目标：验证 immediate offset 与 state-update 的组合效果
+  - 覆盖：`core-f32, full-mask, immediate-offset, state-update`
+  - 承接：`pto.vstas` 验证 aligned immediate-offset + state-update；`pto.vstus` 验证 unaligned immediate-offset + state-update
+- `micro-op/vector-load-store/vsld-vsst-stride-boundary`
+  - 目标：验证 stride load/store 在边界步长下的访存效果
+  - 覆盖：`core-f32, strided-load, strided-store, block-mask`
+  - 承接：`pto.vsld` 验证 stride 读取边界；`pto.vsst` 验证对应 stride 写回边界
+
+### Gather/Scatter Cases
+
+- `micro-op/gather-scatter/vscatter`
+  - 目标：验证 indexed scatter 主语义
+  - 覆盖：`core-f32, full-mask, non-contiguous, explicit-index-pattern, scatter-store, store-effect-validation, no-alias`
 - `micro-op/gather-scatter/vgather2`
   - 目标：验证 indexed gather 主语义
   - 覆盖：`core-f32, full-mask, non-contiguous, explicit-index-pattern, load-effect-validation, no-alias`
@@ -1066,9 +1330,28 @@ applicable:
 - `micro-op/gather-scatter/vgather2_bc`
   - 目标：验证带 mask 的 gather 语义
   - 覆盖：`core-f32, full-mask, non-contiguous, masked-gather, load-effect-validation, no-alias`
+
+assessment 驱动的补充 case：
+
+- `micro-op/gather-scatter/vgather2-duplicate-index`
+  - 目标：验证重复 index 下的 gather 读取效果
+  - 覆盖：`core-f32, non-contiguous, explicit-index-pattern, load-effect-validation, no-alias`
+- `micro-op/gather-scatter/vgather2_bc-sparse-mask`
+  - 目标：验证稀疏 mask 下的 masked gather 行为
+  - 覆盖：`core-f32, masked-gather, load-effect-validation, no-alias`
+- `micro-op/gather-scatter/vgatherb-block-boundary`
+  - 目标：验证 block gather 在块边界附近的读取行为
+  - 覆盖：`core-f32, block-gather, aligned-base, load-effect-validation, no-alias`
+- `micro-op/gather-scatter/vscatter-out-of-order-index`
+  - 目标：验证乱序 index 下的 scatter 写回效果
+  - 覆盖：`core-f32, explicit-index-pattern, scatter-store, store-effect-validation, no-alias`
+
+### Rearrangement Cases
+
 - `micro-op/rearrangement/vintlv-vdintlv`
   - 目标：验证 interleave / deinterleave round-trip
   - 覆盖：`paired-roundtrip, lane-order`
+  - 承接：`pto.vintlv` 验证 interleave 顺序；`pto.vdintlv` 验证对应 deinterleave 恢复顺序
 - `micro-op/rearrangement/vslide`
   - 目标：验证双源 slide 窗口语义
   - 覆盖：`lane-order, slide-window`
@@ -1094,11 +1377,24 @@ applicable:
   - 目标：验证 zero-extending unpack
   - 覆盖：`pack-unpack, zero-extend`
 
-对 store/rearrangement family 的其余变体继续沿用相同原则：
+assessment 驱动的补充 case：
 
-- contiguous 主路径先有一个最小 case
-- layout / dist 的代表性变体各有独立 case
-- 强耦合成组语义用 round-trip case 表达
+- `micro-op/rearrangement/vintlv-vdintlv-lane-boundary`
+  - 目标：验证 interleave / deinterleave 在临界 lane 布局下的顺序保持
+  - 覆盖：`paired-roundtrip, lane-order`
+  - 承接：`pto.vintlv` 验证临界 lane 布局下的 interleave 顺序；`pto.vdintlv` 验证对应 deinterleave 恢复顺序
+- `micro-op/rearrangement/vslide-tail-window`
+  - 目标：验证 slide 在 `tail-mask` 下的窗口拼接
+  - 覆盖：`lane-order, slide-window, tail-mask`
+- `micro-op/rearrangement/vshift-tail-zero-fill`
+  - 目标：验证 shift 在 `tail-mask` 下的 zero-fill 行为
+  - 覆盖：`lane-order, zero-fill, tail-mask`
+- `micro-op/rearrangement/vsqz-nontrivial-mask`
+  - 目标：验证非平凡 predicate 模式下的压缩顺序
+  - 覆盖：`predicate-driven-rearrangement, stable-order`
+- `micro-op/rearrangement/vusqz-nontrivial-mask`
+  - 目标：验证非平凡 predicate 模式下的展开位置
+  - 覆盖：`predicate-driven-rearrangement, placement`
 
 ### DSA/SFU Cases
 
@@ -1150,6 +1446,24 @@ applicable:
   - 备注：`docs/vpto-spec.md` 与 `docs/isa/13-dsa-sfu-ops.md` 目前只给出 surface/接口层信息，尚未形成可稳定闭环的 oracle 语义
 - `micro-op/dsa-sfu/vtranspose`
   - 目标：验证 UB-to-UB transpose
+  - 覆盖：`ub-to-ub, layout-transform, representative-config`
+
+assessment 驱动的补充 case：
+
+- `micro-op/dsa-sfu/vlrelu-f32-exceptional`
+  - 目标：验证 `vlrelu` 在特殊值输入下的行为
+  - 覆盖：`core-f32, scalar-operand, exceptional-values`
+- `micro-op/dsa-sfu/vprelu-tail`
+  - 目标：验证 `vprelu` 在 `tail-mask` 下的逐元素 alpha 语义
+  - 覆盖：`core-f32, vector-alpha, tail-mask`
+- `micro-op/dsa-sfu/vexpdiff-boundary`
+  - 目标：验证 `vexpdiff` 在极值和接近零差值下的行为
+  - 覆盖：`core-f32, fused-expdiff, exceptional-values, floating-overflow-underflow`
+- `micro-op/dsa-sfu/vmula-accumulator-boundary`
+  - 目标：验证 `vmula` 在累加器边界值附近的累加语义
+  - 覆盖：`core-f32, fused-op, accumulator`
+- `micro-op/dsa-sfu/vtranspose-multi-config`
+  - 目标：验证 `vtranspose` 在多个代表配置下的布局变换一致性
   - 覆盖：`ub-to-ub, layout-transform, representative-config`
 
 说明：
