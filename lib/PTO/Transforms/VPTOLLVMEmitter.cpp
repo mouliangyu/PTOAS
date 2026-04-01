@@ -1401,6 +1401,38 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vlrelu.v" + std::to_string(*lanes) + vec + ".x";
   }
+  if (auto binary = dyn_cast<pto::VpreluOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vprelu.v" + std::to_string(*lanes) + vec + ".x";
+  }
+  if (auto binary = dyn_cast<pto::VexpdiffOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vexpdiff.v" + std::to_string(*lanes) + vec + ".x";
+  }
+  if (auto binary = dyn_cast<pto::VaddreluOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vaddrelu.v" + std::to_string(*lanes) + vec + ".x";
+  }
+  if (auto binary = dyn_cast<pto::VsubreluOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vsubrelu.v" + std::to_string(*lanes) + vec + ".x";
+  }
   if (auto binary = dyn_cast<pto::VdivOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
@@ -1544,6 +1576,14 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     if (elem.empty())
       return failure();
     return "llvm.hivm.vcmps." + vcmps.getCmpMode().str() + "." + elem + ".z";
+  }
+  if (auto vsel = dyn_cast<pto::VselOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(vsel.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(vsel.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vsel.v" + std::to_string(*lanes) + vec + ".z";
   }
   if (isa<pto::PdintlvB8Op>(op))
     return std::string("llvm.hivm.pdintlv.b8");
@@ -1763,6 +1803,29 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
                  pto::VminOp, pto::VandOp, pto::VorOp, pto::VxorOp, pto::VshlOp,
                  pto::VshrOp>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
+  } else if (isa<pto::VpreluOp, pto::VexpdiffOp, pto::VaddreluOp,
+                 pto::VsubreluOp>(op)) {
+    callArgs.append(op->operand_begin(), op->operand_end());
+    auto laneCount = getElementCountFromVectorLike(op->getResult(0).getType());
+    if (!laneCount) {
+      diagOS << "VPTO LLVM emission failed: could not determine lane count for "
+             << op->getName().getStringRef() << "\n";
+      return failure();
+    }
+    Value mask;
+    if (getElementTypeFromVectorLike(op->getResult(0).getType()).isF32() ||
+        getElementTypeFromVectorLike(op->getResult(0).getType()).isInteger(32)) {
+      auto fullMask = buildPltB32Mask(builder, module, loc, *laneCount, diagOS);
+      if (failed(fullMask))
+        return failure();
+      mask = *fullMask;
+    } else {
+      auto fullMask = buildPltB16Mask(builder, module, loc, *laneCount, diagOS);
+      if (failed(fullMask))
+        return failure();
+      mask = *fullMask;
+    }
+    callArgs.push_back(mask);
   } else if (isa<pto::VmulsOp, pto::VaddsOp, pto::VmaxsOp, pto::VminsOp,
                  pto::VlreluOp>(op)) {
     callArgs.push_back(op->getOperand(0));
@@ -1879,7 +1942,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 1));
     callArgs.push_back(vstsPost.getMask());
-  } else if (isa<pto::VcmpOp, pto::VcmpsOp, pto::PdintlvB8Op>(op)) {
+  } else if (isa<pto::VcmpOp, pto::VcmpsOp, pto::VselOp,
+                 pto::PdintlvB8Op>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
   } else if (auto psts = dyn_cast<pto::PstsOp>(op)) {
     Value offset = castIntegerLikeTo(op, psts.getOffset(), builder.getI32Type());

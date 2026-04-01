@@ -134,6 +134,20 @@ static unsigned getIntOrFloatBitWidth(Type type) {
   return 0;
 }
 
+static bool isIntegerOrFloatLike(Type type) {
+  return isa<IntegerType>(type) || isa<FloatType>(type);
+}
+
+static std::optional<int64_t> getVRegStorageBitWidth(Type type) {
+  auto vecType = dyn_cast<VRegType>(type);
+  if (!vecType)
+    return std::nullopt;
+  unsigned elemWidth = getIntOrFloatBitWidth(vecType.getElementType());
+  if (!elemWidth)
+    return std::nullopt;
+  return vecType.getElementCount() * static_cast<int64_t>(elemWidth);
+}
+
 static LogicalResult verifyIntegerVRegTypeLike(Operation *op, Type type,
                                               StringRef roleDescription) {
   if (failed(verifyVRegTypeLike(op, type, roleDescription)))
@@ -820,6 +834,20 @@ LogicalResult PselOp::verify() {
   return success();
 }
 
+template <typename BinaryMaskOp>
+static LogicalResult verifyBinaryMaskOp(BinaryMaskOp op) {
+  if (failed(verifyMaskTypeLike(op, op.getSrc0().getType(), "src0 type")) ||
+      failed(verifyMaskTypeLike(op, op.getSrc1().getType(), "src1 type")) ||
+      failed(verifyMaskTypeLike(op, op.getMask().getType(), "mask type")) ||
+      failed(verifyMaskTypeLike(op, op.getResult().getType(), "result type")))
+    return failure();
+  return success();
+}
+
+LogicalResult PandOp::verify() { return verifyBinaryMaskOp(*this); }
+LogicalResult PorOp::verify() { return verifyBinaryMaskOp(*this); }
+LogicalResult PxorOp::verify() { return verifyBinaryMaskOp(*this); }
+
 void PldsOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
@@ -888,6 +916,21 @@ static LogicalResult verifyVecScalarOpLike(OpTy op) {
   return success();
 }
 
+template <typename OpTy>
+static LogicalResult verifyVecScalarMaskedOpLike(OpTy op) {
+  auto inputType = dyn_cast<VRegType>(op.getInput().getType());
+  auto resultType = dyn_cast<VRegType>(op.getResult().getType());
+  if (!inputType || !resultType)
+    return op.emitOpError("input and result must be !pto.vreg<...>");
+  if (failed(verifyMaskTypeLike(op, op.getMask().getType(), "mask type")))
+    return failure();
+  if (inputType != resultType)
+    return op.emitOpError("input and result vector types must match");
+  if (op.getScalar().getType() != inputType.getElementType())
+    return op.emitOpError("scalar type must match vector element type");
+  return success();
+}
+
 template <typename CarryOp>
 static LogicalResult verifyCarryVecOp(CarryOp op) {
   if (failed(verifyIntegerVRegTypeLike(op, op.getLhs().getType(), "lhs type")) ||
@@ -941,6 +984,31 @@ LogicalResult VshrsOp::verify() {
     return emitOpError("requires integer vector and integer scalar");
   return success();
 }
+LogicalResult VsubsOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
+LogicalResult VandsOp::verify() {
+  if (failed(verifyVecScalarMaskedOpLike(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  if (!isa<IntegerType>(inputType.getElementType()))
+    return emitOpError("requires integer vector element type");
+  return success();
+}
+LogicalResult VorsOp::verify() {
+  if (failed(verifyVecScalarMaskedOpLike(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  if (!isa<IntegerType>(inputType.getElementType()))
+    return emitOpError("requires integer vector element type");
+  return success();
+}
+LogicalResult VxorsOp::verify() {
+  if (failed(verifyVecScalarMaskedOpLike(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  if (!isa<IntegerType>(inputType.getElementType()))
+    return emitOpError("requires integer vector element type");
+  return success();
+}
 
 LogicalResult VabsOp::verify() {
   if (failed(verifyVRegTypeLike(*this, getInput().getType(), "operand type")))
@@ -970,8 +1038,19 @@ static LogicalResult verifyUnaryVecOp(UnaryOp op) {
 LogicalResult VexpOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VlnOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VsqrtOp::verify() { return verifyUnaryVecOp(*this); }
+LogicalResult VnegOp::verify() { return verifyUnaryVecOp(*this); }
+LogicalResult VrsqrtOp::verify() {
+  if (failed(verifyUnaryVecOp(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  Type elemType = inputType.getElementType();
+  if (!elemType.isF16() && !elemType.isF32())
+    return emitOpError("requires f16 or f32 vector element type");
+  return success();
+}
 LogicalResult VrecOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VreluOp::verify() { return verifyUnaryVecOp(*this); }
+LogicalResult VmovOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VnotOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VbcntOp::verify() {
   if (failed(verifyUnaryVecOp(*this)))
@@ -1033,6 +1112,41 @@ LogicalResult VaddcOp::verify() { return verifyCarryVecOp(*this); }
 LogicalResult VsubcOp::verify() { return verifyCarryVecOp(*this); }
 LogicalResult VaddcsOp::verify() { return verifyCarryVecOpWithInput(*this); }
 LogicalResult VsubcsOp::verify() { return verifyCarryVecOpWithInput(*this); }
+
+template <typename ReductionOp>
+static LogicalResult verifyReductionVecOp(ReductionOp op) {
+  return verifyUnaryVecOp(op);
+}
+
+template <typename ReductionOp>
+static LogicalResult verifyGroupReductionVecOp(ReductionOp op) {
+  if (failed(verifyReductionVecOp(op)))
+    return failure();
+  auto inputType = cast<VRegType>(op.getInput().getType());
+  Type elemType = inputType.getElementType();
+  if (auto intType = dyn_cast<IntegerType>(elemType)) {
+    if (intType.getWidth() < 16 || intType.getWidth() > 32)
+      return op.emitOpError(
+          "requires 16-bit or 32-bit integer vector element type");
+    return success();
+  }
+  if (!elemType.isF16() && !elemType.isF32())
+    return op.emitOpError("requires i16/i32/f16/f32 vector element type");
+  return success();
+}
+
+LogicalResult VcgaddOp::verify() { return verifyGroupReductionVecOp(*this); }
+LogicalResult VcgmaxOp::verify() { return verifyGroupReductionVecOp(*this); }
+LogicalResult VcgminOp::verify() { return verifyGroupReductionVecOp(*this); }
+LogicalResult VcpaddOp::verify() {
+  if (failed(verifyReductionVecOp(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  Type elemType = inputType.getElementType();
+  if (!elemType.isF16() && !elemType.isF32())
+    return emitOpError("requires f16 or f32 vector element type");
+  return success();
+}
 
 template <typename SelectOp>
 static LogicalResult verifyLaneSelectOp(SelectOp op) {
@@ -1098,6 +1212,103 @@ LogicalResult VselOp::verify() {
 
 LogicalResult VselrOp::verify() { return verifyLaneSelectOp(*this); }
 LogicalResult Vselrv2Op::verify() { return verifyLaneSelectOp(*this); }
+
+LogicalResult VslideOp::verify() {
+  if (failed(verifyVRegTypeLike(*this, getSrc0().getType(), "src0 type")) ||
+      failed(verifyVRegTypeLike(*this, getSrc1().getType(), "src1 type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  if (getSrc0().getType() != getSrc1().getType() ||
+      getSrc0().getType() != getResult().getType())
+    return emitOpError("requires src0, src1, and result to share one vector type");
+  return success();
+}
+
+LogicalResult VshiftOp::verify() {
+  if (failed(verifyVRegTypeLike(*this, getSrc().getType(), "src type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  if (getSrc().getType() != getResult().getType())
+    return emitOpError("requires src and result to share one vector type");
+  return success();
+}
+
+LogicalResult VsqzOp::verify() { return verifyUnaryVecOp(*this); }
+
+LogicalResult VusqzOp::verify() {
+  if (failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  return success();
+}
+
+LogicalResult VpermOp::verify() {
+  if (failed(verifyVRegTypeLike(*this, getSrc().getType(), "src type")) ||
+      failed(verifyVRegTypeLike(*this, getIndex().getType(), "index type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  auto srcType = cast<VRegType>(getSrc().getType());
+  auto indexType = cast<VRegType>(getIndex().getType());
+  auto resultType = cast<VRegType>(getResult().getType());
+  if (srcType != resultType)
+    return emitOpError("requires src and result to share one vector type");
+  if (srcType.getElementCount() != indexType.getElementCount())
+    return emitOpError("requires index vector to match source element count");
+  if (!isa<IntegerType>(indexType.getElementType()))
+    return emitOpError("requires integer index vector element type");
+  return success();
+}
+
+LogicalResult VpackOp::verify() {
+  if (failed(verifyVRegTypeLike(*this, getSrc0().getType(), "src0 type")) ||
+      failed(verifyVRegTypeLike(*this, getSrc1().getType(), "src1 type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  auto src0Type = cast<VRegType>(getSrc0().getType());
+  auto src1Type = cast<VRegType>(getSrc1().getType());
+  auto resultType = cast<VRegType>(getResult().getType());
+  if (src0Type != src1Type)
+    return emitOpError("requires src0 and src1 to share one vector type");
+  Type srcElemType = src0Type.getElementType();
+  Type resultElemType = resultType.getElementType();
+  if (!isa<IntegerType>(srcElemType) || !isa<IntegerType>(resultElemType))
+    return emitOpError("currently requires integer source and result element types");
+  if (resultType.getElementCount() != src0Type.getElementCount() * 2)
+    return emitOpError(
+        "requires result element count to be twice the source element count");
+  unsigned srcWidth = getIntOrFloatBitWidth(srcElemType);
+  unsigned resultWidth = getIntOrFloatBitWidth(resultElemType);
+  if (!srcWidth || resultWidth * 2 != srcWidth)
+    return emitOpError(
+        "requires result element width to be half the source element width");
+  return success();
+}
+
+template <typename UnpackOp>
+static LogicalResult verifyUnpackVecOp(UnpackOp op) {
+  if (failed(verifyVRegTypeLike(op, op.getSrc().getType(), "src type")) ||
+      failed(verifyVRegTypeLike(op, op.getResult().getType(), "result type")))
+    return failure();
+  auto srcType = cast<VRegType>(op.getSrc().getType());
+  auto resultType = cast<VRegType>(op.getResult().getType());
+  Type srcElemType = srcType.getElementType();
+  Type resultElemType = resultType.getElementType();
+  if (!isa<IntegerType>(srcElemType) || !isa<IntegerType>(resultElemType))
+    return op.emitOpError(
+        "currently requires integer source and result element types");
+  if (srcType.getElementCount() != resultType.getElementCount() * 2)
+    return op.emitOpError(
+        "requires source element count to be twice the result element count");
+  unsigned srcWidth = getIntOrFloatBitWidth(srcElemType);
+  unsigned resultWidth = getIntOrFloatBitWidth(resultElemType);
+  if (!srcWidth || srcWidth * 2 != resultWidth)
+    return op.emitOpError(
+        "requires result element width to be twice the source element width");
+  return success();
+}
+
+LogicalResult VsunpackOp::verify() { return verifyUnpackVecOp(*this); }
+LogicalResult VzunpackOp::verify() { return verifyUnpackVecOp(*this); }
 
 static bool isSupportedCmpMode(StringRef mode) {
   return mode == "eq" || mode == "ne" || mode == "lt" || mode == "le" ||
@@ -1222,6 +1433,107 @@ LogicalResult VmulaOp::verify() {
       getAcc().getType() != getRhs().getType() ||
       getAcc().getType() != getResult().getType())
     return emitOpError("requires acc, lhs, rhs, and result to share one vector type");
+  return success();
+}
+
+template <typename BinaryVecNoMaskOp>
+static LogicalResult verifyBinaryVecNoMaskOp(BinaryVecNoMaskOp op) {
+  if (failed(verifyVRegTypeLike(op, op.getLhs().getType(), "lhs type")) ||
+      failed(verifyVRegTypeLike(op, op.getRhs().getType(), "rhs type")) ||
+      failed(verifyVRegTypeLike(op, op.getResult().getType(), "result type")))
+    return failure();
+  if (op.getLhs().getType() != op.getRhs().getType() ||
+      op.getLhs().getType() != op.getResult().getType())
+    return op.emitOpError("requires lhs, rhs, and result to share one vector type");
+  return success();
+}
+
+template <typename BinaryVecNoMaskOp>
+static LogicalResult verifyFloatBinaryVecNoMaskOp(BinaryVecNoMaskOp op) {
+  if (failed(verifyBinaryVecNoMaskOp(op)))
+    return failure();
+  auto lhsType = cast<VRegType>(op.getLhs().getType());
+  Type elemType = lhsType.getElementType();
+  if (!elemType.isF16() && !elemType.isF32())
+    return op.emitOpError("requires f16 or f32 vector element type");
+  return success();
+}
+
+LogicalResult VpreluOp::verify() { return verifyFloatBinaryVecNoMaskOp(*this); }
+LogicalResult VexpdiffOp::verify() {
+  return verifyFloatBinaryVecNoMaskOp(*this);
+}
+LogicalResult VaddreluOp::verify() {
+  return verifyFloatBinaryVecNoMaskOp(*this);
+}
+LogicalResult VsubreluOp::verify() {
+  return verifyFloatBinaryVecNoMaskOp(*this);
+}
+
+LogicalResult VaxpyOp::verify() {
+  if (failed(verifyVRegTypeLike(*this, getSrc0().getType(), "src0 type")) ||
+      failed(verifyVRegTypeLike(*this, getSrc1().getType(), "src1 type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+  auto src0Type = cast<VRegType>(getSrc0().getType());
+  auto src1Type = cast<VRegType>(getSrc1().getType());
+  auto resultType = cast<VRegType>(getResult().getType());
+  if (src0Type != src1Type || src0Type != resultType)
+    return emitOpError("requires src0, src1, and result to share one vector type");
+  Type elemType = src0Type.getElementType();
+  if (!elemType.isF16() && !elemType.isF32())
+    return emitOpError("requires f16 or f32 vector element type");
+  if (getAlpha().getType() != elemType)
+    return emitOpError("requires alpha type to match vector element type");
+  return success();
+}
+
+template <typename ConvOp>
+static LogicalResult verifyFusedConvVecOp(ConvOp op) {
+  if (failed(verifyVRegTypeLike(op, op.getLhs().getType(), "lhs type")) ||
+      failed(verifyVRegTypeLike(op, op.getRhs().getType(), "rhs type")) ||
+      failed(verifyVRegTypeLike(op, op.getResult().getType(), "result type")))
+    return failure();
+  auto lhsType = cast<VRegType>(op.getLhs().getType());
+  auto rhsType = cast<VRegType>(op.getRhs().getType());
+  auto resultType = cast<VRegType>(op.getResult().getType());
+  if (lhsType != rhsType)
+    return op.emitOpError("requires lhs and rhs to share one vector type");
+  if (!isIntegerOrFloatLike(lhsType.getElementType()) ||
+      !isIntegerOrFloatLike(resultType.getElementType()))
+    return op.emitOpError(
+        "requires integer or floating-point vector element types");
+  auto lhsBits = getVRegStorageBitWidth(lhsType);
+  auto resultBits = getVRegStorageBitWidth(resultType);
+  if (!lhsBits || !resultBits || *lhsBits != *resultBits)
+    return op.emitOpError(
+        "requires source and result to preserve total vector storage width");
+  return success();
+}
+
+LogicalResult VaddreluconvOp::verify() {
+  return verifyFusedConvVecOp(*this);
+}
+LogicalResult VmulconvOp::verify() { return verifyFusedConvVecOp(*this); }
+
+void VtransposeOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSrcMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestMutable());
+}
+
+LogicalResult VtransposeOp::verify() {
+  auto destType = dyn_cast<PtrType>(getDest().getType());
+  auto srcType = dyn_cast<PtrType>(getSrc().getType());
+  if (!destType || !srcType)
+    return emitOpError("requires !pto.ptr source and destination");
+  if (classifyMemoryRole(destType) != MemoryRole::UB ||
+      classifyMemoryRole(srcType) != MemoryRole::UB)
+    return emitOpError("requires UB-backed source and destination pointers");
+  if (destType.getElementType() != srcType.getElementType())
+    return emitOpError(
+        "requires source and destination pointer element types to match");
   return success();
 }
 
