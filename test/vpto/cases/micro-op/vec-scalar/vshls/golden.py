@@ -15,21 +15,20 @@ import numpy as np
 ROWS = 32
 COLS = 32
 SEED = 19
-SCALE = np.float32(3.14)
+SHIFT = 3
 LOGICAL_ELEMS = 1000
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.random((ROWS, COLS), dtype=np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2.reshape(-1)[:LOGICAL_ELEMS] = (
-        v1.reshape(-1)[:LOGICAL_ELEMS] * SCALE
-    ).astype(np.float32, copy=False)
+    v1 = rng.integers(0, 1 << 20, size=(ROWS, COLS), dtype=np.uint32)
+    v2 = np.zeros((ROWS, COLS), dtype=np.int32)
+    golden_v2 = np.zeros((ROWS, COLS), dtype=np.int32)
+    flat = (v1.reshape(-1)[:LOGICAL_ELEMS] << SHIFT).astype(np.uint32, copy=False)
+    golden_v2.reshape(-1)[:LOGICAL_ELEMS] = flat.view(np.int32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
+    v1.view(np.int32).reshape(-1).tofile(output_dir / "v1.bin")
     v2.reshape(-1).tofile(output_dir / "v2.bin")
     golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
 

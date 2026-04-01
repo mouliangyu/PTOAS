@@ -15,7 +15,7 @@ import numpy as np
 ROWS = 32
 COLS = 32
 SEED = 19
-SRC_ELEM_BYTES = 4
+SRC_ELEM_BYTES = 2
 REPEAT_BYTES = 256
 
 
@@ -57,33 +57,27 @@ def _pack_predicate_mask(mask: np.ndarray, src_elem_bytes: int) -> np.ndarray:
 def generate(output_dir: Path, seed: int, src_elem_bytes: int) -> None:
     rng = np.random.default_rng(seed)
 
-    v1 = rng.uniform(-3.0, 3.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = v1.copy()
-    col_ids = np.arange(COLS, dtype=np.int32)
-    row_ids = np.arange(ROWS, dtype=np.int32)[:, None]
-    mismatch = ((row_ids + col_ids) % 3) == 1
-    v2[mismatch] = (v2[mismatch] + np.float32(1.25)).astype(np.float32)
-    mask = np.equal(v1, v2)
+    v1 = rng.integers(-32768, 32767, size=(ROWS, COLS), dtype=np.int16)
+    mask = v1 > np.int16(5)
 
     packed_mask = _pack_predicate_mask(mask, src_elem_bytes)
     output_init = np.zeros((ROWS * COLS,), dtype=np.uint8)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
     output_init.tofile(output_dir / "v3.bin")
     packed_mask.tofile(output_dir / "golden_v3.bin")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vcmp-eq validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vcmps-i16-signed validation."
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("."),
-        help="Directory where v1.bin/v2.bin/v3.bin/golden_v3.bin are written.",
+        help="Directory where v1.bin/v3.bin/golden_v3.bin are written.",
     )
     parser.add_argument(
         "--seed",

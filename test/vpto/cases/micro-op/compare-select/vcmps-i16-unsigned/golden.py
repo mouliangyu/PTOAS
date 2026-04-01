@@ -15,7 +15,7 @@ import numpy as np
 ROWS = 32
 COLS = 32
 SEED = 19
-SRC_ELEM_BYTES = 4
+SRC_ELEM_BYTES = 2
 REPEAT_BYTES = 256
 
 
@@ -57,13 +57,9 @@ def _pack_predicate_mask(mask: np.ndarray, src_elem_bytes: int) -> np.ndarray:
 def generate(output_dir: Path, seed: int, src_elem_bytes: int) -> None:
     rng = np.random.default_rng(seed)
 
-    v1 = rng.uniform(-3.0, 3.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = v1.copy()
-    col_ids = np.arange(COLS, dtype=np.int32)
-    row_ids = np.arange(ROWS, dtype=np.int32)[:, None]
-    mismatch = ((row_ids + col_ids) % 3) == 1
-    v2[mismatch] = (v2[mismatch] + np.float32(1.25)).astype(np.float32)
-    mask = np.equal(v1, v2)
+    v1 = rng.integers(0, 65535, size=(ROWS, COLS), dtype=np.uint16)
+    v2 = np.array([1000], dtype=np.uint16)
+    mask = v1 > v2[0]
 
     packed_mask = _pack_predicate_mask(mask, src_elem_bytes)
     output_init = np.zeros((ROWS * COLS,), dtype=np.uint8)
@@ -77,7 +73,7 @@ def generate(output_dir: Path, seed: int, src_elem_bytes: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vcmp-eq validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vcmps-i16-unsigned validation."
     )
     parser.add_argument(
         "--output-dir",

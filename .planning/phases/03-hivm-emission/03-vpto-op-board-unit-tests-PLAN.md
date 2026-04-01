@@ -136,6 +136,11 @@
 - 对覆盖率推进而言，`implemented`、`blocked`、`board-passed` 都属于“已补充测例”
 - 只有 `planned` 才表示该 case 仍未被真正补充到仓库，且也尚未形成“文档层面无法写 case”的明确 blocker 结论
 - `blocked` 不能用于表达“当前实现编不过/跑不过/还没接 lowering”；这些应保留为 `implemented`，并在 `notes` 中记录失败点
+- 执行阶段不得因为主观判断“这条看起来写不出来”而自行跳过 case
+- 只有开发者明确确认或提出某条 case / 某类语义应按 blocker 管理后，才允许把该 blocker 正式落到 `scope` / `matrix`
+- 在获得上述确认前，case 仍按 `planned` 或 `implemented` 推进；不能先斩后奏地改成 `blocked`
+- 一旦某条 case 已被开发者确认并登记为 `blocked`，后续错误分析、问题收敛和修复阶段都应跳过该条目
+- 已登记的 `blocked` 条目只有在开发者主动取消 `blocked` 标记后，才重新进入分析和修复队列
 
 ## Case Design Rules
 
@@ -166,6 +171,9 @@
 统一设计约束：
 
 - 采用“前处理 + 主体 + 后处理”三段式模板
+- 测例必须保持 `scope` / `matrix` 中声明的测试目标；不允许为了通过 parser / verifier / lowering 而把 case 改成无法验证原目标语义的形式
+- 如果当前测例实现与测试目标不符合，必须继续修正到符合目标；不能把不符合目标的实现当作“已修复”
+- 若当前 surface / lowering / emitter 还无法同时满足“语法合法”和“测试目标成立”，应将其记为 surface / implementation 问题，而不是弱化测例目标
 - 用例骨架参考 `test/vpto/cases/tileop/abs/`，尤其是 GM↔UB 搬运方式与同步方式
 - 前处理负责按 `tileop/abs` 的方式完成 GM→UB DMA 与必要同步
 - 主体在 `pto.vecscope` region 内执行被测 VPTO op
@@ -205,6 +213,49 @@
 - reduction 的结果落位
 - rearrangement 的顺序变化
 
+## Error Analysis Rules
+
+错误分析与问题收敛阶段，必须遵守以下约定：
+
+1. 分析对象只来自已静态登记的 case
+   - 只分析 `matrix` 中已存在、且 `scope` 已定义目标的 case
+   - 不允许绕过 `scope` / `matrix`，直接对临时 case 或未登记 case 下结论
+
+2. `blocked` 条目默认不进入分析队列
+   - 已被开发者确认并登记为 `blocked` 的 case，在开发者主动取消前，一律跳过错误分析、问题收敛和修复
+   - 错误分析阶段只处理 `implemented` 或 `board-passed` 回退后的失败条目
+
+3. 先检查 case 是否符合 `scope` 目标
+   - 若 case 实现与 `scope` / `matrix` 声明的测试目标不一致，优先判为测例实现问题
+   - 不允许为了消除 parser / verifier / lowering / codegen 错误而弱化 case 目标
+   - 若当前实现无法同时满足“语法合法”和“目标成立”，应记录为 surface / implementation 问题，而不是把 case 改成无意义样例
+
+4. 语义判断只以文档为准
+   - 错误分析中的语义判断首先依据 `docs/vpto-spec.md` 与 `docs/isa/`
+   - 若文档之间存在冲突或不足以给出稳定 oracle，应整理成待开发者确认结论
+   - 未经开发者确认，不得自行把该 case 转成 `blocked`
+
+5. 先判定失败层级，再决定处理方式
+   - parser / verifier 失败：先检查 case 写法是否符合当前 ODS / surface
+   - lowering / emitter / codegen 失败：在 case 目标不变前提下，记录为实现链路问题
+   - runtime / board 失败：在 case 与 oracle 均成立前提下，记录为运行链路或后端问题
+   - 不允许把实现链路失败误记成文档 blocker
+
+6. 向量 case 的结构合法性必须优先检查
+   - 向量 / mask / align 相关语义必须位于 `pto.vecscope` 内
+   - 需要 operand feed 的向量 / mask / align 输入只能通过 UB 访问 op 获得
+   - 结果必须遵循 `GM→UB→计算→UB→GM` 的可观测路径
+   - 若 case 违反这些结构约束，应先修 case，再继续分析下游报错
+
+7. 错误结论必须静态回写
+   - case 已存在且失败时，状态保持为 `implemented`
+   - 失败点、已确认原因和当前判断应写入 `matrix.notes`
+   - 只有开发者确认的文档层 blocker，才允许改成 `blocked`
+
+8. 错误分析不改变覆盖率推进原则
+   - 单个 case 或单个 family 的失败，不影响继续收敛其他非-`blocked` 条目
+   - 只要 `planned` 未清零或仍有非-`blocked` 失败条目待收敛，就不因为中间汇报而停止
+
 ## Validation
 
 执行顺序固定为：
@@ -227,6 +278,8 @@
 4. 只有当 `matrix` 中所有 case 都已进入 `implemented`、`blocked` 或 `board-passed` 后，才进入“集中提通过率”的主阶段
 5. 覆盖率阶段中的中间汇报不改变执行状态；若 `planned` 未清零，则默认继续实施，而不是等待下一轮再推进
 6. 只有当 case 无法依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出时，才允许转为 `blocked`
+7. 若怀疑某 case 应转为 `blocked`，默认动作不是跳过，而是先整理成待确认结论；只有开发者确认或提出后，才能更新 `scope` / `matrix`
+8. 对已登记为 `blocked` 的条目，默认不再做错误分析与修复推进；除非开发者主动取消 `blocked`
 
 验收标准分两层：
 
