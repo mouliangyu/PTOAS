@@ -95,6 +95,8 @@ case scope 文档。它负责三件事：
 - 文档未声明、但 IR 暂时能打印出来的形式，不直接纳入正式覆盖范围
 - 文档声明了且语义足够清楚时，应先把 case 写出来；即使当前 verifier 或 lowering 不接受，也不因此把条目标为 `blocked`
 - 只有当文档本身不足以写出语义明确的 case 或无法定义稳定 oracle 时，才允许标记 `blocked`
+- 执行阶段不得自行把“怀疑写不出来”的 case 记成 `blocked` 并跳过；只有开发者明确确认或提出后，才能把 blocker 正式登记到本文件与 `matrix`
+- 已由开发者确认并登记为 `blocked` 的 case，在开发者主动取消前，不再进入错误分析与修复推进流程
 - 类型、属性、参数列表、打印形式的“是否纳入 scope”以文档语义为准；实现链路失败属于后续 `implemented` 阶段的失败记录，而不是 scope 层 blocker
 
 ## Excluded Infrastructure
@@ -982,7 +984,9 @@ assessment 驱动的补充 case：
 `pto.vselr` 当前预期补齐以下 case：
 
 - `micro-op/compare-select/vselr`
-  - 目标：验证 reversed select 语义
+  - 状态：`blocked`
+  - 原因：当前无法根据 `docs/isa/11-compare-select.md`、`docs/isa/12-data-rearrangement.md` 与 `VPTOOps.td` 唯一确定其语义；暂不继续收敛
+  - 目标：待语义敲定后，再恢复“验证 reversed select 语义”
   - 覆盖：`core-f32, full-mask, reversed-select`
 
 ### Conversion Cases

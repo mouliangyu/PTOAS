@@ -17,6 +17,7 @@ CASE_NAME="${CASE_NAME:-}"
 MODULE_ID="${MODULE_ID:-a5d60abf67864aa0}"
 DEVICE="${DEVICE:-SIM}"
 SIM_LIB_DIR="${SIM_LIB_DIR:-}"
+COMPILE_ONLY="${COMPILE_ONLY:-0}"
 
 log() {
   echo "[$(date +'%F %T')] $*"
@@ -319,7 +320,7 @@ build_host_executable() {
     -l"${case_token}_kernel"
 }
 
-build_one() {
+build_one_impl() {
   local case_name="$1"
   local case_dir="${CASES_ROOT}/${case_name}"
   local case_token
@@ -341,9 +342,6 @@ build_one() {
   [[ -f "${case_dir}/golden.py" ]] || die "missing golden.py for ${case_name}"
   [[ -f "${case_dir}/compare.py" ]] || die "missing compare.py for ${case_name}"
 
-  rm -rf "${out_dir}"
-  mkdir -p "${out_dir}"
-
   log "[$case_name] step 1/6: lower VPTO MLIR to LLVM IR"
   "${PTOAS_BIN}" ${PTOAS_FLAGS} ${VPTO_FLAGS} \
     "${case_dir}/kernel.pto" -o "${llvm_ir}"
@@ -363,6 +361,12 @@ build_one() {
 
   log "[$case_name] step 4/6: link kernel shared library"
   link_kernel_so "${case_token}" "${host_stub_obj}" "${launch_obj}" "${repack_obj}" "${repack_so}" "${case_module_id}"
+
+  if [[ "${COMPILE_ONLY}" == "1" ]]; then
+    log "[$case_name] compile-only mode: stop after kernel shared library"
+    log "[$case_name] output dir: ${out_dir}"
+    return 0
+  fi
 
   log "[$case_name] step 5/6: build host executable and golden"
   build_host_executable "${case_token}" "${case_dir}" "${out_dir}"
@@ -404,12 +408,28 @@ EOF
   log "[$case_name] output dir: ${out_dir}"
 }
 
+build_one() {
+  local case_name="$1"
+  local case_token
+  case_token="$(printf '%s' "${case_name}" | sed 's#[/[:space:]]#_#g')"
+  local out_dir="${WORK_SPACE}/${case_token}"
+  local case_log="${out_dir}/validation.log"
+
+  rm -rf "${out_dir}"
+  mkdir -p "${out_dir}"
+
+  (
+    build_one_impl "${case_name}"
+  ) 2>&1 | tee "${case_log}"
+}
+
 log "=== VPTO Host Validation ==="
 log "WORK_SPACE=${WORK_SPACE}"
 log "ASCEND_HOME_PATH=${ASCEND_HOME_PATH}"
 log "PTOAS_BIN=${PTOAS_BIN}"
 log "PTOAS_FLAGS=${PTOAS_FLAGS}"
 log "VPTO_FLAGS=${VPTO_FLAGS}"
+log "COMPILE_ONLY=${COMPILE_ONLY}"
 log "CASE_NAME=${CASE_NAME:-<all>}"
 
 for case_name in "${CASES[@]}"; do

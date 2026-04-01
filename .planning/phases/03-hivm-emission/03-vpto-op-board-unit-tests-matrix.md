@@ -8,6 +8,18 @@
 - `board-passed`: 已完成上板验证
 - `blocked`: 当前无法仅依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出语义明确的 case；只用于文档层面的不可写阻塞
 
+## Latest Compile Scan
+
+- 最新 micro-op compile-only 扫描命令：
+  - `source scripts/ptoas_env.sh && WORK_SPACE=/tmp/vpto-micro-op-sim-compile-rerun DEVICE=SIM COMPILE_ONLY=1 JOBS=64 CASE_PREFIX=micro-op test/vpto/scripts/run_host_vpto_validation_parallel.sh`
+- 最新结果：
+  - 总计 `223`，`PASS=88`，`FAIL=135`
+  - 汇总文件：`/tmp/vpto-micro-op-sim-compile-rerun/parallel-summary.tsv`
+- 本轮 matrix 刷新原则：
+  - 只更新最新 rerun 已确认的进度与失败归因
+  - 不因为 compile 失败回退 `implemented`
+  - 仅保留开发者已确认的 `blocked` 项；其余失败继续记录为实现缺口、surface 漂移或文档缺口
+
 ## Infrastructure Ops
 
 | op | family | doc_source | in_scope | case | scenarios | status | notes |
@@ -128,7 +140,7 @@
 | `pto.vcmp` | compare-select | `docs/isa/11-compare-select.md` | yes | `micro-op/compare-select/vcmp-eq` | `core-f32, full-mask, relation-eq` | 另有 `vcmp-lt`、tail、整型与异常值变体 |
 | `pto.vcmps` | compare-select | `docs/isa/11-compare-select.md` | yes | `micro-op/compare-select/vcmps-f32` | `core-f32, full-mask, scalar-operand` | 另有 tail、整型与异常值变体 |
 | `pto.vsel` | compare-select | `docs/isa/11-compare-select.md` | yes | `micro-op/compare-select/vsel` | `core-f32, full-mask` | 另有 tail 与整型变体 |
-| `pto.vselr` | compare-select | `docs/isa/11-compare-select.md` | yes | `micro-op/compare-select/vselr` | `core-f32, full-mask, reversed-select` | |
+| `pto.vselr` | compare-select | `docs/isa/11-compare-select.md` | yes | `micro-op/compare-select/vselr` | `core-f32, full-mask, reversed-select` | 语义待定，当前按 `blocked` 管理 |
 | `pto.vintlv` | rearrangement | `docs/isa/12-data-rearrangement.md` | yes | `micro-op/rearrangement/vintlv-vdintlv` | `paired-roundtrip, lane-order` | 与 `pto.vdintlv` 成组验证 |
 | `pto.vdintlv` | rearrangement | `docs/isa/12-data-rearrangement.md` | yes | `micro-op/rearrangement/vintlv-vdintlv` | `paired-roundtrip, lane-order` | 与 `pto.vintlv` 成组验证 |
 | `pto.vslide` | rearrangement | `docs/isa/12-data-rearrangement.md` | yes | `micro-op/rearrangement/vslide` | `lane-order, slide-window` | |
@@ -240,11 +252,11 @@
 | `micro-op/compare-select/vsel` | compare-select | `pto.vsel` | `core-f32, full-mask` | implemented | static case added under `test/vpto/cases/micro-op/compare-select/vsel`; board closure pending |
 | `micro-op/compare-select/vsel-tail` | compare-select | `pto.vsel` | `core-f32, tail-mask` | implemented | static case added under `test/vpto/cases/micro-op/compare-select/vsel-tail`; board closure pending |
 | `micro-op/compare-select/vsel-i16` | compare-select | `pto.vsel` | `core-i16-signed, full-mask` | implemented | static case added under `test/vpto/cases/micro-op/compare-select/vsel-i16`; board closure pending |
-| `micro-op/compare-select/vselr` | compare-select | `pto.vselr` | `core-f32, full-mask, reversed-select` | implemented | static case added under `test/vpto/cases/micro-op/compare-select/vselr`; board closure pending |
+| `micro-op/compare-select/vselr` | compare-select | `pto.vselr` | `core-f32, full-mask, reversed-select` | blocked | 当前无法根据 `docs/isa/11-compare-select.md`、`docs/isa/12-data-rearrangement.md` 与 `VPTOOps.td` 唯一确定 `vselr` 语义；现有 case 仍是旧的 `mask + cmp_mode` 伪接口，暂停继续收敛 |
 | `micro-op/compare-select/vcmps-f32` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/compare-select/vcmps-tail` | compare-select | `pto.vcmps` | `core-f32, tail-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/compare-select/vcmps-i16-signed` | compare-select | `pto.vcmps` | `core-i16-signed, full-mask, scalar-operand` | implemented | static case added under `test/vpto/cases/micro-op/compare-select/vcmps-i16-signed`; board closure pending |
-| `micro-op/compare-select/vcmps-i16-unsigned` | compare-select | `pto.vcmps` | `core-i16-unsigned, full-mask, scalar-operand` | implemented | static case added under `test/vpto/cases/micro-op/compare-select/vcmps-i16-unsigned`; board closure pending |
+| `micro-op/compare-select/vcmps-i16-unsigned` | compare-select | `pto.vcmps` | `core-i16-unsigned, full-mask, scalar-operand` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍失败；case 已按 `ui16` 标量 surface 落地，但 `--vpto-emit-hivm-llvm` 仍在 lowering 阶段报 `llvm.load` 不接受 `ui16` 结果类型，当前是 unsigned scalar path 的 lowering 缺口 |
 | `micro-op/compare-select/vcmps-f32-exceptional` | compare-select | `pto.vcmps` | `core-f32, full-mask, scalar-operand, exceptional-values` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/conversion/vcvt-f32-to-f16` | conversion | `pto.vcvt` | `f32-to-f16, full-mask` | implemented | static case added under `test/vpto/cases/micro-op/conversion/vcvt-f32-to-f16`; board closure pending |
 | `micro-op/conversion/vcvt-f16-to-f32` | conversion | `pto.vcvt` | `f16-to-f32, full-mask` | implemented | static case added under `test/vpto/cases/micro-op/conversion/vcvt-f16-to-f32`; board closure pending |
@@ -263,9 +275,9 @@
 | `micro-op/materialization-predicate/ppack-punpack` | materialization-predicate | `pto.ppack`, `pto.punpack` | `pack-unpack-roundtrip` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/ppack-punpack`; board closure pending |
 | `micro-op/materialization-predicate/pdintlv_b8` | materialization-predicate | `pto.pdintlv_b8` | `predicate-transform, lane-order` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pdintlv_b8`; board closure pending |
 | `micro-op/materialization-predicate/pintlv_b16` | materialization-predicate | `pto.pintlv_b16` | `predicate-transform, lane-order` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pintlv_b16`; board closure pending |
-| `micro-op/materialization-predicate/pand` | materialization-predicate | `pto.pand` | `predicate-transform` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pand`; board closure pending |
-| `micro-op/materialization-predicate/por` | materialization-predicate | `pto.por` | `predicate-transform` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/por`; board closure pending |
-| `micro-op/materialization-predicate/pxor` | materialization-predicate | `pto.pxor` | `predicate-transform` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pxor`; board closure pending |
+| `micro-op/materialization-predicate/pand` | materialization-predicate | `pto.pand` | `predicate-transform` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍失败；case 已按当前 surface 落地，失败停在 VPTO LLVM emitter 路径构造 `scf.for` 时缺少 dialect 注册 |
+| `micro-op/materialization-predicate/por` | materialization-predicate | `pto.por` | `predicate-transform` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍失败；case 已按当前 surface 落地，失败停在 VPTO LLVM emitter 路径构造 `scf.for` 时缺少 dialect 注册 |
+| `micro-op/materialization-predicate/pxor` | materialization-predicate | `pto.pxor` | `predicate-transform` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍失败；case 已按当前 surface 落地，失败停在 VPTO LLVM emitter 路径构造 `scf.for` 时缺少 dialect 注册 |
 | `micro-op/materialization-predicate/pnot` | materialization-predicate | `pto.pnot` | `predicate-transform` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pnot`; board closure pending |
 | `micro-op/materialization-predicate/psel` | materialization-predicate | `pto.psel` | `predicate-transform, predicate-select` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/psel`; board closure pending |
 | `micro-op/predicate-load-store/psts-plds` | predicate-load-store | `pto.plds`, `pto.psts` | `packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements` | implemented | static case added under `test/vpto/cases/micro-op/predicate-load-store/psts-plds`; board closure pending |
@@ -282,21 +294,21 @@
 | `micro-op/reduction/vcpadd` | reduction | `pto.vcpadd` | `prefix-op, full-mask` | implemented | static case added under `test/vpto/cases/micro-op/reduction/vcpadd`; board closure pending |
 | `micro-op/vector-load-store/vlds` | vector-load-store | `pto.vlds` | `core-f32, contiguous, full-mask, aligned, dist-norm` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vlds`; board closure pending |
 | `micro-op/vector-load-store/vlds-tail` | vector-load-store | `pto.vlds` | `core-f32, contiguous, tail-mask, aligned, dist-norm` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vlds-tail`; board closure pending |
-| `micro-op/vector-load-store/vlds-brc-b32` | vector-load-store | `pto.vlds` | `core-f32, full-mask, aligned, dist-brc-b32` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vlds-brc-b32`; board closure pending |
+| `micro-op/vector-load-store/vlds-brc-b32` | vector-load-store | `pto.vlds` | `core-f32, full-mask, aligned, dist-brc-b32` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse/verifier；case 目标可静态登记，但当前 verifier 明确拒绝 `BRC_B32`，这是 docs/isa 与 verifier 的 surface 漂移，不能弱化成别的 `dist` |
 | `micro-op/vector-load-store/vsts` | vector-load-store | `pto.vsts` | `core-f32, contiguous, full-mask, aligned, dist-norm` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsts`; board closure pending |
 | `micro-op/vector-load-store/vldas-vldus` | vector-load-store | `pto.vldas`, `pto.vldus` | `core-f32, full-mask, unaligned, stream-state` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vldas-vldus`; board closure pending |
 | `micro-op/vector-load-store/vldx2-vstx2` | vector-load-store | `pto.vldx2`, `pto.vstx2` | `core-f32, full-mask, paired-roundtrip, dintlv` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vldx2-vstx2`; board closure pending |
 | `micro-op/vector-load-store/vsld` | vector-load-store | `pto.vsld` | `core-f32, full-mask, strided-load` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsld`; board closure pending |
-| `micro-op/vector-load-store/vsldb` | vector-load-store | `pto.vsldb` | `core-f32, full-mask, block-strided-load, block-mask` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsldb`; board closure pending |
+| `micro-op/vector-load-store/vsldb` | vector-load-store | `pto.vsldb` | `core-f32, full-mask, block-strided-load, block-mask` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 skeleton 不符合目标，且 docs 只说 `%offset` 是 packed control word，未给可写 testcase 的编码规则，故继续按文档/接口缺口记录 |
 | `micro-op/gather-scatter/vscatter` | gather-scatter | `pto.vscatter` | `core-f32, full-mask, non-contiguous, explicit-index-pattern, scatter-store, store-effect-validation, no-alias` | implemented | static case added under `test/vpto/cases/micro-op/gather-scatter/vscatter`; board closure pending |
 | `micro-op/vector-load-store/vsst` | vector-load-store | `pto.vsst` | `core-f32, full-mask, strided-store` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsst`; board closure pending |
-| `micro-op/vector-load-store/vsstb` | vector-load-store | `pto.vsstb` | `core-f32, full-mask, block-strided-store, block-mask` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsstb`; board closure pending |
-| `micro-op/vector-load-store/vsta` | vector-load-store | `pto.vsta` | `core-f32, full-mask, aligned, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsta`; board closure pending |
-| `micro-op/vector-load-store/vstas` | vector-load-store | `pto.vstas` | `core-f32, full-mask, aligned, immediate-offset, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstas`; board closure pending |
+| `micro-op/vector-load-store/vsstb` | vector-load-store | `pto.vsstb` | `core-f32, full-mask, block-strided-store, block-mask` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 skeleton 不符合目标，且 docs 只说 `%offset` 是 packed control word，未给可写 testcase 的编码规则，故继续按文档/接口缺口记录 |
+| `micro-op/vector-load-store/vsta` | vector-load-store | `pto.vsta` | `core-f32, full-mask, aligned, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；flush 语义依赖 preceding unaligned-store stream，在 `vstu/vstus/vstur` surface 未稳定前不能忠实构造 producer/consumer 链，故继续按接口漂移记录 |
+| `micro-op/vector-load-store/vstas` | vector-load-store | `pto.vstas` | `core-f32, full-mask, aligned, immediate-offset, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；scalar-offset flush 语义同样依赖真实 unaligned-store 上游，当前不能只为过 parser 伪造 align 来源，故继续按接口漂移记录 |
 | `micro-op/vector-load-store/vstar` | vector-load-store | `pto.vstar` | `core-f32, full-mask, aligned, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstar`; board closure pending |
-| `micro-op/vector-load-store/vstu` | vector-load-store | `pto.vstu` | `core-f32, full-mask, unaligned, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstu`; board closure pending |
-| `micro-op/vector-load-store/vstus` | vector-load-store | `pto.vstus` | `core-f32, full-mask, unaligned, immediate-offset, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstus`; board closure pending |
-| `micro-op/vector-load-store/vstur` | vector-load-store | `pto.vstur` | `core-f32, full-mask, unaligned, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstur`; board closure pending |
+| `micro-op/vector-load-store/vstu` | vector-load-store | `pto.vstu` | `core-f32, full-mask, unaligned, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 docs/isa 与 `VPTOOps.td` 对参数表和 `mode` 仍有漂移，现有 skeleton 也未测到目标语义，继续按接口漂移记录 |
+| `micro-op/vector-load-store/vstus` | vector-load-store | `pto.vstus` | `core-f32, full-mask, unaligned, immediate-offset, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 docs/isa 与 `VPTOOps.td` 对参数表和 `mode` 仍有漂移，现有 skeleton 也未测到目标语义，继续按接口漂移记录 |
+| `micro-op/vector-load-store/vstur` | vector-load-store | `pto.vstur` | `core-f32, full-mask, unaligned, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 docs/isa 与 `VPTOOps.td` 对参数表和 `mode` 仍有漂移，现有 skeleton 也未测到目标语义，继续按接口漂移记录 |
 | `micro-op/gather-scatter/vgather2` | gather-scatter | `pto.vgather2` | `core-f32, full-mask, non-contiguous, explicit-index-pattern, load-effect-validation, no-alias` | implemented | static case added under `test/vpto/cases/micro-op/gather-scatter/vgather2`; board closure pending |
 | `micro-op/gather-scatter/vgatherb` | gather-scatter | `pto.vgatherb` | `core-f32, full-mask, block-gather, aligned-base, load-effect-validation, no-alias` | implemented | static case added under `test/vpto/cases/micro-op/gather-scatter/vgatherb`; board closure pending |
 | `micro-op/gather-scatter/vgather2_bc` | gather-scatter | `pto.vgather2_bc` | `core-f32, full-mask, non-contiguous, masked-gather, load-effect-validation, no-alias` | implemented | static case added under `test/vpto/cases/micro-op/gather-scatter/vgather2_bc`; board closure pending |
@@ -304,7 +316,7 @@
 | `micro-op/rearrangement/vslide` | rearrangement | `pto.vslide` | `lane-order, slide-window` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vslide`; board closure pending |
 | `micro-op/rearrangement/vshift` | rearrangement | `pto.vshift` | `lane-order, zero-fill` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vshift`; board closure pending |
 | `micro-op/rearrangement/vsqz` | rearrangement | `pto.vsqz` | `predicate-driven-rearrangement, stable-order` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vsqz`; board closure pending |
-| `micro-op/rearrangement/vusqz` | rearrangement | `pto.vusqz` | `predicate-driven-rearrangement, placement` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vusqz`; board closure pending |
+| `micro-op/rearrangement/vusqz` | rearrangement | `pto.vusqz` | `predicate-driven-rearrangement, placement` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 surface 不能仅凭 docs/isa 忠实表达 placement 目标，先按语义/接口缺口记录，不弱化目标 |
 | `micro-op/rearrangement/vperm` | rearrangement | `pto.vperm` | `lane-order, explicit-index-pattern` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vperm`; board closure pending |
 | `micro-op/rearrangement/vpack` | rearrangement | `pto.vpack` | `pack-unpack, narrowing` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vpack`; board closure pending |
 | `micro-op/rearrangement/vsunpack` | rearrangement | `pto.vsunpack` | `pack-unpack, sign-extend` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vsunpack`; board closure pending |
@@ -313,7 +325,7 @@
 | `micro-op/rearrangement/vslide-tail-window` | rearrangement | `pto.vslide` | `lane-order, slide-window, tail-mask` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vslide-tail-window`; board closure pending |
 | `micro-op/rearrangement/vshift-tail-zero-fill` | rearrangement | `pto.vshift` | `lane-order, zero-fill, tail-mask` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vshift-tail-zero-fill`; board closure pending |
 | `micro-op/rearrangement/vsqz-nontrivial-mask` | rearrangement | `pto.vsqz` | `predicate-driven-rearrangement, stable-order` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vsqz-nontrivial-mask`; board closure pending |
-| `micro-op/rearrangement/vusqz-nontrivial-mask` | rearrangement | `pto.vusqz` | `predicate-driven-rearrangement, placement` | implemented | static case added under `test/vpto/cases/micro-op/rearrangement/vusqz-nontrivial-mask`; board closure pending |
+| `micro-op/rearrangement/vusqz-nontrivial-mask` | rearrangement | `pto.vusqz` | `predicate-driven-rearrangement, placement` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 surface 不能仅凭 docs/isa 忠实表达 nontrivial-mask placement 目标，先按语义/接口缺口记录，不弱化目标 |
 | `micro-op/dsa-sfu/vlrelu-f32` | dsa-sfu | `pto.vlrelu` | `core-f32, scalar-operand, full-mask` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/dsa-sfu/vlrelu-tail` | dsa-sfu | `pto.vlrelu` | `core-f32, tail-mask, scalar-operand` | implemented | host validation reaches step 5; local run is blocked by missing `SIM_LIB_DIR` |
 | `micro-op/dsa-sfu/vlrelu-f16` | dsa-sfu | `pto.vlrelu` | `core-f16, full-mask, scalar-operand` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vlrelu-f16`; board closure pending |
@@ -322,13 +334,13 @@
 | `micro-op/dsa-sfu/vaddrelu-f32` | dsa-sfu | `pto.vaddrelu` | `core-f32, fused-op` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vaddrelu-f32`; board closure pending |
 | `micro-op/dsa-sfu/vsubrelu-f32` | dsa-sfu | `pto.vsubrelu` | `core-f32, fused-op` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vsubrelu-f32`; board closure pending |
 | `micro-op/dsa-sfu/vaxpy-f32` | dsa-sfu | `pto.vaxpy` | `core-f32, scalar-operand, fused-op` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vaxpy-f32`; board closure pending |
-| `micro-op/dsa-sfu/vaddreluconv` | dsa-sfu | `pto.vaddreluconv` | `fused-op, conversion-result` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vaddreluconv`; board closure pending |
-| `micro-op/dsa-sfu/vmulconv` | dsa-sfu | `pto.vmulconv` | `fused-op, conversion-result` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vmulconv`; board closure pending |
+| `micro-op/dsa-sfu/vaddreluconv` | dsa-sfu | `pto.vaddreluconv` | `fused-op, conversion-result` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 skeleton 沿用旧的 `vector + scalar` 写法，而修到 `vector + vector` 后，`conversion-result` 目标又会撞到 docs/ODS/verify 对 result 形状与位宽约束未对齐的问题 |
+| `micro-op/dsa-sfu/vmulconv` | dsa-sfu | `pto.vmulconv` | `fused-op, conversion-result` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 skeleton 沿用旧的 `vector + scalar` 写法，而修到 `vector + vector` 后，`conversion-result` 目标又会撞到 docs/ODS/verify 对 result 形状与位宽约束未对齐的问题 |
 | `micro-op/dsa-sfu/vmull` | dsa-sfu | `pto.vmull` | `widening-op, hi-lo-split` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vmull`; board closure pending |
 | `micro-op/dsa-sfu/vmula` | dsa-sfu | `pto.vmula` | `core-f32, fused-op, accumulator` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vmula`; board closure pending |
 | `micro-op/dsa-sfu/vci` | dsa-sfu / conversion | `pto.vci` | `index-generation` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vci`; board closure pending |
 | `micro-op/dsa-sfu/vbitsort` | dsa-sfu | `pto.vbitsort` | `index-generation, layout-transform` | blocked | `docs/vpto-spec.md` 与 `docs/isa/13-dsa-sfu-ops.md` 目前只给出 surface/接口层信息，尚未形成可稳定闭环的 oracle 语义 |
-| `micro-op/dsa-sfu/vtranspose` | dsa-sfu | `pto.vtranspose` | `ub-to-ub, layout-transform, representative-config` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vtranspose`; board closure pending |
+| `micro-op/dsa-sfu/vtranspose` | dsa-sfu | `pto.vtranspose` | `ub-to-ub, layout-transform, representative-config` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍失败；case 已按当前 surface 落地，失败停在 VPTO LLVM emitter 路径构造 `scf.for` 时缺少 dialect 注册 |
 | `micro-op/vec-scalar/vsubs-tail` | vec-scalar | `pto.vsubs` | `core-f32, tail-mask, scalar-operand` | implemented | static case added under `test/vpto/cases/micro-op/vec-scalar/vsubs-tail`; board closure pending |
 | `micro-op/vec-scalar/vmuls-tail` | vec-scalar | `pto.vmuls` | `core-f32, tail-mask, scalar-operand` | implemented | static case added under `test/vpto/cases/micro-op/vec-scalar/vmuls-tail`; board closure pending |
 | `micro-op/vec-scalar/vmaxs-tail` | vec-scalar | `pto.vmaxs` | `core-f32, tail-mask, scalar-operand` | implemented | static case added under `test/vpto/cases/micro-op/vec-scalar/vmaxs-tail`; board closure pending |
@@ -369,7 +381,7 @@
 | `micro-op/materialization-predicate/pdintlv_b8-nontrivial` | materialization-predicate | `pto.pdintlv_b8` | `predicate-transform, lane-order` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pdintlv_b8-nontrivial`; board closure pending |
 | `micro-op/materialization-predicate/pintlv_b16-nontrivial` | materialization-predicate | `pto.pintlv_b16` | `predicate-transform, lane-order` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/pintlv_b16-nontrivial`; board closure pending |
 | `micro-op/materialization-predicate/psel-tail-predicate` | materialization-predicate | `pto.psel` | `predicate-transform, predicate-select, tail-mask` | implemented | static case added under `test/vpto/cases/micro-op/materialization-predicate/psel-tail-predicate`; board closure pending |
-| `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary` | predicate-load-store | `pto.plds`, `pto.psts` | `packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements` | implemented | static case added under `test/vpto/cases/micro-op/predicate-load-store/psts-plds-packed-prefix-boundary`; board closure pending |
+| `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary` | predicate-load-store | `pto.plds`, `pto.psts` | `packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前目标要求 packed roundtrip，但 `pto.psts` / `pto.plds` 文档只定义普通 scalar-offset UB store/load，不改变 target op 的前提下无法忠实写出 |
 | `micro-op/predicate-load-store/pstu-state-advance-boundary` | predicate-load-store | `pto.pstu` | `unaligned-packed-store, state-update, representative-logical-elements` | implemented | static case added under `test/vpto/cases/micro-op/predicate-load-store/pstu-state-advance-boundary`; board closure pending |
 | `micro-op/reduction/vcgadd-tail` | reduction | `pto.vcgadd` | `group-reduction, tail-mask, result-placement` | implemented | static case added under `test/vpto/cases/micro-op/reduction/vcgadd-tail`; board closure pending |
 | `micro-op/reduction/vcgmax-tie` | reduction | `pto.vcgmax` | `group-reduction, result-placement` | implemented | static case added under `test/vpto/cases/micro-op/reduction/vcgmax-tie`; board closure pending |
@@ -379,9 +391,9 @@
 | `micro-op/vector-load-store/vldas-vldus-state-chain` | vector-load-store | `pto.vldas`, `pto.vldus` | `core-f32, full-mask, unaligned, stream-state, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vldas-vldus-state-chain`; board closure pending |
 | `micro-op/vector-load-store/vldx2-layout-check` | vector-load-store | `pto.vldx2` | `core-f32, full-mask, paired-roundtrip, dintlv, lane-order` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vldx2-layout-check`; board closure pending |
 | `micro-op/vector-load-store/vstx2-layout-check` | vector-load-store | `pto.vstx2` | `core-f32, full-mask, paired-roundtrip, dintlv, lane-order` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstx2-layout-check`; board closure pending |
-| `micro-op/vector-load-store/vsta-state-advance` | vector-load-store | `pto.vsta` | `core-f32, full-mask, aligned, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsta-state-advance`; board closure pending |
-| `micro-op/vector-load-store/vstu-state-advance` | vector-load-store | `pto.vstu` | `core-f32, full-mask, unaligned, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstu-state-advance`; board closure pending |
-| `micro-op/vector-load-store/vstas-vstus-offset-update` | vector-load-store | `pto.vstas`, `pto.vstus` | `core-f32, full-mask, immediate-offset, state-update` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vstas-vstus-offset-update`; board closure pending |
+| `micro-op/vector-load-store/vsta-state-advance` | vector-load-store | `pto.vsta` | `core-f32, full-mask, aligned, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；目标依赖真实 unaligned-store state producer，在 `vstu/vstus/vstur` surface 未稳定前无法忠实写出 state-advance 路径 |
+| `micro-op/vector-load-store/vstu-state-advance` | vector-load-store | `pto.vstu` | `core-f32, full-mask, unaligned, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；当前 docs/isa 与 `VPTOOps.td` 对参数表和 `mode` 仍有漂移，现有 skeleton 也未测到目标语义，继续按接口漂移记录 |
+| `micro-op/vector-load-store/vstas-vstus-offset-update` | vector-load-store | `pto.vstas`, `pto.vstus` | `core-f32, full-mask, immediate-offset, state-update` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍停在 parse；`vstas`/`vstus` 组合目标依赖未稳定的 unaligned-store surface，当前不能在不改变目标的前提下补出合法 upstream state 链 |
 | `micro-op/vector-load-store/vsld-vsst-stride-boundary` | vector-load-store | `pto.vsld`, `pto.vsst` | `core-f32, strided-load, strided-store, block-mask` | implemented | static case added under `test/vpto/cases/micro-op/vector-load-store/vsld-vsst-stride-boundary`; board closure pending |
 | `micro-op/gather-scatter/vgather2-duplicate-index` | gather-scatter | `pto.vgather2` | `core-f32, non-contiguous, explicit-index-pattern, load-effect-validation, no-alias` | implemented | static case added under `test/vpto/cases/micro-op/gather-scatter/vgather2-duplicate-index`; board closure pending |
 | `micro-op/gather-scatter/vgather2_bc-sparse-mask` | gather-scatter | `pto.vgather2_bc` | `core-f32, masked-gather, load-effect-validation, no-alias` | implemented | static case added under `test/vpto/cases/micro-op/gather-scatter/vgather2_bc-sparse-mask`; board closure pending |
@@ -391,7 +403,7 @@
 | `micro-op/dsa-sfu/vprelu-tail` | dsa-sfu | `pto.vprelu` | `core-f32, vector-alpha, tail-mask` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vprelu-tail`; board closure pending |
 | `micro-op/dsa-sfu/vexpdiff-boundary` | dsa-sfu | `pto.vexpdiff` | `core-f32, fused-expdiff, exceptional-values, floating-overflow-underflow` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vexpdiff-boundary`; board closure pending |
 | `micro-op/dsa-sfu/vmula-accumulator-boundary` | dsa-sfu | `pto.vmula` | `core-f32, fused-op, accumulator` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vmula-accumulator-boundary`; board closure pending |
-| `micro-op/dsa-sfu/vtranspose-multi-config` | dsa-sfu | `pto.vtranspose` | `ub-to-ub, layout-transform, representative-config` | implemented | static case added under `test/vpto/cases/micro-op/dsa-sfu/vtranspose-multi-config`; board closure pending |
+| `micro-op/dsa-sfu/vtranspose-multi-config` | dsa-sfu | `pto.vtranspose` | `ub-to-ub, layout-transform, representative-config` | implemented | 最新 `/tmp/vpto-micro-op-sim-compile-rerun` 仍失败；case 已按当前 multi-config surface 落地，失败停在 VPTO LLVM emitter 路径构造 `scf.for` 时缺少 dialect 注册 |
 
 ## Notes
 

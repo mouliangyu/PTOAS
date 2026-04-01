@@ -411,6 +411,51 @@ def PTO_PselOp : PTO_Op<"psel", [Pure]> {
   }];
 }
 
+def PTO_PandOp : PTO_Op<"pand", [Pure]> {
+  let arguments = (ins
+    PTO_MaskTypeConstraint:$src0,
+    PTO_MaskTypeConstraint:$src1,
+    PTO_MaskTypeConstraint:$mask
+  );
+  let results = (outs PTO_MaskTypeConstraint:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src0 `,` $src1 `,` $mask attr-dict `:` type($src0) `,` type($src1) `,` type($mask) `->` type($result)
+  }];
+}
+
+def PTO_PorOp : PTO_Op<"por", [Pure]> {
+  let arguments = (ins
+    PTO_MaskTypeConstraint:$src0,
+    PTO_MaskTypeConstraint:$src1,
+    PTO_MaskTypeConstraint:$mask
+  );
+  let results = (outs PTO_MaskTypeConstraint:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src0 `,` $src1 `,` $mask attr-dict `:` type($src0) `,` type($src1) `,` type($mask) `->` type($result)
+  }];
+}
+
+def PTO_PxorOp : PTO_Op<"pxor", [Pure]> {
+  let arguments = (ins
+    PTO_MaskTypeConstraint:$src0,
+    PTO_MaskTypeConstraint:$src1,
+    PTO_MaskTypeConstraint:$mask
+  );
+  let results = (outs PTO_MaskTypeConstraint:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src0 `,` $src1 `,` $mask attr-dict `:` type($src0) `,` type($src1) `,` type($mask) `->` type($result)
+  }];
+}
+
 def PTO_PldsOp : PTO_Op<"plds", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -531,12 +576,19 @@ class PTO_UnaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
 def PTO_VexpOp : PTO_UnaryVecOp<"vexp">;
 def PTO_VlnOp : PTO_UnaryVecOp<"vln">;
 def PTO_VsqrtOp : PTO_UnaryVecOp<"vsqrt">;
+def PTO_VnegOp : PTO_UnaryVecOp<"vneg">;
+def PTO_VrsqrtOp : PTO_UnaryVecOp<"vrsqrt">;
 def PTO_VrecOp : PTO_UnaryVecOp<"vrec">;
 def PTO_VreluOp : PTO_UnaryVecOp<"vrelu">;
+def PTO_VmovOp : PTO_UnaryVecOp<"vmov">;
 def PTO_VnotOp : PTO_UnaryVecOp<"vnot">;
 def PTO_VcaddOp : PTO_UnaryVecOp<"vcadd">;
 def PTO_VcmaxOp : PTO_UnaryVecOp<"vcmax">;
 def PTO_VcminOp : PTO_UnaryVecOp<"vcmin">;
+def PTO_VcgaddOp : PTO_UnaryVecOp<"vcgadd">;
+def PTO_VcgmaxOp : PTO_UnaryVecOp<"vcgmax">;
+def PTO_VcgminOp : PTO_UnaryVecOp<"vcgmin">;
+def PTO_VcpaddOp : PTO_UnaryVecOp<"vcpadd">;
 
 class PTO_BinaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins
@@ -738,6 +790,21 @@ class PTO_VecScalarOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   }];
 }
 
+class PTO_VecScalarMaskedOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$input,
+    AnyType:$scalar,
+    PTO_MaskTypeConstraint:$mask
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $input `,` $scalar `,` $mask attr-dict `:` type($input) `,` type($scalar) `,` type($mask) `->` type($result)
+  }];
+}
+
 def PTO_VtrcOp : PTO_Op<"vtrc", [Pure]> {
   let arguments = (ins
     PTO_VectorType:$input,
@@ -880,6 +947,10 @@ def PTO_VminsOp : PTO_VecScalarOp<"vmins">;
 def PTO_VlreluOp : PTO_VecScalarOp<"vlrelu">;
 def PTO_VshlsOp : PTO_VecScalarOp<"vshls">;
 def PTO_VshrsOp : PTO_VecScalarOp<"vshrs">;
+def PTO_VsubsOp : PTO_VecScalarMaskedOp<"vsubs">;
+def PTO_VandsOp : PTO_VecScalarMaskedOp<"vands">;
+def PTO_VorsOp : PTO_VecScalarMaskedOp<"vors">;
+def PTO_VxorsOp : PTO_VecScalarMaskedOp<"vxors">;
 
 def PTO_VsldOp : PTO_Op<"vsld", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
@@ -1040,6 +1111,105 @@ def PTO_VselrOp : PTO_Op<"vselr", [Pure]> {
   }];
 }
 
+def PTO_VslideOp : PTO_Op<"vslide", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1,
+    I16:$amt
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src0 `,` $src1 `,` $amt attr-dict `:` type($src0) `,` type($src1) `,` type($amt) `->` type($result)
+  }];
+}
+
+def PTO_VshiftOp : PTO_Op<"vshift", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src,
+    I16:$amt
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src `,` $amt attr-dict `:` type($src) `,` type($amt) `->` type($result)
+  }];
+}
+
+def PTO_VsqzOp : PTO_UnaryVecOp<"vsqz">;
+
+def PTO_VusqzOp : PTO_Op<"vusqz", [Pure]> {
+  let arguments = (ins PTO_MaskTypeConstraint:$mask);
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $mask attr-dict `:` type($mask) `->` type($result)
+  }];
+}
+
+def PTO_VpermOp : PTO_Op<"vperm", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src,
+    PTO_VectorType:$index
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src `,` $index attr-dict `:` type($src) `,` type($index) `->` type($result)
+  }];
+}
+
+def PTO_VpackOp : PTO_Op<"vpack", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1,
+    Index:$part
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src0 `,` $src1 `,` $part attr-dict `:` type($src0) `,` type($src1) `,` type($part) `->` type($result)
+  }];
+}
+
+def PTO_VsunpackOp : PTO_Op<"vsunpack", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src,
+    Index:$part
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src `,` $part attr-dict `:` type($src) `->` type($result)
+  }];
+}
+
+def PTO_VzunpackOp : PTO_Op<"vzunpack", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src,
+    Index:$part
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src `,` $part attr-dict `:` type($src) `->` type($result)
+  }];
+}
+
 def PTO_Vselrv2Op : PTO_Op<"vselrv2", [Pure]> {
   let arguments = (ins
     PTO_VectorType:$src0,
@@ -1140,6 +1310,85 @@ def PTO_VmulaOp : PTO_Op<"vmula", [Pure]> {
 
   let assemblyFormat = [{
     $acc `,` $lhs `,` $rhs `,` $mask attr-dict `:` type($acc) `,` type($lhs) `,` type($rhs) `,` type($mask) `->` type($result)
+  }];
+}
+
+class PTO_UnmaskedBinaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)
+  }];
+}
+
+def PTO_VpreluOp : PTO_UnmaskedBinaryVecOp<"vprelu">;
+def PTO_VexpdiffOp : PTO_UnmaskedBinaryVecOp<"vexpdiff">;
+def PTO_VaddreluOp : PTO_UnmaskedBinaryVecOp<"vaddrelu">;
+def PTO_VsubreluOp : PTO_UnmaskedBinaryVecOp<"vsubrelu">;
+
+def PTO_VaxpyOp : PTO_Op<"vaxpy", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$src0,
+    PTO_VectorType:$src1,
+    AnyType:$alpha
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $src0 `,` $src1 `,` $alpha attr-dict `:` type($src0) `,` type($src1) `,` type($alpha) `->` type($result)
+  }];
+}
+
+def PTO_VaddreluconvOp : PTO_Op<"vaddreluconv", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)
+  }];
+}
+
+def PTO_VmulconvOp : PTO_Op<"vmulconv", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$lhs,
+    PTO_VectorType:$rhs
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)
+  }];
+}
+
+def PTO_VtransposeOp : PTO_Op<"vtranspose", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$dest,
+    PTO_BufferType:$src,
+    I64:$config
+  );
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $dest `,` $src `,` $config attr-dict `:` type($dest) `,` type($src) `,` type($config)
   }];
 }
 
