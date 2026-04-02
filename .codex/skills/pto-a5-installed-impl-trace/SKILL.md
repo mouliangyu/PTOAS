@@ -1,6 +1,6 @@
 ---
 name: pto-a5-installed-impl-trace
-description: Trace PTO A5 behavior from the installed CANN/PTO implementation under ASCEND_HOME_PATH before trusting repo-local lowering or emitter code. Use when the user asks which installed A5 implementation branch is authoritative, which builtin wrapper a PTO/A5 op maps to, or whether repo lowering matches installed PTO behavior.
+description: Guide LLVM IR discovery for A5 VPTO lowering from the installed CANN/PTO implementation under ASCEND_HOME_PATH. Use when the user does not yet know which `llvm.hivm.*` intrinsic, builtin wrapper, or operand contract a VPTO/A5 op should lower to.
 ---
 
 # PTO A5 Installed Implementation Trace
@@ -12,6 +12,17 @@ Use this skill when the task is specifically about:
 - deciding whether repo-local lowering is correct or only a guess
 - resolving conflicts between generated repo IR and installed PTO headers
 - tracing `Cmp`, `Cmps`, predicate, pack, store, or typed vector behavior
+
+This skill answers:
+- what LLVM IR a VPTO op should lower to
+- what the authoritative intrinsic name is
+- what operand list or mask form the installed toolchain expects
+- whether repo-local lowering or emission diverges from installed behavior
+
+This skill does not answer:
+- how to build or link a finished LLVM-path artifact end to end
+- how to package `.o`, `fatobj`, or `.so`
+- how to run board validation
 
 ## Strong Rule
 
@@ -46,7 +57,67 @@ Always follow this order:
 6. inspect builtin wrapper headers when the question is about the real compiler-facing builtin:
    - `$ASCEND_HOME_PATH/tools/bisheng_compiler/lib/clang/*/include/__clang_cce_vector_intrinsics.h`
    - `$ASCEND_HOME_PATH/tools/bisheng_compiler/lib/clang/*/include/npu_arch_*/__clang_cce_vector_intrinsics.h`
-7. only then compare against repo-local code under `lib/PTO/Transforms/`
+7. inspect intrinsic name availability directly from the installed compiler binary before guessing LLVM/HIVM spellings:
+   - `strings $ASCEND_HOME_PATH/bin/bisheng | rg 'llvm\\.hivm\\.'`
+   - narrow to the op under investigation, for example:
+     - `strings $ASCEND_HOME_PATH/bin/bisheng | rg 'llvm\\.hivm\\.(vneg|vrsqrt|vnot|vmov)'`
+8. only then compare against repo-local code under `lib/PTO/Transforms/`
+
+## Practical Fast Path
+
+For VPTO LLVM emission work, prefer this concrete order instead of jumping
+straight to ad hoc compiler probes:
+
+1. confirm the op exists in installed PTO/A5 headers
+2. confirm the builtin wrapper shape in installed Clang headers
+3. confirm the intrinsic name family with:
+   - `strings $ASCEND_HOME_PATH/bin/bisheng | rg 'llvm\\.hivm\\.<op>'`
+4. patch repo-local emitter/lowering as little as possible
+5. generate real repo-driven LLVM IR through the existing VPTO validation path:
+   - `source scripts/ptoas_env.sh`
+   - `WORK_SPACE=/tmp/<token> CASE_NAME=<case> DEVICE=SIM COMPILE_ONLY=1 test/vpto/scripts/run_host_vpto_validation.sh`
+6. inspect:
+   - `<workspace>/<case-token>/*.ll`
+   - `<workspace>/<case-token>/validation.log`
+7. only after seeing the real generated `.ll` and Bisheng failure should you
+   refine the call shape
+
+This route is preferred because it preserves the real PTOAS lowering context,
+the real case structure, and the exact driver invocation used by the repo.
+
+## Probe Strategy
+
+Use probes in this order:
+
+1. installed headers
+2. `strings bisheng`
+3. repo-generated VPTO LLVM IR from `run_host_vpto_validation.sh`
+4. only then minimal handwritten `.ll` probes
+5. handwritten `.cce` frontend probes are last resort
+
+Handwritten `.ll` probes are acceptable for quick ABI sanity checks such as:
+- whether Bisheng recognizes a specific `llvm.hivm.*` name
+- whether a guessed argument count immediately crashes or verifies
+
+But they are not the primary source of truth for semantic or frontend wrapper
+behavior.
+
+## Avoid These Traps
+
+Do not default to handwritten `.cce` probes when repo-driven IR is available.
+On this machine, bare `.cce` probes often fail before reaching the real
+question because they are missing the exact frontend driver mode, target
+features, wrapper setup, or host/device compilation context used by the repo.
+
+In particular, treat these as warning signs that you have started too low in
+the stack:
+- errors around `[aicore]`
+- errors around `__cce_half`
+- builtin alias attribute failures
+- missing target feature or wrapper environment failures
+
+When these happen, step back to the repo-driven compile-only flow instead of
+trying to repair the ad hoc frontend invocation from scratch.
 
 ## Trace By The Real Type Split
 
@@ -88,18 +159,21 @@ available. That is still enough to answer questions such as:
 
 If the installed PTO headers tell you the wrapper builtin but that still does
 not answer the LLVM/HIVM operand contract, do not guess from repo-local
-lowering. Extend the trace using the generated sample kernel and the real
-compiler frontend:
+lowering. Extend the trace using the generated repo testcase first, and only
+after that the real compiler frontend:
 
-1. generate the sample testcase kernel that already compiles on this machine
-2. inspect the testcase build flags from:
+1. run an existing repo case with:
+   - `WORK_SPACE=/tmp/<token> CASE_NAME=<case> DEVICE=SIM COMPILE_ONLY=1 test/vpto/scripts/run_host_vpto_validation.sh`
+2. inspect the generated `.ll` and `validation.log`
+3. if the repo-generated LLVM IR still leaves the contract ambiguous, inspect
+   the testcase build flags from:
    - `<testcase>/build/CMakeFiles/<target>.dir/flags.make`
    - `<testcase>/build/CMakeFiles/<target>.dir/build.make`
-3. rerun the same `bisheng` compile with `-v` and `-save-temps`
-4. inspect:
+4. rerun the same `bisheng` compile with `-v` and `-save-temps`
+5. inspect:
    - `*.ccei` for the exact installed PTO wrapper call sequence
    - `strings *.bc | rg 'llvm.hivm\\.'` to see which HIVM intrinsics survived
-5. if needed, rerun the same frontend compile with `-S`, `-emit-llvm`, or the
+6. if needed, rerun the same frontend compile with `-S`, `-emit-llvm`, or the
    equivalent `cc1` invocation from `-v` to inspect the real LLVM IR emitted by
    the compiler frontend before instruction selection
 
@@ -115,8 +189,10 @@ shapes from memory.
 
 When you use this skill, report:
 - the exact installed header paths inspected
+- whether `strings $ASCEND_HOME_PATH/bin/bisheng` confirmed the intrinsic name
 - which typed branch was the authoritative one
 - the builtin sequence observed there
 - the builtin wrapper name if you found one in the installed Clang headers
+- whether repo-generated `.ll` matched the guessed call shape
 - whether repo-local lowering matches or diverges
 - the first concrete mismatch, if any
