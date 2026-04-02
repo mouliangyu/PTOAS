@@ -24,7 +24,8 @@ module attributes {pto.target_arch = "a5"} {
     %c64_i64 = arith.constant 64 : i64
     %3 = pto.castptr %arg0 : !pto.ptr<ui16, gm> -> !pto.ptr<i8, gm>
     %4 = arith.index_castui %c0_i64 : i64 to index
-    %threshold = pto.load_scalar %arg1[%4] : !pto.ptr<ui16, gm> -> ui16
+    %threshold_i16 = arith.constant 513 : i16
+    %threshold = builtin.unrealized_conversion_cast %threshold_i16 : i16 to ui16
     %5 = pto.addptr %3, %4 : <i8, gm> -> <i8, gm>
     pto.set_loop2_stride_outtoub %c4096_i64, %c4096_i64 : i64, i64
     pto.set_loop1_stride_outtoub %c4096_i64, %c4096_i64 : i64, i64

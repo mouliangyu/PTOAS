@@ -58,15 +58,10 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vtrc_f32_rounding_kernel_2d(__gm__ float *v1,
-                                                              __gm__ float *v2,
-                                                              __gm__ float *v3,
-                                                              __gm__ float *v4);
+extern "C" __global__ AICORE void vcvt_f16_special_kernel_2d(__gm__ half *v1,
+                                                             __gm__ float *v2);
 
-void LaunchVtrc_f32_rounding_kernel_2d(float *v1, float *v2, float *v3,
-                                       float *v4, void *stream) {
-  vtrc_f32_rounding_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                                      (__gm__ float *)v2,
-                                                      (__gm__ float *)v3,
-                                                      (__gm__ float *)v4);
+void LaunchVcvt_f16_special_kernel_2d(uint16_t *v1, float *v2, void *stream) {
+  vcvt_f16_special_kernel_2d<<<1, nullptr, stream>>>((__gm__ half *)v1,
+                                                     (__gm__ float *)v2);
 }

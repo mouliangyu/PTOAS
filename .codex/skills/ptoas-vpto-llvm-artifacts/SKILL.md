@@ -1,6 +1,6 @@
 ---
 name: ptoas-vpto-llvm-artifacts
-description: Inspect PTOAS VPTO intermediate MLIR, export VPTO kernels as LLVM IR or LLVM bitcode, validate the bisheng handoff, and assemble device objects, fat objects, or shared kernel libraries. Use when the user asks for VPTO MLIR, an LLVM IR path build, LLVM BC export, bisheng compilation, or fatobj/lib.so assembly for A5.
+description: Guide the PTOAS VPTO compile-and-link workflow: inspect VPTO MLIR, export LLVM IR or LLVM bitcode, validate the Bisheng handoff, and assemble device objects, fat objects, or shared kernel libraries. Use when the user asks how to build, export, compile, or link VPTO LLVM-path artifacts for A5.
 ---
 
 # PTOAS VPTO LLVM Artifacts
@@ -13,20 +13,31 @@ Use this skill when the task is specifically about:
 - assembling a device object, fat relocatable object, or shared kernel library from the LLVM path
 - helping with an "LLVM IR path build", "LLVM IR path compile", or "VPTO MLIR" request
 
+This skill answers:
+- how to build or export the artifact
+- how to hand the artifact to Bisheng
+- how to continue from `.ll` / `.bc` to `.o` / `fatobj` / `.so`
+- where each stage output is written
+
+This skill does not answer:
+- which `llvm.hivm.*` intrinsic a VPTO op should lower to
+- what the authoritative intrinsic name or operand contract is
+- whether the repo-local emitter guessed the wrong LLVM IR form
+
+Those questions belong to `pto-a5-installed-impl-trace`.
+
 ## Strong Rule
 
-If an LLVM-path code change is needed for an A5 op, first inspect the installed
-PTO implementation under `ASCEND_HOME_PATH` and treat it as the semantic
-baseline. Repo-local lowering and emitter code are not authoritative.
-
-Only accept an intrinsic-level replacement after confirming it from installed
-PTO headers or from real frontend-generated compiler artifacts such as
-`-save-temps` outputs. Do not invent intrinsic mappings from memory.
+Treat this skill as a compile-and-link workflow guide, not as the authority for
+discovering intrinsic mappings. If the task turns into "what should this VPTO
+op lower to" or "is this `llvm.hivm.*` form correct", switch to
+`pto-a5-installed-impl-trace`.
 
 This is not the primary entry point for:
 - generating `test/npu_validation` testcases
 - running on hardware, handling `aclrtSetDevice`, or deciding whether `sudo` is needed
 - `golden.py` / `compare.py` result checks
+- discovering the authoritative LLVM IR shape for a VPTO op
 
 If the end goal is runtime validation, use `ptoas-npu-validation-a5` as the main
 skill and call this skill only when that flow needs a custom LLVM IR or LLVM BC
@@ -194,8 +205,7 @@ Checks:
 
 ## If You Need The Real Compiler-Expected Intrinsic Shape
 
-Do not infer the final `llvm.hivm.*` operand contract from repo-local emitter
-code alone.
+This is outside the main purpose of this skill.
 
 When a hand-written LLVM IR path fails in instruction selection or appears to
 miscompile, use this trace order:

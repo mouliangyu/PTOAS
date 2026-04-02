@@ -19,7 +19,7 @@
 - 第一层：覆盖率推进
   - 要求 `matrix` 中所有 case 都有对应的静态测例或明确 blocker 结论
 - 第二层：通过率推进
-  - 在覆盖率完整的基础上，再逐步把 `planned/blocked/implemented` 收敛到更多 `board-passed`
+  - 在覆盖率完整的基础上，再逐步把 `planned/blocked/implemented/compiled` 收敛到更多 `board-passed`
 
 停止条件收紧如下：
 
@@ -125,6 +125,8 @@
   已纳入本轮范围，但尚未落地 case
 - `implemented`
   case 已实现，包含“静态 case 已补齐但编译/运行链路仍失败”的情形
+- `compiled`
+  case 已实现，且 compile-only 路径已稳定走到编译产物；尚未完成 runtime / board 验证
 - `board-passed`
   case 已完成上板验证
 - `blocked`
@@ -133,7 +135,7 @@
 补充约定：
 
 - 本轮应优先消灭“只有 matrix 条目、但还没有对应静态测例”的空白状态
-- 对覆盖率推进而言，`implemented`、`blocked`、`board-passed` 都属于“已补充测例”
+- 对覆盖率推进而言，`implemented`、`compiled`、`blocked`、`board-passed` 都属于“已补充测例”
 - 只有 `planned` 才表示该 case 仍未被真正补充到仓库，且也尚未形成“文档层面无法写 case”的明确 blocker 结论
 - `blocked` 不能用于表达“当前实现编不过/跑不过/还没接 lowering”；这些应保留为 `implemented`，并在 `notes` 中记录失败点
 - 执行阶段不得因为主观判断“这条看起来写不出来”而自行跳过 case
@@ -223,7 +225,7 @@
 
 2. `blocked` 条目默认不进入分析队列
    - 已被开发者确认并登记为 `blocked` 的 case，在开发者主动取消前，一律跳过错误分析、问题收敛和修复
-   - 错误分析阶段只处理 `implemented` 或 `board-passed` 回退后的失败条目
+   - 错误分析阶段只处理 `implemented`、`compiled` 或 `board-passed` 回退后的失败条目
 
 3. 先检查 case 是否符合 `scope` 目标
    - 若 case 实现与 `scope` / `matrix` 声明的测试目标不一致，优先判为测例实现问题
@@ -248,7 +250,7 @@
    - 若 case 违反这些结构约束，应先修 case，再继续分析下游报错
 
 7. 错误结论必须静态回写
-   - case 已存在且失败时，状态保持为 `implemented`
+   - case 已存在且失败时，状态保持为 `implemented`；若 compile-only 已稳定走到产物，可升级为 `compiled`
    - 失败点、已确认原因和当前判断应写入 `matrix.notes`
    - 只有开发者确认的文档层 blocker，才允许改成 `blocked`
 
@@ -265,7 +267,7 @@
 3. 再按最新 `scope` 回填或修正 `matrix`
 4. 进入测例构造阶段后，新增或修改 case 目录与用例内容
 5. 每个 case 单独上板验证
-6. 仅在 `matrix` 中推进 `planned/implemented/board-passed/blocked` 状态
+6. 仅在 `matrix` 中推进 `planned/implemented/compiled/board-passed/blocked` 状态
 7. 运行 `test/vpto` 全量板测回归
 8. 重新更新 `coverage assessment`，检查最新 `matrix` 是否仍存在 case 缺口或 scope/matrix 漂移
 9. 检查 `scope`、`coverage assessment`、`matrix` 与 case 目录、板测结果保持一致
@@ -273,9 +275,9 @@
 实施策略补充：
 
 1. 覆盖率推进阶段，不以“这条 case 是否已经板测通过”作为是否继续补例的前提
-2. 若在补例过程中遇到 parser / verifier / lowering / codegen / runtime 问题，应记录到对应 case 的 `notes`，并保持为 `implemented`，而不是转成 `blocked`
+2. 若在补例过程中遇到 parser / verifier / lowering / codegen / runtime 问题，应记录到对应 case 的 `notes`；未形成稳定编译产物前保持为 `implemented`，compile-only 已稳定走到产物后可记为 `compiled`，而不是转成 `blocked`
 3. 单个 family 中已有 case 失败，不影响继续补齐该 family 的剩余 case
-4. 只有当 `matrix` 中所有 case 都已进入 `implemented`、`blocked` 或 `board-passed` 后，才进入“集中提通过率”的主阶段
+4. 只有当 `matrix` 中所有 case 都已进入 `implemented`、`compiled`、`blocked` 或 `board-passed` 后，才进入“集中提通过率”的主阶段
 5. 覆盖率阶段中的中间汇报不改变执行状态；若 `planned` 未清零，则默认继续实施，而不是等待下一轮再推进
 6. 只有当 case 无法依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出时，才允许转为 `blocked`
 7. 若怀疑某 case 应转为 `blocked`，默认动作不是跳过，而是先整理成待确认结论；只有开发者确认或提出后，才能更新 `scope` / `matrix`

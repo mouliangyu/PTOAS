@@ -38,14 +38,14 @@ module attributes {pto.target_arch = "a5"} {
     %c4096_i64 = arith.constant 4096 : i64
     %part = arith.constant 0 : index
 
-    %gm_in = pto.castptr %arg0 : !pto.ptr<f32, gm> -> !pto.ptr<i16, gm>
-    %gm_out = pto.castptr %arg1 : !pto.ptr<f32, gm> -> !pto.ptr<i32, gm>
-    %ub_in = pto.castptr %c0_i64 : i64 -> !pto.ptr<i16, ub>
-    %ub_out = pto.castptr %c4096_i64 : i64 -> !pto.ptr<i32, ub>
+    %gm_in = pto.castptr %arg0 : !pto.ptr<f32, gm> -> !pto.ptr<ui16, gm>
+    %gm_out = pto.castptr %arg1 : !pto.ptr<f32, gm> -> !pto.ptr<ui32, gm>
+    %ub_in = pto.castptr %c0_i64 : i64 -> !pto.ptr<ui16, ub>
+    %ub_out = pto.castptr %c4096_i64 : i64 -> !pto.ptr<ui32, ub>
 
     %false = arith.constant false
     pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
-    pto.copy_gm_to_ubuf %gm_in, %ub_in, %c0_i64, %c32_i64, %c128_i64, %c0_i64, %c0_i64, %false, %c0_i64, %c128_i64, %c128_i64 : !pto.ptr<i16, gm>, !pto.ptr<i16, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64
+    pto.copy_gm_to_ubuf %gm_in, %ub_in, %c0_i64, %c32_i64, %c128_i64, %c0_i64, %c0_i64, %false, %c0_i64, %c128_i64, %c128_i64 : !pto.ptr<ui16, gm>, !pto.ptr<ui16, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64
 
     pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
@@ -54,16 +54,16 @@ module attributes {pto.target_arch = "a5"} {
       %store_mask = pto.pset_b32 "PAT_ALL" : !pto.mask
       scf.for %offset = %c0 to %c1024 step %c64 {
         %src_offset = arith.muli %offset, %c2 : index
-        %vec = pto.vlds %ub_in[%src_offset] : !pto.ptr<i16, ub> -> !pto.vreg<128xi16>
-        %out = pto.vzunpack %vec, %part : !pto.vreg<128xi16> -> !pto.vreg<64xi32>
-        pto.vsts %out, %ub_out[%offset], %store_mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask
+        %vec = pto.vlds %ub_in[%src_offset] : !pto.ptr<ui16, ub> -> !pto.vreg<128xui16>
+        %out = pto.vzunpack %vec, %part : !pto.vreg<128xui16> -> !pto.vreg<64xui32>
+        pto.vsts %out, %ub_out[%offset], %store_mask : !pto.vreg<64xui32>, !pto.ptr<ui32, ub>, !pto.mask
       }
     }
 
     pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-    pto.copy_ubuf_to_gm %ub_out, %gm_out, %c0_i64, %c32_i64, %c128_i64, %c0_i64, %c128_i64, %c128_i64 : !pto.ptr<i32, ub>, !pto.ptr<i32, gm>, i64, i64, i64, i64, i64, i64
+    pto.copy_ubuf_to_gm %ub_out, %gm_out, %c0_i64, %c32_i64, %c128_i64, %c0_i64, %c128_i64, %c128_i64 : !pto.ptr<ui32, ub>, !pto.ptr<ui32, gm>, i64, i64, i64, i64, i64, i64
     pto.barrier #pto.pipe<PIPE_ALL>
     return
   }
