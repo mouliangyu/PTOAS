@@ -68,6 +68,8 @@ using namespace mlir;
 namespace mlir::pto {
 namespace {
 
+static llvm::DenseMap<Value, Type> abiPointerElementTypes;
+
 struct QueriedTargetAttrs {
   std::string targetCPU;
   std::string targetFeatures;
@@ -126,6 +128,7 @@ static Type getElementTypeFromVectorLike(Type type);
 static std::optional<int64_t> getElementCountFromVectorLike(Type type);
 static func::FuncOp getOrCreateExternalFunc(ModuleOp module, StringRef name,
                                             FunctionType type);
+static Value castIntegerLikeTo(Operation *anchor, Value value, Type targetType);
 
 static std::string getElementTypeFragment(Type type) {
   if (type.isF16())
@@ -164,9 +167,9 @@ static std::optional<uint64_t> parseSaturationImmediate(StringRef sat) {
 }
 
 static std::optional<uint64_t> parsePartImmediate(StringRef part) {
-  if (part == "PART_EVEN")
+  if (part == "EVEN" || part == "PART_EVEN")
     return 0; // __cce_simd::Part::EVEN
-  if (part == "PART_ODD")
+  if (part == "ODD" || part == "PART_ODD")
     return 1; // __cce_simd::Part::ODD
   return std::nullopt;
 }
@@ -447,6 +450,25 @@ static std::optional<uint64_t> parsePredicateStoreDistImmediate(llvm::StringRef 
   return std::nullopt;
 }
 
+static Value packBlockRepeatStride(Operation *anchor, Value blockStride,
+                                   Value repeatStride) {
+  OpBuilder builder(anchor);
+  builder.setInsertionPoint(anchor);
+
+  Value blockI32 = castIntegerLikeTo(anchor, blockStride, builder.getI32Type());
+  Value repeatI32 =
+      castIntegerLikeTo(anchor, repeatStride, builder.getI32Type());
+  if (!blockI32 || !repeatI32)
+    return {};
+
+  auto c16 = builder.create<arith::ConstantIntOp>(anchor->getLoc(), 16, 32);
+  auto blockShifted =
+      builder.create<arith::ShLIOp>(anchor->getLoc(), blockI32, c16);
+  return builder
+      .create<arith::OrIOp>(anchor->getLoc(), blockShifted, repeatI32)
+      .getResult();
+}
+
 static std::optional<uint64_t> parseOrderImmediate(llvm::StringRef order) {
   if (order.empty() || order == "ASC")
     return 0; // INC_ORDER
@@ -529,6 +551,14 @@ static std::optional<uint64_t> parseStrideImmediate(llvm::StringRef stride) {
 static std::optional<uint64_t> parseVsstStrideImmediate(llvm::StringRef stride) {
   if (stride == "STRIDE_S8_B16")
     return 0;
+  return std::nullopt;
+}
+
+static std::optional<int32_t> parsePostModeImmediate(StringRef mode) {
+  if (mode == "NO_POST_UPDATE")
+    return 0;
+  if (mode == "POST_UPDATE")
+    return 1;
   return std::nullopt;
 }
 
@@ -774,9 +804,12 @@ struct ConvertPtoAddPtrOp final : OpConversionPattern<pto::AddPtrOp> {
       offset = rewriter.create<arith::IndexCastUIOp>(op.getLoc(),
                                                      rewriter.getI64Type(), offset);
 
-    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-        op, llvmPtrType, cast<pto::PtrType>(op.getPtr().getType()).getElementType(),
+    auto gep = rewriter.create<LLVM::GEPOp>(
+        op.getLoc(), llvmPtrType, cast<pto::PtrType>(op.getPtr().getType()).getElementType(),
         adaptor.getPtr(), ValueRange{offset});
+    abiPointerElementTypes[gep.getResult()] =
+        cast<pto::PtrType>(op.getResult().getType()).getElementType();
+    rewriter.replaceOp(op, gep.getResult());
     return success();
   }
 };
@@ -800,15 +833,23 @@ struct ConvertPtoCastPtrOp final : OpConversionPattern<pto::CastPtrOp> {
     }
 
     if (auto llvmPtrType = dyn_cast<LLVM::LLVMPointerType>(convertedResultType)) {
+      auto resultElementType =
+          cast<pto::PtrType>(op.getResult().getType()).getElementType();
       if (isa<IntegerType>(inputType)) {
-        rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(op, llvmPtrType, input);
+        auto intToPtr =
+            rewriter.create<LLVM::IntToPtrOp>(op.getLoc(), llvmPtrType, input);
+        abiPointerElementTypes[intToPtr.getResult()] = resultElementType;
+        rewriter.replaceOp(op, intToPtr.getResult());
         return success();
       }
       auto sourcePtrType = dyn_cast<LLVM::LLVMPointerType>(inputType);
       if (!sourcePtrType)
         return rewriter.notifyMatchFailure(op, "expected integer or LLVM pointer input");
       if (sourcePtrType.getAddressSpace() == llvmPtrType.getAddressSpace()) {
-        rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, llvmPtrType, input);
+        auto bitcast =
+            rewriter.create<LLVM::BitcastOp>(op.getLoc(), llvmPtrType, input);
+        abiPointerElementTypes[bitcast.getResult()] = resultElementType;
+        rewriter.replaceOp(op, bitcast.getResult());
         return success();
       }
       return rewriter.notifyMatchFailure(op, "cross-address-space ptr casts are unsupported");
@@ -1046,6 +1087,41 @@ static Type getElementTypeFromVectorLike(Type type) {
   if (auto vecType = dyn_cast<VectorType>(type))
     return vecType.getElementType();
   return {};
+}
+
+static Type getElementTypeFromPointerLike(Type type) {
+  if (auto ptrType = dyn_cast<pto::PtrType>(type))
+    return ptrType.getElementType();
+  if (auto memRefType = dyn_cast<MemRefType>(type))
+    return memRefType.getElementType();
+  return {};
+}
+
+static Type getElementTypeFromABIValue(Value value) {
+  if (!value)
+    return {};
+  if (Type direct = getElementTypeFromPointerLike(value.getType()))
+    return direct;
+  auto it = abiPointerElementTypes.find(value);
+  if (it != abiPointerElementTypes.end())
+    return it->second;
+  if (auto result = dyn_cast<OpResult>(value)) {
+    if (auto call = dyn_cast<func::CallOp>(result.getOwner())) {
+      if (call.getCallee() == "llvm.hivm.vstus.post" && result.getResultNumber() == 1 &&
+          !call.getArgOperands().empty())
+        return getElementTypeFromVectorLike(call.getArgOperands().front().getType());
+    }
+  }
+  return {};
+}
+
+static void recordPointerElementTypes(ValueRange oldResults, ValueRange newResults) {
+  for (auto [oldValue, newValue] : llvm::zip(oldResults, newResults)) {
+    Type elementType = getElementTypeFromPointerLike(oldValue.getType());
+    if (!elementType)
+      continue;
+    abiPointerElementTypes[newValue] = elementType;
+  }
 }
 
 static std::optional<int64_t> getElementCountFromVectorLike(Type type) {
@@ -1441,6 +1517,10 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vldus.v" + std::to_string(*lanes) + vec;
   }
+  if (isa<pto::VstusOp>(op))
+    return std::string("llvm.hivm.vstus.post");
+  if (isa<pto::VsturOp>(op))
+    return std::string("llvm.hivm.vstur");
   if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
     std::string vec = getElementTypeFragment(getElementTypeFromVectorLike(vlds.getResult().getType()));
     auto lanes = getElementCountFromVectorLike(vlds.getResult().getType());
@@ -1637,6 +1717,22 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vlrelu.v" + std::to_string(*lanes) + vec + ".x";
   }
+  if (auto binary = dyn_cast<pto::VshlsOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vshls.v" + std::to_string(*lanes) + vec + ".x";
+  }
+  if (auto binary = dyn_cast<pto::VshrsOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vshrs.v" + std::to_string(*lanes) + vec + ".x";
+  }
   if (auto binary = dyn_cast<pto::VpreluOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
@@ -1646,28 +1742,14 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return "llvm.hivm.vprelu.v" + std::to_string(*lanes) + vec + ".x";
   }
   if (auto binary = dyn_cast<pto::VexpdiffOp>(op)) {
-    std::string vec =
+    std::string srcVec =
+        getElementTypeFragment(getElementTypeFromVectorLike(binary.getInput().getType()));
+    auto srcLanes = getElementCountFromVectorLike(binary.getInput().getType());
+    std::string dstElem =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
-    if (vec.empty() || !lanes)
+    if (srcVec.empty() || dstElem.empty() || !srcLanes)
       return failure();
-    return "llvm.hivm.vexpdiff.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto binary = dyn_cast<pto::VaddreluOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vaddrelu.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto binary = dyn_cast<pto::VsubreluOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vsubrelu.v" + std::to_string(*lanes) + vec + ".x";
+    return "llvm.hivm.vexpdif.v" + std::to_string(*srcLanes) + srcVec + dstElem;
   }
   if (auto binary = dyn_cast<pto::VdivOp>(op)) {
     std::string vec =
@@ -1843,7 +1925,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     auto lanes = getElementCountFromVectorLike(ternary.getResult().getType());
     if (vec.empty() || !lanes)
       return failure();
-    return "llvm.hivm.vaxpy.v" + std::to_string(*lanes) + vec + ".x";
+    return "llvm.hivm.vaxpy.v" + std::to_string(*lanes) + vec + ".m";
   }
   if (auto vci = dyn_cast<pto::VciOp>(op)) {
     std::string vec =
@@ -1882,6 +1964,8 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
   }
   if (isa<pto::VstarOp>(op))
     return std::string("llvm.hivm.vstar");
+  if (isa<pto::VstasOp>(op))
+    return std::string("llvm.hivm.vstas");
   if (auto vslide = dyn_cast<pto::VslideOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vslide.getResult().getType()));
@@ -1897,6 +1981,14 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     if (vec.empty() || !lanes)
       return failure();
     return "llvm.hivm.vsqz.v" + std::to_string(*lanes) + vec + ".x.v300";
+  }
+  if (auto vusqz = dyn_cast<pto::VusqzOp>(op)) {
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(vusqz.getResult().getType()));
+    auto lanes = getElementCountFromVectorLike(vusqz.getResult().getType());
+    if (vec.empty() || !lanes)
+      return failure();
+    return "llvm.hivm.vusqz.v" + std::to_string(*lanes) + vec + ".m";
   }
   if (auto unpack = dyn_cast<pto::VsunpackOp>(op)) {
     Type inputElemType = getElementTypeFromVectorLike(unpack.getSrc().getType());
@@ -1915,6 +2007,16 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     if (input.empty() || result.empty())
       return failure();
     return "llvm.hivm.vzunpack." + input + "2" + result;
+  }
+  if (auto pack = dyn_cast<pto::VpackOp>(op)) {
+    Type inputElemType = getElementTypeFromVectorLike(pack.getSrc().getType());
+    Type resultElemType = getElementTypeFromVectorLike(pack.getResult().getType());
+    std::string input = getElementTypeFragment(inputElemType);
+    std::string result = getElementTypeFragment(resultElemType);
+    auto part = parseHiLoPartImmediate(pack.getPart());
+    if (input.empty() || result.empty() || !part)
+      return failure();
+    return "llvm.hivm.vpack." + input + "2" + result + ".x";
   }
   if (auto interleave = dyn_cast<pto::VintlvOp>(op)) {
     std::string vec =
@@ -1936,6 +2038,10 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.vsld");
   if (isa<pto::VsstOp>(op))
     return std::string("llvm.hivm.vsst");
+  if (isa<pto::VsldbOp>(op))
+    return std::string("llvm.hivm.vsldb");
+  if (isa<pto::VsstbOp>(op))
+    return std::string("llvm.hivm.vsstb");
   if (isa<pto::Vldx2Op>(op))
     return std::string("llvm.hivm.vldx2");
   if (isa<pto::Vstx2Op>(op))
@@ -1983,7 +2089,20 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     auto lanes = getElementCountFromVectorLike(vsel.getResult().getType());
     if (vec.empty() || !lanes)
       return failure();
-    return "llvm.hivm.vsel.v" + std::to_string(*lanes) + vec + ".z";
+    return "llvm.hivm.vsel.v" + std::to_string(*lanes) + vec;
+  }
+  if (auto vselr = dyn_cast<pto::VselrOp>(op)) {
+    Type elemType = getElementTypeFromVectorLike(vselr.getResult().getType());
+    auto lanes = getElementCountFromVectorLike(vselr.getResult().getType());
+    if (!elemType || !lanes)
+      return failure();
+    std::string vec =
+        getElementTypeFragment(getElementTypeFromVectorLike(vselr.getResult().getType()));
+    if (auto floatType = dyn_cast<FloatType>(elemType); floatType && floatType.isF32())
+      vec = "u32";
+    if (vec.empty())
+      return failure();
+    return "llvm.hivm.vselr.v" + std::to_string(*lanes) + vec;
   }
   if (isa<pto::PpackOp>(op))
     return std::string("llvm.hivm.ppack.z");
@@ -2011,6 +2130,44 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.pldi.b8");
   if (isa<pto::PstsOp>(op))
     return std::string("llvm.hivm.psts.b8");
+  if (op->getName().getStringRef() == "pto.pstu") {
+    Type maskOperandType = op->getOperand(1).getType();
+    if (auto maskType = dyn_cast<pto::MaskType>(maskOperandType)) {
+      if (maskType.isB16())
+        return std::string("llvm.hivm.pstu.b16");
+      if (maskType.isB32())
+        return std::string("llvm.hivm.pstu.b32");
+    }
+    if (Type baseElementType = getElementTypeFromABIValue(op->getOperand(2))) {
+      if (auto intType = dyn_cast<IntegerType>(baseElementType)) {
+        if (intType.getWidth() == 16)
+          return std::string("llvm.hivm.pstu.b16");
+        if (intType.getWidth() == 32)
+          return std::string("llvm.hivm.pstu.b32");
+      }
+    }
+    // Current repo coverage only exercises the installed `b32` surface. Keep
+    // this fallback narrow to unblock those cases; `b16` still needs an
+    // end-to-end testcase path before we can claim the generic surface works.
+    return std::string("llvm.hivm.pstu.b32");
+  }
+  if (auto pstu = dyn_cast<pto::PstuOp>(op)) {
+    if (auto maskType = dyn_cast<pto::MaskType>(pstu.getValue().getType())) {
+      if (maskType.isB16())
+        return std::string("llvm.hivm.pstu.b16");
+      if (maskType.isB32())
+        return std::string("llvm.hivm.pstu.b32");
+    }
+    if (Type baseElementType = getElementTypeFromABIValue(pstu.getBase())) {
+      if (auto intType = dyn_cast<IntegerType>(baseElementType)) {
+        if (intType.getWidth() == 16)
+          return std::string("llvm.hivm.pstu.b16");
+        if (intType.getWidth() == 32)
+          return std::string("llvm.hivm.pstu.b32");
+      }
+    }
+    return failure();
+  }
   if (isa<pto::PstOp>(op))
     return std::string("llvm.hivm.pst.b8");
   if (isa<pto::PstiOp>(op))
@@ -2128,8 +2285,14 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   SmallVector<Type> resultTypes;
   for (Type type : op->getResultTypes())
     resultTypes.push_back(convertVPTOType(type, builder));
+  SmallVector<Type> intrinsicResultTypes(resultTypes.begin(), resultTypes.end());
 
   SmallVector<Value> callArgs;
+  auto buildBridgeCast = [&](Value input, Type targetType) -> Value {
+    if (input.getType() == targetType)
+      return input;
+    return builder.create<arith::BitcastOp>(loc, targetType, input).getResult();
+  };
 
   if (isa<pto::SetLoop2StrideOutToUbOp, pto::SetLoop1StrideOutToUbOp,
           pto::SetLoop2StrideUbToOutOp, pto::SetLoop1StrideUbToOutOp>(op)) {
@@ -2198,7 +2361,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << pset.getPattern() << "\n";
       return failure();
     }
-    callArgs.push_back(getI64Constant(builder, loc, *pattern));
+    callArgs.push_back(getI32Constant(builder, loc, *pattern));
   } else if (auto pset = dyn_cast<pto::PsetB16Op>(op)) {
     auto pattern = parsePredicatePatternImmediate(pset.getPattern());
     if (!pattern) {
@@ -2206,7 +2369,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << pset.getPattern() << "\n";
       return failure();
     }
-    callArgs.push_back(getI64Constant(builder, loc, *pattern));
+    callArgs.push_back(getI32Constant(builder, loc, *pattern));
   } else if (auto pset = dyn_cast<pto::PsetB32Op>(op)) {
     auto pattern = parsePredicatePatternImmediate(pset.getPattern());
     if (!pattern) {
@@ -2214,7 +2377,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << pset.getPattern() << "\n";
       return failure();
     }
-    callArgs.push_back(getI64Constant(builder, loc, *pattern));
+    callArgs.push_back(getI32Constant(builder, loc, *pattern));
   } else if (auto pge = dyn_cast<pto::PgeB8Op>(op)) {
     auto pattern = parsePredicatePatternImmediate(pge.getPattern());
     if (!pattern) {
@@ -2222,8 +2385,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << pge.getPattern() << "\n";
       return failure();
     }
-    callArgs.push_back(getI64Constant(builder, loc, *pattern));
-    callArgs.push_back(getI64Constant(builder, loc, 0));
+    callArgs.push_back(getI32Constant(builder, loc, *pattern));
+    callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto pge = dyn_cast<pto::PgeB16Op>(op)) {
     auto pattern = parsePredicatePatternImmediate(pge.getPattern());
     if (!pattern) {
@@ -2231,8 +2394,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << pge.getPattern() << "\n";
       return failure();
     }
-    callArgs.push_back(getI64Constant(builder, loc, *pattern));
-    callArgs.push_back(getI64Constant(builder, loc, 0));
+    callArgs.push_back(getI32Constant(builder, loc, *pattern));
+    callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto pge = dyn_cast<pto::PgeB32Op>(op)) {
     auto pattern = parsePredicatePatternImmediate(pge.getPattern());
     if (!pattern) {
@@ -2240,13 +2403,39 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << pge.getPattern() << "\n";
       return failure();
     }
-    callArgs.push_back(getI64Constant(builder, loc, *pattern));
-    callArgs.push_back(getI64Constant(builder, loc, 0));
+    callArgs.push_back(getI32Constant(builder, loc, *pattern));
+    callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto vldas = dyn_cast<pto::VldasOp>(op)) {
     callArgs.push_back(vldas.getSource());
   } else if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
     callArgs.push_back(vldus.getSource());
     callArgs.push_back(vldus.getAlign());
+  } else if (auto vstus = dyn_cast<pto::VstusOp>(op)) {
+    Type elementType = getElementTypeFromVectorLike(vstus.getValue().getType());
+    auto basePtr = requirePointerABIAddress(op, vstus.getBase(), diagOS);
+    if (!elementType || failed(basePtr))
+      return failure();
+    auto offsetBytes = convertElementOffsetToBytes(op, vstus.getOffset(), elementType);
+    if (failed(offsetBytes))
+      return failure();
+    callArgs.push_back(vstus.getValue());
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(*offsetBytes);
+    callArgs.push_back(vstus.getAlignIn());
+  } else if (auto vstur = dyn_cast<pto::VsturOp>(op)) {
+    auto basePtr = requirePointerABIAddress(op, vstur.getBase(), diagOS);
+    auto postMode = parsePostModeImmediate(vstur.getMode());
+    if (failed(basePtr) || !postMode) {
+      if (!postMode)
+        diagOS << "VPTO LLVM emission failed: unsupported vstur mode "
+               << vstur.getMode() << "\n";
+      return failure();
+    }
+    callArgs.push_back(vstur.getValue());
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(vstur.getAlignIn());
+    callArgs.push_back(getI32Constant(builder, loc, *postMode));
+    callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vlds.getResult().getType());
     auto offsetBytes = convertElementOffsetToBytes(
@@ -2436,7 +2625,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, 1));
   } else if (isa<pto::VaddOp, pto::VsubOp, pto::VmulOp, pto::VdivOp, pto::VmaxOp,
                  pto::VminOp, pto::VandOp, pto::VorOp, pto::VxorOp, pto::VshlOp,
-                 pto::VshrOp>(op)) {
+                 pto::VshrOp, pto::VshlsOp, pto::VshrsOp>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
   } else if (isa<pto::VaddcOp, pto::VsubcOp>(op)) {
     callArgs.push_back(op->getOperand(0));
@@ -2495,9 +2684,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       return failure();
     }
     callArgs.push_back(vci.getIndex());
-    callArgs.push_back(getI64Constant(builder, loc, *order));
-  } else if (isa<pto::VpreluOp, pto::VexpdiffOp, pto::VaddreluOp,
-                 pto::VsubreluOp>(op)) {
+    callArgs.push_back(getI32Constant(builder, loc, *order));
+  } else if (isa<pto::VpreluOp>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
     auto laneCount = getElementCountFromVectorLike(op->getResult(0).getType());
     if (!laneCount) {
@@ -2519,6 +2707,37 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       mask = *fullMask;
     }
     callArgs.push_back(mask);
+  } else if (auto vexpdiff = dyn_cast<pto::VexpdiffOp>(op)) {
+    callArgs.push_back(vexpdiff.getInput());
+    callArgs.push_back(vexpdiff.getMax());
+    auto srcLaneCount = getElementCountFromVectorLike(vexpdiff.getInput().getType());
+    if (!srcLaneCount) {
+      diagOS << "VPTO LLVM emission failed: could not determine lane count for "
+             << op->getName().getStringRef() << "\n";
+      return failure();
+    }
+    Value mask;
+    Type inputElemType = getElementTypeFromVectorLike(vexpdiff.getInput().getType());
+    if (inputElemType.isF32() || inputElemType.isInteger(32)) {
+      auto fullMask = buildPltB32Mask(builder, module, loc, *srcLaneCount, diagOS);
+      if (failed(fullMask))
+        return failure();
+      mask = *fullMask;
+    } else {
+      auto fullMask = buildPltB16Mask(builder, module, loc, *srcLaneCount, diagOS);
+      if (failed(fullMask))
+        return failure();
+      mask = *fullMask;
+    }
+    auto part = parsePartImmediate(vexpdiff.getPart());
+    if (!part) {
+      diagOS << "VPTO LLVM emission failed: unsupported vexpdiff part ";
+      diagOS << vexpdiff.getPart();
+      diagOS << "\n";
+      return failure();
+    }
+    callArgs.push_back(mask);
+    callArgs.push_back(getI32Constant(builder, loc, *part));
   } else if (isa<pto::VmulsOp, pto::VaddsOp, pto::VmaxsOp, pto::VminsOp,
                  pto::VlreluOp>(op)) {
     callArgs.push_back(op->getOperand(0));
@@ -2646,6 +2865,28 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(vstar.getValue());
     callArgs.push_back(*basePtr);
     callArgs.push_back(getI32Constant(builder, loc, 0));
+  } else if (auto vstas = dyn_cast<pto::VstasOp>(op)) {
+    auto basePtr = requirePointerABIAddress(op, vstas.getDestination(), diagOS);
+    Type elementType = getElementTypeFromABIValue(vstas.getDestination());
+    if (failed(basePtr) || !elementType) {
+      diagOS << "VPTO LLVM emission failed: could not materialize vstas ABI "
+                "inputs; destination type="
+             << vstas.getDestination().getType() << ", element type="
+             << (elementType ? elementType : Type()) << "\n";
+      return failure();
+    }
+    auto offsetBytes = convertElementOffsetToBytes(op, vstas.getOffset(), elementType);
+    if (failed(offsetBytes)) {
+      diagOS << "VPTO LLVM emission failed: could not materialize vstas byte "
+                "offset from "
+             << vstas.getOffset().getType() << " using element type "
+             << elementType << "\n";
+      return failure();
+    }
+    callArgs.push_back(vstas.getValue());
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(*offsetBytes);
+    callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto vslide = dyn_cast<pto::VslideOp>(op)) {
     callArgs.push_back(vslide.getSrc0());
     callArgs.push_back(vslide.getSrc1());
@@ -2654,6 +2895,9 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(vsqz.getInput());
     callArgs.push_back(vsqz.getMask());
     callArgs.push_back(getI32Constant(builder, loc, 1));
+  } else if (auto vusqz = dyn_cast<pto::VusqzOp>(op)) {
+    callArgs.push_back(vusqz.getSrc());
+    callArgs.push_back(vusqz.getMask());
   } else if (auto unpack = dyn_cast<pto::VsunpackOp>(op)) {
     Value part = castIntegerLikeTo(op, unpack.getPart(), builder.getI32Type());
     if (!part) {
@@ -2670,6 +2914,15 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     }
     callArgs.push_back(unpack.getSrc());
     callArgs.push_back(part);
+  } else if (auto pack = dyn_cast<pto::VpackOp>(op)) {
+    auto part = parseHiLoPartImmediate(pack.getPart());
+    if (!part) {
+      diagOS << "VPTO LLVM emission failed: unsupported vpack part "
+             << pack.getPart() << "\n";
+      return failure();
+    }
+    callArgs.push_back(pack.getSrc());
+    callArgs.push_back(getI32Constant(builder, loc, *part));
   } else if (auto interleave = dyn_cast<pto::VintlvOp>(op)) {
     callArgs.push_back(interleave.getLhs());
     callArgs.push_back(interleave.getRhs());
@@ -2722,6 +2975,33 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *stride));
     callArgs.push_back(getI32Constant(builder, loc, 0));
+  } else if (auto vsldb = dyn_cast<pto::VsldbOp>(op)) {
+    auto basePtr = requirePointerABIAddress(op, vsldb.getSource(), diagOS);
+    Value packedStride = packBlockRepeatStride(
+        op, vsldb.getBlockStride(), vsldb.getRepeatStride());
+    if (failed(basePtr) || !packedStride) {
+      if (succeeded(basePtr) && !packedStride)
+        diagOS << "VPTO LLVM emission failed: could not pack vsldb control word\n";
+      return failure();
+    }
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(packedStride);
+    callArgs.push_back(getI32Constant(builder, loc, 0));
+    callArgs.push_back(vsldb.getMask());
+  } else if (auto vsstb = dyn_cast<pto::VsstbOp>(op)) {
+    auto basePtr = requirePointerABIAddress(op, vsstb.getDestination(), diagOS);
+    Value packedStride = packBlockRepeatStride(
+        op, vsstb.getBlockStride(), vsstb.getRepeatStride());
+    if (failed(basePtr) || !packedStride) {
+      if (succeeded(basePtr) && !packedStride)
+        diagOS << "VPTO LLVM emission failed: could not pack vsstb control word\n";
+      return failure();
+    }
+    callArgs.push_back(vsstb.getValue());
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(packedStride);
+    callArgs.push_back(getI32Constant(builder, loc, 0));
+    callArgs.push_back(vsstb.getMask());
   } else if (auto vstx2 = dyn_cast<pto::Vstx2Op>(op)) {
     Type elementType = getElementTypeFromVectorLike(vstx2.getLow().getType());
     auto offsetBytes =
@@ -2785,7 +3065,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       return failure();
     }
     callArgs.push_back(ppack.getInput());
-    callArgs.push_back(getI64Constant(builder, loc, *part));
+    callArgs.push_back(getI32Constant(builder, loc, *part));
   } else if (auto punpack = dyn_cast<pto::PunpackOp>(op)) {
     auto part = parseHiLoPartImmediate(punpack.getPart());
     if (!part) {
@@ -2794,7 +3074,23 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       return failure();
     }
     callArgs.push_back(punpack.getInput());
-    callArgs.push_back(getI64Constant(builder, loc, *part));
+    callArgs.push_back(getI32Constant(builder, loc, *part));
+  } else if (auto vselr = dyn_cast<pto::VselrOp>(op)) {
+    auto resultVecType = dyn_cast<VectorType>(resultTypes.front());
+    if (!resultVecType) {
+      diagOS << "VPTO LLVM emission failed: unexpected vselr result type\n";
+      return failure();
+    }
+    Type intrinsicVecType = resultVecType;
+    if (auto resultFloat = dyn_cast<FloatType>(resultVecType.getElementType());
+        resultFloat && resultFloat.isF32()) {
+      intrinsicVecType =
+          VectorType::get(resultVecType.getShape(), builder.getI32Type(),
+                          resultVecType.getScalableDims());
+    }
+    intrinsicResultTypes[0] = intrinsicVecType;
+    callArgs.push_back(buildBridgeCast(vselr.getSrc0(), intrinsicVecType));
+    callArgs.push_back(vselr.getSrc1());
   } else if (isa<pto::VcmpOp, pto::VcmpsOp, pto::VselOp, pto::PnotOp,
                  pto::PselOp, pto::PandOp, pto::PorOp, pto::PxorOp,
                  pto::PdintlvB8Op, pto::PintlvB16Op>(op)) {
@@ -2802,7 +3098,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto plds = dyn_cast<pto::PldsOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, plds.getSource(), diagOS);
     Value offset = castIntegerLikeTo(op, plds.getOffset(), builder.getI32Type());
-    auto dist = parsePredicateLoadDistImmediate(plds.getDist().value_or("NORM"));
+    auto dist = parsePredicateLoadDistImmediate(plds.getDist());
     if (failed(basePtr) || !offset || !dist) {
       if (succeeded(basePtr) && offset && !dist)
         diagOS << "VPTO LLVM emission failed: unsupported plds dist immediate\n";
@@ -2827,25 +3123,45 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto pldi = dyn_cast<pto::PldiOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, pldi.getSource(), diagOS);
+    Value offset = castIntegerLikeTo(op, pldi.getOffset(), builder.getI32Type());
     auto dist = parsePredicateLoadDistImmediate(pldi.getDist());
-    if (failed(basePtr) || !dist) {
-      if (succeeded(basePtr) && !dist)
+    if (failed(basePtr) || !offset || !dist) {
+      if (succeeded(basePtr) && offset && !dist)
         diagOS << "VPTO LLVM emission failed: unsupported pldi dist immediate\n";
       return failure();
     }
     callArgs.push_back(*basePtr);
-    callArgs.push_back(pldi.getOffset());
+    callArgs.push_back(offset);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto psts = dyn_cast<pto::PstsOp>(op)) {
+    auto basePtr = requirePointerABIAddress(op, psts.getDestination(), diagOS);
     Value offset = castIntegerLikeTo(op, psts.getOffset(), builder.getI32Type());
-    if (!offset)
+    auto dist = parsePredicateStoreDistImmediate(psts.getDist());
+    if (failed(basePtr) || !offset || !dist) {
+      if (succeeded(basePtr) && offset && !dist)
+        diagOS << "VPTO LLVM emission failed: unsupported psts dist immediate\n";
       return failure();
+    }
     callArgs.push_back(psts.getValue());
-    callArgs.push_back(psts.getDestination());
+    callArgs.push_back(*basePtr);
     callArgs.push_back(offset);
-    callArgs.push_back(getI32Constant(builder, loc, 1));
+    callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
+  } else if (op->getName().getStringRef() == "pto.pstu") {
+    auto basePtr = requirePointerABIAddress(op, op->getOperand(2), diagOS);
+    if (failed(basePtr))
+      return failure();
+    callArgs.push_back(op->getOperand(1));
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(op->getOperand(0));
+  } else if (auto pstu = dyn_cast<pto::PstuOp>(op)) {
+    auto basePtr = requirePointerABIAddress(op, pstu.getBase(), diagOS);
+    if (failed(basePtr))
+      return failure();
+    callArgs.push_back(pstu.getValue());
+    callArgs.push_back(*basePtr);
+    callArgs.push_back(pstu.getAlignIn());
   } else if (auto pst = dyn_cast<pto::PstOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, pst.getDestination(), diagOS);
     Value offset = castIntegerLikeTo(op, pst.getOffset(), builder.getI32Type());
@@ -2862,15 +3178,16 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto psti = dyn_cast<pto::PstiOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, psti.getDestination(), diagOS);
+    Value offset = castIntegerLikeTo(op, psti.getOffset(), builder.getI32Type());
     auto dist = parsePredicateStoreDistImmediate(psti.getDist());
-    if (failed(basePtr) || !dist) {
-      if (succeeded(basePtr) && !dist)
+    if (failed(basePtr) || !offset || !dist) {
+      if (succeeded(basePtr) && offset && !dist)
         diagOS << "VPTO LLVM emission failed: unsupported psti dist immediate\n";
       return failure();
     }
     callArgs.push_back(psti.getValue());
     callArgs.push_back(*basePtr);
-    callArgs.push_back(psti.getOffset());
+    callArgs.push_back(offset);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto gather = dyn_cast<pto::Vgather2Op>(op)) {
@@ -2916,17 +3233,24 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   for (Value arg : callArgs)
     argTypes.push_back(arg.getType());
 
-  auto funcType = builder.getFunctionType(argTypes, resultTypes);
+  auto funcType = builder.getFunctionType(argTypes, intrinsicResultTypes);
   auto callee = getOrCreateExternalFunc(module, *calleeName, funcType);
   auto call = builder.create<func::CallOp>(loc, callee, callArgs);
   if (op->getNumResults() == 0)
     builder.eraseOp(op);
-  else
-    builder.replaceOp(op, call.getResults());
+  else {
+    SmallVector<Value> finalResults;
+    finalResults.reserve(call.getNumResults());
+    for (auto [idx, result] : llvm::enumerate(call.getResults()))
+      finalResults.push_back(buildBridgeCast(result, resultTypes[idx]));
+    recordPointerElementTypes(op->getResults(), finalResults);
+    builder.replaceOp(op, finalResults);
+  }
   return success();
 }
 
 static LogicalResult rewriteVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) {
+  abiPointerElementTypes.clear();
   SmallVector<Operation *> opsToRewrite;
   module.walk([&](Operation *op) {
     if (op->getName().getDialectNamespace() == "pto")

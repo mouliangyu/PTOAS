@@ -109,7 +109,7 @@ static bool isSupportedVPTOBufferLikeBoundaryOp(Operation *op) {
              pto::PldiOp, pto::VsldOp, pto::VstsOp, pto::PstsOp,
              pto::VsstOp, pto::PstOp,
              pto::PstiOp, pto::Vldx2Op, pto::Vstx2Op, pto::VsldbOp,
-             pto::VsstbOp, pto::VstaOp, pto::VstasOp, pto::VstarOp>(op);
+             pto::VsstbOp, pto::VstasOp, pto::VstarOp>(op);
 }
 
 static LogicalResult canonicalizeBoundaryCastPtrOps(ModuleOp module,

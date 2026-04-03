@@ -2,9 +2,7 @@
 // case: micro-op/predicate-load-store/psts-plds-packed-prefix-boundary
 // family: predicate-load-store
 // target_ops: pto.plds, pto.psts
-// scenarios: packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: packed-predicate-roundtrip, dynamic-offset, load-store-pair-preservation, representative-logical-elements
 // -----------------------------------------------------------------------------
 #include <pto/common/type.hpp>
 
@@ -16,9 +14,9 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vcmp_eq_kernel_2d(__gm__ float *v1,
-                                                    __gm__ float *v2,
-                                                    __gm__ unsigned char *v3) {
+extern "C" __global__ AICORE void psts_plds_packed_prefix_boundary_kernel_2d(__gm__ float *v1,
+                                                                              __gm__ float *v2,
+                                                                              __gm__ unsigned char *v3) {
   (void)v1;
   (void)v2;
   (void)v3;

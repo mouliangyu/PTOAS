@@ -462,14 +462,14 @@ def PTO_PldsOp : PTO_Op<"plds", [
   let arguments = (ins
     PTO_BufferLikeType:$source,
     Index:$offset,
-    OptionalAttr<StrAttr>:$dist
+    StrAttr:$dist
   );
   let results = (outs PTO_MaskTypeConstraint:$result);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `[` $offset `]` attr-dict `:` type($source) `->` type($result)
+    $source `[` $offset `]` `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($result)
   }];
 }
 
@@ -497,7 +497,7 @@ def PTO_PldiOp : PTO_Op<"pldi", [
   ]> {
   let arguments = (ins
     PTO_BufferLikeType:$source,
-    I32:$offset,
+    Index:$offset,
     StrAttr:$dist
   );
   let results = (outs PTO_MaskTypeConstraint:$result);
@@ -505,7 +505,7 @@ def PTO_PldiOp : PTO_Op<"pldi", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `,` $offset `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($result)
+    $source `[` $offset `]` `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($result)
   }];
 }
 
@@ -533,7 +533,7 @@ def PTO_PstiOp : PTO_Op<"psti", [
   let arguments = (ins
     PTO_MaskTypeConstraint:$value,
     PTO_BufferLikeType:$destination,
-    I32:$offset,
+    Index:$offset,
     StrAttr:$dist
   );
   let results = (outs);
@@ -541,7 +541,7 @@ def PTO_PstiOp : PTO_Op<"psti", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $value `,` $destination `,` $offset `,` $dist attr-dict `:` type($value) `,` type($destination) `,` type($offset)
+    $value `,` $destination `[` $offset `]` `,` $dist attr-dict `:` type($value) `,` type($destination) `,` type($offset)
   }];
 }
 
@@ -945,12 +945,8 @@ def PTO_VaddsOp : PTO_VecScalarOp<"vadds">;
 def PTO_VmaxsOp : PTO_VecScalarOp<"vmaxs">;
 def PTO_VminsOp : PTO_VecScalarOp<"vmins">;
 def PTO_VlreluOp : PTO_VecScalarOp<"vlrelu">;
-def PTO_VshlsOp : PTO_VecScalarOp<"vshls">;
-def PTO_VshrsOp : PTO_VecScalarOp<"vshrs">;
-def PTO_VsubsOp : PTO_VecScalarMaskedOp<"vsubs">;
-def PTO_VandsOp : PTO_VecScalarMaskedOp<"vands">;
-def PTO_VorsOp : PTO_VecScalarMaskedOp<"vors">;
-def PTO_VxorsOp : PTO_VecScalarMaskedOp<"vxors">;
+def PTO_VshlsOp : PTO_VecScalarMaskedOp<"vshls">;
+def PTO_VshrsOp : PTO_VecScalarMaskedOp<"vshrs">;
 
 def PTO_VsldOp : PTO_Op<"vsld", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
@@ -1035,7 +1031,8 @@ def PTO_PstsOp : PTO_Op<"psts", [
   let arguments = (ins
     PTO_MaskTypeConstraint:$value,
     PTO_BufferLikeType:$destination,
-    Index:$offset
+    Index:$offset,
+    StrAttr:$dist
   );
 
   let results = (outs);
@@ -1043,7 +1040,7 @@ def PTO_PstsOp : PTO_Op<"psts", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $value `,` $destination `[` $offset `]` attr-dict `:` type($value) `,` type($destination)
+    $value `,` $destination `[` $offset `]` `,` $dist attr-dict `:` type($value) `,` type($destination) `,` type($offset)
   }];
 }
 
@@ -1126,59 +1123,33 @@ def PTO_VslideOp : PTO_Op<"vslide", [Pure]> {
   }];
 }
 
-def PTO_VshiftOp : PTO_Op<"vshift", [Pure]> {
-  let arguments = (ins
-    PTO_VectorType:$src,
-    I16:$amt
-  );
-  let results = (outs PTO_VectorType:$result);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $src `,` $amt attr-dict `:` type($src) `,` type($amt) `->` type($result)
-  }];
-}
-
 def PTO_VsqzOp : PTO_UnaryVecOp<"vsqz">;
 
 def PTO_VusqzOp : PTO_Op<"vusqz", [Pure]> {
-  let arguments = (ins PTO_MaskTypeConstraint:$mask);
-  let results = (outs PTO_VectorType:$result);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $mask attr-dict `:` type($mask) `->` type($result)
-  }];
-}
-
-def PTO_VpermOp : PTO_Op<"vperm", [Pure]> {
   let arguments = (ins
     PTO_VectorType:$src,
-    PTO_VectorType:$index
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $src `,` $index attr-dict `:` type($src) `,` type($index) `->` type($result)
+    $src `,` $mask attr-dict `:` type($src) `,` type($mask) `->` type($result)
   }];
 }
 
 def PTO_VpackOp : PTO_Op<"vpack", [Pure]> {
   let arguments = (ins
-    PTO_VectorType:$src0,
-    PTO_VectorType:$src1,
-    Index:$part
+    PTO_VectorType:$src,
+    StrAttr:$part
   );
   let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $src0 `,` $src1 `,` $part attr-dict `:` type($src0) `,` type($src1) `,` type($part) `->` type($result)
+    $src `,` $part attr-dict `:` type($src) `->` type($result)
   }];
 }
 
@@ -1328,9 +1299,20 @@ class PTO_UnmaskedBinaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
 }
 
 def PTO_VpreluOp : PTO_UnmaskedBinaryVecOp<"vprelu">;
-def PTO_VexpdiffOp : PTO_UnmaskedBinaryVecOp<"vexpdiff">;
-def PTO_VaddreluOp : PTO_UnmaskedBinaryVecOp<"vaddrelu">;
-def PTO_VsubreluOp : PTO_UnmaskedBinaryVecOp<"vsubrelu">;
+def PTO_VexpdiffOp : PTO_Op<"vexpdiff", [Pure]> {
+  let arguments = (ins
+    PTO_VectorType:$input,
+    PTO_VectorType:$max,
+    StrAttr:$part
+  );
+  let results = (outs PTO_VectorType:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $input `,` $max `,` $part attr-dict `:` type($input) `,` type($max) `->` type($result)
+  }];
+}
 
 def PTO_VaxpyOp : PTO_Op<"vaxpy", [Pure]> {
   let arguments = (ins
@@ -1372,23 +1354,6 @@ def PTO_VmulconvOp : PTO_Op<"vmulconv", [Pure]> {
 
   let assemblyFormat = [{
     $lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)
-  }];
-}
-
-def PTO_VtransposeOp : PTO_Op<"vtranspose", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_BufferType:$dest,
-    PTO_BufferType:$src,
-    I64:$config
-  );
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $dest `,` $src `,` $config attr-dict `:` type($dest) `,` type($src) `,` type($config)
   }];
 }
 
@@ -1434,7 +1399,8 @@ def PTO_VsldbOp : PTO_Op<"vsldb", [
   ]> {
   let arguments = (ins
     PTO_BufferLikeType:$source,
-    I32:$offset,
+    I16:$block_stride,
+    I16:$repeat_stride,
     PTO_MaskTypeConstraint:$mask
   );
   let results = (outs PTO_VectorType:$result);
@@ -1442,7 +1408,7 @@ def PTO_VsldbOp : PTO_Op<"vsldb", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `,` $offset `,` $mask attr-dict `:` type($source) `,` type($offset) `,` type($mask) `->` type($result)
+    $source `,` $block_stride `,` $repeat_stride `,` $mask attr-dict `:` type($source) `,` type($block_stride) `,` type($repeat_stride) `,` type($mask) `->` type($result)
   }];
 }
 
@@ -1452,7 +1418,8 @@ def PTO_VsstbOp : PTO_Op<"vsstb", [
   let arguments = (ins
     PTO_VectorType:$value,
     PTO_BufferLikeType:$destination,
-    I32:$offset,
+    I16:$block_stride,
+    I16:$repeat_stride,
     PTO_MaskTypeConstraint:$mask
   );
   let results = (outs);
@@ -1460,24 +1427,7 @@ def PTO_VsstbOp : PTO_Op<"vsstb", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $value `,` $destination `,` $offset `,` $mask attr-dict `:` type($value) `,` type($destination) `,` type($offset) `,` type($mask)
-  }];
-}
-
-def PTO_VstaOp : PTO_Op<"vsta", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_AlignTypeConstraint:$value,
-    PTO_BufferLikeType:$destination,
-    Index:$offset
-  );
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $value `,` $destination `[` $offset `]` attr-dict `:` type($value) `,` type($destination) `,` type($offset)
+    $value `,` $destination `,` $block_stride `,` $repeat_stride `,` $mask attr-dict `:` type($value) `,` type($destination) `,` type($block_stride) `,` type($repeat_stride) `,` type($mask)
   }];
 }
 
@@ -1536,25 +1486,6 @@ def PTO_PstuOp : PTO_Op<"pstu", [
   }];
 }
 
-def PTO_VstuOp : PTO_Op<"vstu", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_AlignTypeConstraint:$align_in,
-    Index:$offset_in,
-    PTO_VectorType:$value,
-    PTO_BufferType:$base,
-    StrAttr:$mode
-  );
-  let results = (outs PTO_AlignTypeConstraint:$align_out, Index:$offset_out);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $align_in `,` $offset_in `,` $value `,` $base `,` $mode attr-dict `:` type($align_in) `,` type($offset_in) `,` type($value) `,` type($base) `->` type($align_out) `,` type($offset_out)
-  }];
-}
-
 def PTO_VstusOp : PTO_Op<"vstus", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -1562,15 +1493,14 @@ def PTO_VstusOp : PTO_Op<"vstus", [
     PTO_AlignTypeConstraint:$align_in,
     I32:$offset,
     PTO_VectorType:$value,
-    PTO_BufferType:$base,
-    StrAttr:$mode
+    PTO_BufferType:$base
   );
   let results = (outs PTO_AlignTypeConstraint:$align_out, PTO_BufferType:$base_out);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $align_in `,` $offset `,` $value `,` $base `,` $mode attr-dict `:` type($align_in) `,` type($offset) `,` type($value) `,` type($base) `->` type($align_out) `,` type($base_out)
+    $align_in `,` $offset `,` $value `,` $base attr-dict `:` type($align_in) `,` type($offset) `,` type($value) `,` type($base) `->` type($align_out) `,` type($base_out)
   }];
 }
 

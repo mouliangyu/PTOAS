@@ -11,6 +11,7 @@
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -114,10 +115,6 @@ static bool isSupportedVstx2DistToken(StringRef dist) {
 
 static bool isSupportedPostMode(StringRef mode) {
   return mode == "NO_POST_UPDATE" || mode == "POST_UPDATE";
-}
-
-static bool isSupportedVstuMode(StringRef mode) {
-  return mode == "POST_UPDATE" || mode == "NO_POST_UPDATE";
 }
 
 static std::optional<StringRef> getOptionalPostModeAttr(Operation *op) {
@@ -893,6 +890,10 @@ LogicalResult PldsOp::verify() {
   MemoryRole sourceRole = classifyMemoryRole(getSource().getType());
   if (sourceRole == MemoryRole::GM)
     return emitOpError("requires a UB-backed source");
+  if (!getOffset().getType().isIndex())
+    return emitOpError("requires index offset");
+  if (!isSupportedPredicateLoadDist(getDist()))
+    return emitOpError("requires predicate load dist to be NORM, US, or DS");
   return success();
 }
 
@@ -929,6 +930,8 @@ LogicalResult PldiOp::verify() {
     return failure();
   if (classifyMemoryRole(getSource().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed source");
+  if (!matchPattern(getOffset(), m_Constant()))
+    return emitOpError("requires offset to be a constant index immediate");
   if (!isSupportedPredicateLoadDist(getDist()))
     return emitOpError("requires predicate load dist to be NORM, US, or DS");
   return success();
@@ -998,46 +1001,35 @@ LogicalResult VmaxsOp::verify() { return verifyVecScalarOpLike(*this); }
 LogicalResult VminsOp::verify() { return verifyVecScalarOpLike(*this); }
 LogicalResult VlreluOp::verify() { return verifyVecScalarOpLike(*this); }
 LogicalResult VshlsOp::verify() {
-  if (failed(verifyVecScalarOpLike(*this)))
+  auto inputType = dyn_cast<VRegType>(getInput().getType());
+  auto resultType = dyn_cast<VRegType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("input and result must be !pto.vreg<...>");
+  if (failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")))
     return failure();
-  auto inputType = cast<VRegType>(getInput().getType());
-  if (!isa<IntegerType>(inputType.getElementType()) ||
-      !isa<IntegerType>(getScalar().getType()))
+  if (inputType != resultType)
+    return emitOpError("input and result vector types must match");
+  if (!isa<IntegerType>(inputType.getElementType()))
     return emitOpError("requires integer vector and integer scalar");
+  auto scalarType = dyn_cast<IntegerType>(getScalar().getType());
+  if (!scalarType || !scalarType.isSignlessInteger(16))
+    return emitOpError("requires signless i16 scalar");
   return success();
 }
 LogicalResult VshrsOp::verify() {
-  if (failed(verifyVecScalarOpLike(*this)))
+  auto inputType = dyn_cast<VRegType>(getInput().getType());
+  auto resultType = dyn_cast<VRegType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("input and result must be !pto.vreg<...>");
+  if (failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")))
     return failure();
-  auto inputType = cast<VRegType>(getInput().getType());
-  if (!isa<IntegerType>(inputType.getElementType()) ||
-      !isa<IntegerType>(getScalar().getType()))
+  if (inputType != resultType)
+    return emitOpError("input and result vector types must match");
+  if (!isa<IntegerType>(inputType.getElementType()))
     return emitOpError("requires integer vector and integer scalar");
-  return success();
-}
-LogicalResult VsubsOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
-LogicalResult VandsOp::verify() {
-  if (failed(verifyVecScalarMaskedOpLike(*this)))
-    return failure();
-  auto inputType = cast<VRegType>(getInput().getType());
-  if (!isa<IntegerType>(inputType.getElementType()))
-    return emitOpError("requires integer vector element type");
-  return success();
-}
-LogicalResult VorsOp::verify() {
-  if (failed(verifyVecScalarMaskedOpLike(*this)))
-    return failure();
-  auto inputType = cast<VRegType>(getInput().getType());
-  if (!isa<IntegerType>(inputType.getElementType()))
-    return emitOpError("requires integer vector element type");
-  return success();
-}
-LogicalResult VxorsOp::verify() {
-  if (failed(verifyVecScalarMaskedOpLike(*this)))
-    return failure();
-  auto inputType = cast<VRegType>(getInput().getType());
-  if (!isa<IntegerType>(inputType.getElementType()))
-    return emitOpError("requires integer vector element type");
+  auto scalarType = dyn_cast<IntegerType>(getScalar().getType());
+  if (!scalarType || !scalarType.isSignlessInteger(16))
+    return emitOpError("requires signless i16 scalar");
   return success();
 }
 
@@ -1255,56 +1247,40 @@ LogicalResult VslideOp::verify() {
   return success();
 }
 
-LogicalResult VshiftOp::verify() {
+LogicalResult VsqzOp::verify() { return verifyUnaryVecOp(*this); }
+
+LogicalResult VusqzOp::verify() {
   if (failed(verifyVRegTypeLike(*this, getSrc().getType(), "src type")) ||
+      failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")) ||
       failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
     return failure();
   if (getSrc().getType() != getResult().getType())
     return emitOpError("requires src and result to share one vector type");
-  return success();
-}
-
-LogicalResult VsqzOp::verify() { return verifyUnaryVecOp(*this); }
-
-LogicalResult VusqzOp::verify() {
-  if (failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")) ||
-      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
-    return failure();
-  return success();
-}
-
-LogicalResult VpermOp::verify() {
-  if (failed(verifyVRegTypeLike(*this, getSrc().getType(), "src type")) ||
-      failed(verifyVRegTypeLike(*this, getIndex().getType(), "index type")) ||
-      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
-    return failure();
   auto srcType = cast<VRegType>(getSrc().getType());
-  auto indexType = cast<VRegType>(getIndex().getType());
-  auto resultType = cast<VRegType>(getResult().getType());
-  if (srcType != resultType)
-    return emitOpError("requires src and result to share one vector type");
-  if (srcType.getElementCount() != indexType.getElementCount())
-    return emitOpError("requires index vector to match source element count");
-  if (!isa<IntegerType>(indexType.getElementType()))
-    return emitOpError("requires integer index vector element type");
+  auto elemType = dyn_cast<IntegerType>(srcType.getElementType());
+  if (!elemType)
+    return emitOpError("requires signed integer vector element type");
+  if (elemType.isUnsigned())
+    return emitOpError("requires signed integer vector element type");
+  unsigned width = elemType.getWidth();
+  if (width != 8 && width != 16 && width != 32)
+    return emitOpError("requires s8/s16/s32 vector element type");
   return success();
 }
 
 LogicalResult VpackOp::verify() {
-  if (failed(verifyVRegTypeLike(*this, getSrc0().getType(), "src0 type")) ||
-      failed(verifyVRegTypeLike(*this, getSrc1().getType(), "src1 type")) ||
+  if (failed(verifyVRegTypeLike(*this, getSrc().getType(), "src type")) ||
       failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
     return failure();
-  auto src0Type = cast<VRegType>(getSrc0().getType());
-  auto src1Type = cast<VRegType>(getSrc1().getType());
+  if (!isSupportedPartToken(getPart()))
+    return emitOpError("requires part to be LOWER or HIGHER");
+  auto srcType = cast<VRegType>(getSrc().getType());
   auto resultType = cast<VRegType>(getResult().getType());
-  if (src0Type != src1Type)
-    return emitOpError("requires src0 and src1 to share one vector type");
-  Type srcElemType = src0Type.getElementType();
+  Type srcElemType = srcType.getElementType();
   Type resultElemType = resultType.getElementType();
   if (!isa<IntegerType>(srcElemType) || !isa<IntegerType>(resultElemType))
     return emitOpError("currently requires integer source and result element types");
-  if (resultType.getElementCount() != src0Type.getElementCount() * 2)
+  if (resultType.getElementCount() != srcType.getElementCount() * 2)
     return emitOpError(
         "requires result element count to be twice the source element count");
   unsigned srcWidth = getIntOrFloatBitWidth(srcElemType);
@@ -1312,6 +1288,14 @@ LogicalResult VpackOp::verify() {
   if (!srcWidth || resultWidth * 2 != srcWidth)
     return emitOpError(
         "requires result element width to be half the source element width");
+  auto srcIntType = cast<IntegerType>(srcElemType);
+  auto resultIntType = cast<IntegerType>(resultElemType);
+  if (!resultIntType.isUnsigned())
+    return emitOpError("requires unsigned result element type");
+  if (!((srcIntType.getWidth() == 32 && resultIntType.getWidth() == 16) ||
+        (srcIntType.getWidth() == 16 && resultIntType.getWidth() == 8)))
+    return emitOpError(
+        "currently supports only s32/u32 -> u16 and s16/u16 -> u8");
   return success();
 }
 
@@ -1492,13 +1476,33 @@ static LogicalResult verifyFloatBinaryVecNoMaskOp(BinaryVecNoMaskOp op) {
 
 LogicalResult VpreluOp::verify() { return verifyFloatBinaryVecNoMaskOp(*this); }
 LogicalResult VexpdiffOp::verify() {
-  return verifyFloatBinaryVecNoMaskOp(*this);
-}
-LogicalResult VaddreluOp::verify() {
-  return verifyFloatBinaryVecNoMaskOp(*this);
-}
-LogicalResult VsubreluOp::verify() {
-  return verifyFloatBinaryVecNoMaskOp(*this);
+  if (failed(verifyVRegTypeLike(*this, getInput().getType(), "input type")) ||
+      failed(verifyVRegTypeLike(*this, getMax().getType(), "max type")) ||
+      failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
+
+  auto inputType = cast<VRegType>(getInput().getType());
+  auto maxType = cast<VRegType>(getMax().getType());
+  auto resultType = cast<VRegType>(getResult().getType());
+  if (inputType != maxType)
+    return emitOpError("requires input and max to share one vector type");
+
+  Type inputElemType = inputType.getElementType();
+  if (!inputElemType.isF16() && !inputElemType.isF32())
+    return emitOpError("requires f16 or f32 input vector element type");
+  if (!resultType.getElementType().isF32())
+    return emitOpError("requires f32 result vector element type");
+
+  auto inputBits = getVRegStorageBitWidth(inputType);
+  auto resultBits = getVRegStorageBitWidth(resultType);
+  if (!inputBits || !resultBits || *inputBits != *resultBits)
+    return emitOpError(
+        "requires source and result to preserve total vector storage width");
+
+  StringRef part = getPart();
+  if (part != "EVEN" && part != "ODD")
+    return emitOpError("part must be EVEN or ODD");
+  return success();
 }
 
 LogicalResult VaxpyOp::verify() {
@@ -1546,27 +1550,6 @@ LogicalResult VaddreluconvOp::verify() {
   return verifyFusedConvVecOp(*this);
 }
 LogicalResult VmulconvOp::verify() { return verifyFusedConvVecOp(*this); }
-
-void VtransposeOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getSrcMutable());
-  effects.emplace_back(MemoryEffects::Write::get(), &getDestMutable());
-}
-
-LogicalResult VtransposeOp::verify() {
-  auto destType = dyn_cast<PtrType>(getDest().getType());
-  auto srcType = dyn_cast<PtrType>(getSrc().getType());
-  if (!destType || !srcType)
-    return emitOpError("requires !pto.ptr source and destination");
-  if (classifyMemoryRole(destType) != MemoryRole::UB ||
-      classifyMemoryRole(srcType) != MemoryRole::UB)
-    return emitOpError("requires UB-backed source and destination pointers");
-  if (destType.getElementType() != srcType.getElementType())
-    return emitOpError(
-        "requires source and destination pointer element types to match");
-  return success();
-}
 
 void VsldOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
@@ -1728,6 +1711,10 @@ LogicalResult VsldbOp::verify() {
   if (failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")) ||
       failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
     return failure();
+  if (!getBlockStride().getType().isSignlessInteger(16))
+    return emitOpError("requires block_stride to be i16");
+  if (!getRepeatStride().getType().isSignlessInteger(16))
+    return emitOpError("requires repeat_stride to be i16");
   return success();
 }
 
@@ -1773,6 +1760,8 @@ LogicalResult PstiOp::verify() {
     return emitOpError("requires a pointer-like destination");
   if (classifyMemoryRole(getDestination().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed destination");
+  if (!matchPattern(getOffset(), m_Constant()))
+    return emitOpError("requires offset to be a constant index immediate");
   if (!isSupportedPredicateStoreDist(getDist()))
     return emitOpError("requires predicate store dist to be NORM or PK");
   return success();
@@ -1786,6 +1775,10 @@ LogicalResult PstsOp::verify() {
   MemoryRole destinationRole = classifyMemoryRole(getDestination().getType());
   if (destinationRole == MemoryRole::GM)
     return emitOpError("requires a UB-backed destination");
+  if (!getOffset().getType().isIndex())
+    return emitOpError("requires index offset");
+  if (!isSupportedPredicateStoreDist(getDist()))
+    return emitOpError("requires predicate store dist to be NORM or PK");
   return success();
 }
 
@@ -1823,25 +1816,10 @@ LogicalResult VsstbOp::verify() {
     return emitOpError("requires a pointer-like destination");
   if (classifyMemoryRole(getDestination().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed destination");
-  return success();
-}
-
-void VstaOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getValueMutable());
-  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
-}
-
-LogicalResult VstaOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getValue().getType(), "value type")))
-    return failure();
-  if (!isBufferLike(getDestination().getType()))
-    return emitOpError("requires a pointer-like destination");
-  if (classifyMemoryRole(getDestination().getType()) == MemoryRole::GM)
-    return emitOpError("requires a UB-backed destination");
-  if (!getOffset().getType().isIndex())
-    return emitOpError("requires index offset");
+  if (!getBlockStride().getType().isSignlessInteger(16))
+    return emitOpError("requires block_stride to be i16");
+  if (!getRepeatStride().getType().isSignlessInteger(16))
+    return emitOpError("requires repeat_stride to be i16");
   return success();
 }
 
@@ -1898,31 +1876,15 @@ LogicalResult PstuOp::verify() {
     return emitOpError("requires base and base_out to have identical types");
   if (classifyMemoryRole(getBase().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed base");
-  return success();
-}
-
-void VstuOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getAlignInMutable());
-  effects.emplace_back(MemoryEffects::Read::get(), &getOffsetInMutable());
-  effects.emplace_back(MemoryEffects::Read::get(), &getValueMutable());
-  effects.emplace_back(MemoryEffects::Read::get(), &getBaseMutable());
-}
-
-LogicalResult VstuOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getAlignIn().getType(), "align_in type")) ||
-      failed(verifyVRegTypeLike(*this, getValue().getType(), "value type")) ||
-      failed(verifyAlignTypeLike(*this, getAlignOut().getType(), "align_out type")))
-    return failure();
-  if (!isBufferLike(getBase().getType()))
-    return emitOpError("requires a pointer-like base");
-  if (classifyMemoryRole(getBase().getType()) == MemoryRole::GM)
-    return emitOpError("requires a UB-backed base");
-  if (!getOffsetIn().getType().isIndex() || !getOffsetOut().getType().isIndex())
-    return emitOpError("requires index offset_in and offset_out");
-  if (!isSupportedVstuMode(getMode()))
-    return emitOpError("requires mode to be POST_UPDATE or NO_POST_UPDATE");
+  auto baseType = cast<pto::PtrType>(getBase().getType());
+  auto maskType = cast<pto::MaskType>(getValue().getType());
+  auto elemType = dyn_cast<IntegerType>(baseType.getElementType());
+  if (!elemType || elemType.isSigned() || (elemType.getWidth() != 16 && elemType.getWidth() != 32))
+    return emitOpError("requires ui16/ui32 UB base type");
+  if (maskType.isB16() && elemType.getWidth() != 16)
+    return emitOpError("requires !pto.mask<b16> to pair with !pto.ptr<ui16, ub>");
+  if (maskType.isB32() && elemType.getWidth() != 32)
+    return emitOpError("requires !pto.mask<b32> to pair with !pto.ptr<ui32, ub>");
   return success();
 }
 
@@ -1945,8 +1907,6 @@ LogicalResult VstusOp::verify() {
     return emitOpError("requires base and base_out to have identical types");
   if (classifyMemoryRole(getBase().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed base");
-  if (!isSupportedPostMode(getMode()))
-    return emitOpError("requires mode to be POST_UPDATE or NO_POST_UPDATE");
   return success();
 }
 

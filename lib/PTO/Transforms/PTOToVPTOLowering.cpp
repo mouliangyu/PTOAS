@@ -4946,7 +4946,8 @@ LogicalResult buildPackedCmp32VecScope(StringRef family,
                          .getResult();
   auto interleaved = rewriter.create<pto::PdintlvB8Op>(
       loc, packedMaskType, packedMaskType, packedCmp0, packedCmp1);
-  rewriter.create<pto::PstsOp>(loc, interleaved.getLow(), dstBase, dstZero);
+  rewriter.create<pto::PstsOp>(loc, interleaved.getLow(), dstBase, dstZero,
+                               "NORM");
   rewriter.create<scf::YieldOp>(loc, pairMask1.getScalarOut());
 
   if (remainRepeats == 0)
@@ -4965,7 +4966,8 @@ LogicalResult buildPackedCmp32VecScope(StringRef family,
                          .create<pto::PpackOp>(loc, packedMaskType, tailCmp,
                                                 rewriter.getStringAttr("LOWER"))
                          .getResult();
-  rewriter.create<pto::PstsOp>(loc, packedTail, tailDstBase, tailDstZero);
+  rewriter.create<pto::PstsOp>(loc, packedTail, tailDstBase, tailDstZero,
+                               "NORM");
   return success();
 }
 

@@ -2,7 +2,7 @@
 // case: micro-op/predicate-load-store/pstu
 // family: predicate-load-store
 // target_ops: pto.pstu
-// scenarios: unaligned-packed-store, state-update, representative-logical-elements
+// scenarios: unaligned-predicate-store, state-update, representative-logical-elements
 // NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
 // still a valid test conclusion in the current coverage-first phase.
 // -----------------------------------------------------------------------------
@@ -31,22 +31,21 @@ using namespace PtoTestCommon;
     }                                                                            \
   } while (0)
 
-void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
-                             void *stream);
+void LaunchPstu_kernel_2d(float *v1, float *v2, uint32_t *v3, void *stream);
 
 int main() {
   size_t elemCount_v1 = 1024;
   size_t fileSize_v1 = elemCount_v1 * sizeof(float);
   size_t elemCount_v2 = 1024;
   size_t fileSize_v2 = elemCount_v2 * sizeof(float);
-  size_t elemCount_v3 = 1024;
-  size_t fileSize_v3 = elemCount_v3 * sizeof(unsigned char);
+  size_t elemCount_v3 = 8;
+  size_t fileSize_v3 = elemCount_v3 * sizeof(uint32_t);
   float *v1Host = nullptr;
   float *v1Device = nullptr;
   float *v2Host = nullptr;
   float *v2Device = nullptr;
-  unsigned char *v3Host = nullptr;
-  unsigned char *v3Device = nullptr;
+  uint32_t *v3Host = nullptr;
+  uint32_t *v3Device = nullptr;
 
   int rc = 0;
   bool aclInited = false;
@@ -79,7 +78,7 @@ int main() {
   ACL_CHECK(aclrtMemcpy(v3Device, fileSize_v3, v3Host, fileSize_v3,
                         ACL_MEMCPY_HOST_TO_DEVICE));
 
-  LaunchVcmp_eq_kernel_2d(v1Device, v2Device, v3Device, stream);
+  LaunchPstu_kernel_2d(v1Device, v2Device, v3Device, stream);
 
   ACL_CHECK(aclrtSynchronizeStream(stream));
   ACL_CHECK(aclrtMemcpy(v3Host, fileSize_v3, v3Device, fileSize_v3,

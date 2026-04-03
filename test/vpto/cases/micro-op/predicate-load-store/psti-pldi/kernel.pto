@@ -16,7 +16,6 @@ module attributes {pto.target_arch = "a5"} {
     %c32 = arith.constant 32 : index
     %c64 = arith.constant 64 : index
     %c128 = arith.constant 128 : index
-    %c0_i32 = arith.constant 0 : i32
     %c0_i64 = arith.constant 0 : i64
     %c1_i64 = arith.constant 1 : i64
     %c32_i64 = arith.constant 32 : i64
@@ -45,21 +44,13 @@ module attributes {pto.target_arch = "a5"} {
       %_:1 = scf.for %iter = %c0 to %c8 step %c1 iter_args(%remaining = %c1024_i32) -> (i32) {
         %lane0 = arith.muli %iter, %c128 : index
         %lane1 = arith.addi %lane0, %c64 : index
-        %byte_index = arith.muli %iter, %c16 : index
-        %byte_offset = arith.index_castui %byte_index : index to i32
-        %mask0, %next_remaining0 = pto.plt_b32 %remaining : i32 -> !pto.mask, i32
-        %mask1, %next_remaining1 = pto.plt_b32 %next_remaining0 : i32 -> !pto.mask, i32
-        %lhs0 = pto.vlds %ub_lhs[%lane0] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %rhs0 = pto.vlds %ub_rhs[%lane0] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %cmp0 = pto.vcmp %lhs0, %rhs0, %mask0, "eq" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.mask
-        %lhs1 = pto.vlds %ub_lhs[%lane1] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %rhs1 = pto.vlds %ub_rhs[%lane1] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %cmp1 = pto.vcmp %lhs1, %rhs1, %mask1, "eq" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.mask
-        %packed, %packed_hi = pto.pdintlv_b8 %cmp0, %cmp1 : !pto.mask, !pto.mask -> !pto.mask, !pto.mask
-        pto.psti %packed, %ub_mid, %byte_offset, "NORM" : !pto.mask, !pto.ptr<ui8, ub>, i32
-        %roundtrip = pto.pldi %ub_mid, %byte_offset, "NORM" : !pto.ptr<ui8, ub>, i32 -> !pto.mask
-        pto.psts %roundtrip, %ub_out[%byte_index] : !pto.mask, !pto.ptr<ui8, ub>
-        scf.yield %next_remaining1 : i32
+        %cmp0 = pto.pset_b8 "PAT_VL64" : !pto.mask<b8>
+        %cmp1 = pto.pset_b8 "PAT_M4" : !pto.mask<b8>
+        %packed, %packed_hi = pto.pdintlv_b8 %cmp0, %cmp1 : !pto.mask<b8>, !pto.mask<b8> -> !pto.mask<b8>, !pto.mask<b8>
+        pto.psti %packed, %ub_mid[%c0], "NORM" : !pto.mask<b8>, !pto.ptr<ui8, ub>, index
+        %roundtrip = pto.pldi %ub_mid[%c0], "NORM" : !pto.ptr<ui8, ub>, index -> !pto.mask<b8>
+        pto.psts %roundtrip, %ub_out[%c0], "NORM" : !pto.mask<b8>, !pto.ptr<ui8, ub>, index
+        scf.yield %remaining : i32
       }
     }
 

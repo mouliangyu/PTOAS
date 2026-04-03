@@ -111,19 +111,19 @@ for (int i = 0; i < N; i++)
 
 ### `pto.vselr`
 
-- **syntax:** `%result = pto.vselr %src0, %src1 : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<NxT>`
-- **semantics:** Select with reversed mask semantics.
+- **syntax:** `%result = pto.vselr %src, %idx : !pto.vreg<NxT>, !pto.vreg<Nxi<width>> -> !pto.vreg<NxT>`
+- **semantics:** Lane-select by index vector.
 
 ```c
 for (int i = 0; i < N; i++)
-    dst[i] = mask[i] ? src1[i] : src0[i];  // reversed from vsel
+    dst[i] = src[idx[i]];
 ```
 
-- **inputs:** `%src0` and `%src1` are the source vectors.
-- **outputs:** `%result` is the selected vector.
-- **constraints and limitations:** This family preserves reversed-select
-  semantics. If the concrete lowering uses an implicit predicate source, that
-  predicate source MUST be documented by the surrounding IR pattern.
+- **inputs:** `%src` is the source vector. `%idx` is the lane-index vector.
+- **outputs:** `%result` is the reordered vector.
+- **constraints and limitations:** `%idx` must use integer elements. `%idx`
+  must have the same lane count as `%src`, and its integer element width must
+  match the bit width of `%src` element type.
 
 ---
 

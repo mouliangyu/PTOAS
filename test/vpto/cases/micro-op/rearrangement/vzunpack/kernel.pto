@@ -51,12 +51,12 @@ module attributes {pto.target_arch = "a5"} {
     pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
 
     pto.vecscope {
-      %store_mask = pto.pset_b32 "PAT_ALL" : !pto.mask
+      %store_mask = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
       scf.for %offset = %c0 to %c1024 step %c64 {
         %src_offset = arith.muli %offset, %c2 : index
         %vec = pto.vlds %ub_in[%src_offset] : !pto.ptr<ui16, ub> -> !pto.vreg<128xui16>
         %out = pto.vzunpack %vec, %part : !pto.vreg<128xui16> -> !pto.vreg<64xui32>
-        pto.vsts %out, %ub_out[%offset], %store_mask : !pto.vreg<64xui32>, !pto.ptr<ui32, ub>, !pto.mask
+        pto.vsts %out, %ub_out[%offset], %store_mask : !pto.vreg<64xui32>, !pto.ptr<ui32, ub>, !pto.mask<b32>
       }
     }
 

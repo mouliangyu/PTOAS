@@ -2,7 +2,7 @@
 // case: micro-op/predicate-load-store/pstu
 // family: predicate-load-store
 // target_ops: pto.pstu
-// scenarios: unaligned-packed-store, state-update, representative-logical-elements
+// scenarios: unaligned-predicate-store, state-update, representative-logical-elements
 // NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
 // still a valid test conclusion in the current coverage-first phase.
 // -----------------------------------------------------------------------------
@@ -43,13 +43,11 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vcmp_eq_kernel_2d(__gm__ float *v1,
-                                                    __gm__ float *v2,
-                                                    __gm__ unsigned char *v3);
+extern "C" __global__ AICORE void pstu_kernel_2d(__gm__ float *v1,
+                                                 __gm__ float *v2,
+                                                 __gm__ uint32_t *v3);
 
-void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
-                             void *stream) {
-  vcmp_eq_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                            (__gm__ float *)v2,
-                                            (__gm__ unsigned char *)v3);
+void LaunchPstu_kernel_2d(float *v1, float *v2, uint32_t *v3, void *stream) {
+  pstu_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1, (__gm__ float *)v2,
+                                         (__gm__ uint32_t *)v3);
 }

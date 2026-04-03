@@ -13,6 +13,7 @@ module attributes {pto.target_arch = "a5"} {
     %c0_i64 = arith.constant 0 : i64
     %c1_i64 = arith.constant 1 : i64
     %c16_i64 = arith.constant 16 : i64
+    %c32_i64 = arith.constant 32 : i64
     %c1_i32 = arith.constant 1 : i32
 
     %ub_out = pto.castptr %c0_i64 : i64 -> !pto.ptr<ui8, ub>
@@ -20,19 +21,19 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       scf.for %iter = %c0 to %c1 step %c1 {
-        %m0, %s0 = pto.plt_b8 %c1_i32 : i32 -> !pto.mask, i32
-        %m1, %s1 = pto.plt_b16 %c1_i32 : i32 -> !pto.mask, i32
-        %m2, %s2 = pto.plt_b32 %c1_i32 : i32 -> !pto.mask, i32
-        pto.psts %m0, %ub_out[%c0] : !pto.mask, !pto.ptr<ui8, ub>
-        pto.psts %m1, %ub_out[%c8] : !pto.mask, !pto.ptr<ui8, ub>
-        pto.psts %m2, %ub_out[%c16] : !pto.mask, !pto.ptr<ui8, ub>
+        %m0, %s0 = pto.plt_b8 %c1_i32 : i32 -> !pto.mask<b8>, i32
+        %m1, %s1 = pto.plt_b16 %c1_i32 : i32 -> !pto.mask<b16>, i32
+        %m2, %s2 = pto.plt_b32 %c1_i32 : i32 -> !pto.mask<b32>, i32
+        pto.psts %m0, %ub_out[%c0] : !pto.mask<b8>, !pto.ptr<ui8, ub>
+        pto.psts %m1, %ub_out[%c8] : !pto.mask<b16>, !pto.ptr<ui8, ub>
+        pto.psts %m2, %ub_out[%c16] : !pto.mask<b32>, !pto.ptr<ui8, ub>
       }
     }
 
     pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-    pto.copy_ubuf_to_gm %ub_out, %gm_out, %c0_i64, %c1_i64, %c16_i64, %c0_i64, %c16_i64, %c16_i64 : !pto.ptr<ui8, ub>, !pto.ptr<ui8, gm>, i64, i64, i64, i64, i64, i64
+    pto.copy_ubuf_to_gm %ub_out, %gm_out, %c0_i64, %c1_i64, %c16_i64, %c0_i64, %c32_i64, %c32_i64 : !pto.ptr<ui8, ub>, !pto.ptr<ui8, gm>, i64, i64, i64, i64, i64, i64
     pto.barrier #pto.pipe<PIPE_ALL>
     return
   }

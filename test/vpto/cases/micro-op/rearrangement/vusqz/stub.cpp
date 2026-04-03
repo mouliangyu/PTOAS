@@ -3,8 +3,6 @@
 // family: rearrangement
 // target_ops: pto.vusqz
 // scenarios: predicate-driven-rearrangement, placement
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
 // -----------------------------------------------------------------------------
 #include <pto/common/type.hpp>
 
@@ -16,11 +14,10 @@
 #define __gm__
 #endif
 
-// The runtime launcher resolves the real device implementation from the
-// embedded aibinary. The host-side fatobj still needs a concrete kernel symbol
-// with the final ABI name, but it does not need the original EmitC body.
-extern "C" __global__ AICORE void vabs_kernel_2d(__gm__ float *v1,
-                                                 __gm__ float *v2) {
+extern "C" __global__ AICORE void vusqz_kernel_2d(__gm__ int32_t *v1,
+                                                  __gm__ float *v2,
+                                                  __gm__ int32_t *v3) {
   (void)v1;
   (void)v2;
+  (void)v3;
 }
