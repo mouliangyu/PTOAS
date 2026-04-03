@@ -1,6 +1,6 @@
 ---
-name: ptoas-vpto-llvm-artifacts
-description: Guide the PTOAS VPTO compile-and-link workflow: inspect VPTO MLIR, export LLVM IR or LLVM bitcode, validate the Bisheng handoff, and assemble device objects, fat objects, or shared kernel libraries. Use when the user asks how to build, export, compile, or link VPTO LLVM-path artifacts for A5.
+name: "ptoas-vpto-llvm-artifacts"
+description: "Guide the PTOAS VPTO compile-and-link workflow: inspect VPTO MLIR, export LLVM IR or LLVM bitcode, validate the Bisheng handoff, and assemble device objects, fat objects, or shared kernel libraries. Use when the user asks how to build, export, compile, or link VPTO LLVM-path artifacts for A5."
 ---
 
 # PTOAS VPTO LLVM Artifacts

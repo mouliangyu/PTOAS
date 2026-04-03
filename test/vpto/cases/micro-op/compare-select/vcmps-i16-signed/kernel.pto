@@ -43,17 +43,17 @@ module attributes {pto.target_arch = "a5"} {
         %19 = arith.muli %arg4, %c16 : index
         %22 = pto.castptr %11 : !pto.ptr<ui8, ub> -> !pto.ptr<i8, ub>
         %24 = pto.addptr %22, %19 : <i8, ub> -> <i8, ub>
-        %mask, %scalar_out = pto.plt_b32 %arg5 : i32 -> !pto.mask, i32
+        %mask, %scalar_out = pto.plt_b16 %arg5 : i32 -> !pto.mask<b16>, i32
         %25 = pto.vlds %0[%17] : !pto.ptr<i16, ub> -> !pto.vreg<128xi16>
-        %27 = pto.vcmps %25, %c5, %mask, "gt" : !pto.vreg<128xi16>, i16, !pto.mask -> !pto.mask
-        pto.psts %27, %24[%c0] : !pto.mask, !pto.ptr<i8, ub>
+        %27 = pto.vcmps %25, %c5, %mask, "gt" : !pto.vreg<128xi16>, i16, !pto.mask<b16> -> !pto.mask<b16>
+        pto.psts %27, %24[%c0] : !pto.mask<b16>, !pto.ptr<i8, ub>
         scf.yield %scalar_out : i32
       }
     }
     pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     %c1024_i64 = arith.constant 1024 : i64
-    %12 = arith.muli %1, %c1_i64 : i64
+    %12 = arith.muli %1, %c2_i64 : i64
     %13 = pto.castptr %arg1 : !pto.ptr<ui8, gm> -> !pto.ptr<i8, gm>
     %14 = pto.addptr %13, %4 : <i8, gm> -> <i8, gm>
     pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64

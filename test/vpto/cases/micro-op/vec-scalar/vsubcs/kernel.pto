@@ -32,10 +32,10 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       %_:1 = scf.for %offset = %c0 to %c1024 step %c64 iter_args(%remaining = %c1000_i32) -> (i32) {
-        %mask, %next_remaining = pto.plt_b32 %remaining : i32 -> !pto.mask, i32
+        %mask, %next_remaining = pto.plt_b32 %remaining : i32 -> !pto.mask<b32>, i32
         %vec = pto.vlds %ub_in[%offset] : !pto.ptr<i32, ub> -> !pto.vreg<64xi32>
-        %prod, %carry = pto.vsubcs %vec, %vec, %mask, %mask : !pto.vreg<64xi32>, !pto.vreg<64xi32>, !pto.mask, !pto.mask -> !pto.vreg<64xi32>, !pto.mask
-        pto.vsts %prod, %ub_out[%offset], %mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask
+        %prod, %carry = pto.vsubcs %vec, %vec, %mask, %mask : !pto.vreg<64xi32>, !pto.vreg<64xi32>, !pto.mask<b32>, !pto.mask<b32> -> !pto.vreg<64xi32>, !pto.mask<b32>
+        pto.vsts %prod, %ub_out[%offset], %mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask<b32>
         scf.yield %next_remaining : i32
       }
     }

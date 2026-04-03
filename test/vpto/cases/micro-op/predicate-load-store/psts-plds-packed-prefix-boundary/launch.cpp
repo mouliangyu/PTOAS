@@ -2,13 +2,8 @@
 // case: micro-op/predicate-load-store/psts-plds-packed-prefix-boundary
 // family: predicate-load-store
 // target_ops: pto.plds, pto.psts
-// scenarios: packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: packed-predicate-roundtrip, dynamic-offset, load-store-pair-preservation, representative-logical-elements
 // -----------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// PTOAS compatibility layer
-// ---------------------------------------------------------------------------
 #ifndef __VEC_SCOPE__
 #define __VEC_SCOPE__
 #endif
@@ -43,13 +38,14 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vcmp_eq_kernel_2d(__gm__ float *v1,
-                                                    __gm__ float *v2,
-                                                    __gm__ unsigned char *v3);
+extern "C" __global__ AICORE void psts_plds_packed_prefix_boundary_kernel_2d(__gm__ float *v1,
+                                                                              __gm__ float *v2,
+                                                                              __gm__ unsigned char *v3);
 
-void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
-                             void *stream) {
-  vcmp_eq_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                            (__gm__ float *)v2,
-                                            (__gm__ unsigned char *)v3);
+void LaunchPsts_plds_packed_prefix_boundary_kernel_2d(float *v1, float *v2,
+                                                      unsigned char *v3,
+                                                      void *stream) {
+  psts_plds_packed_prefix_boundary_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
+                                                                     (__gm__ float *)v2,
+                                                                     (__gm__ unsigned char *)v3);
 }

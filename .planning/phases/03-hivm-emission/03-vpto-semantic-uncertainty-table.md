@@ -40,15 +40,7 @@
 
 - `test/vpto/cases/micro-op/predicate-load-store/pst-pld`
 
-### 2. `vselr` 的正式语义
-
-当前 `vselr` 仍停留在旧的 `mask + cmp_mode` 伪接口印象上，但从 `docs/isa/11-compare-select.md`、`docs/isa/12-data-rearrangement.md` 和 `VPTOOps.td` 之间，无法唯一确定它的正式 operands、results，以及它和 `vsel` 的实际差异。这个问题本质上不是实现缺口，而是文档还没有把 op 语义说清楚。
-
-代表 case：
-
-- `test/vpto/cases/micro-op/compare-select/vselr`
-
-### 3. `vcmax` / `vcmin` 的 value/index 结果布局
+### 2. `vcmax` / `vcmin` 的 value/index 结果布局
 
 当前文档只说明 reduction 结果里包含 `value/index`，但没有固定结果打包方式，特别是低位 packing 细节没有收口。只要这个布局没有定下来，相关 case 就无法有稳定 oracle，docs 也无法给出明确结果表示。
 
@@ -56,7 +48,7 @@
 
 - `test/vpto/cases/micro-op/reduction/vcmax`
 
-### 4. `vbitsort` 的可验证语义
+### 3. `vbitsort` 的可验证语义
 
 当前关于 `vbitsort` 的资料只有 surface 或接口层信息，还不足以说明输出到底应该如何解释。排序键、索引含义、输出布局、以及最终应如何验证，目前都没有形成可闭环的文档语义，因此不能只靠实现来反推。
 
@@ -98,54 +90,18 @@
 
 ## Interface / Surface Alignment Needed
 
-### 1. unaligned / stateful store family 的 interface 未稳定
-
-`vstu`、`vstus`、`vstur` 这组 op 一方面涉及 `mode` 参数 surface，另一方面又是 `vsta`、`vstas` 这类 flush/state-update case 的上游 producer。当前 `docs/isa/03-vector-load-store.md` 与 `VPTOOps.td` 对参数表面和上游 state 契约没有完全对齐，导致整组 op 的文档接口还不够稳定。
-
-代表 case：
-
-- `test/vpto/cases/micro-op/vector-load-store/vstu`
-
-### 2. `vsldb` / `vsstb` 的 packed control word 编码规则缺失
-
-当前文档只说 `%offset` 是 packed stride/control word，但没有进一步给出字段含义、编码方式和如何写 testcase。只要编码规则不明确，docs 就没有真正把这两个 op 的可用接口定义完整。
-
-代表 case：
-
-- `test/vpto/cases/micro-op/vector-load-store/vsldb`
-
-### 3. `vusqz` 的 surface 无法支撑当前目标
-
-当前 surface 只有 `%mask -> %result`，但文档语义又依赖一个“source-front stream”式的隐式输入。也就是说，现有表面形式不足以承载文档想表达的 placement / rearrangement 语义，这需要优先在 docs 上明确真实输入模型，而不是继续沿着现有 case 补。
-
-代表 case：
-
-- `test/vpto/cases/micro-op/rearrangement/vusqz`
-
-### 4. `vaddreluconv` / `vmulconv` 的 docs、ODS、verifier 未对齐
-
-当前失败分析显示，这两个 op 的 skeleton 还停留在旧的 `vector + scalar` 写法，而 docs/ODS 已经要求 `vector + vector` 输入。即使修正到 `vector + vector`，`conversion-result` 的 result 形状和总位宽约束又会撞到 verifier 限制。这里需要先统一哪一层才是权威 surface，再去补文档和 case。
-
-代表 case：
-
-- `test/vpto/cases/micro-op/dsa-sfu/vaddreluconv`
-
-### 5. `vprelu` / `vexpdiff` / `vaddrelu` / `vsubrelu` 的参数列表定义未收口
+### 5. `vprelu` / `vexpdiff` 的参数列表定义未收口
 
 当前 PTO surface 和 LLVM 侧观察到的定义没有收口，至少存在下面这些待确认项：
 
 - `vprelu`：LLVM 定义观察为 `3` 个 `vreg` 输入加 `1` 个 `mask` 输入
 - `vexpdiff`：LLVM 定义观察为 `2` 个 `vreg` 输入加 `1` 个 `mask` 再加 `1` 个标量
-- `vaddrelu` / `vsubrelu`：也需要明确它们在 LLVM 层的正式参数列表，当前 docs/ODS/PTO surface 尚未把这层关系讲清楚
-
 这里需要先决定哪一层是权威定义，并把 PTO surface、docs 和 LLVM 参数列表关系写清楚；否则相关 case 虽然可以继续补 emitter，但接口本身仍处于未定状态。
 
 代表 case：
 
 - `test/vpto/cases/micro-op/dsa-sfu/vprelu-f32`
 - `test/vpto/cases/micro-op/dsa-sfu/vexpdiff-f32`
-- `test/vpto/cases/micro-op/dsa-sfu/vaddrelu-f32`
-- `test/vpto/cases/micro-op/dsa-sfu/vsubrelu-f32`
 
 ### 6. `vlds BRC_B32` 与 verifier 结论不一致
 
@@ -173,15 +129,7 @@
 
 - `test/vpto/cases/micro-op/dsa-sfu/vsort32`
 
-### 3. vec-scalar summary 未同步正文
-
-当前 `docs/vpto-spec.md` summary 没有反映 `vsubs`、`vands`、`vors`、`vxors` 等已在 `docs/isa/08` 正文出现的 surface，导致仅看总表时会误判支持范围。这个问题虽然不是单个 op 语义未定，但属于 docs 贡献者需要补齐的表述漂移。
-
-代表 case：
-
-- `test/vpto/cases/micro-op/vec-scalar/vsubs`
-
-### 4. reduction summary 未同步正文
+### 3. reduction summary 未同步正文
 
 `docs/isa/10-reduction-ops.md` 正文已经出现 `vcg*`、`vcpadd`，但 `docs/vpto-spec.md` summary 还没有同步。这里需要先决定 summary 是否应反映完整 current surface；如果不是完整 summary，也应在文档里明确说明。
 
@@ -192,8 +140,8 @@
 ## Recommended Update Order
 
 1. 先处理纯语义待定项：`predicate-load-store` packed roundtrip、`vselr`、`vcmax/vcmin`、`vbitsort`
-2. 再处理接口/表面未对齐项：unaligned/stateful store family、`vsldb/vsstb`、`vusqz`、`vaddreluconv/vmulconv`
-3. 再处理文档漂移项：`vmrgsort` 命名、`vsort32`、vec-scalar summary、reduction summary
+2. 再处理接口/表面未对齐项：unaligned/stateful store family、`vusqz`
+3. 再处理文档漂移项：`vmrgsort` 命名、`vsort32`、reduction summary
 4. 最后处理 P1 范围的类型与 overflow 规则：`vadds`、`vabs/vexp`、`vadd`、`vcvt`
 
 完成以上结论后，建议优先回写：
@@ -262,43 +210,21 @@
 - `test/vpto/cases/micro-op/unary-vector/vmov`
 - `test/vpto/cases/micro-op/unary-vector/vmov-tail`
 
-4. `vprelu` / `vexpdiff` / `vaddrelu` / `vsubrelu` 的 installed contract 观察补充
+4. `vprelu` / `vexpdiff` 的 installed contract 观察补充
 
 当前新增观察：
 
 - `vprelu`：installed Clang wrapper 已确认它走通用 binary-op 形式，wrapper surface 是 `dst, src0, src1, mask, mode`；其中 merge 语义通过 `vmov` 注回 `dst`
 - `vexpdiff`：installed A5 headers 与 Clang wrappers 里未观察到同名 surface，`strings bisheng` 也未观察到 `llvm.hivm.vexpdiff*`
-- `vaddrelu` / `vsubrelu`：installed A5 headers、Clang wrappers、以及 `strings bisheng` 中都未观察到同名 surface / intrinsic
-
 增量结论：
 
 - `vprelu` 需要把 PTO surface、docs 和 installed wrapper / LLVM 参数列表关系写清楚
-- `vexpdiff` / `vaddrelu` / `vsubrelu` 需要先决定 docs surface 是否真的已经落入 installed A5 toolchain contract
+- `vexpdiff` 需要先决定 docs surface 是否真的已经落入 installed A5 toolchain contract
 
 代表 case：
 
 - `test/vpto/cases/micro-op/dsa-sfu/vprelu-f32`
 - `test/vpto/cases/micro-op/dsa-sfu/vexpdiff-f32`
-- `test/vpto/cases/micro-op/dsa-sfu/vaddrelu-f32`
-- `test/vpto/cases/micro-op/dsa-sfu/vsubrelu-f32`
-
-#### Drift / Surface Additions
-
-1. `vsubs` 的 docs surface 与 installed toolchain 支持面未收口
-
-当前新增观察：
-
-- `docs/isa/08-vec-scalar-ops.md` 已给出 `pto.vsubs` surface
-- 但 installed Clang headers 中未观察到对应 `vsubs` wrapper
-- `strings bisheng` 也未观察到 `llvm.hivm.vsubs.*`
-
-增量结论：
-
-- 这不只是 summary 漂移，而是 docs 是否真的在描述一个已落入 installed A5 toolchain contract 的 op 还没有收口
-
-代表 case：
-
-- `test/vpto/cases/micro-op/vec-scalar/vsubs`
 
 ### 2026-04-01 Batch 02
 
@@ -359,52 +285,6 @@
 本批次继续只追加新观察，不改写上面的既有台账编号。
 
 #### Drift / Surface Additions
-
-1. `vands` / `vors` / `vxors` 的 docs surface 与 installed toolchain 支持面未收口
-
-当前新增观察：
-
-- `docs/isa/08-vec-scalar-ops.md` 与当前 testcase 都把这三条 op 定义成
-  `input + scalar + mask -> result`
-- 但 installed Clang headers 中未直接观察到 `vands` / `vors` / `vxors` 同名 wrapper
-- `strings bisheng` 里也未观察到 `llvm.hivm.vands.*` / `llvm.hivm.vors.*` / `llvm.hivm.vxors.*`
-- 当前 emitter 继续往下推进只会落到“unsupported op”而不会产生可验证的 LLVM contract
-
-增量结论：
-
-- 这三条不能按普通 emitter 缺口处理；需要先确认 docs 里的 PTO surface 是否真对应 installed A5 contract，或者存在命名映射
-
-代表 case：
-
-- `test/vpto/cases/micro-op/vec-scalar/vands`
-- `test/vpto/cases/micro-op/vec-scalar/vors`
-- `test/vpto/cases/micro-op/vec-scalar/vxors`
-- `test/vpto/cases/micro-op/vec-scalar/vands-mask-edge`
-- `test/vpto/cases/micro-op/vec-scalar/vors-mask-edge`
-- `test/vpto/cases/micro-op/vec-scalar/vxors-mask-edge`
-
-2. `vshls` / `vshrs` 的 docs surface 与 `VPTOOps.td` 当前定义未收口
-
-当前新增观察：
-
-- `docs/isa/08-vec-scalar-ops.md` 将两条 op 都定义为
-  `input + scalar + mask -> result`
-- 但 `VPTOOps.td` 当前把 `pto.vshls` / `pto.vshrs` 都定义成 `PTO_VecScalarOp`，即只有
-  `input + scalar -> result`，没有 `mask`
-- 当前 testcase 也因此只能按无 mask 的 ODS surface 落地
-- installed toolchain 侧虽然能观察到 `llvm.hivm.vshls.*` / `llvm.hivm.vshrs.*`，但在 docs / ODS / testcase 三者未先收口前，不能擅自选择其中一套语义继续补 emitter
-
-增量结论：
-
-- 这里的主问题不是 LLVM intrinsic 不存在，而是 PTO surface 还没有在 docs 与 ODS 间统一
-- 在 surface 收口前，不能把 compile 失败简单归类成 emitter 缺口
-
-代表 case：
-
-- `test/vpto/cases/micro-op/vec-scalar/vshls`
-- `test/vpto/cases/micro-op/vec-scalar/vshrs`
-- `test/vpto/cases/micro-op/vec-scalar/vshls-shift-boundary`
-- `test/vpto/cases/micro-op/vec-scalar/vshrs-shift-boundary`
 
 ### 2026-04-01 Batch 04
 
@@ -510,25 +390,33 @@
 
 - `test/vpto/cases/micro-op/predicate-load-store/pst-pld`
 
-2. `psti` / `pldi` family 的 installed wrapper 已知，但对应 `llvm.hivm.psti.b8` / `llvm.hivm.pldi.b8` 选择契约仍未收口
+2. `psti` / `pldi` family 的 installed wrapper 已知，repo 当前 emission 也已按该 contract 发射，但 bisheng 对 `llvm.hivm.pldi.b8` 仍无法完成指令选择
 
 当前新增观察：
 
 - installed Clang wrapper 已确认：
   `psti(vector_bool src, __ubuf__ uint32_t *base, int32_t offset, T dist) -> __builtin_cce_psti_b8(src, base, offset, dist.value, 0)`
   `pldi(vector_bool &dst, __ubuf__ uint32_t *base, int32_t offset, T dist) -> __builtin_cce_pldi_b8(base, offset, dist.value, 0)`
+- repo 当前导出的 LLVM 形状为：
+  `declare void @llvm.hivm.psti.b8(<256 x i1>, ptr addrspace(6), i32, i32, i32)`
+  `declare <256 x i1> @llvm.hivm.pldi.b8(ptr addrspace(6), i32, i32, i32)`
 - `strings bisheng` 已确认 `llvm.hivm.psti.b8` / `llvm.hivm.pldi.b8` 名字存在
 - repo 当前生成的 `llvm.hivm.psti.b8` / `llvm.hivm.pldi.b8` 已经不再停在 `unsupported op`
 - 但送 bisheng 后，`pldi.b8` 在 instruction selection 阶段仍报 `Cannot select: intrinsic %llvm.hivm.pldi.b8`
 
 增量结论：
 
-- 当前问题已经从“是否有 intrinsic 名字”收敛到“installed frontend 对 `psti/pldi` family 的真实 LLVM contract 还没有被确认”
-- 在拿到真实 frontend 产物前，不能继续拍脑袋改返回形态、立即数类型或固定尾参
+- 当前问题已经从“是否有 intrinsic 名字 / emission 是否缺失”收敛到“repo 当前按 wrapper 约定发射的 LLVM 形状，bisheng 后端仍无法选择”
+- 在拿到 installed frontend 真实 LLVM 产物前，不能继续拍脑袋改返回形态、立即数类型、地址空间或固定尾参
 
 代表 case：
 
 - `test/vpto/cases/micro-op/predicate-load-store/psti-pldi`
+
+更新：
+
+- `2026-04-03` 已确认 `pldi/psti` 的 PTO surface 统一为 `base[offset], "DIST"`，其中 `%offset` 必须是常量 `index`；lowering 到 LLVM IR 时再转换为 intrinsic 所需的 `i32`
+- 在该约束下，`test/vpto/cases/micro-op/predicate-load-store/psti-pldi` 的本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过并产出 kernel shared library
 
 3. `vaxpy` family 的 installed wrapper 已知，但对应 `llvm.hivm.vaxpy.*` 的 LLVM 参数顺序 / 选择契约仍未收口
 
@@ -568,97 +456,3 @@
 代表 case：
 
 - `test/vpto/cases/micro-op/dsa-sfu/vci`
-
-5. `pstu` 的 surface 类型集合未收口
-
-当前新增观察：
-
-- `docs/isa/04-predicate-load-store.md` / `docs/vpto-spec.md` 当前把 `pto.pstu` 写成泛型 `!pto.ptr<T, ub>`
-- installed Clang wrapper 只明确暴露 `__builtin_cce_pstu_b16` / `__builtin_cce_pstu_b32`
-- 当前 repo testcase `test/vpto/cases/micro-op/predicate-load-store/pstu/kernel.pto` 仍以 `!pto.ptr<ui8, ub>` 书写
-
-增量结论：
-
-- 当前问题首先不是 emitter 没接，而是 docs surface、testcase 与 installed type contract 没有收口
-- 在文档明确 `pstu` 是否真的接受 `ui8` 基址前，不应继续猜 LLVM lowering
-
-代表 case：
-
-- `test/vpto/cases/micro-op/predicate-load-store/pstu`
-- `test/vpto/cases/micro-op/predicate-load-store/pstu-state-advance-boundary`
-
-6. `vtranspose` 没有观察到同名 HIVM intrinsic，当前只看到 helper 级实现
-
-当前新增观察：
-
-- `docs/isa/13-dsa-sfu-ops.md` 把 `pto.vtranspose` 定义为 UB-to-UB helper，输入是 `%dest, %src, %config`
-- `strings bisheng` 未观察到 `llvm.hivm.vtranspose` / `llvm.hivm.transpose` family
-- installed A5 `TTrans.hpp` 当前通过 `vci + vmuls + vadds + vgather2 + vsts` 的 helper 序列实现转置
-- 当前 repo testcase 只携带一个 `i64 %config`，但尚未看到这个 `%config` 如何与 installed helper 模板参数一一对应
-
-增量结论：
-
-- 当前问题不是简单“缺少一个 intrinsic 名字”，而是 `vtranspose` 到 helper 序列的 lowering 规则尚未收口
-- 在 `config` 与 helper 参数关系明确前，不应直接猜单条 LLVM intrinsic 或随意展开成某个特定序列
-
-代表 case：
-
-- `test/vpto/cases/micro-op/dsa-sfu/vtranspose`
-- `test/vpto/cases/micro-op/dsa-sfu/vtranspose-multi-config`
-
-7. `vpack` 的 PTO/docs surface 与 installed wrapper 参数表不一致
-
-当前新增观察：
-
-- `docs/isa/12-data-rearrangement.md` / `VPTOOps.td` 当前把 `pto.vpack` 定义为双输入：
-  `%result = pto.vpack %src0, %src1, %part`
-- installed Clang wrapper 当前只明确暴露单输入：
-  `vpack(vector_<narrow> &dst, vector_<wide> src, part, mode)`
-- `strings bisheng` 观察到的也是单源 family：
-  `llvm.hivm.vpack.s322u16.*` / `llvm.hivm.vpack.u322u16.*`
-
-增量结论：
-
-- 当前不是简单 emitter 未接，而是 PTO/docs surface 与 installed contract 没有收口
-- 在确认双输入 PTO surface 如何映射到真实 A5 contract 前，不应继续拍脑袋补 LLVM lowering
-
-代表 case：
-
-- `test/vpto/cases/micro-op/rearrangement/vpack`
-
-8. `vperm` 的 docs 命名与 installed contract 没有建立直接映射
-
-当前新增观察：
-
-- `docs/isa/12-data-rearrangement.md` 把 `pto.vperm` 定义成 in-register `%src + %index` permute
-- `strings bisheng` 未观察到 `llvm.hivm.vperm.*`
-- installed trace 只明确观察到 memory-based `vgatherb` / `vgather2` family
-- `docs/vpto-spec.md` 也保留了 “`pto.vperm` naming: a5_intrinsic `vgather` mapped to `pto.vperm`” 的待确认说明
-
-增量结论：
-
-- 当前不是简单 emitter 缺口，而是 docs 命名/语义与 installed contract 未收口
-- 在确认 `pto.vperm` 是否真对应某个 gather family、以及是否仍保持 in-register 语义前，不应继续猜 LLVM lowering
-
-代表 case：
-
-- `test/vpto/cases/micro-op/rearrangement/vperm`
-
-9. `vshift` 的 single-source zero-fill 语义尚未映射到明确的 installed LLVM contract
-
-当前新增观察：
-
-- `docs/isa/12-data-rearrangement.md` 把 `pto.vshift` 定义为 single-source zero-fill slide
-- `docs/vpto-spec.md` 保留了 “a5_intrinsic `vsld` mapped to `pto.vshift`” 的待确认说明
-- installed A5 当前只明确暴露 memory `vsld` family 与 in-register `vslide` family
-- 当前尚未拿到能够证明 `pto.vshift == vslide(src, zero, amt)` 或其他等价式的 installed frontend 证据
-
-增量结论：
-
-- 当前不是简单 emitter 缺口，而是 op 命名/contract 未收口
-- 在 installed frontend 明确真实映射前，不应继续拍脑袋把 `pto.vshift` 降成 `vslide` 或 `vsld`
-
-代表 case：
-
-- `test/vpto/cases/micro-op/rearrangement/vshift`
-- `test/vpto/cases/micro-op/rearrangement/vshift-tail-zero-fill`

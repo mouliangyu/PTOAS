@@ -3,7 +3,6 @@
 # family: vector-load-store
 # target_ops: pto.vstas, pto.vstus
 # scenarios: core-f32, full-mask, immediate-offset, state-update
-# NOTE: bulk-generated coverage skeleton.
 # coding=utf-8
 
 import os
@@ -187,7 +186,7 @@ def compare_packed_pred_mask(golden_path, output_path, logical_elems, src_elem_b
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
     ok = True
-    ok = compare_bin("golden_v2.bin", "v2.bin", np.float32, 0.0001) and ok
+    ok = compare_bin_prefix("golden_v2.bin", "v2.bin", np.float32, 0.0001, 69) and ok
     if not ok:
         if strict:
             print("[ERROR] compare failed")

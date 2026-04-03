@@ -18,11 +18,11 @@ module attributes {pto.target_arch = "a5"} {
     %c64_i64 = arith.constant 64 : i64
     %c2048_i64 = arith.constant 2048 : i64
     %c1000_i32 = arith.constant 1000 : i32
+    %scalar = arith.constant 31 : i16
     %gm_in = pto.castptr %arg0 : !pto.ptr<f32, gm> -> !pto.ptr<ui16, gm>
     %gm_out = pto.castptr %arg1 : !pto.ptr<f32, gm> -> !pto.ptr<ui16, gm>
     %ub_in = pto.castptr %c0_i64 : i64 -> !pto.ptr<ui16, ub>
     %ub_out = pto.castptr %c2048_i64 : i64 -> !pto.ptr<ui16, ub>
-    %scalar = pto.load_scalar %gm_in[%c0] : !pto.ptr<ui16, gm> -> ui16
 
     %false = arith.constant false
     pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
@@ -33,10 +33,10 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       %_:1 = scf.for %offset = %c0 to %c1024 step %c128 iter_args(%remaining = %c1000_i32) -> (i32) {
-        %mask, %next_remaining = pto.plt_b16 %remaining : i32 -> !pto.mask, i32
+        %mask, %next_remaining = pto.plt_b16 %remaining : i32 -> !pto.mask<b16>, i32
         %vec = pto.vlds %ub_in[%offset] : !pto.ptr<ui16, ub> -> !pto.vreg<128xui16>
-        %prod = pto.vshls %vec, %scalar : !pto.vreg<128xui16>, ui16 -> !pto.vreg<128xui16>
-        pto.vsts %prod, %ub_out[%offset], %mask : !pto.vreg<128xui16>, !pto.ptr<ui16, ub>, !pto.mask
+        %prod = pto.vshls %vec, %scalar, %mask : !pto.vreg<128xui16>, i16, !pto.mask<b16> -> !pto.vreg<128xui16>
+        pto.vsts %prod, %ub_out[%offset], %mask : !pto.vreg<128xui16>, !pto.ptr<ui16, ub>, !pto.mask<b16>
         scf.yield %next_remaining : i32
       }
     }

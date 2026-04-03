@@ -24,8 +24,6 @@
 - 测例跟随旧 surface：
   - `vcvt` 当前 surface 采用 attribute 形式承载 `round_mode/sat/part`，不是旧的字符串位置参数形式。
   - 部分 load/store、predicate-load-store 的用例写法更接近旧文档/旧草稿，不符合当前 `VPTOOps.td` 的 assembly format。
-- 测例目标和语义不一致：
-  - 例如 `vands` 目标是按整型 vec-scalar 位运算覆盖，但测例实际使用了 `f32` 输入和 `f32` 标量。
 - 仍可能是真实实现缺口：
   - 某些 op 在文档/规划中存在，但当前 `VPTOOps.td` 未定义，或者已定义但 VPTO LLVM emitter 尚未支持。这类需要在逐条核对完 surface 后再下结论，不能先用 skeleton 失败直接定性。
 
@@ -66,9 +64,6 @@
   - `micro-op/vector-load-store/vldas-vldus`
 - 无结果 op 被写成有结果赋值形式：
   - `micro-op/vector-load-store/vstar`
-- 测例目标与数据类型/语义不一致：
-  - `micro-op/vec-scalar/vands`
-
 下列 case 很可能也属于“优先修测例或修 surface 对齐”的范围，但在本轮只做了模式级确认，下一阶段应按同 family 批量复查：
 
 - `compare-select` 中其余 `vcmps` / `vselr` 相关 case
@@ -133,8 +128,8 @@
   - 观察：当前 case 已按 tail-mask `pto.vsel %src0, %src1, %mask` surface 书写；installed wrapper 与 `strings bisheng` 均确认 `vsel` family 存在；repo 生成 `.ll` 已越过 step 1，但 bisheng 在 step 2 的 instruction selection 阶段对 `@vsel_tail_kernel_2d.vector.thread` 崩溃退出
   - 结论：当前已不是用例编写或 parse 问题；case 可按现有 tail-mask surface 忠实写出，阻塞点已前移到 Bisheng/toolchain 的 codegen 路径，而不是 VPTO emitter 缺口
 - `micro-op/compare-select/vselr`
-  - 观察：现有用例仍是旧的 `mask + cmp_mode` 伪接口，但当前无法根据 `docs/isa/11-compare-select.md`、`docs/isa/12-data-rearrangement.md` 与 `VPTOOps.td` 唯一确定 `vselr` 的真实语义
-  - 结论：blocked。现有用例仍是旧的 `mask + cmp_mode` 伪接口，但当前无法根据 `docs/isa/11-compare-select.md`、`docs/isa/12-data-rearrangement.md` 与 `VPTOOps.td` 唯一确定 `vselr` 的真实语义，暂不继续收敛
+  - 观察：`2026-04-03` 已按 `%result = pto.vselr %src, %idx : !pto.vreg<NxT>, !pto.vreg<Nxi<width>> -> !pto.vreg<NxT>` 重写 case，并将 golden 更新为按 idx 向量从源向量取数的 lane 重排 oracle；`f32` 路径现按 `bitcast <64xf32> -> <64xi32> -> llvm.hivm.vselr.v64u32 -> bitcast <64xf32>` 方式导出 LLVM
+  - 结论：compile-only 已通过，当前失败评审中不再保留为 blocker
 
 ## conversion
 
@@ -162,12 +157,6 @@
 
 ## dsa-sfu
 
-- `micro-op/dsa-sfu/vaddrelu-f32`
-  - 观察：当前 case 已按 `pto.vaddrelu %lhs, %rhs` surface 书写；但 installed A5 headers、Clang wrappers、`strings bisheng` 中都未观察到同名 surface / intrinsic
-  - 结论：blocked。当前不是简单 emitter 缺口，而是 PTO surface 到 installed toolchain contract 尚未建立；在不改变语义的前提下不能猜测其 LLVM 形态
-- `micro-op/dsa-sfu/vaddreluconv`
-  - 观察：当前 skeleton 仍沿用旧的 `vector + scalar` 写法，但 `VPTOOps.td` 与 `docs/isa/13-dsa-sfu-ops.md` 都要求 `pto.vaddreluconv` 采用 `vector + vector` 输入；同时当前 verifier 还要求 source/result 保持总存储位宽，与文档中“conversion-result”示例之间仍有漂移
-  - 结论：当前失败首先暴露的是测例 skeleton 失真；但即使修正到 `vector + vector`，`conversion-result` 目标仍会撞到 docs/ODS/verify 尚未完全对齐的问题，不能为了过 parser 把目标弱化成普通非-conv 向量算子
 - `micro-op/dsa-sfu/vaxpy-f32`
   - 观察：当前 case 已按 `pto.vaxpy %src0, %src1, %alpha` surface 书写；本轮 emitter 已接到 `llvm.hivm.vaxpy.v64f32.x`，但 bisheng 在 instruction selection 阶段仍报 `Cannot select`
   - 结论：当前阻塞点已收敛为 LLVM intrinsic contract 未收口，而不是 parser / ODS 或普通 emitter 缺口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
@@ -175,20 +164,17 @@
   - 观察：当前 case 已按 `pto.vci %index {order = "ASC"}` surface 书写；本轮 emitter 已接到 `llvm.hivm.vci.v64s32`，repo 当前生成 `declare <64 x i32> @llvm.hivm.vci.v64s32(i32, i64)`，但 bisheng verifier 仍报 `Intrinsic has incorrect argument type`
   - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口，而不是 parser / ODS 或普通 emitter 缺口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
 - `micro-op/dsa-sfu/vexpdiff-boundary`
-  - 观察：当前 case 已按 `pto.vexpdiff %input, %max` surface 书写；但 installed A5 headers、Clang wrappers、`strings bisheng` 中都未观察到同名 surface / intrinsic
-  - 结论：blocked。当前不是简单 emitter 缺口，而是 PTO surface 到 installed toolchain contract 尚未建立；在不改变语义的前提下不能猜测其 LLVM 形态
+  - 观察：已按 installed wrapper contract 收口为 `pto.vexpdiff %input, %max {part = "PART_*"} : ... -> !pto.vreg<...xf32>`；LLVM 已导出为 `llvm.hivm.vexpdif.v64f32f32(<64 x float>, <64 x float>, <256 x i1>, i32)`
+  - 结论：当前已不是 parser / emitter 缺口；本轮 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
 - `micro-op/dsa-sfu/vexpdiff-f32`
-  - 观察：当前 case 已按 `pto.vexpdiff %input, %max` surface 书写；但 installed A5 headers、Clang wrappers、`strings bisheng` 中都未观察到同名 surface / intrinsic
-  - 结论：blocked。当前不是简单 emitter 缺口，而是 PTO surface 到 installed toolchain contract 尚未建立；在不改变语义的前提下不能猜测其 LLVM 形态
+  - 观察：已按 installed wrapper contract 收口为 `pto.vexpdiff %input, %max {part = "PART_*"} : ... -> !pto.vreg<...xf32>`；LLVM 已导出为 `llvm.hivm.vexpdif.v64f32f32(<64 x float>, <64 x float>, <256 x i1>, i32)`
+  - 结论：当前已不是 parser / emitter 缺口；本轮 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
 - `micro-op/dsa-sfu/vmula`
   - 观察：已按当前 `pto.vmula %acc, %lhs, %rhs, %mask` surface 重写；本轮 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/dsa-sfu/vmula-accumulator-boundary`
   - 观察：已按当前 `pto.vmula %acc, %lhs, %rhs, %mask` surface 重写；本轮已在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
-- `micro-op/dsa-sfu/vmulconv`
-  - 观察：当前 skeleton 仍沿用旧的 `vector + scalar` 写法，但 `VPTOOps.td` 与 `docs/isa/13-dsa-sfu-ops.md` 都要求 `pto.vmulconv` 采用 `vector + vector` 输入；同时当前 verifier 还要求 source/result 保持总存储位宽，与文档中“conversion-result”示例之间仍有漂移
-  - 结论：当前失败首先暴露的是测例 skeleton 失真；但即使修正到 `vector + vector`，`conversion-result` 目标仍会撞到 docs/ODS/verify 尚未完全对齐的问题，不能为了过 parser 把目标弱化成普通非-conv 向量算子
 - `micro-op/dsa-sfu/vmull`
   - 观察：已按当前 `pto.vmull %lhs, %rhs, %mask -> %low, %high` surface 重写；本轮 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
@@ -198,15 +184,6 @@
 - `micro-op/dsa-sfu/vprelu-tail`
   - 观察：当前 case 已按 `pto.vprelu %input, %alpha` surface 书写；installed wrapper 已确认 `vprelu(dst, src0, src1, mask, mode)` binary-op 形式，merge 路径还会显式经由 `vmov(dst, dstTmp, mask)`
   - 结论：blocked。当前 PTO surface 与 installed/LLVM 侧的 `merge-dst + 2 src + mask` 关系未收口；在不改变语义的前提下不能直接按“普通 binary op emitter 缺口”处理
-- `micro-op/dsa-sfu/vsubrelu-f32`
-  - 观察：当前 case 已按 `pto.vsubrelu %lhs, %rhs` surface 书写；但 installed A5 headers、Clang wrappers、`strings bisheng` 中都未观察到同名 surface / intrinsic
-  - 结论：blocked。当前不是简单 emitter 缺口，而是 PTO surface 到 installed toolchain contract 尚未建立；在不改变语义的前提下不能猜测其 LLVM 形态
-- `micro-op/dsa-sfu/vtranspose`
-  - 观察：当前 case 已按 `pto.vtranspose %dest, %src, %config` surface 书写；重新 tracing installed A5 `TTrans.hpp` 后，未观察到同名 HIVM intrinsic，而是 `vci/vmuls/vadds/vgather2/vsts` helper 序列
-  - 结论：当前阻塞点不是旧的 dialect 注册问题，而是 `config` 到 helper/底层序列的正式 contract 仍未收口；在没有更明确语义前不能直接猜单条 LLVM lowering
-- `micro-op/dsa-sfu/vtranspose-multi-config`
-  - 观察：当前 case 已按 `pto.vtranspose %dest, %src, %config` surface 书写；重新 tracing installed A5 `TTrans.hpp` 后，未观察到同名 HIVM intrinsic，而是 helper 级实现
-  - 结论：当前阻塞点不是旧的 dialect 注册问题，而是 `config` 到 helper/底层序列的正式 contract 仍未收口；在没有更明确语义前不能直接猜 multi-config 的 LLVM lowering
 
 ## gather-scatter
 
@@ -298,14 +275,14 @@
   - 观察：`pst/pld` emitter 已接线，repo 当前生成的 `llvm.hivm.pst.b8(<256 x i1>, ptr, i32, i32, i32)` / `llvm.hivm.pld.b8(ptr, i32, i32, i32)` 在 bisheng verifier 阶段报 `Intrinsic has incorrect argument type`
   - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
 - `micro-op/predicate-load-store/psti-pldi`
-  - 观察：`psti/pldi` emitter 已接线，repo 当前生成的 `llvm.hivm.psti.b8` / `llvm.hivm.pldi.b8` 已越过 `unsupported op`，但 bisheng 在 instruction selection 阶段仍对 `pldi.b8` 报 `Cannot select`
-  - 结论：当前阻塞点已收敛为 LLVM intrinsic contract 未收口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
+  - 观察：已收紧为常量 `index` offset case，并统一为 `pto.psti %value, %base[%offset], "DIST"` / `%result = pto.pldi %base[%offset], "DIST"` surface；repo 当前 lowering 在发射 `llvm.hivm.psti.b8(<256 x i1>, ptr addrspace(6), i32, i32, i32)` / `llvm.hivm.pldi.b8(ptr addrspace(6), i32, i32, i32)` 前将该常量 `index` 转为 `i32`
+  - 结论：当前已打通到 compile-only kernel shared library；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/predicate-load-store/psts-plds`
-  - 观察：`plds/psts` emitter 已接线，本轮 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step 4/6
+  - 观察：已按 `psti/pldi` 同语义的 dynamic-offset 版本收口，并统一为 `pto.psts %value, %base[%offset], "DIST"` / `%result = pto.plds %base[%offset], "DIST"` surface；`plds/psts` emitter 已接线，本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过并产出 kernel shared library
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary`
-  - 观察：当前目标要求 `packed-predicate-roundtrip`，但 `docs/isa/04-predicate-load-store.md` 中 `pto.psts` / `pto.plds` 只有标量偏移的普通 UB store/load surface；`PK` 只出现在 `pto.pst` / `pto.psti`，并不属于本 case 的 target op
-  - 结论：按当前 docs/isa 无法在不改变目标的前提下忠实写出；这是文档/语义缺口，不应通过替换 target op 来规避
+  - 观察：已按 `logical_elems=1000` 的 dynamic-offset packed predicate roundtrip 重写，不再误用旧 compare skeleton
+  - 结论：当前已不是 parser / emitter 缺口；本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过并产出 kernel shared library，后续若继续推进，应关注 runtime / board 路径
 - `micro-op/predicate-load-store/pstu`
   - 观察：已按当前 `pto.pstu %align_in, %value, %base -> %align_out, %base_out` surface 重写；重新 tracing installed wrapper 后，只明确观察到 `__builtin_cce_pstu_b16/b32`，而当前 testcase 仍以 `!pto.ptr<ui8, ub>` 书写
   - 结论：当前阻塞点不是普通 emitter 缺口，而是 docs surface / testcase / installed type contract 未收口；在类型语义明确前不能继续猜 emitter
@@ -324,15 +301,6 @@
 - `micro-op/rearrangement/vpack`
   - 观察：installed wrapper 当前只明确暴露单输入 `vpack(vector_<narrow> &dst, vector_<wide> src, part, mode)`；而 `docs/isa/12-data-rearrangement.md` / `VPTOOps.td` 当前仍把 `pto.vpack` 定义成双输入 `%src0, %src1, %part`
   - 结论：blocked。当前不是普通 emitter 缺口，而是 PTO/docs surface 与 installed contract 未收口；在确认双输入 surface 如何映射前不继续猜 LLVM lowering
-- `micro-op/rearrangement/vperm`
-  - 观察：docs 把 `pto.vperm` 定义成 in-register `%src + %index` permute，但 installed trace 只明确观察到 memory-based `vgatherb/vgather2` family，`strings bisheng` 也未出现 `llvm.hivm.vperm.*`
-  - 结论：blocked。当前不是普通 emitter 缺口，而是 docs 命名/语义与 installed contract 未收口；在确认它是否真对应某个 gather family 前不继续猜 emitter
-- `micro-op/rearrangement/vshift`
-  - 观察：docs 把 `pto.vshift` 定义成 single-source zero-fill slide；但 installed A5 当前只明确暴露 memory `vsld` 与 in-register `vslide` family，尚未确认 `pto.vshift` 是否等价于某个真实 LLVM/HIVM contract
-  - 结论：blocked。当前不是普通 emitter 缺口，而是 op 命名/contract 未收口；在 installed frontend 明确前不继续猜测 `vslide(src, zero, amt)` 之类替代 lowering
-- `micro-op/rearrangement/vshift-tail-zero-fill`
-  - 观察：与主 case 相同；当前只确认到 docs surface，但未确认对应 installed LLVM contract
-  - 结论：blocked。边界 case 先随主 case 一并按 contract 未收口管理
 - `micro-op/rearrangement/vslide`
   - 观察：installed wrapper 与 `strings bisheng` 均确认 `vslide` family 存在；本轮补齐 LLVM emission 后，`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过 `step 4/6`
   - 结论：当前已越过 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
@@ -465,49 +433,24 @@
 - `micro-op/vec-scalar/vaddcs-carry-boundary`
   - 观察：当前 case 已按 `pto.vaddcs %lhs, %rhs, %carry_in, %mask -> %result, %carry` surface 书写；本轮已在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
-- `micro-op/vec-scalar/vands`
-  - 观察：`plt_b16` 接线后，失败点已前移为 `unsupported op pto.vands`；同时 installed headers 与 `strings bisheng` 里都未观察到 `vands` 对应 contract
-  - 结论：blocked。当前不是单纯 emitter 缺口；需要先确认 docs 中 `pto.vands` 是否对应 installed A5 contract 或存在命名映射
-- `micro-op/vec-scalar/vands-mask-edge`
-  - 观察：`plt_b16` 接线后，失败点已前移为 `unsupported op pto.vands`；installed headers 与 `strings bisheng` 仍未观察到 `vands` 对应 contract
-  - 结论：blocked。当前不是单纯 emitter 缺口；边界 case 先随主 case 一并按 docs/toolchain 未收口管理
-- `micro-op/vec-scalar/vors`
-  - 观察：`plt_b16` 接线后，失败点已前移为 `unsupported op pto.vors`；同时 installed headers 与 `strings bisheng` 里都未观察到 `vors` 对应 contract
-  - 结论：blocked。当前不是单纯 emitter 缺口；需要先确认 docs 中 `pto.vors` 是否对应 installed A5 contract 或存在命名映射
-- `micro-op/vec-scalar/vors-mask-edge`
-  - 观察：`plt_b16` 接线后，失败点已前移为 `unsupported op pto.vors`；installed headers 与 `strings bisheng` 仍未观察到 `vors` 对应 contract
-  - 结论：blocked。当前不是单纯 emitter 缺口；边界 case 先随主 case 一并按 docs/toolchain 未收口管理
 - `micro-op/vec-scalar/vshls`
-  - 观察：installed toolchain 侧能观察到 `llvm.hivm.vshls.*`，但 `docs/isa/08-vec-scalar-ops.md` 要求 `input + scalar + mask`，而 `VPTOOps.td` / 当前 testcase 只能写成 `input + scalar`
-  - 结论：blocked。当前主问题不是 LLVM intrinsic 缺失，而是 docs 与 ODS 的 PTO surface 未收口；在 surface 统一前不能继续猜 emitter 语义
+  - 观察：`2026-04-02` 已按 docs 收口为 `input + i16 scalar + mask` surface，并通过 installed toolchain contract 补齐 `llvm.hivm.vshls.v128u16.x` emission；case 以常量 `i16` shift 值保留 scalar-operand 目标并在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step `4/6`
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/vec-scalar/vshls-shift-boundary`
-  - 观察：installed toolchain 侧能观察到 `llvm.hivm.vshls.*`，但 docs 要求 `mask`，`VPTOOps.td` / 当前 testcase 却没有 `mask` surface
-  - 结论：blocked。当前主问题不是 LLVM intrinsic 缺失，而是 docs 与 ODS 的 PTO surface 未收口；边界 case 先随主 case 一并阻塞
+  - 观察：`2026-04-02` 已按 docs 收口为 `input + i16 scalar + mask` surface，并把 boundary case 固化为 `31` 的 `i16` shift 标量；`DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/vec-scalar/vshrs`
-  - 观察：installed toolchain 侧能观察到 `llvm.hivm.vshrs.*`，但 `docs/isa/08-vec-scalar-ops.md` 要求 `input + scalar + mask`，而 `VPTOOps.td` / 当前 testcase 只能写成 `input + scalar`
-  - 结论：blocked。当前主问题不是 LLVM intrinsic 缺失，而是 docs 与 ODS 的 PTO surface 未收口；在 surface 统一前不能继续猜 emitter 语义
+  - 观察：`2026-04-02` 已按 docs 收口为 `input + i16 scalar + mask` surface，并通过 installed toolchain contract 补齐 `llvm.hivm.vshrs.v128u16.x` emission；case 以常量 `i16` shift 值保留 scalar-operand 目标并在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step `4/6`
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/vec-scalar/vshrs-shift-boundary`
-  - 观察：installed toolchain 侧能观察到 `llvm.hivm.vshrs.*`，但 docs 要求 `mask`，`VPTOOps.td` / 当前 testcase 却没有 `mask` surface
-  - 结论：blocked。当前主问题不是 LLVM intrinsic 缺失，而是 docs 与 ODS 的 PTO surface 未收口；边界 case 先随主 case 一并阻塞
+  - 观察：`2026-04-02` 已按 docs 收口为 `input + i16 scalar + mask` surface，并把 boundary case 固化为 `31` 的 `i16` shift 标量；`DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/vec-scalar/vsubcs`
   - 观察：当前 case 已按 `pto.vsubcs %lhs, %rhs, %carry_in, %mask -> %result, %carry` surface 书写；本轮已在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/vec-scalar/vsubcs-borrow-boundary`
   - 观察：当前 case 已按 `pto.vsubcs %lhs, %rhs, %carry_in, %mask -> %result, %carry` surface 书写；本轮已在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
-- `micro-op/vec-scalar/vsubs`
-  - 观察：已按当前 `pto.vsubs %input, %scalar, %mask` surface 重写；但 installed Clang headers 未观察到 `vsubs` wrapper，`strings bisheng` 也未观察到 `llvm.hivm.vsubs.*`
-  - 结论：这不是单纯 emitter 缺口；当前 docs/isa 定义的 `pto.vsubs` surface 与 installed toolchain 支持面未收口，应先按语义/接口待确认处理
-- `micro-op/vec-scalar/vsubs-tail`
-  - 观察：已按当前 `pto.vsubs %input, %scalar, %mask` tail-mask surface 重写；但 installed Clang headers 未观察到 `vsubs` wrapper，`strings bisheng` 也未观察到 `llvm.hivm.vsubs.*`
-  - 结论：这不是单纯 emitter 缺口；当前 docs/isa 定义的 `pto.vsubs` surface 与 installed toolchain 支持面未收口，应先按语义/接口待确认处理
-- `micro-op/vec-scalar/vxors`
-  - 观察：`plt_b16` 接线后，失败点已前移为 `unsupported op pto.vxors`；同时 installed headers 与 `strings bisheng` 里都未观察到 `vxors` 对应 contract
-  - 结论：blocked。当前不是单纯 emitter 缺口；需要先确认 docs 中 `pto.vxors` 是否对应 installed A5 contract 或存在命名映射
-- `micro-op/vec-scalar/vxors-mask-edge`
-  - 观察：`plt_b16` 接线后，失败点已前移为 `unsupported op pto.vxors`；installed headers 与 `strings bisheng` 仍未观察到 `vxors` 对应 contract
-  - 结论：blocked。当前不是单纯 emitter 缺口；边界 case 先随主 case 一并按 docs/toolchain 未收口管理
-
 ## vector-load-store
 
 - `micro-op/vector-load-store/vldas-vldus`
@@ -538,25 +481,19 @@
   - 观察：已按当前 `pto.vsld/pto.vsst` strided memory surface 重写；失败已收敛为 VPTO LLVM emitter 未支持 `pto.vsld`
   - 结论：case 目标与当前写法一致，已不是用例编写或 parse 问题；阻塞点是相关 VPTO LLVM emitter 实现缺口
 - `micro-op/vector-load-store/vsldb`
-  - 观察：`docs/isa/03-vector-load-store.md` 只说明 `%offset` 是“packed stride/control word”，但没有给出可据此构造 testcase 的编码规则；在不臆造 control word 的前提下，block-strided-load 目标无法被忠实写出
-  - 结论：当前 skeleton case 本身不符合目标，也不能按现有文档把目标改写成合法 surface；应记录为文档/接口缺口，而不是继续修补这份错误 skeleton
+  - 观察：`docs/isa`、`docs/vpto-spec`、`VPTOOps.td` 现已统一为 `%block_stride: i16` + `%repeat_stride: i16` surface；case 已按该 surface 重写为 `pto.vecscope` 内合法 block-strided load，并在 `2026-04-03` 本地 `DEVICE=SIM COMPILE_ONLY=1` 走到 step `4/6`
+  - 结论：当前已越过 parser / emitter / device compile 阶段；旧的 packed control-word 缺口已收敛
 - `micro-op/vector-load-store/vsst`
   - 观察：installed A5 wrapper 当前只直接暴露 `vsst(..., S8_B16)`；而现有 case / docs 场景写的是 `STRIDE_S2_B64`。本轮复测已把失败点收敛为 `unsupported vsst stride immediate`
   - 结论：blocked。当前不是单纯 emitter 缺口，而是 current case/docs stride 与 installed toolchain wrapper 支持面未收口；在不改变测试目标的前提下，应先确认 `vsst` 在 A5 上的正式 stride contract
 - `micro-op/vector-load-store/vsstb`
-  - 观察：`docs/isa/03-vector-load-store.md` 只说明 `%offset` 是“packed stride/control word”，但没有给出可据此构造 testcase 的编码规则；在不臆造 control word 的前提下，block-strided-store 目标无法被忠实写出
-  - 结论：当前 skeleton case 本身不符合目标，也不能按现有文档把目标改写成合法 surface；应记录为文档/接口缺口，而不是继续修补这份错误 skeleton
-- `micro-op/vector-load-store/vsta`
-  - 观察：`pto.vsta` 本身 surface 明确，但文档要求它消费“preceding unaligned-store stream”的 pending store-alignment state；当前能稳定写出的 unaligned store producer 仍受 `vstu/vstus/vstur` 文档/ODS 漂移影响，因此无法在不偷换测试目标的前提下构造有意义的 case
-  - 结论：当前 skeleton case 明显没有测到目标语义；按现有 docs/ODS 也无法在不改变目标的前提下补出合法 producer/consumer 链，故记录为接口漂移
-- `micro-op/vector-load-store/vsta-state-advance`
-  - 观察：与 `vsta` 相同，`state-advance` 目标依赖真实 unaligned store state producer；在 `vstu/vstus/vstur` surface 未稳定前，不能忠实写出
-  - 结论：当前 skeleton case 明显没有测到目标语义；按现有 docs/ODS 也无法在不改变目标的前提下补出合法 state-advance 路径，故记录为接口漂移
+  - 观察：`docs/isa`、`docs/vpto-spec`、`VPTOOps.td` 现已统一为 `%block_stride: i16` + `%repeat_stride: i16` surface；case 已按该 surface 重写为 `pto.vecscope` 内合法 block-strided store，并在 `2026-04-03` 本地 `DEVICE=SIM COMPILE_ONLY=1` 走到 step `4/6`
+  - 结论：当前已越过 parser / emitter / device compile 阶段；旧的 packed control-word 缺口已收敛
 - `micro-op/vector-load-store/vstar`
   - 观察：无结果 case 已修正为 `pto.vecscope` 内的合法写法；本轮补齐 `vstar` LLVM emission 后，`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过 `step 4/6`
   - 结论：当前已越过 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/vector-load-store/vstas`
-  - 观察：`pto.vstas` 的 scalar-offset flush surface 明确，但其输入仍应来自 preceding unaligned-store stream；当前缺少稳定、已敲定的 `vstu/vstus/vstur` case-writing surface，不能只为过 parser 伪造来源
+  - 观察：`pto.vstas` 的 scalar-offset flush surface 明确，但其输入仍应来自 preceding unaligned-store stream；当前缺少稳定、已敲定的 `vstus/vstur` case-writing surface，不能只为过 parser 伪造来源
   - 结论：当前 skeleton case 明显没有测到目标语义；按现有 docs/ODS 也无法在不改变目标的前提下补出合法 upstream state，故记录为接口漂移
 - `micro-op/vector-load-store/vstas-vstus-offset-update`
   - 观察：该 case 同时要求 `vstas` 与 `vstus`；其中 `vstus` 仍存在文档/ODS 关于参数列表与 `mode` 的漂移，因此不能忠实落成当前 surface，也无法支撑 `offset-update` 目标
@@ -567,14 +504,9 @@
 - `micro-op/vector-load-store/vsts-tail`
   - 观察：已改为真正的 tail-mask `vlds + vsts` case；`ptoas --vpto-emit-hivm-llvm` 可通过
   - 结论：case 目标与当前写法一致；用例编写和 parse 已收敛
-- `micro-op/vector-load-store/vstu`
-  - 观察：当前 `docs/isa/03-vector-load-store.md` 未给出与 `VPTOOps.td` 一致的 `mode` 参数表面；在不擅自发明 `mode` 的前提下，case 目标无法继续收敛到合法 surface
-  - 结论：当前 skeleton case 本身不符合目标；同时文档/ODS 未提供可忠实落地的合法 surface，因此只能记录为接口漂移
-- `micro-op/vector-load-store/vstu-state-advance`
-  - 观察：当前 `docs/isa/03-vector-load-store.md` 未给出与 `VPTOOps.td` 一致的 `mode` 参数表面；在不擅自发明 `mode` 的前提下，case 目标无法继续收敛到合法 surface
-  - 结论：当前 skeleton case 本身不符合目标；同时文档/ODS 未提供可忠实落地的合法 state-advance surface，因此只能记录为接口漂移
 - `micro-op/vector-load-store/vstur`
-  - 观察：当前 `docs/isa/03-vector-load-store.md` 未给出与 `VPTOOps.td` 一致的 `mode` 参数表面；在不擅自发明 `mode` 的前提下，case 目标无法继续收敛到合法 surface
+  - 观察：installed A5 wrapper 明确要求 `vstur(align, src, base, post)`，其中 `post` 为 `POST_UPDATE|NO_POST_UPDATE`；当前 surface 已与 docs/ODS 对齐。其硬件语义为有效地址 `base + AR`，`POST_UPDATE` 时固定 `SPR AR` 会按固定 `SPR SQZN` 更新；独立序列通常需从 `AR=0` 起步
+  - 结论：当前不再是 surface 漂移；case 已按四参 `vstur` 形态重写，`--vpto-emit-hivm-llvm` 已可导出 `align = llvm.hivm.vstur(vreg, ptr6, align, post, 0)` 形态。后续若继续推进，应转向 compile-only / bisheng handoff 验证
   - 结论：当前 skeleton case 本身不符合目标；同时文档/ODS 未提供可忠实落地的合法 surface，因此只能记录为接口漂移
 - `micro-op/vector-load-store/vstus`
   - 观察：当前 `docs/isa/03-vector-load-store.md` 未给出与 `VPTOOps.td` 一致的 `mode` 参数表面；在不擅自发明 `mode` 的前提下，case 目标无法继续收敛到合法 surface
