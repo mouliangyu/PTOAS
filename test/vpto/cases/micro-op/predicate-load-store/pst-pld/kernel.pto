@@ -45,19 +45,13 @@ module attributes {pto.target_arch = "a5"} {
         %lane0 = arith.muli %iter, %c128 : index
         %lane1 = arith.addi %lane0, %c64 : index
         %byte_offset = arith.muli %iter, %c16 : index
-        %mask0, %next_remaining0 = pto.plt_b32 %remaining : i32 -> !pto.mask, i32
-        %mask1, %next_remaining1 = pto.plt_b32 %next_remaining0 : i32 -> !pto.mask, i32
-        %lhs0 = pto.vlds %ub_lhs[%lane0] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %rhs0 = pto.vlds %ub_rhs[%lane0] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %cmp0 = pto.vcmp %lhs0, %rhs0, %mask0, "eq" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.mask
-        %lhs1 = pto.vlds %ub_lhs[%lane1] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %rhs1 = pto.vlds %ub_rhs[%lane1] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-        %cmp1 = pto.vcmp %lhs1, %rhs1, %mask1, "eq" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.mask
-        %packed, %packed_hi = pto.pdintlv_b8 %cmp0, %cmp1 : !pto.mask, !pto.mask -> !pto.mask, !pto.mask
-        pto.pst %packed, %ub_mid[%byte_offset], "NORM" : !pto.mask, !pto.ptr<ui8, ub>, index
-        %roundtrip = pto.pld %ub_mid[%byte_offset], "NORM" : !pto.ptr<ui8, ub>, index -> !pto.mask
-        pto.psts %roundtrip, %ub_out[%byte_offset] : !pto.mask, !pto.ptr<ui8, ub>
-        scf.yield %next_remaining1 : i32
+        %cmp0 = pto.pset_b8 "PAT_VL64" : !pto.mask<b8>
+        %cmp1 = pto.pset_b8 "PAT_M4" : !pto.mask<b8>
+        %packed, %packed_hi = pto.pdintlv_b8 %cmp0, %cmp1 : !pto.mask<b8>, !pto.mask<b8> -> !pto.mask<b8>, !pto.mask<b8>
+        pto.pst %packed, %ub_mid[%byte_offset], "NORM" : !pto.mask<b8>, !pto.ptr<ui8, ub>, index
+        %roundtrip = pto.pld %ub_mid[%byte_offset], "NORM" : !pto.ptr<ui8, ub>, index -> !pto.mask<b8>
+        pto.psts %roundtrip, %ub_out[%byte_offset] : !pto.mask<b8>, !pto.ptr<ui8, ub>
+        scf.yield %remaining : i32
       }
     }
 

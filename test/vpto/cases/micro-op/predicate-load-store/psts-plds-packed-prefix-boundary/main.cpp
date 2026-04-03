@@ -2,14 +2,8 @@
 // case: micro-op/predicate-load-store/psts-plds-packed-prefix-boundary
 // family: predicate-load-store
 // target_ops: pto.plds, pto.psts
-// scenarios: packed-predicate-roundtrip, scalar-offset, load-store-pair-preservation, representative-logical-elements
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: packed-predicate-roundtrip, dynamic-offset, load-store-pair-preservation, representative-logical-elements
 // -----------------------------------------------------------------------------
-/**
-Copyright (c) 2025 Huawei Technologies Co., Ltd.
-*/
-
 #include "test_common.h"
 #include "acl/acl.h"
 #include <cstdio>
@@ -31,8 +25,9 @@ using namespace PtoTestCommon;
     }                                                                            \
   } while (0)
 
-void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
-                             void *stream);
+void LaunchPsts_plds_packed_prefix_boundary_kernel_2d(float *v1, float *v2,
+                                                      unsigned char *v3,
+                                                      void *stream);
 
 int main() {
   size_t elemCount_v1 = 1024;
@@ -79,7 +74,7 @@ int main() {
   ACL_CHECK(aclrtMemcpy(v3Device, fileSize_v3, v3Host, fileSize_v3,
                         ACL_MEMCPY_HOST_TO_DEVICE));
 
-  LaunchVcmp_eq_kernel_2d(v1Device, v2Device, v3Device, stream);
+  LaunchPsts_plds_packed_prefix_boundary_kernel_2d(v1Device, v2Device, v3Device, stream);
 
   ACL_CHECK(aclrtSynchronizeStream(stream));
   ACL_CHECK(aclrtMemcpy(v3Host, fileSize_v3, v3Device, fileSize_v3,

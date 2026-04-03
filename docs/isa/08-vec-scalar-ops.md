@@ -36,22 +36,6 @@ for (int i = 0; i < N; i++)
 
 ---
 
-### `pto.vsubs`
-
-- **syntax:** `%result = pto.vsubs %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = src[i] - scalar;
-```
-
-- **inputs:** `%input`, `%scalar`, and `%mask` as above.
-- **outputs:** `%result` is the lane-wise difference.
-- **constraints and limitations:** Integer or floating-point legality depends on
-  the selected type family in lowering.
-
----
-
 ### `pto.vmuls`
 
 - **syntax:** `%result = pto.vmuls %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
@@ -98,65 +82,18 @@ for (int i = 0; i < N; i++)
 
 ---
 
-## Bitwise
-
-### `pto.vands`
-
-- **syntax:** `%result = pto.vands %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = src[i] & scalar;
-```
-
-- **inputs:** `%input`, `%scalar`, and `%mask` as above.
-- **outputs:** `%result` is the lane-wise bitwise AND.
-- **constraints and limitations:** Integer element types only.
-
----
-
-### `pto.vors`
-
-- **syntax:** `%result = pto.vors %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = src[i] | scalar;
-```
-
-- **inputs:** `%input`, `%scalar`, and `%mask` as above.
-- **outputs:** `%result` is the lane-wise bitwise OR.
-- **constraints and limitations:** Integer element types only.
-
----
-
-### `pto.vxors`
-
-- **syntax:** `%result = pto.vxors %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = src[i] ^ scalar;
-```
-
-- **inputs:** `%input`, `%scalar`, and `%mask` as above.
-- **outputs:** `%result` is the lane-wise bitwise XOR.
-- **constraints and limitations:** Integer element types only.
-
----
-
 ## Shift
 
 ### `pto.vshls`
 
-- **syntax:** `%result = pto.vshls %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vshls %input, %scalar, %mask : !pto.vreg<NxT>, i16, !pto.mask<G> -> !pto.vreg<NxT>`
 
 ```c
 for (int i = 0; i < N; i++)
     dst[i] = src[i] << scalar;
 ```
 
-- **inputs:** `%input` is the value vector, `%scalar` is the uniform shift
+- **inputs:** `%input` is the value vector, `%scalar` is the uniform `i16` shift
   amount, and `%mask` selects active lanes.
 - **outputs:** `%result` is the shifted vector.
 - **constraints and limitations:** Integer element types only. The shift amount
@@ -166,14 +103,14 @@ for (int i = 0; i < N; i++)
 
 ### `pto.vshrs`
 
-- **syntax:** `%result = pto.vshrs %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vshrs %input, %scalar, %mask : !pto.vreg<NxT>, i16, !pto.mask<G> -> !pto.vreg<NxT>`
 
 ```c
 for (int i = 0; i < N; i++)
     dst[i] = src[i] >> scalar;
 ```
 
-- **inputs:** `%input` is the value vector, `%scalar` is the uniform shift
+- **inputs:** `%input` is the value vector, `%scalar` is the uniform `i16` shift
   amount, and `%mask` selects active lanes.
 - **outputs:** `%result` is the shifted vector.
 - **constraints and limitations:** Integer element types only.

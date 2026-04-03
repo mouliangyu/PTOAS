@@ -31,13 +31,13 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       %_:1 = scf.for %offset = %c0 to %c512 step %c64 iter_args(%remaining = %c512_i32) -> (i32) {
-        %mask, %next_remaining = pto.plt_b32 %remaining : i32 -> !pto.mask, i32
+        %mask, %next_remaining = pto.plt_b32 %remaining : i32 -> !pto.mask<b32>, i32
         %rhs_offset = arith.addi %offset, %c512 : index
         %lhs = pto.vlds %ub_in[%offset] : !pto.ptr<i32, ub> -> !pto.vreg<64xi32>
         %rhs = pto.vlds %ub_in[%rhs_offset] : !pto.ptr<i32, ub> -> !pto.vreg<64xi32>
-        %low, %high = pto.vmull %lhs, %rhs, %mask : !pto.vreg<64xi32>, !pto.vreg<64xi32>, !pto.mask -> !pto.vreg<64xi32>, !pto.vreg<64xi32>
-        pto.vsts %low, %ub_out[%offset], %mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask
-        pto.vsts %high, %ub_out[%rhs_offset], %mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask
+        %low, %high = pto.vmull %lhs, %rhs, %mask : !pto.vreg<64xi32>, !pto.vreg<64xi32>, !pto.mask<b32> -> !pto.vreg<64xi32>, !pto.vreg<64xi32>
+        pto.vsts %low, %ub_out[%offset], %mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask<b32>
+        pto.vsts %high, %ub_out[%rhs_offset], %mask : !pto.vreg<64xi32>, !pto.ptr<i32, ub>, !pto.mask<b32>
         scf.yield %next_remaining : i32
       }
     }

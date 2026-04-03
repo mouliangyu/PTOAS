@@ -316,9 +316,7 @@ Why these are real gaps:
 - `vsld`
 - `vsst`
 - `vsstb`
-- `vstu`
 - `vstus`
-- `vsta`
 - `vstas`
 - `vstur`
 - `vstar`
@@ -327,7 +325,7 @@ Why these are real gaps:
 
 - x2 forms need multi-result or paired-vector semantics.
 - stride forms (`vsld/vsst`) are not the same as current `vlds/vsts`.
-- align-store/update families (`vstu/vstas/...`) need `!a5vm.align`-driven
+- align-store/update families (`vstus/vstas/...`) need `!a5vm.align`-driven
   semantics that current `a5vm` store ops do not represent.
 
 ### C3. Carry / Widen / Shift / Count Arithmetic Gaps
@@ -479,9 +477,7 @@ Reason:
 - `a5vm.vmula`
 - `a5vm.vldx2`
 - `a5vm.vstx2`
-- `a5vm.vstu`
 - `a5vm.vstus`
-- `a5vm.vsta`
 - `a5vm.vstas`
 - `a5vm.vstur`
 - `a5vm.vstar`
@@ -556,11 +552,9 @@ present in the CCE wrapper header.
 - `vsst`
 - `vsstb`
 - `vst`
-- `vsta`
 - `vstar`
 - `vstas`
 - `vsts`
-- `vstu`
 - `vstur`
 - `vstus`
 - `vtrc`

@@ -184,14 +184,14 @@ public:
     if (isa<CopyGmToUbufOp, CopyUbufToUbufOp, CopyUbufToGmOp>(op))
       return VPTOBufferAddressFamily::Copy;
 
-    if (isa<VldsPostOp, VstsPostOp, VldasOp, VldusOp, PstuOp, VstuOp,
-            VstusOp, VsturOp>(op))
+    if (isa<VldsPostOp, VstsPostOp, VldasOp, VldusOp, PstuOp, VstusOp,
+            VsturOp>(op))
       return VPTOBufferAddressFamily::PtrOnly;
 
     if (isa<VldsOp, UvldOp, PldsOp, PldOp, PldiOp, VsldOp, VstsOp, PstOp,
             PstiOp, PstsOp, VsstOp, VbitsortOp, Vmrgsort4Op, Vgather2Op,
             VgatherbOp, Vgather2BcOp, VscatterOp, Vldx2Op, Vstx2Op, VsldbOp,
-            VsstbOp, VstaOp, VstasOp, VstarOp>(op))
+            VsstbOp, VstasOp, VstarOp>(op))
       return VPTOBufferAddressFamily::BufferLike;
 
     return VPTOBufferAddressFamily::None;

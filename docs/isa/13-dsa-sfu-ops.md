@@ -59,8 +59,8 @@ for (int i = 0; i < N; i++)
 
 ### `pto.vexpdiff`
 
-- **syntax:** `%result = pto.vexpdiff %input, %max : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<NxT>`
-- **A5 types:** f16, f32
+- **syntax:** `%result = pto.vexpdiff %input, %max, "EVEN|ODD" : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<Mxf32>`
+- **A5 types:** input `f16` or `f32`, output `f32`
 - **semantics:** Fused exp(x - max) for numerically stable softmax.
 
 ```c
@@ -71,49 +71,16 @@ for (int i = 0; i < N; i++)
 **Use case:** Softmax numerator computation with numerical stability.
 
 - **inputs:** `%input` is the source vector and `%max` is the broadcasted
-  subtraction term.
-- **outputs:** `%result` is the fused `exp(input - max)` vector.
-- **constraints and limitations:** Floating-point element types only.
+  subtraction term. `%part` selects `EVEN` or `ODD` for the
+  underlying hardware contract.
+- **outputs:** `%result` is the fused `exp(input - max)` vector with `f32`
+  elements.
+- **constraints and limitations:** Source vectors must be `f16` or `f32`, the
+  result vector must be `f32`, and source/result storage width must match.
 
 ---
 
 ## Fused Compute+Convert Ops
-
-### `pto.vaddrelu`
-
-- **syntax:** `%result = pto.vaddrelu %lhs, %rhs : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<NxT>`
-- **A5 types:** f16, f32
-- **semantics:** Fused add + ReLU.
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = max(src0[i] + src1[i], 0);
-```
-
-- **inputs:** `%lhs` and `%rhs` are the two addends.
-- **outputs:** `%result` is the fused add-then-ReLU result.
-- **constraints and limitations:** Floating-point element types only on the
-  current documented surface.
-
----
-
-### `pto.vsubrelu`
-
-- **syntax:** `%result = pto.vsubrelu %lhs, %rhs : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<NxT>`
-- **A5 types:** f16, f32
-- **semantics:** Fused sub + ReLU.
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = max(src0[i] - src1[i], 0);
-```
-
-- **inputs:** `%lhs` is the minuend and `%rhs` is the subtrahend.
-- **outputs:** `%result` is the fused sub-then-ReLU result.
-- **constraints and limitations:** Floating-point element types only on the
-  current documented surface.
-
----
 
 ### `pto.vaxpy`
 
@@ -134,47 +101,6 @@ for (int i = 0; i < N; i++)
 
 ---
 
-### `pto.vaddreluconv`
-
-- **syntax:** `%result = pto.vaddreluconv %lhs, %rhs : !pto.vreg<NxT0>, !pto.vreg<NxT0> -> !pto.vreg<MxT1>`
-- **semantics:** Fused add + ReLU + type conversion (HW fusion).
-
-```c
-// f32→f16 variant:
-for (int i = 0; i < 64; i++)
-    dst_f16[i] = f32_to_f16(max(src0_f32[i] + src1_f32[i], 0));
-
-// f16→i8 variant:
-for (int i = 0; i < 128; i++)
-    dst_i8[i] = f16_to_i8(max(src0_f16[i] + src1_f16[i], 0));
-```
-
-- **inputs:** `%lhs` and `%rhs` are the source vectors.
-- **outputs:** `%result` is the fused add/ReLU/convert result.
-- **constraints and limitations:** Only backend-supported source/destination
-  type pairs are legal. Rounding, saturation, and packing rules follow the
-  semantics of this fused operation, not an arbitrary sequence of standalone
-  ops.
-
----
-
-### `pto.vmulconv`
-
-- **syntax:** `%result = pto.vmulconv %lhs, %rhs : !pto.vreg<NxT0>, !pto.vreg<NxT0> -> !pto.vreg<MxT1>`
-- **semantics:** Fused mul + type conversion (HW fusion).
-
-```c
-// f16→i8 variant:
-for (int i = 0; i < 128; i++)
-    dst_i8[i] = f16_to_i8(src0_f16[i] * src1_f16[i]);
-```
-
-- **inputs:** `%lhs` and `%rhs` are the source vectors.
-- **outputs:** `%result` is the fused mul/convert result.
-- **constraints and limitations:** Only backend-supported source/destination
-  type pairs are legal.
-
----
 
 ## Extended Arithmetic
 
@@ -241,24 +167,6 @@ for (int i = 0; i < N; i++)
 
 ---
 
-## UB-to-UB Operations
-
-### `pto.vtranspose`
-
-- **syntax:** `pto.vtranspose %dest, %src, %config : !pto.ptr<T, ub>, !pto.ptr<T, ub>, i64`
-- **semantics:** UB-to-UB transpose operation (not vreg-to-vreg).
-
-**Note:** This operates on UB memory directly, not on vector registers.
-
-- **inputs:** `%dest` and `%src` are UB pointers and `%config` is the ISA
-  control/config word.
-- **outputs:** This op writes UB memory and returns no SSA value.
-- **constraints and limitations:** This is not a `vreg -> vreg` op even though
-  it lives in the `pto.v*` namespace. Its correctness depends on the control
-  word and UB layout contract.
-
----
-
 ## Sorting Operations
 
 ### `pto.vsort32`
@@ -307,9 +215,6 @@ for (int i = 0; i < N; i++)
 
 // Leaky ReLU activation
 %activated = pto.vlrelu %linear_out, %alpha_scalar, %mask : !pto.vreg<64xf32>, f32, !pto.mask<G> -> !pto.vreg<64xf32>
-
-// Fused residual add + ReLU
-%residual = pto.vaddrelu %conv_out, %skip_connection : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
 // Generate indices for argsort
 %indices = pto.vci %c0 {order = "ASC"} : i32 -> !pto.vreg<64xi32>

@@ -2,47 +2,30 @@
 # case: micro-op/compare-select/vselr
 # family: compare-select
 # target_ops: pto.vselr
-# scenarios: core-f32, full-mask, reversed-select
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: core-f32, full-mask, explicit-lane-index
 
 import os
 import sys
 import numpy as np
 
-REPEAT_BYTES = 256
-
-
-def _ceil_div(x, y):
-    return (x + y - 1) // y
-
-
-def _packed_pred_storage_bytes(logical_elems, src_elem_bytes):
-    repeat_elems = REPEAT_BYTES // src_elem_bytes
-    if src_elem_bytes == 4:
-        repeat_times = _ceil_div(logical_elems, repeat_elems) + 1
-        return (repeat_times // 2) * 16
-    return _ceil_div(logical_elems, repeat_elems) * (repeat_elems // 8)
-
-
-def compare_packed_pred_mask(golden_path, output_path, logical_elems, src_elem_bytes):
+def compare_tensor(golden_path, output_path):
     if not os.path.exists(golden_path) or not os.path.exists(output_path):
         return False
-    golden = np.fromfile(golden_path, dtype=np.uint8)
-    output = np.fromfile(output_path, dtype=np.uint8)
-    prefix = _packed_pred_storage_bytes(logical_elems, src_elem_bytes)
-    if golden.size < prefix or output.size < prefix:
+    golden = np.fromfile(golden_path, dtype=np.float32)
+    output = np.fromfile(output_path, dtype=np.float32)
+    if golden.shape != output.shape:
         return False
-    if not np.array_equal(golden[:prefix], output[:prefix]):
-        diff = np.nonzero(golden[:prefix] != output[:prefix])[0]
+    if not np.allclose(golden, output, rtol=0.0, atol=0.0):
+        diff = np.nonzero(golden != output)[0]
         idx = int(diff[0]) if diff.size else 0
-        print(f"[ERROR] Mismatch (packed mask): idx={idx} golden={int(golden[idx])} out={int(output[idx])}")
+        print(f"[ERROR] Mismatch: idx={idx} golden={float(golden[idx])} out={float(output[idx])}")
         return False
     return True
 
 
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
-    ok = compare_packed_pred_mask("golden_v3.bin", "v3.bin", 32 * 32, 4)
+    ok = compare_tensor("golden_v3.bin", "v3.bin")
     if not ok:
         if strict:
             print("[ERROR] compare failed")

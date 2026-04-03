@@ -752,9 +752,13 @@ Address-form policy for this section:
 ### `pto.plds`
 
 - syntax:
-  `%result = pto.plds %source[%offset] {dist = "DIST"} : buf_like -> !pto.mask<b8>`
+  `%result = pto.plds %source[%offset], "DIST" : buf_like, index -> !pto.mask<b8>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  使用运行时偏移从 UB 读取 predicate 数据到 mask 寄存器。
+  它与 `pto.pldi` 具有相同的 predicate payload 语义，区别只在于
+  `%offset` 是 SSA `index` 而不是常量 `index` 立即数。
+  `"DIST"` 为必选字符串，取值与 `pto.pldi` 一致，可为 `"NORM"`、
+  `"US"`、`"DS"`。
 - CCE correspondence:
   `plds(...)`
   `__builtin_cce_plds_b8`
@@ -772,9 +776,15 @@ Address-form policy for this section:
 ### `pto.pldi`
 
 - syntax:
-  `%result = pto.pldi %source, %offset, "DIST" : buf_like, i32 -> !pto.mask<b8>`
+  `%result = pto.pldi %source[%offset], "DIST" : buf_like, index -> !pto.mask<b8>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  使用立即数偏移从 UB 读取 predicate 数据到 mask 寄存器。
+  `%offset` 在 PTO surface 上必须是常量 `index` 立即数；
+  lowering 到 LLVM IR 时再转换为 intrinsic 所需的 `i32` 参数。
+  `"DIST"` 为必选字符串，取值只能是 `"NORM"`、`"US"`、`"DS"`：
+  `NORM` 表示正常加载 256 字节 predicate 数据；
+  `US` 表示加载 128 字节后按 bit 复制一次；
+  `DS` 表示加载 512 字节后每两 bit 仅保留一个 bit。
 - CCE correspondence:
   `pldi(...)`
   `__builtin_cce_pldi_b8`, `__builtin_cce_pldi_post_b8`
@@ -832,9 +842,11 @@ Address-form policy for this section:
 ### `pto.vsldb`
 
 - syntax:
-  `%result = pto.vsldb %source, %offset, %mask : !llvm.ptr<AS>, i32, !pto.mask<G> -> !pto.vreg<NxT>`
+  `%result = pto.vsldb %source, %block_stride, %repeat_stride, %mask : !llvm.ptr<AS>, i16, i16, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Vector block-stride load. PTO surface splits the hardware control word into
+  `%block_stride` and `%repeat_stride`; LLVM emission repacks them as
+  `(block_stride << 16) | repeat_stride` before calling `llvm.hivm.vsldb`.
 - CCE correspondence:
   `vsldb(...)`
   `__builtin_cce_vsldb_*`, `__builtin_cce_vsldb_post_*`
@@ -1227,7 +1239,7 @@ Address-form policy for this section:
 ### `pto.vshls`
 
 - syntax:
-  `%result = pto.vshls %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vshls %input, %scalar, %mask : !pto.vreg<NxT>, i16, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1237,7 +1249,7 @@ Address-form policy for this section:
 ### `pto.vshrs`
 
 - syntax:
-  `%result = pto.vshrs %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vshrs %input, %scalar, %mask : !pto.vreg<NxT>, i16, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1299,9 +1311,9 @@ Address-form policy for this section:
 ### `pto.vselr`
 
 - syntax:
-  `%result = pto.vselr %src0, %src1 : !pto.vreg<NxT>, !pto.vreg<NxI> -> !pto.vreg<NxT>`
+  `%result = pto.vselr %src, %idx : !pto.vreg<NxT>, !pto.vreg<Nxi<width>> -> !pto.vreg<NxT>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  根据 `%idx` 中的 lane 索引，从 `%src` 中选取对应元素写入 `%result`。
 - CCE correspondence:
   `vselr(...)`
   `__builtin_cce_vselr_*`
@@ -1413,6 +1425,39 @@ Address-form policy for this section:
 - CCE correspondence:
   `vdintlvv2(...)`
   `__builtin_cce_vdintlvv2_*`
+
+### `pto.vpack`
+
+- syntax:
+  `%result = pto.vpack %src, "PART" : !pto.vreg<NxT_wide> -> !pto.vreg<2NxT_narrow>`
+- semantics:
+  Narrow one source vector, write the narrowed payload into the selected half
+  of the result, and zero-fill the other half. `"PART"` must be `"LOWER"` or
+  `"HIGHER"`. Supported width pairs are `i32/u32 -> ui16` and
+  `i16/u16 -> ui8`.
+- CCE correspondence:
+  `vpack(...)`
+  `__builtin_cce_vpack_*`
+
+### `pto.vsunpack`
+
+- syntax:
+  `%result = pto.vsunpack %src, "PART" : !pto.vreg<2NxT_narrow> -> !pto.vreg<NxT_wide>`
+- semantics:
+  Select one half of the packed source and sign-extend it to the wider result.
+- CCE correspondence:
+  `vsunpack(...)`
+  `__builtin_cce_vsunpack_*`
+
+### `pto.vzunpack`
+
+- syntax:
+  `%result = pto.vzunpack %src, "PART" : !pto.vreg<2NxT_narrow> -> !pto.vreg<NxT_wide>`
+- semantics:
+  Select one half of the packed source and zero-extend it to the wider result.
+- CCE correspondence:
+  `vzunpack(...)`
+  `__builtin_cce_vzunpack_*`
 
 ## 11. Conversion, Index And Sort
 
@@ -1530,9 +1575,14 @@ Address-form policy for this section:
 ### `pto.psts`
 
 - syntax:
-  `pto.psts %value, %destination[%offset] : !pto.mask<b8>, buf_like`
+  `pto.psts %value, %destination[%offset], "DIST" : !pto.mask<b8>, buf_like, index`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  使用运行时偏移将 predicate 数据写入 UB。
+  它与 `pto.psti` 的 predicate payload 语义一致，区别只在于
+  `%offset` 是 SSA `index` 而不是常量 `index` 立即数。
+  `"DIST"` 为必选字符串，取值只能是 `"NORM"`、`"PK"`：
+  `NORM` 表示写入普通 256 字节 predicate 空间；
+  `PK` 表示写入 128 字节空间，并且每两 bit 仅保留 1 bit。
 - CCE correspondence:
   `psts(...)`
   `__builtin_cce_psts_b8`, `__builtin_cce_psts_post_b8`
@@ -1550,9 +1600,14 @@ Address-form policy for this section:
 ### `pto.psti`
 
 - syntax:
-  `pto.psti %value, %destination, %offset, "DIST" : !pto.mask<b8>, buf_like, i32`
+  `pto.psti %value, %destination[%offset], "DIST" : !pto.mask<b8>, buf_like, index`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  使用立即数偏移将 predicate 数据写入 UB。
+  `%offset` 在 PTO surface 上必须是常量 `index` 立即数；
+  lowering 到 LLVM IR 时再转换为 intrinsic 所需的 `i32` 参数。
+  `"DIST"` 为必选字符串，取值只能是 `"NORM"`、`"PK"`：
+  `NORM` 表示写入普通 256 字节 predicate 空间；
+  `PK` 表示写入 128 字节空间，并且每两 bit 仅保留 1 bit。
 - CCE correspondence:
   `psti(...)`
   `__builtin_cce_psti_b8`, `__builtin_cce_psti_post_b8`
@@ -1580,22 +1635,14 @@ Address-form policy for this section:
 ### `pto.vsstb`
 
 - syntax:
-  `pto.vsstb %value, %destination, %offset, %mask : !pto.vreg<NxT>, buf_like, i32, !pto.mask<G>`
+  `pto.vsstb %value, %destination, %block_stride, %repeat_stride, %mask : !pto.vreg<NxT>, buf_like, i16, i16, !pto.mask<G>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Vector block-stride store. PTO surface splits the hardware control word into
+  `%block_stride` and `%repeat_stride`; LLVM emission repacks them as
+  `(block_stride << 16) | repeat_stride` before calling `llvm.hivm.vsstb`.
 - CCE correspondence:
   `vsstb(...)`
   `__builtin_cce_vsstb_*`, `__builtin_cce_vsstb_post_*`
-
-### `pto.vsta`
-
-- syntax:
-  `pto.vsta %value, %destination[%offset] : !pto.align, buf_like, index`
-- semantics:
-  TODO(user): add one-line semantics for external developers.
-- CCE correspondence:
-  `vsta(...)`
-  `__builtin_cce_vsta_*`
 
 ### `pto.vstas`
 
@@ -1627,29 +1674,20 @@ accepted for these operands in the current contract.
 ### `pto.pstu`
 
 - syntax:
-  `%align_out, %base_out = pto.pstu %align_in, %value, %base : !pto.align, !pto.mask<G>, !llvm.ptr<AS> -> !pto.align, !llvm.ptr<AS>`
+  `%align_out, %base_out = pto.pstu %align_in, %value, %base : !pto.align, !pto.mask<b16>, !pto.ptr<ui16, ub> -> !pto.align, !pto.ptr<ui16, ub>`
+  `%align_out, %base_out = pto.pstu %align_in, %value, %base : !pto.align, !pto.mask<b32>, !pto.ptr<ui32, ub> -> !pto.align, !pto.ptr<ui32, ub>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Predicate unaligned store that threads explicit align/base state in SSA form. The base type is not generic: `b16` pairs with `ui16`, and `b32` pairs with `ui32`.
 - CCE correspondence:
   `pstu(...)`
   `__builtin_cce_pstu_b16`, `__builtin_cce_pstu_b32`
-
-### `pto.vstu`
-
-- syntax:
-  `%align_out, %offset_out = pto.vstu %align_in, %offset_in, %value, %base : !pto.align, index, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align, index`
-- semantics:
-  TODO(user): add one-line semantics for external developers.
-- CCE correspondence:
-  `vstu(...)`
-  `__builtin_cce_vstu_*`
 
 ### `pto.vstus`
 
 - syntax:
   `%align_out, %base_out = pto.vstus %align_in, %offset, %value, %base : !pto.align, i32, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align, !llvm.ptr<AS>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Unaligned vector store with scalar offset input that threads align-state and returns the updated base-state in SSA form.
 - CCE correspondence:
   `vstus(...)`
   `__builtin_cce_vstus_*`, `__builtin_cce_vstus_post_*`
@@ -1657,9 +1695,16 @@ accepted for these operands in the current contract.
 ### `pto.vstur`
 
 - syntax:
-  `%align_out = pto.vstur %align_in, %value, %base : !pto.align, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align`
+  `%align_out = pto.vstur %align_in, %value, %base, "MODE" : !pto.align, !pto.vreg<NxT>, !llvm.ptr<AS> -> !pto.align`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Unaligned vector store form that updates only the residual align-state in SSA
+  while the hardware address stream is driven by `base + AR`. `MODE` is
+  `POST_UPDATE` or `NO_POST_UPDATE`: `POST_UPDATE` allows hardware to advance
+  the fixed `SPR AR` register according to the fixed `SPR SQZN` configuration,
+  while `NO_POST_UPDATE` preserves the current `SPR AR` value. Independent
+  `vstur` sequences normally start from `AR = 0`; if that is not already
+  guaranteed by the surrounding program, the hardware sequence should clear
+  `SPR AR` before the first dependent `pto.vstur`.
 - CCE correspondence:
   `vstur(...)`
   `__builtin_cce_vstur_*`
@@ -1890,7 +1935,7 @@ pto.vsts %max_vec, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !
 %max_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // 2. exp(x - max) using fused op
-%exp = pto.vexpdiff %logits, %max_bc : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
+%exp = pto.vexpdiff %logits, %max_bc, "ODD" : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
 // 3. Sum
 %sum = pto.vcadd %exp, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
@@ -1913,8 +1958,6 @@ pto.vsts %sum, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.
 // Parametric ReLU (per-element alpha)
 %prelu = pto.vprelu %input, %alpha_vec : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
-// Fused add + ReLU
-%fused = pto.vaddrelu %a, %b : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 ```
 
 ### Data Layout Conversion
@@ -1985,15 +2028,13 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 
 | # | Section | What Changed | Source |
 |---|---------|-------------|--------|
-| 1 | Sec 7: Binary ops | No changes — full 1:1 match | Both |
-| 2 | Sec 8: vsubs, vands, vors, vxors | **ADDED** | a5_intrinsic_ir.md |
-| 3 | Sec 9: vselrv2 | **REMOVED** (not A5) | — |
-| 4 | Sec 9: vprelu | **ADDED** parametric ReLU | a5_intrinsic_ir.md |
-| 5 | Sec 10: vintlvv2, vdintlvv2, pdintlv_b8, pintlv_b16 | **REMOVED** (not A5) | — |
-| 6 | Sec 10: vslide, vshift, vsqz, vusqz | **ADDED** data movement | a5_intrinsic_ir.md |
-| 7 | Sec 10: vperm (was vgather reg) | **ADDED** in-register permute | a5_intrinsic_ir.md |
-| 8 | Sec 10: vtranspose | **ADDED** | a5_intrinsic_ir.md |
-| 9 | Sec 10: vpack, vsunpack, vzunpack | **ADDED** pack/unpack | a5_intrinsic_ir.md |
+| 1 | Binary ops | No changes — full 1:1 match | Both |
+| 2 | Sec 8: `pto.vshls`, `pto.vshrs` | **UPDATED** to masked `i16` scalar syntax | a5_intrinsic_ir.md |
+| 3 | `pto.vselrv2` | **REMOVED** (not A5) | — |
+| 4 | `pto.vprelu` | **ADDED** parametric ReLU | a5_intrinsic_ir.md |
+| 5 | `pto.vintlvv2`, `pto.vdintlvv2`, `pto.pdintlv_b8`, `pto.pintlv_b16` | **REMOVED** (not A5) | — |
+| 7 | `pto.vslide`, `pto.vsqz`, `pto.vusqz` | **ADDED** data movement | a5_intrinsic_ir.md |
+| 8 | Sec 10: vpack, vsunpack, vzunpack | **ADDED** pack/unpack | a5_intrinsic_ir.md |
 
 ### Part 3C Changes (Sections 11–14)
 
@@ -2003,9 +2044,7 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 | 2 | Sec 11: vtrc, vci, vbitsort | Kept from vpto-spec.md (`vbitsort` lacks A5 oracle mapping today) | vpto-spec.md |
 | 3 | Sec 12: vmull | C semantics + A5 type info added | Both |
 | 4 | Sec 12: vmula | Kept from vpto-spec.md | vpto-spec.md |
-| 5 | Sec 12: vaddrelu, vsubrelu | **ADDED** fused add/sub+ReLU | a5_intrinsic_ir.md |
 | 6 | Sec 12: vaxpy | **ADDED** AXPY | a5_intrinsic_ir.md |
-| 7 | Sec 12: vaddreluconv, vmulconv | **ADDED** fused compute+convert | a5_intrinsic_ir.md |
 | 8 | Sec 13: vsts dist modes | **EXPANDED** — PK_B*, MRG* C semantics | a5_intrinsic_ir.md |
 | 9 | Sec 13-14: All store ops | C semantics added where missing | Both |
 
@@ -2031,13 +2070,10 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 
 ### Part 3B
 
-1. **pto.vperm naming:** a5_intrinsic `vgather` (in-register permute) mapped to `pto.vperm`. Confirm naming preference.
-2. **pto.vshift naming:** a5_intrinsic `vsld` (single-source slide) mapped to `pto.vshift` to avoid `pto.vsld` collision. Confirm.
-3. **Section 10 removals:** 4 interleave ops removed (not on A5). If multi-arch support is needed later, these would need conditional inclusion.
+1. **Section 10 removals:** 4 interleave ops removed (not on A5). If multi-arch support is needed later, these would need conditional inclusion.
 
 ### Part 3C
 
-1. **Fused op naming convention:** `pto.vaddrelu`, `pto.vaddreluconv`, `pto.vmulconv` use long compound names. Should we adopt a shorter convention (e.g., `pto.vfma_relu`)?
 2. **vmrgsort4:** Kept from vpto-spec.md but no a5_intrinsic mapping found. Confirm if A5 supports this.
 3. **Store dist token completeness:** PK_B16, MRG4CHN_B8, MRG2CHN_B8, MRG2CHN_B16 added. Are there other store distribution modes on A5?
 4. **vcvt width-changing pattern:** The even/odd + vor pattern for f32→f16 is the standard compiler lowering. Confirm this is the intended representation in the spec.

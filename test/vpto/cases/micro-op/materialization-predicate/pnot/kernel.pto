@@ -19,10 +19,10 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       scf.for %iter = %c0 to %c1 step %c1 {
-        %all = pto.pset_b32 "PAT_ALL" : !pto.mask
-        %half, %next = pto.plt_b32 %c13 : i32 -> !pto.mask, i32
-        %out = pto.pnot %half, %all : !pto.mask, !pto.mask -> !pto.mask
-        pto.psts %out, %ub_out[%c0] : !pto.mask, !pto.ptr<ui8, ub>
+        %all = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+        %half, %next = pto.plt_b32 %c13 : i32 -> !pto.mask<b32>, i32
+        %out = pto.pnot %half, %all : !pto.mask<b32>, !pto.mask<b32> -> !pto.mask<b32>
+        pto.psts %out, %ub_out[%c0] : !pto.mask<b32>, !pto.ptr<ui8, ub>
       }
     }
 

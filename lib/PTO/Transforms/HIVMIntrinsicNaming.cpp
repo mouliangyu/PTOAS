@@ -380,6 +380,26 @@ FailureOr<IntrinsicSelection> selectUnaryIntrinsic(Operation *op) {
     return makeResolved(op, candidate, usedFields, vecFragment);
   }
 
+  if (auto binary = dyn_cast<pto::VshlsOp>(op)) {
+    const std::string vecFragment = getVectorTypeFragment(binary.getResult().getType());
+    llvm::SmallVector<std::string, 3> usedFields = {
+        "family=vshls", "vector=" + vecFragment, "variant=x"};
+    std::string candidate = "llvm.hivm.vshls";
+    if (!vecFragment.empty())
+      candidate += "." + vecFragment + ".x";
+    return makeResolved(op, candidate, usedFields, vecFragment);
+  }
+
+  if (auto binary = dyn_cast<pto::VshrsOp>(op)) {
+    const std::string vecFragment = getVectorTypeFragment(binary.getResult().getType());
+    llvm::SmallVector<std::string, 3> usedFields = {
+        "family=vshrs", "vector=" + vecFragment, "variant=x"};
+    std::string candidate = "llvm.hivm.vshrs";
+    if (!vecFragment.empty())
+      candidate += "." + vecFragment + ".x";
+    return makeResolved(op, candidate, usedFields, vecFragment);
+  }
+
   return failure();
 }
 

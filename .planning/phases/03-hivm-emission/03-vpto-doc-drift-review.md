@@ -51,19 +51,15 @@
 
 - `docs/isa/08-vec-scalar-ops.md` 正文已包含：
   - `pto.vadds`
-  - `pto.vsubs`
   - `pto.vmuls`
   - `pto.vmaxs`
   - `pto.vmins`
-  - `pto.vands`
-  - `pto.vors`
-  - `pto.vxors`
   - `pto.vshls`
   - `pto.vshrs`
   - `pto.vlrelu`
   - `pto.vaddcs`
   - `pto.vsubcs`
-- 但 `docs/vpto-spec.md` 的 group summary 仍是旧计数和旧列表，没有反映 `vsubs/vands/vors/vxors`
+- 但 `docs/vpto-spec.md` 的 group summary 仍是旧计数和旧列表，未完全反映当前正文 surface
 
 影响：
 

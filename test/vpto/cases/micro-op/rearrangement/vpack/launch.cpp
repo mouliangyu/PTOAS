@@ -2,9 +2,7 @@
 // case: micro-op/rearrangement/vpack
 // family: rearrangement
 // target_ops: pto.vpack
-// scenarios: pack-unpack, narrowing
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: pack-unpack, narrowing, half-placement, zero-fill-other-half
 // -----------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // PTOAS compatibility layer
@@ -58,9 +56,10 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vabs_kernel_2d(__gm__ float *v1,
-                                                 __gm__ float *v2);
+extern "C" __global__ AICORE void vpack_kernel_2d(__gm__ int *v1,
+                                                  __gm__ uint16_t *v2);
 
-void LaunchVabs_kernel_2d(float *v1, float *v2, void *stream) {
-  vabs_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1, (__gm__ float *)v2);
+void LaunchVpack_kernel_2d(int32_t *v1, uint16_t *v2, void *stream) {
+  vpack_kernel_2d<<<1, nullptr, stream>>>((__gm__ int *)v1,
+                                          (__gm__ uint16_t *)v2);
 }

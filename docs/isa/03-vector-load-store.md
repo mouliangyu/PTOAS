@@ -159,17 +159,20 @@ for (int i = 0; i < 64; i++) {
 
 ### `pto.vsldb`
 
-- **syntax:** `%result = pto.vsldb %source, %offset, %mask : !pto.ptr<T, ub>, i32, !pto.mask<G> -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vsldb %source, %block_stride, %repeat_stride, %mask : !pto.ptr<T, ub>, i16, i16, !pto.mask<G> -> !pto.vreg<NxT>`
 - **semantics:** Block-strided load for 2D tile access.
 - **inputs:**
-  `%source` is the UB base pointer, `%offset` is the packed stride/control word,
-  and `%mask` controls which blocks participate.
+  `%source` is the UB base pointer. `%block_stride` and `%repeat_stride` are
+  the two 16-bit fields of the hardware control word, and `%mask` controls
+  which blocks participate.
 - **outputs:**
   `%result` is the loaded vector.
 - **constraints and limitations:**
-  `%offset` is not a plain byte displacement; it encodes the block stride and
-  repeat pattern. If a block is masked off, the corresponding destination block
-  is zeroed and MUST NOT raise an address overflow exception for that block.
+  PTO surface does not expose the packed control word directly. LLVM emission
+  packs the two `i16` fields as `(block_stride << 16) | repeat_stride` before
+  calling `llvm.hivm.vsldb(vreg_or_result, ptr6, packed, 0, mask)`-shape
+  intrinsics. If a block is masked off, the corresponding destination block is
+  zeroed and MUST NOT raise an address overflow exception for that block.
 
 ---
 
@@ -315,16 +318,19 @@ for (int i = 0; i < 64; i++) {
 
 ### `pto.vsstb`
 
-- **syntax:** `pto.vsstb %value, %dest, %offset, %mask : !pto.vreg<NxT>, !pto.ptr<T, ub>, i32, !pto.mask<G>`
+- **syntax:** `pto.vsstb %value, %dest, %block_stride, %repeat_stride, %mask : !pto.vreg<NxT>, !pto.ptr<T, ub>, i16, i16, !pto.mask<G>`
 - **semantics:** Block-strided store for 2D tile access.
 - **inputs:**
-  `%value` is the source vector, `%dest` is the UB base pointer, `%offset` is
-  the packed stride/control word, and `%mask` controls block participation.
+  `%value` is the source vector, `%dest` is the UB base pointer,
+  `%block_stride` and `%repeat_stride` are the two 16-bit fields of the
+  hardware control word, and `%mask` controls block participation.
 - **outputs:**
   This op writes UB memory and returns no SSA value.
 - **constraints and limitations:**
-  `%offset` is a control word, not a plain byte displacement. This is a
-  deprecated compatibility family kept for surface coverage.
+  PTO surface does not expose the packed control word directly. LLVM emission
+  packs the two `i16` fields as `(block_stride << 16) | repeat_stride` before
+  calling `llvm.hivm.vsstb(vreg, ptr6, packed, 0, mask)`. Masked-off blocks
+  MUST NOT issue memory writes.
 
 ---
 
@@ -355,22 +361,6 @@ for (int i = 0; i < active_lanes; i++)
 
 ## Alignment State Stores
 
-### `pto.vsta`
-
-- **syntax:** `pto.vsta %value, %dest[%offset] : !pto.align, !pto.ptr<T, ub>, index`
-- **semantics:** Flush alignment state to memory.
-- **inputs:**
-  `%value` is the pending store-alignment state, `%dest` is the UB base pointer,
-  and `%offset` is the flush displacement.
-- **outputs:**
-  This op writes buffered tail bytes to UB and returns no SSA value.
-- **constraints and limitations:**
-  The flush address MUST match the post-updated address expected by the
-  preceding unaligned-store stream. After the flush, the corresponding store
-  alignment state is consumed.
-
----
-
 ### `pto.vstas`
 - **syntax:** `pto.vstas %value, %dest, %offset : !pto.align, !pto.ptr<T, ub>, i32`
 - **semantics:** Scalar-register-offset form of alignment-state flush.
@@ -380,7 +370,8 @@ for (int i = 0; i < active_lanes; i++)
 - **outputs:**
   This op writes buffered tail bytes to UB and returns no SSA value.
 - **constraints and limitations:**
-  This family uses the same buffered-tail semantics as `pto.vsta` but keeps the
+  This family flushes pending store-alignment state using an explicit scalar
+  offset and keeps the
   scalar-offset form explicit.
 
 ---
@@ -396,54 +387,6 @@ for (int i = 0; i < active_lanes; i++)
 - **constraints and limitations:**
   The implicit update state consumed by this flush MUST correspond to the same
   store stream that produced `%value`.
-
----
-
-### `pto.vstu`
-- **syntax:** `%align_out, %base_out = pto.vstu %align_in, %base_in, %value, %dest : !pto.align, !pto.ptr<T, ub>, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, !pto.ptr<T, ub>`
-- **semantics:** Unaligned store with explicit threaded alignment/base state.
-- **inputs:**
-  `%align_in` is the incoming store-alignment state, `%base_in` is the current
-  stream base, `%value` is the vector to store, and `%dest` is the UB base
-  pointer.
-- **outputs:**
-  `%align_out` is the updated buffered-tail state and `%base_out` is the
-  next base pointer state.
-- **constraints and limitations:**
-  This op models a stateful unaligned-store sequence in SSA form. A final
-  `pto.vsta` / `pto.vstas` / `pto.vstar` is still required to flush the trailing
-  buffered bytes.
-
----
-
-### `pto.vstus`
-- **syntax:** `%align_out, %base_out = pto.vstus %align_in, %base_in, %value, %dest, %offset : !pto.align, !pto.ptr<T, ub>, !pto.vreg<NxT>, !pto.ptr<T, ub>, i32 -> !pto.align, !pto.ptr<T, ub>`
-- **semantics:** Scalar-offset unaligned store with threaded state.
-- **inputs:**
-  Same roles as `pto.vstu`, but `%offset` is provided explicitly as the scalar
-  displacement.
-- **outputs:**
-  Updated alignment state and base state.
-- **constraints and limitations:**
-  The same final flush requirement and state-threading constraints as
-  `pto.vstu` apply.
-
----
-
-### `pto.vstur`
-- **syntax:** `%align_out = pto.vstur %align_in, %value, %dest : !pto.align, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align`
-- **semantics:** Register-update unaligned store form.
-- **inputs:**
-  `%align_in` is the incoming store-alignment state, `%value` is the vector to
-  store, and `%dest` is the UB base pointer.
-- **outputs:**
-  `%align_out` is the updated buffered-tail state.
-- **constraints and limitations:**
-  This op updates only the residual alignment state. A matching flush op is
-  still required to emit the trailing bytes.
-
-- **syntax:** `pto.vstas %value, %dest, %offset : !pto.align, !pto.ptr<T, ub>, i32`
-- **semantics:** Flush alignment state with scalar offset.
 
 ---
 
@@ -468,24 +411,6 @@ for (int i = 0; i < active_lanes; i++)
 
 These ops make reference-updated state explicit as SSA results.
 
-### `pto.vstu`
-
-- **syntax:** `%align_out, %offset_out = pto.vstu %align_in, %offset_in, %value, %base : !pto.align, index, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, index`
-- **semantics:** Unaligned store with align + offset state update.
-- **inputs:**
-  `%align_in` is the incoming store-alignment state, `%offset_in` is the current
-  logical byte/element displacement, `%value` is the vector being stored, and
-  `%base` is the UB base pointer.
-- **outputs:**
-  `%align_out` is the updated alignment/tail state and `%offset_out` is the
-  next offset state.
-- **constraints and limitations:**
-  The alignment state MUST be threaded in program order. A terminating flush
-  form such as `pto.vstar`/`pto.vstas` is still required to commit the buffered
-  tail bytes.
-
----
-
 ### `pto.vstus`
 
 - **syntax:** `%align_out, %base_out = pto.vstus %align_in, %offset, %value, %base : !pto.align, i32, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align, !pto.ptr<T, ub>`
@@ -506,14 +431,22 @@ These ops make reference-updated state explicit as SSA results.
 
 ### `pto.vstur`
 
-- **syntax:** `%align_out = pto.vstur %align_in, %value, %base : !pto.align, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align`
-- **semantics:** Unaligned store with residual flush and state update.
+- **syntax:** `%align_out = pto.vstur %align_in, %value, %base, "MODE" : !pto.align, !pto.vreg<NxT>, !pto.ptr<T, ub> -> !pto.align`
+- **semantics:** Unaligned store with residual flush and SPR-AR-driven state update.
 - **inputs:**
   `%align_in` is the incoming store-alignment state, `%value` is the vector to
-  store, and `%base` is the UB base pointer.
+  store, `%base` is the UB base pointer, and `MODE` selects whether the
+  hardware updates `SPR AR` after the store.
 - **outputs:**
   `%align_out` is the updated residual state after the current partial store.
 - **constraints and limitations:**
-  This form exposes only the evolving state; it does not by itself guarantee
-  that all buffered bytes have reached memory. A compatible final flush is still
-  required unless the surrounding sequence is known to be complete.
+  The effective address is `base + AR`, where `AR` is the hardware SPR state
+  carried outside SSA. `POST_UPDATE` means hardware may advance `SPR AR`
+  according to the fixed `SPR SQZN` configuration; `NO_POST_UPDATE` preserves
+  the current `SPR AR` value. This form exposes only the evolving residual
+  align-state in SSA; it does not by itself guarantee that all buffered bytes
+  have reached memory. A compatible final flush is still required unless the
+  surrounding sequence is known to be complete. Independent sequences typically
+  begin from `AR = 0`; if the surrounding program does not already guarantee
+  that, the hardware sequence should clear `SPR AR` before the first dependent
+  `pto.vstur`. `MODE` MUST be one of `POST_UPDATE` or `NO_POST_UPDATE`.

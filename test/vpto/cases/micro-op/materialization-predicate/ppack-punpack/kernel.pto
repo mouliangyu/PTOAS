@@ -18,11 +18,11 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       scf.for %iter = %c0 to %c1 step %c1 {
-        %src = pto.pset_b32 "PAT_ALL" : !pto.mask
-        %packed = pto.ppack %src, "LOWER" : !pto.mask -> !pto.mask
-        %roundtrip = pto.punpack %packed, "LOWER" : !pto.mask -> !pto.mask
-        pto.psts %packed, %ub_out[%c0] : !pto.mask, !pto.ptr<ui8, ub>
-        pto.psts %roundtrip, %ub_out[%c8] : !pto.mask, !pto.ptr<ui8, ub>
+        %src = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+        %packed = pto.ppack %src, "LOWER" : !pto.mask<b32> -> !pto.mask<b32>
+        %roundtrip = pto.punpack %packed, "LOWER" : !pto.mask<b32> -> !pto.mask<b32>
+        pto.psts %packed, %ub_out[%c0] : !pto.mask<b32>, !pto.ptr<ui8, ub>
+        pto.psts %roundtrip, %ub_out[%c8] : !pto.mask<b32>, !pto.ptr<ui8, ub>
       }
     }
 

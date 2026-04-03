@@ -82,24 +82,6 @@ if (amt >= 0)
 
 ---
 
-### `pto.vshift`
-
-- **syntax:** `%result = pto.vshift %src, %amt : !pto.vreg<NxT>, i16 -> !pto.vreg<NxT>`
-- **semantics:** Single-source slide (shift with zero fill).
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = (i >= amt) ? src[i - amt] : 0;
-```
-
-- **inputs:** `%src` is the source vector and `%amt` is the slide amount.
-- **outputs:** `%result` is the shifted vector.
-- **constraints and limitations:** This surface represents the single-source
-  slide/shift family. Zero-fill versus other fill behavior MUST match the
-  selected form.
-
----
-
 ## Compress / Expand
 
 ### `pto.vsqz`
@@ -126,7 +108,7 @@ while (j < N) dst[j++] = 0;
 
 ### `pto.vusqz`
 
-- **syntax:** `%result = pto.vusqz %mask : !pto.mask<G> -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vusqz %src, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
 - **semantics:** Expand — scatter front elements to active positions.
 
 ```c
@@ -136,49 +118,31 @@ for (int i = 0; i < N; i++)
     else dst[i] = 0;
 ```
 
-- **inputs:** `%mask` is the expansion/placement predicate.
+- **inputs:** `%src` provides the compacted front stream; `%mask` is the
+  expansion/placement predicate.
 - **outputs:** `%result` is the expanded vector image.
-- **constraints and limitations:** The source-front stream is implicit in the
-  current surface. Lane placement for active and inactive positions MUST be
-  preserved exactly.
+- **constraints and limitations:** `T` is currently limited to `s8`, `s16`,
+  or `s32`. `%src` provides the compacted front stream in lane order; lanes
+  beyond the active-prefix payload should be treated as zero-initialized for
+  merge-style execution. Lane placement for active and inactive positions MUST
+  be preserved exactly.
 
 ---
-
-## Permutation
-
-### `pto.vperm`
-
-- **syntax:** `%result = pto.vperm %src, %index : !pto.vreg<NxT>, !pto.vreg<NxI> -> !pto.vreg<NxT>`
-- **semantics:** In-register permute (table lookup). **Not** memory gather.
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = src[index[i] % N];
-```
-
-**Note:** This operates on register contents, unlike `pto.vgather2` which reads from UB memory.
-
-- **inputs:** `%src` is the source vector and `%index` supplies per-lane source
-  indices.
-- **outputs:** `%result` is the permuted vector.
-- **constraints and limitations:** This is an in-register permutation family.
-  `%index` values outside the legal range follow the wrap/clamp behavior of the
-  selected form.
 
 ---
 
 ### `pto.vselr`
 
-- **syntax:** `%result = pto.vselr %src0, %src1 : !pto.vreg<NxT>, !pto.vreg<NxI> -> !pto.vreg<NxT>`
-- **semantics:** Register select with reversed mask semantics.
+- **syntax:** `%result = pto.vselr %src, %idx : !pto.vreg<NxT>, !pto.vreg<Nxi<width>> -> !pto.vreg<NxT>`
+- **semantics:** Register lane-select with an explicit index vector.
 
 ```c
 for (int i = 0; i < N; i++)
-    dst[i] = mask[i] ? src1[i] : src0[i];
+    dst[i] = src[idx[i]];
 ```
 
-- **inputs:** `%src0` and `%src1` are source vectors.
-- **outputs:** `%result` is the selected vector.
+- **inputs:** `%src` is the source vector. `%idx` is the lane-index vector.
+- **outputs:** `%result` is the reordered vector.
 - **constraints and limitations:** This page records the rearrangement use of
   the family; the compare/select page documents the same name from the predicate
   selection perspective.
@@ -189,23 +153,30 @@ for (int i = 0; i < N; i++)
 
 ### `pto.vpack`
 
-- **syntax:** `%result = pto.vpack %src0, %src1, %part : !pto.vreg<NxT_wide>, !pto.vreg<NxT_wide>, index -> !pto.vreg<2NxT_narrow>`
-- **semantics:** Narrowing pack — two wide vectors to one narrow vector.
+- **syntax:** `%result = pto.vpack %src, "PART" : !pto.vreg<NxT_wide> -> !pto.vreg<2NxT_narrow>`
+- **semantics:** Narrow one wide vector and place the narrowed payload into the
+  selected half of the result. The other half is filled with zero.
 
 ```c
-// e.g., two vreg<64xi32> → one vreg<128xi16>
-for (int i = 0; i < N; i++) {
-    dst[i]     = truncate(src0[i]);
-    dst[N + i] = truncate(src1[i]);
+// e.g., vreg<64xi32> → vreg<128xui16>
+for (int i = 0; i < N; i++)
+    dst[i] = 0;
+
+if (part == LOWER) {
+    for (int i = 0; i < N; i++)
+        dst[i] = truncate(src[i]);
+} else { // HIGHER
+    for (int i = 0; i < N; i++)
+        dst[N + i] = truncate(src[i]);
 }
 ```
 
-- **inputs:** `%src0` and `%src1` are wide source vectors and `%part` selects
-  the packing submode.
+- **inputs:** `%src` is the wide source vector. `"LOWER"` and `"HIGHER"`
+  select whether the narrowed payload lands in the lower or upper half.
 - **outputs:** `%result` is the packed narrow vector.
-- **constraints and limitations:** Packing is a narrowing conversion. Source
-  values that do not fit the destination width follow the truncation semantics
-  of the selected packing mode.
+- **constraints and limitations:** Packing is a narrowing conversion with
+  truncation semantics. Current VPTO surface supports `i32/ui32 -> ui16` and
+  `i16/ui16 -> ui8`.
 
 ---
 
@@ -264,8 +235,8 @@ for (int i = 0; i < N/2; i++)
     : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
 
 // Type narrowing via pack
-%packed_i16 = pto.vpack %wide0_i32, %wide1_i32, %c0
-    : !pto.vreg<64xi32>, !pto.vreg<64xi32>, index -> !pto.vreg<128xi16>
+%packed_i16 = pto.vpack %wide_i32, "LOWER"
+  : !pto.vreg<64xi32> -> !pto.vreg<128xui16>
 ```
 
 ---
