@@ -65,12 +65,12 @@ for (int i = 0; i < N; i++)
 
 ### `pto.pset_b8` / `pto.pset_b16` / `pto.pset_b32`
 
-- **syntax:** `%result = pto.pset_b8 "PAT_*" : !pto.mask<b8>`
-- **syntax:** `%result = pto.pset_b16 "PAT_*" : !pto.mask<b16>`
-- **syntax:** `%result = pto.pset_b32 "PAT_*" : !pto.mask<b32>`
-- **semantics:** Generate predicate from pattern.
+- **syntax:** `%result = pto.pset_b8 "PATTERN" : !pto.mask<b8>`
+- **syntax:** `%result = pto.pset_b16 "PATTERN" : !pto.mask<b16>`
+- **syntax:** `%result = pto.pset_b32 "PATTERN" : !pto.mask<b32>`
+- **semantics:** Materialize a predicate register from a named pattern token.
 
-**Patterns:**
+**Supported pattern tokens:**
 
 | Pattern | Description |
 |---------|-------------|
@@ -78,8 +78,12 @@ for (int i = 0; i < N; i++)
 | `PAT_ALLF` | All lanes inactive |
 | `PAT_H` | High half active |
 | `PAT_Q` | Upper quarter active |
-| `PAT_VL1`...`PAT_VL128` | First N lanes active |
+| `PAT_VL1`...`PAT_VL128` | First N logical lanes active |
 | `PAT_M3`, `PAT_M4` | Modular patterns |
+
+`PAT_ALL` is the PTO spelling of the VISA-style all-true predicate pattern.
+The other tokens listed above are also concrete installed-toolchain pattern
+objects, not PTO-only aliases.
 
 **Example — All 64 f32 lanes active:**
 ```mlir
@@ -95,10 +99,14 @@ for (int i = 0; i < N; i++)
 
 ### `pto.pge_b8` / `pto.pge_b16` / `pto.pge_b32`
 
-- **syntax:** `%result = pto.pge_b8 "PAT_*" : !pto.mask<b8>`
-- **syntax:** `%result = pto.pge_b16 "PAT_*" : !pto.mask<b16>`
-- **syntax:** `%result = pto.pge_b32 "PAT_*" : !pto.mask<b32>`
-- **semantics:** Generate tail mask — first N lanes active.
+- **syntax:** `%result = pto.pge_b8 "PATTERN" : !pto.mask<b8>`
+- **syntax:** `%result = pto.pge_b16 "PATTERN" : !pto.mask<b16>`
+- **syntax:** `%result = pto.pge_b32 "PATTERN" : !pto.mask<b32>`
+- **semantics:** Generate a predicate from a lane-count pattern token. In the
+  common tail-mask form, `PAT_VL<N>` marks the first `N` logical lanes active.
+- **supported pattern tokens:** `PAT_ALL`, `PAT_ALLF`, `PAT_H`, `PAT_Q`,
+  `PAT_VL1`, `PAT_VL2`, `PAT_VL3`, `PAT_VL4`, `PAT_VL8`, `PAT_VL16`,
+  `PAT_VL32`, `PAT_VL64`, `PAT_VL128`, `PAT_M3`, `PAT_M4`
 
 ```c
 for (int i = 0; i < TOTAL_LANES; i++)
@@ -117,7 +125,29 @@ for (int i = 0; i < TOTAL_LANES; i++)
 - **syntax:** `%mask, %scalar_out = pto.plt_b8 %scalar : i32 -> !pto.mask<b8>, i32`
 - **syntax:** `%mask, %scalar_out = pto.plt_b16 %scalar : i32 -> !pto.mask<b16>, i32`
 - **syntax:** `%mask, %scalar_out = pto.plt_b32 %scalar : i32 -> !pto.mask<b32>, i32`
-- **semantics:** Generate predicate state together with updated scalar state.
+- **semantics:** Generate a tail-style predicate from an SSA lane-count value.
+  On A5/V300-style toolchains, this family is exposed as a post-update wrapper:
+  the predicate result becomes `%mask`, and the wrapper's carry-out scalar state
+  is surfaced as `%scalar_out`.
+- **inputs:**
+  `%scalar` is the incoming lane-count / remaining-count state.
+- **outputs:**
+  `%mask` is the generated predicate.
+  `%scalar_out` is the post-update scalar carry-out from the same `plt` call
+  and can be threaded into a subsequent `pto.plt_b*` call in the same chain.
+
+```c
+for (int i = 0; i < VL_t; ++i)
+    mask[i] = (i < scalar_in);
+
+scalar_out = (scalar_in < VL_t) ? 0 : (scalar_in - VL_t);
+```
+
+Where `VL_t` is the logical lane count of the concrete op variant:
+
+- `pto.plt_b8`: `VL_t = 256`
+- `pto.plt_b16`: `VL_t = 128`
+- `pto.plt_b32`: `VL_t = 64`
 
 ---
 
@@ -127,8 +157,28 @@ for (int i = 0; i < TOTAL_LANES; i++)
 
 - **syntax:** `%result = pto.ppack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
 - **semantics:** Narrowing pack of predicate register.
+- **part tokens:**
+  - `LOWER`: pack into the lower half of `%result`; the upper half is zeroed.
+  - `HIGHER`: pack into the higher half of `%result`; the lower half is zeroed.
 
-**Part tokens:** `LOWER`, `HIGHER`
+Conceptually, `pto.ppack` keeps one bit out of each adjacent 2-bit group from
+`%input`, packs those kept bits into the selected half of `%result`, and fills
+the other half with zeros.
+
+```c
+// Let VL be the logical lane count of the destination predicate.
+// LOWER
+for (int i = 0; i < VL / 2; ++i)
+    result[i] = input[2 * i];
+for (int i = VL / 2; i < VL; ++i)
+    result[i] = 0;
+
+// HIGHER
+for (int i = 0; i < VL / 2; ++i)
+    result[VL / 2 + i] = input[2 * i];
+for (int i = 0; i < VL / 2; ++i)
+    result[i] = 0;
+```
 
 ---
 
@@ -136,6 +186,28 @@ for (int i = 0; i < TOTAL_LANES; i++)
 
 - **syntax:** `%result = pto.punpack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
 - **semantics:** Widening unpack of predicate register.
+- **part tokens:**
+  - `LOWER`: unpack from the lower half of `%input`.
+  - `HIGHER`: unpack from the higher half of `%input`.
+
+Conceptually, `pto.punpack` reads the selected half of `%input`, zero-extends
+each 1-bit predicate element into a 2-bit group in `%result`, and leaves the
+expanded image in the full destination predicate register.
+
+```c
+// Let VL be the logical lane count of the destination predicate.
+// LOWER
+for (int i = 0; i < VL / 2; ++i) {
+    result[2 * i] = input[i];
+    result[2 * i + 1] = 0;
+}
+
+// HIGHER
+for (int i = 0; i < VL / 2; ++i) {
+    result[2 * i] = input[VL / 2 + i];
+    result[2 * i + 1] = 0;
+}
+```
 
 ---
 
@@ -144,11 +216,13 @@ for (int i = 0; i < TOTAL_LANES; i++)
 ### `pto.pand`
 
 - **syntax:** `%result = pto.pand %src0, %src1, %mask : !pto.mask<G>, !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Predicate bitwise AND.
+- **semantics:** Predicate bitwise AND gated by a governing predicate.
+
+Inactive lanes selected out by `%mask` are zeroed.
 
 ```c
 for (int i = 0; i < N; i++)
-    if (mask[i]) dst[i] = src0[i] & src1[i];
+    dst[i] = mask[i] ? (src0[i] & src1[i]) : 0;
 ```
 
 ---
@@ -156,11 +230,13 @@ for (int i = 0; i < N; i++)
 ### `pto.por`
 
 - **syntax:** `%result = pto.por %src0, %src1, %mask : !pto.mask<G>, !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Predicate bitwise OR.
+- **semantics:** Predicate bitwise OR gated by a governing predicate.
+
+Inactive lanes selected out by `%mask` are zeroed.
 
 ```c
 for (int i = 0; i < N; i++)
-    if (mask[i]) dst[i] = src0[i] | src1[i];
+    dst[i] = mask[i] ? (src0[i] | src1[i]) : 0;
 ```
 
 ---
@@ -168,11 +244,13 @@ for (int i = 0; i < N; i++)
 ### `pto.pxor`
 
 - **syntax:** `%result = pto.pxor %src0, %src1, %mask : !pto.mask<G>, !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Predicate bitwise XOR.
+- **semantics:** Predicate bitwise XOR gated by a governing predicate.
+
+Inactive lanes selected by `%mask` are zeroed.
 
 ```c
 for (int i = 0; i < N; i++)
-    if (mask[i]) dst[i] = src0[i] ^ src1[i];
+    dst[i] = mask[i] ? (src0[i] ^ src1[i]) : 0;
 ```
 
 ---
@@ -180,11 +258,13 @@ for (int i = 0; i < N; i++)
 ### `pto.pnot`
 
 - **syntax:** `%result = pto.pnot %input, %mask : !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Predicate bitwise NOT.
+- **semantics:** Predicate bitwise NOT gated by a governing predicate.
+
+Inactive lanes selected by `%mask` are zeroed.
 
 ```c
 for (int i = 0; i < N; i++)
-    if (mask[i]) dst[i] = ~src[i];
+    dst[i] = mask[i] ? (~src[i]) : 0;
 ```
 
 ---
@@ -192,7 +272,8 @@ for (int i = 0; i < N; i++)
 ### `pto.psel`
 
 - **syntax:** `%result = pto.psel %src0, %src1, %sel : !pto.mask<G>, !pto.mask<G>, !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Predicate select (mux).
+- **semantics:** Predicate select (mux). `%sel` is the governing predicate that
+  chooses lanes from `%src0` or `%src1`.
 
 ```c
 for (int i = 0; i < N; i++)
@@ -201,38 +282,23 @@ for (int i = 0; i < N; i++)
 
 ---
 
-## Predicate Movement
-
-### `pto.ppack`
-
-- **syntax:** `%result = pto.ppack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Narrowing pack of predicate register.
-
-```c
-for (int i = 0; i < N; i++)
-    if (mask[i]) dst[i] = src[i];
-```
-
----
-
-### `pto.punpack`
-
-- **syntax:** `%result = pto.punpack %input, "PART" : !pto.mask<G> -> !pto.mask<G>`
-- **semantics:** Widening unpack of predicate register.
-
----
-
-### `pto.pdintlv_b8`
+### `pto.pdintlv_b8` / `pto.pdintlv_b16` / `pto.pdintlv_b32`
 
 - **syntax:** `%low, %high = pto.pdintlv_b8 %src0, %src1 : !pto.mask<b8>, !pto.mask<b8> -> !pto.mask<b8>, !pto.mask<b8>`
-- **semantics:** Predicate deinterleave.
+- **syntax:** `%low, %high = pto.pdintlv_b16 %src0, %src1 : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>`
+- **syntax:** `%low, %high = pto.pdintlv_b32 %src0, %src1 : !pto.mask<b32>, !pto.mask<b32> -> !pto.mask<b32>, !pto.mask<b32>`
+- **semantics:** De-interleave two predicate sources and return the two
+  de-interleaved predicate images in the same predicate element family.
 
 ---
 
-### `pto.pintlv_b16`
+### `pto.pintlv_b8` / `pto.pintlv_b16` / `pto.pintlv_b32`
 
+- **syntax:** `%low, %high = pto.pintlv_b8 %src0, %src1 : !pto.mask<b8>, !pto.mask<b8> -> !pto.mask<b8>, !pto.mask<b8>`
 - **syntax:** `%low, %high = pto.pintlv_b16 %src0, %src1 : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>`
-- **semantics:** Predicate interleave.
+- **syntax:** `%low, %high = pto.pintlv_b32 %src0, %src1 : !pto.mask<b32>, !pto.mask<b32> -> !pto.mask<b32>, !pto.mask<b32>`
+- **semantics:** Interleave two predicate sources and return the two
+  resulting predicate images in the same predicate element family.
 
 ---
 

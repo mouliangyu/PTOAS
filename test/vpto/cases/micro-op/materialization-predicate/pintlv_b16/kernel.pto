@@ -22,8 +22,8 @@ module attributes {pto.target_arch = "a5"} {
         %lhs = pto.pset_b16 "PAT_ALL" : !pto.mask<b16>
         %rhs = pto.pset_b16 "PAT_ALLF" : !pto.mask<b16>
         %low, %high = pto.pintlv_b16 %lhs, %rhs : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>
-        pto.psts %low, %ub_out[%c0] : !pto.mask<b16>, !pto.ptr<ui8, ub>
-        pto.psts %high, %ub_out[%c8] : !pto.mask<b16>, !pto.ptr<ui8, ub>
+        pto.psts %low, %ub_out[%c0], "NORM" : !pto.mask<b16>, !pto.ptr<ui8, ub>, index
+        pto.psts %high, %ub_out[%c8], "NORM" : !pto.mask<b16>, !pto.ptr<ui8, ub>, index
       }
     }
 

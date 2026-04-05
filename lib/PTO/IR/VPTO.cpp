@@ -104,13 +104,383 @@ static bool isSupportedPartToken(StringRef part) {
   return part == "LOWER" || part == "HIGHER";
 }
 
-static bool isSupportedVldx2DistToken(StringRef dist) {
-  return dist == "DINTLV_B8" || dist == "DINTLV_B16" ||
-         dist == "DINTLV_B32" || dist == "BDINTLV";
+static std::optional<StringRef> normalizeRoundModeToken(StringRef token) {
+  if (token == "R" || token == "ROUND_R")
+    return StringRef("R");
+  if (token == "A" || token == "ROUND_A")
+    return StringRef("A");
+  if (token == "F" || token == "ROUND_F")
+    return StringRef("F");
+  if (token == "C" || token == "ROUND_C")
+    return StringRef("C");
+  if (token == "Z" || token == "ROUND_Z")
+    return StringRef("Z");
+  if (token == "O" || token == "ROUND_O")
+    return StringRef("O");
+  return std::nullopt;
 }
 
-static bool isSupportedVstx2DistToken(StringRef dist) {
-  return dist == "INTLV_B8" || dist == "INTLV_B16" || dist == "INTLV_B32";
+static std::optional<StringRef> normalizeSaturationToken(StringRef token) {
+  if (token == "SAT" || token == "RS_ENABLE")
+    return StringRef("SAT");
+  if (token == "NOSAT" || token == "RS_DISABLE")
+    return StringRef("NOSAT");
+  return std::nullopt;
+}
+
+static std::optional<StringRef> normalizeEvenOddPartToken(StringRef token) {
+  if (token == "EVEN" || token == "PART_EVEN")
+    return StringRef("EVEN");
+  if (token == "ODD" || token == "PART_ODD")
+    return StringRef("ODD");
+  return std::nullopt;
+}
+
+namespace {
+
+enum class VcvtElemKind {
+  Invalid,
+  F16,
+  BF16,
+  F32,
+  S8,
+  U8,
+  S16,
+  U16,
+  S32,
+  U32,
+  S64,
+};
+
+struct VcvtContract {
+  bool requiresRnd;
+  bool requiresSat;
+  bool requiresPart;
+};
+
+static VcvtElemKind classifyVcvtElemType(Type type) {
+  if (type.isF16())
+    return VcvtElemKind::F16;
+  if (type.isBF16())
+    return VcvtElemKind::BF16;
+  if (type.isF32())
+    return VcvtElemKind::F32;
+  if (auto intType = dyn_cast<IntegerType>(type)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return intType.isUnsigned() ? VcvtElemKind::U8 : VcvtElemKind::S8;
+    case 16:
+      return intType.isUnsigned() ? VcvtElemKind::U16 : VcvtElemKind::S16;
+    case 32:
+      return intType.isUnsigned() ? VcvtElemKind::U32 : VcvtElemKind::S32;
+    case 64:
+      return intType.isUnsigned() ? VcvtElemKind::Invalid : VcvtElemKind::S64;
+    default:
+      return VcvtElemKind::Invalid;
+    }
+  }
+  return VcvtElemKind::Invalid;
+}
+
+static std::optional<unsigned> getVcvtElemBitWidth(VcvtElemKind kind) {
+  switch (kind) {
+  case VcvtElemKind::F16:
+  case VcvtElemKind::BF16:
+  case VcvtElemKind::S16:
+  case VcvtElemKind::U16:
+    return 16;
+  case VcvtElemKind::F32:
+  case VcvtElemKind::S32:
+  case VcvtElemKind::U32:
+    return 32;
+  case VcvtElemKind::S8:
+  case VcvtElemKind::U8:
+    return 8;
+  case VcvtElemKind::S64:
+    return 64;
+  case VcvtElemKind::Invalid:
+    return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+static std::optional<VcvtContract> lookupVcvtContract(VcvtElemKind src,
+                                                      VcvtElemKind dst) {
+  switch (src) {
+  case VcvtElemKind::F32:
+    switch (dst) {
+    case VcvtElemKind::F16:
+    case VcvtElemKind::BF16:
+    case VcvtElemKind::S16:
+    case VcvtElemKind::S64:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
+                          /*requiresPart=*/false};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::F16:
+    switch (dst) {
+    case VcvtElemKind::F32:
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::S16:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
+                          /*requiresPart=*/false};
+    case VcvtElemKind::S8:
+    case VcvtElemKind::U8:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::BF16:
+    switch (dst) {
+    case VcvtElemKind::F32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::U8:
+    switch (dst) {
+    case VcvtElemKind::F16:
+    case VcvtElemKind::U16:
+    case VcvtElemKind::U32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::S8:
+    switch (dst) {
+    case VcvtElemKind::F16:
+    case VcvtElemKind::S16:
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::U16:
+    switch (dst) {
+    case VcvtElemKind::U8:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::U32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::S16:
+    switch (dst) {
+    case VcvtElemKind::F16:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/false,
+                          /*requiresPart=*/false};
+    case VcvtElemKind::F32:
+    case VcvtElemKind::U32:
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::U8:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::U32:
+    switch (dst) {
+    case VcvtElemKind::U8:
+    case VcvtElemKind::U16:
+    case VcvtElemKind::S16:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::S32:
+    switch (dst) {
+    case VcvtElemKind::F32:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/false,
+                          /*requiresPart=*/false};
+    case VcvtElemKind::U8:
+    case VcvtElemKind::U16:
+    case VcvtElemKind::S16:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::S64:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::S64:
+    switch (dst) {
+    case VcvtElemKind::F32:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/true,
+                          /*requiresPart=*/true};
+    default:
+      return std::nullopt;
+    }
+  case VcvtElemKind::Invalid:
+    return std::nullopt;
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+static std::optional<unsigned> getDistElementWidth(Type type) {
+  if (auto intType = dyn_cast<IntegerType>(type))
+    return intType.getWidth();
+  if (type.isF16() || type.isBF16())
+    return 16;
+  if (type.isF32())
+    return 32;
+  if (type.isF64())
+    return 64;
+  return std::nullopt;
+}
+
+static bool matchesWidthFamily(StringRef dist, unsigned width,
+                               ArrayRef<unsigned> allowedWidths) {
+  return llvm::is_contained(allowedWidths, width);
+}
+
+static bool isSupportedVldx2DistToken(StringRef dist) {
+  return dist == "BDINTLV" || dist == "DINTLV";
+}
+
+static bool isSupportedVldsDistToken(StringRef dist) {
+  return dist == "NORM" || dist == "BRC" || dist == "US" || dist == "DS" ||
+         dist == "UNPK" || dist == "BRC_BLK" || dist == "E2B" ||
+         dist == "UNPK4" || dist == "SPLT4CHN" || dist == "SPLT2CHN";
+}
+
+static bool isSupportedVstsDistToken(StringRef dist) {
+  return dist == "NORM" || dist == "1PT" || dist == "PK" ||
+         dist == "PK4" || dist == "MRG4CHN" || dist == "MRG2CHN";
+}
+
+static bool isSupportedVstsx2DistToken(StringRef dist) {
+  return dist == "INTLV";
+}
+
+static LogicalResult verifyVldsDistWidth(Operation *op, StringRef dist,
+                                         Type elementType) {
+  auto width = getDistElementWidth(elementType);
+  if (!width)
+    return op->emitOpError("requires load element type with a concrete bit width");
+
+  if (dist == "NORM" || dist == "BRC_BLK")
+    return success();
+  if (dist == "BRC")
+    return matchesWidthFamily(dist, *width, {8, 16, 32})
+               ? success()
+               : op->emitOpError("dist BRC only supports 8/16/32-bit elements");
+  if (dist == "US")
+    return matchesWidthFamily(dist, *width, {8, 16})
+               ? success()
+               : op->emitOpError("dist US only supports 8/16-bit elements");
+  if (dist == "DS")
+    return matchesWidthFamily(dist, *width, {8, 16})
+               ? success()
+               : op->emitOpError("dist DS only supports 8/16-bit elements");
+  if (dist == "UNPK")
+    return matchesWidthFamily(dist, *width, {8, 16, 32})
+               ? success()
+               : op->emitOpError("dist UNPK only supports 8/16/32-bit elements");
+  if (dist == "E2B")
+    return matchesWidthFamily(dist, *width, {16, 32})
+               ? success()
+               : op->emitOpError("dist E2B only supports 16/32-bit elements");
+  if (dist == "UNPK4")
+    return *width == 8
+               ? success()
+               : op->emitOpError("dist UNPK4 only supports 8-bit elements");
+  if (dist == "SPLT4CHN")
+    return *width == 8
+               ? success()
+               : op->emitOpError("dist SPLT4CHN only supports 8-bit elements");
+  if (dist == "SPLT2CHN")
+    return matchesWidthFamily(dist, *width, {8, 16})
+               ? success()
+               : op->emitOpError("dist SPLT2CHN only supports 8/16-bit elements");
+
+  return op->emitOpError("requires a supported load distribution token");
+}
+
+static LogicalResult verifyVldsx2DistWidth(Operation *op, StringRef dist,
+                                           Type elementType) {
+  auto width = getDistElementWidth(elementType);
+  if (!width)
+    return op->emitOpError(
+        "requires x2 load element type with a concrete bit width");
+  if (dist == "BDINTLV")
+    return success();
+  if (dist == "DINTLV")
+    return matchesWidthFamily(dist, *width, {8, 16, 32})
+               ? success()
+               : op->emitOpError("dist DINTLV only supports 8/16/32-bit elements");
+  return op->emitOpError("requires a supported x2 load distribution token");
+}
+
+static LogicalResult verifyVstsDistWidth(Operation *op, StringRef dist,
+                                         Type elementType) {
+  auto width = getDistElementWidth(elementType);
+  if (!width)
+    return op->emitOpError(
+        "requires store element type with a concrete bit width");
+
+  if (dist == "NORM")
+    return matchesWidthFamily(dist, *width, {8, 16, 32})
+               ? success()
+               : op->emitOpError("dist NORM only supports 8/16/32-bit elements");
+  if (dist == "1PT")
+    return matchesWidthFamily(dist, *width, {8, 16, 32})
+               ? success()
+               : op->emitOpError("dist 1PT only supports 8/16/32-bit elements");
+  if (dist == "PK")
+    return matchesWidthFamily(dist, *width, {16, 32, 64})
+               ? success()
+               : op->emitOpError("dist PK only supports 16/32/64-bit elements");
+  if (dist == "PK4")
+    return *width == 32
+               ? success()
+               : op->emitOpError("dist PK4 only supports 32-bit elements");
+  if (dist == "MRG4CHN")
+    return *width == 8
+               ? success()
+               : op->emitOpError("dist MRG4CHN only supports 8-bit elements");
+  if (dist == "MRG2CHN")
+    return matchesWidthFamily(dist, *width, {8, 16})
+               ? success()
+               : op->emitOpError("dist MRG2CHN only supports 8/16-bit elements");
+
+  return op->emitOpError("requires a supported store distribution token");
+}
+
+static LogicalResult verifyVstsx2DistWidth(Operation *op, StringRef dist,
+                                           Type elementType) {
+  auto width = getDistElementWidth(elementType);
+  if (!width)
+    return op->emitOpError(
+        "requires x2 store element type with a concrete bit width");
+  if (dist == "INTLV")
+    return matchesWidthFamily(dist, *width, {8, 16, 32})
+               ? success()
+               : op->emitOpError("dist INTLV only supports 8/16/32-bit elements");
+  return op->emitOpError("requires a supported x2 store distribution token");
 }
 
 static bool isSupportedPostMode(StringRef mode) {
@@ -522,6 +892,10 @@ LogicalResult VgatherbOp::verify() {
   if (sourceRole == MemoryRole::GM)
     return emitOpError("requires a UB-backed source");
 
+  if (failed(verifyMaskTypeWithGranularityLike(getOperation(), getMask().getType(),
+                                               "mask type", "b32")))
+    return failure();
+
   auto offsetsType = dyn_cast<VRegType>(getOffsets().getType());
   auto resultType = dyn_cast<VRegType>(getResult().getType());
   if (!offsetsType || !resultType)
@@ -533,8 +907,6 @@ LogicalResult VgatherbOp::verify() {
     return emitOpError("currently requires 32-bit offset vector elements");
   if (offsetsType.getElementCount() != resultType.getElementCount())
     return emitOpError("offset and result vectors must have the same element count");
-  if (!getActiveLanes().getType().isIndex())
-    return emitOpError("active_lanes must be index");
   return success();
 }
 
@@ -577,6 +949,14 @@ LogicalResult VbitsortOp::verify() {
   if (!getRepeatTimes().getType().isIndex())
     return emitOpError("repeat_times must be index");
   return success();
+}
+
+void VbitsortOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Read::get(), &getIndicesMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
 }
 
 LogicalResult Vmrgsort4Op::verify() {
@@ -635,10 +1015,14 @@ static LogicalResult verifyVldsCommon(LoadOp op) {
 
   if (op.getDistAttr()) {
     StringRef dist = *op.getDist();
-    if (dist != "NORM" && dist != "BLK" && dist != "DINTLV_B32" &&
-        dist != "UNPK_B16")
+    if (!isSupportedVldsDistToken(dist))
       return op.emitOpError(
-          "supports only NORM, BLK, DINTLV_B32, and UNPK_B16 distributions");
+          "supports only NORM, BRC, US, DS, UNPK, BRC_BLK, E2B, UNPK4, "
+          "and SPLT2CHN/SPLT4CHN load distributions");
+    if (failed(verifyVldsDistWidth(
+            op.getOperation(), dist,
+            cast<VRegType>(op.getResult().getType()).getElementType())))
+      return failure();
   }
 
   return success();
@@ -897,26 +1281,6 @@ LogicalResult PldsOp::verify() {
   return success();
 }
 
-void PldOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
-}
-
-LogicalResult PldOp::verify() {
-  if (!isBufferLike(getSource().getType()))
-    return emitOpError("requires a pointer-like source");
-  if (failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
-    return failure();
-  if (classifyMemoryRole(getSource().getType()) == MemoryRole::GM)
-    return emitOpError("requires a UB-backed source");
-  if (!getOffset().getType().isIndex())
-    return emitOpError("requires index offset");
-  if (!isSupportedPredicateLoadDist(getDist()))
-    return emitOpError("requires predicate load dist to be NORM, US, or DS");
-  return success();
-}
-
 void PldiOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
@@ -938,30 +1302,60 @@ LogicalResult PldiOp::verify() {
 }
 
 template <typename OpTy>
-static LogicalResult verifyVecScalarOpLike(OpTy op) {
+static LogicalResult verifyElementwiseVecScalarOpLike(OpTy op) {
   auto inputType = dyn_cast<VRegType>(op.getInput().getType());
   auto resultType = dyn_cast<VRegType>(op.getResult().getType());
   if (!inputType || !resultType)
     return op.emitOpError("input and result must be !pto.vreg<...>");
   if (inputType != resultType)
     return op.emitOpError("input and result vector types must match");
-  if (op.getScalar().getType() != inputType.getElementType())
+
+  Type elemType = inputType.getElementType();
+  Type scalarType = op.getScalar().getType();
+  if (scalarType == elemType)
+    return success();
+
+  auto elemInt = dyn_cast<IntegerType>(elemType);
+  auto scalarInt = dyn_cast<IntegerType>(scalarType);
+  if (!elemInt || !scalarInt || elemInt.getWidth() != scalarInt.getWidth())
     return op.emitOpError("scalar type must match vector element type");
+
+  if (elemInt.isSigned() && (scalarInt.isSigned() || scalarInt.isSignless()))
+    return success();
+  if (elemInt.isUnsigned() &&
+      (scalarInt.isUnsigned() || scalarInt.isSignless()))
+    return success();
+  if (elemInt.isSignless() && scalarInt.isSignless())
+    return success();
+
+  return op.emitOpError(
+      "integer scalar type must match vector element width and use matching signedness or signless i<width>");
+}
+
+template <typename OpTy>
+static LogicalResult verifyVecScalarOpLike(OpTy op) {
+  if (failed(verifyElementwiseVecScalarOpLike(op)))
+    return failure();
+  return success();
+}
+
+template <typename OpTy>
+static LogicalResult verifySignedSaturatingVecScalarOpLike(OpTy op) {
+  if (failed(verifyElementwiseVecScalarOpLike(op)))
+    return failure();
+  auto inputType = cast<VRegType>(op.getInput().getType());
+  auto elemType = dyn_cast<IntegerType>(inputType.getElementType());
+  if (!elemType || elemType.isUnsigned() || elemType.getWidth() != 16)
+    return op.emitOpError("requires s16 vector element type");
   return success();
 }
 
 template <typename OpTy>
 static LogicalResult verifyVecScalarMaskedOpLike(OpTy op) {
-  auto inputType = dyn_cast<VRegType>(op.getInput().getType());
-  auto resultType = dyn_cast<VRegType>(op.getResult().getType());
-  if (!inputType || !resultType)
-    return op.emitOpError("input and result must be !pto.vreg<...>");
+  if (failed(verifyElementwiseVecScalarOpLike(op)))
+    return failure();
   if (failed(verifyMaskTypeLike(op, op.getMask().getType(), "mask type")))
     return failure();
-  if (inputType != resultType)
-    return op.emitOpError("input and result vector types must match");
-  if (op.getScalar().getType() != inputType.getElementType())
-    return op.emitOpError("scalar type must match vector element type");
   return success();
 }
 
@@ -995,11 +1389,16 @@ static LogicalResult verifyCarryVecOpWithInput(CarryWithInputOp op) {
   return success();
 }
 
-LogicalResult VmulsOp::verify() { return verifyVecScalarOpLike(*this); }
-LogicalResult VaddsOp::verify() { return verifyVecScalarOpLike(*this); }
-LogicalResult VmaxsOp::verify() { return verifyVecScalarOpLike(*this); }
-LogicalResult VminsOp::verify() { return verifyVecScalarOpLike(*this); }
-LogicalResult VlreluOp::verify() { return verifyVecScalarOpLike(*this); }
+LogicalResult VmulsOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
+LogicalResult VaddsOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
+LogicalResult VsaddsOp::verify() {
+  if (failed(verifySignedSaturatingVecScalarOpLike(*this)))
+    return failure();
+  return verifyMaskTypeLike(*this, getMask().getType(), "mask type");
+}
+LogicalResult VmaxsOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
+LogicalResult VminsOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
+LogicalResult VlreluOp::verify() { return verifyVecScalarMaskedOpLike(*this); }
 LogicalResult VshlsOp::verify() {
   auto inputType = dyn_cast<VRegType>(getInput().getType());
   auto resultType = dyn_cast<VRegType>(getResult().getType());
@@ -1073,7 +1472,6 @@ LogicalResult VrsqrtOp::verify() {
 }
 LogicalResult VrecOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VreluOp::verify() { return verifyUnaryVecOp(*this); }
-LogicalResult VmovOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VnotOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VbcntOp::verify() {
   if (failed(verifyUnaryVecOp(*this)))
@@ -1108,8 +1506,25 @@ static LogicalResult verifyBinaryVecOp(BinaryOp op) {
   return success();
 }
 
+template <typename BinaryOp>
+static LogicalResult verifySignedSaturatingBinaryVecOp(BinaryOp op) {
+  if (failed(verifyBinaryVecOp(op)))
+    return failure();
+  auto lhsType = cast<VRegType>(op.getLhs().getType());
+  auto elemType = dyn_cast<IntegerType>(lhsType.getElementType());
+  if (!elemType || elemType.isUnsigned() || elemType.getWidth() != 16)
+    return op.emitOpError("requires s16 vector element type");
+  return success();
+}
+
 LogicalResult VaddOp::verify() { return verifyBinaryVecOp(*this); }
 LogicalResult VsubOp::verify() { return verifyBinaryVecOp(*this); }
+LogicalResult VsaddOp::verify() {
+  return verifySignedSaturatingBinaryVecOp(*this);
+}
+LogicalResult VssubOp::verify() {
+  return verifySignedSaturatingBinaryVecOp(*this);
+}
 LogicalResult VmulOp::verify() { return verifyBinaryVecOp(*this); }
 LogicalResult VdivOp::verify() { return verifyBinaryVecOp(*this); }
 LogicalResult VandOp::verify() { return verifyBinaryVecOp(*this); }
@@ -1356,44 +1771,207 @@ LogicalResult VcmpsOp::verify() {
   return success();
 }
 
+ParseResult VtrcOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand input;
+  std::string roundModeToken;
+  NamedAttrList attrs;
+  Type inputType, resultType;
+
+  if (parser.parseOperand(input) || parser.parseComma() ||
+      parser.parseKeywordOrString(&roundModeToken) ||
+      parser.parseOptionalAttrDict(attrs) ||
+      parser.parseColonType(inputType) || parser.parseArrow() ||
+      parser.parseType(resultType))
+    return failure();
+
+  auto normalized = normalizeRoundModeToken(roundModeToken);
+  if (!normalized)
+    return parser.emitError(parser.getCurrentLocation())
+           << "round mode must be one of R/A/F/C/Z/O or "
+              "ROUND_R/ROUND_A/ROUND_F/ROUND_C/ROUND_Z/ROUND_O";
+
+  attrs.set("round_mode", parser.getBuilder().getStringAttr(*normalized));
+  result.addAttributes(attrs);
+  if (parser.resolveOperand(input, inputType, result.operands))
+    return failure();
+  result.addTypes(resultType);
+  return success();
+}
+
+void VtrcOp::print(OpAsmPrinter &printer) {
+  printer << ' ' << getInput() << ", ";
+  Builder builder(getContext());
+  auto normalized = normalizeRoundModeToken(getRoundMode());
+  printer.printAttributeWithoutType(
+      builder.getStringAttr(normalized.value_or(getRoundMode())));
+  printer.printOptionalAttrDict((*this)->getAttrs(), {"round_mode"});
+  printer << " : " << getInput().getType() << " -> " << getResult().getType();
+}
+
+LogicalResult VtrcOp::verify() {
+  auto inputType = dyn_cast<VRegType>(getInput().getType());
+  auto resultType = dyn_cast<VRegType>(getResult().getType());
+  if (!inputType || !resultType)
+    return emitOpError("input and result must be !pto.vreg<...>");
+  if (inputType != resultType)
+    return emitOpError("requires input and result to have identical vreg type");
+  if (!normalizeRoundModeToken(getRoundMode()))
+    return emitOpError("round mode must be one of R/A/F/C/Z/O");
+  return success();
+}
+
+ParseResult VcvtOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand input;
+  NamedAttrList attrs;
+  Type inputType, resultType;
+
+  if (parser.parseOperand(input) || parser.parseOptionalAttrDict(attrs) ||
+      parser.parseColonType(inputType) || parser.parseArrow() ||
+      parser.parseType(resultType))
+    return failure();
+
+  Attribute legacyRndAttr = attrs.get("round_mode");
+  Attribute rndAttr = attrs.get("rnd");
+  if (legacyRndAttr && rndAttr)
+    return parser.emitError(parser.getCurrentLocation())
+           << "rnd and round_mode cannot be specified together";
+
+  auto normalizeNamedStringAttr =
+      [&](StringRef sourceName, StringRef canonicalName,
+          auto normalizeFn) -> ParseResult {
+    Attribute rawAttr = attrs.get(sourceName);
+    if (!rawAttr)
+      return success();
+    auto strAttr = dyn_cast<StringAttr>(rawAttr);
+    if (!strAttr)
+      return parser.emitError(parser.getCurrentLocation())
+             << sourceName << " must be a string literal";
+    auto normalized = normalizeFn(strAttr.getValue());
+    if (!normalized)
+      return parser.emitError(parser.getCurrentLocation())
+             << sourceName << " has unsupported value '" << strAttr.getValue()
+             << "'";
+    attrs.erase(sourceName);
+    attrs.set(canonicalName, parser.getBuilder().getStringAttr(*normalized));
+    return success();
+  };
+
+  if (failed(normalizeNamedStringAttr("round_mode", "rnd",
+                                      normalizeRoundModeToken)) ||
+      failed(normalizeNamedStringAttr("rnd", "rnd", normalizeRoundModeToken)) ||
+      failed(normalizeNamedStringAttr("sat", "sat", normalizeSaturationToken)) ||
+      failed(
+          normalizeNamedStringAttr("part", "part", normalizeEvenOddPartToken)))
+    return failure();
+
+  result.addAttributes(attrs);
+  if (parser.resolveOperand(input, inputType, result.operands))
+    return failure();
+  result.addTypes(resultType);
+  return success();
+}
+
+void VcvtOp::print(OpAsmPrinter &printer) {
+  printer << ' ' << getInput();
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : " << getInput().getType() << " -> " << getResult().getType();
+}
+
 LogicalResult VcvtOp::verify() {
   auto inputType = dyn_cast<VRegType>(getInput().getType());
   auto resultType = dyn_cast<VRegType>(getResult().getType());
   if (!inputType || !resultType)
     return emitOpError("input and result must be !pto.vreg<...>");
 
-  auto inputElemType = inputType.getElementType();
-  auto resultElemType = resultType.getElementType();
-  auto isSupportedElemType = [](Type type) {
-    return type.isF16() || type.isBF16() || type.isF32();
-  };
-  if (!isSupportedElemType(inputElemType) || !isSupportedElemType(resultElemType))
-    return emitOpError("currently supports only f16/bf16/f32 vector element types");
+  VcvtElemKind inputElemKind = classifyVcvtElemType(inputType.getElementType());
+  VcvtElemKind resultElemKind = classifyVcvtElemType(resultType.getElementType());
+  auto contract = lookupVcvtContract(inputElemKind, resultElemKind);
+  if (!contract)
+    return emitOpError("unsupported vcvt source/result element type pair");
 
-  if (getRoundModeAttr()) {
-    StringRef roundMode = *getRoundMode();
-    if (roundMode != "ROUND_R" && roundMode != "ROUND_A" &&
-        roundMode != "ROUND_F" && roundMode != "ROUND_C" &&
-        roundMode != "ROUND_Z" && roundMode != "ROUND_O")
-      return emitOpError("round_mode must be one of ROUND_R/ROUND_A/ROUND_F/ROUND_C/ROUND_Z/ROUND_O");
+  auto inputElemBits = getVcvtElemBitWidth(inputElemKind);
+  auto resultElemBits = getVcvtElemBitWidth(resultElemKind);
+  if (!inputElemBits || !resultElemBits)
+    return emitOpError("could not determine vcvt element bit width");
+  if (inputType.getElementCount() * static_cast<int64_t>(*inputElemBits) !=
+      resultType.getElementCount() * static_cast<int64_t>(*resultElemBits)) {
+    return emitOpError("requires source and result vectors to carry the same "
+                       "total number of bits");
+  }
+
+  if (getRndAttr()) {
+    StringRef roundMode = *getRnd();
+    if (!normalizeRoundModeToken(roundMode))
+      return emitOpError("rnd must be one of R/A/F/C/Z/O");
+  }
+  if (static_cast<bool>(getRndAttr()) != contract->requiresRnd) {
+    return contract->requiresRnd ? emitOpError("requires rnd attr for this vcvt type pair")
+                                 : emitOpError("rnd attr is not valid for this vcvt type pair");
   }
 
   if (getSatAttr()) {
     StringRef sat = *getSat();
-    if (sat != "RS_ENABLE" && sat != "RS_DISABLE")
-      return emitOpError("sat must be RS_ENABLE or RS_DISABLE");
+    if (!normalizeSaturationToken(sat))
+      return emitOpError("sat must be SAT or NOSAT");
+  }
+  if (static_cast<bool>(getSatAttr()) != contract->requiresSat) {
+    return contract->requiresSat ? emitOpError("requires sat attr for this vcvt type pair")
+                                 : emitOpError("sat attr is not valid for this vcvt type pair");
   }
 
   if (getPartAttr()) {
     StringRef part = *getPart();
-    if (part != "PART_EVEN" && part != "PART_ODD")
-      return emitOpError("part must be PART_EVEN or PART_ODD");
+    if (!normalizeEvenOddPartToken(part))
+      return emitOpError("part must be EVEN or ODD");
+  }
+  if (static_cast<bool>(getPartAttr()) != contract->requiresPart) {
+    return contract->requiresPart ? emitOpError("requires part attr for this vcvt type pair")
+                                  : emitOpError("part attr is not valid for this vcvt type pair");
   }
 
   return success();
 }
 
 LogicalResult PdintlvB8Op::verify() {
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
+                                               "lhs type", "b8")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
+                                               "rhs type", "b8")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getLow().getType(),
+                                               "low type", "b8")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
+                                               "high type", "b8")))
+    return failure();
+  return success();
+}
+
+LogicalResult PdintlvB16Op::verify() {
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
+                                               "lhs type", "b16")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
+                                               "rhs type", "b16")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getLow().getType(),
+                                               "low type", "b16")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
+                                               "high type", "b16")))
+    return failure();
+  return success();
+}
+
+LogicalResult PdintlvB32Op::verify() {
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
+                                               "lhs type", "b32")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
+                                               "rhs type", "b32")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getLow().getType(),
+                                               "low type", "b32")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
+                                               "high type", "b32")))
+    return failure();
+  return success();
+}
+
+LogicalResult PintlvB8Op::verify() {
   if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
                                                "lhs type", "b8")) ||
       failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
@@ -1415,6 +1993,19 @@ LogicalResult PintlvB16Op::verify() {
                                                "low type", "b16")) ||
       failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
                                                "high type", "b16")))
+    return failure();
+  return success();
+}
+
+LogicalResult PintlvB32Op::verify() {
+  if (failed(verifyMaskTypeWithGranularityLike(*this, getLhs().getType(),
+                                               "lhs type", "b32")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getRhs().getType(),
+                                               "rhs type", "b32")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getLow().getType(),
+                                               "low type", "b32")) ||
+      failed(verifyMaskTypeWithGranularityLike(*this, getHigh().getType(),
+                                               "high type", "b32")))
     return failure();
   return success();
 }
@@ -1551,31 +2142,13 @@ LogicalResult VaddreluconvOp::verify() {
 }
 LogicalResult VmulconvOp::verify() { return verifyFusedConvVecOp(*this); }
 
-void VsldOp::getEffects(
+void Vldsx2Op::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
   effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
 }
 
-LogicalResult VsldOp::verify() {
-  if (!isBufferLike(getSource().getType()))
-    return emitOpError("requires a pointer-like source");
-  if (failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
-    return failure();
-  if (classifyMemoryRole(getSource().getType()) == MemoryRole::GM)
-    return emitOpError("requires a UB-backed source");
-  if (!isSupportedStrideToken(getStride()))
-    return emitOpError("requires a supported STRIDE_* token");
-  return success();
-}
-
-void Vldx2Op::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
-}
-
-LogicalResult Vldx2Op::verify() {
+LogicalResult Vldsx2Op::verify() {
   if (!isBufferLike(getSource().getType()))
     return emitOpError("requires a pointer-like source");
   if (classifyMemoryRole(getSource().getType()) == MemoryRole::GM)
@@ -1589,6 +2162,10 @@ LogicalResult Vldx2Op::verify() {
     return emitOpError("requires low/high results to share one vector type");
   if (!isSupportedVldx2DistToken(getDist()))
     return emitOpError("requires a supported x2 load distribution token");
+  if (failed(verifyVldsx2DistWidth(
+          getOperation(), getDist(),
+          cast<VRegType>(getLow().getType()).getElementType())))
+    return failure();
   return success();
 }
 
@@ -1612,6 +2189,17 @@ static LogicalResult verifyVstsCommon(StoreOp op) {
   MemoryRole destinationRole = classifyMemoryRole(op.getDestination().getType());
   if (destinationRole == MemoryRole::GM)
     return op.emitOpError("requires a UB-backed destination");
+
+  if (std::optional<StringRef> dist = op.getDist();
+      dist && !isSupportedVstsDistToken(*dist)) {
+    return op.emitOpError("requires a supported store distribution token");
+  }
+  if (std::optional<StringRef> dist = op.getDist();
+      dist &&
+      failed(verifyVstsDistWidth(
+          op.getOperation(), *dist,
+          cast<VRegType>(op.getValue().getType()).getElementType())))
+    return failure();
 
   return success();
 }
@@ -1640,7 +2228,7 @@ LogicalResult VstsPostOp::verify() {
   return success();
 }
 
-void Vstx2Op::getEffects(
+void Vstsx2Op::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
   effects.emplace_back(MemoryEffects::Read::get(), &getLowMutable());
@@ -1648,7 +2236,7 @@ void Vstx2Op::getEffects(
   effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
 }
 
-LogicalResult Vstx2Op::verify() {
+LogicalResult Vstsx2Op::verify() {
   if (failed(verifyVRegTypeLike(*this, getLow().getType(), "low value type")) ||
       failed(verifyVRegTypeLike(*this, getHigh().getType(), "high value type")) ||
       failed(verifyMaskTypeLike(*this, getMask().getType(), "mask type")))
@@ -1661,8 +2249,12 @@ LogicalResult Vstx2Op::verify() {
     return emitOpError("requires a UB-backed destination");
   if (!getOffset().getType().isIndex())
     return emitOpError("requires index offset");
-  if (!isSupportedVstx2DistToken(getDist()))
+  if (!isSupportedVstsx2DistToken(getDist()))
     return emitOpError("requires a supported x2 store distribution token");
+  if (failed(verifyVstsx2DistWidth(
+          getOperation(), getDist(),
+          cast<VRegType>(getLow().getType()).getElementType())))
+    return failure();
   return success();
 }
 
@@ -1725,27 +2317,6 @@ void PstsOp::getEffects(
   effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
 }
 
-void PstOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getValueMutable());
-  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
-}
-
-LogicalResult PstOp::verify() {
-  if (failed(verifyMaskTypeLike(*this, getValue().getType(), "value type")))
-    return failure();
-  if (!isBufferLike(getDestination().getType()))
-    return emitOpError("requires a pointer-like destination");
-  if (classifyMemoryRole(getDestination().getType()) == MemoryRole::GM)
-    return emitOpError("requires a UB-backed destination");
-  if (!getOffset().getType().isIndex())
-    return emitOpError("requires index offset");
-  if (!isSupportedPredicateStoreDist(getDist()))
-    return emitOpError("requires predicate store dist to be NORM or PK");
-  return success();
-}
-
 void PstiOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
@@ -1779,25 +2350,6 @@ LogicalResult PstsOp::verify() {
     return emitOpError("requires index offset");
   if (!isSupportedPredicateStoreDist(getDist()))
     return emitOpError("requires predicate store dist to be NORM or PK");
-  return success();
-}
-
-void VsstOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getValueMutable());
-  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
-}
-
-LogicalResult VsstOp::verify() {
-  if (failed(verifyVRegTypeLike(*this, getValue().getType(), "value type")))
-    return failure();
-  if (!isBufferLike(getDestination().getType()))
-    return emitOpError("requires a pointer-like destination");
-  if (classifyMemoryRole(getDestination().getType()) == MemoryRole::GM)
-    return emitOpError("requires a UB-backed destination");
-  if (!isSupportedStrideToken(getStride()))
-    return emitOpError("requires a supported STRIDE_* token");
   return success();
 }
 

@@ -137,24 +137,28 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
   distribution mode. `NORM` reads one full vector footprint. Broadcast,
   upsample, downsample, unpack, split-channel, and deinterleave modes change
   how memory bytes are mapped into destination lanes, but they do not change the
-  fact that the source is UB memory.
+  fact that the source is UB memory. PTO surface exposes load `dist` as family
+  tokens, and each family only supports the element widths listed below.
 
-**Distribution modes:**
+**Distribution families:**
 
-| Mode | Description | C Semantics | Latency |
-|------|-------------|-------------|---------------------|
-| `NORM` | Contiguous 256B load | `dst[i] = UB[base + i * sizeof(T)]` | **9** cycles |
-| `BRC_B32` | Broadcast single element | `dst[i] = UB[base]` for all i | **9** cycles |
-| `BRC_B8`, `BRC_B16` | Broadcast first lane element | Same idea at B8/B16 width | **9** cycles |
-| `US_B8/B16` | Upsample (duplicate each element) | `dst[2*i] = dst[2*i+1] = UB[base + i]` | **9** cycles |
-| `DS_B8/B16` | Downsample (every 2nd element) | `dst[i] = UB[base + 2*i]` | **9** cycles |
-| `UNPK_B8/B16/B32` | Unpack (zero-extend to wider type) | `dst_i32[i] = (uint32_t)UB_i16[base + 2*i]` | **9** cycles |
-| `SPLT4CHN_B8` | Split 4-channel (RGBA → R plane) | Extract every 4th byte | **9** cycles |
-| `SPLT2CHN_B8/B16` | Split 2-channel | Extract every 2nd element | **9** cycles |
-| `DINTLV_B32` | Deinterleave 32-bit | Even elements only | **9** cycles |
-| `DINTLV_B16`, `DINTLV_B8` | Deinterleave 16-bit / 8-bit | Pair lanes from interleaved UB | **9** cycles |
-| `BDINTLV` | Block deinterleave | (see PTO headers for exact tiling) | **9** cycles |
-| `BLK` | Block load | Blocked / tiled access pattern (see PTO headers) | **9** cycles (`dist:BRC_BLK` on `RV_VLD`) |
+| Family | Allowed element widths | C semantics | Latency |
+|------|-------------|-------------|-------------|
+| `NORM` | width-agnostic | `dst[i] = UB[base + i * sizeof(T)]` | **9** cycles |
+| `BRC` | `b8`, `b16`, `b32` | `dst[i] = UB[base]` for all `i` | **9** cycles |
+| `US` | `b8`, `b16` | `dst[2*i] = dst[2*i+1] = UB[base + i]` | **9** cycles |
+| `DS` | `b8`, `b16` | `dst[i] = UB[base + 2*i]` | **9** cycles |
+| `UNPK` | `b8`, `b16`, `b32` | Expand packed source data into wider lanes | **9** cycles |
+| `BRC_BLK` | width-agnostic | Block-replicate load path; simulator logs may print `dist:BRC_BLK` | **9** cycles |
+| `E2B` | `b16`, `b32` | Load element groups and expand them into byte-oriented lane layout | **9** cycles |
+| `UNPK4` | `b8` | Unpack 4-way packed `b8` source groups into destination lanes | **9** cycles |
+| `SPLT4CHN` | `b8` | Split 4-channel interleaved source into one channel plane | **9** cycles |
+| `SPLT2CHN` | `b8`, `b16` | Split 2-channel interleaved source into one channel plane | **9** cycles |
+
+`pto.vlds` 当前只承载单结果 load family。双结果 deinterleave 形式在 PTO
+surface 上单独归到 [`pto.vldsx2`](#ptovldsx2)：`BDINTLV` 为 block
+deinterleave family，`DINTLV` 为按元素位宽变化的 deinterleave family。
+为兼容仓库中已有 lowering，`BLK` 仍作为 `BRC_BLK` 的别名被接受。
 
 **Example — Contiguous load:**
 ```mlir
@@ -163,7 +167,7 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
 
 **Example — Broadcast scalar to all lanes:**
 ```mlir
-%v = pto.vlds %ub[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+%v = pto.vlds %ub[%c0] {dist = "BRC"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 ```
 
 ---
@@ -212,9 +216,9 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
 
 ## Dual Loads (Deinterleave)
 
-### `pto.vldx2`
+### `pto.vldsx2`
 
-- **syntax:** `%low, %high = pto.vldx2 %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.vreg<NxT>, !pto.vreg<NxT>`
+- **syntax:** `%low, %high = pto.vldsx2 %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.vreg<NxT>, !pto.vreg<NxT>`
 - **semantics:** Dual load with deinterleave (AoS → SoA conversion).
 - **inputs:**
   `%source` is the UB base pointer, `%offset` is the displacement, and `DIST`
@@ -224,12 +228,19 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
 - **constraints and limitations:**
   This family is only legal for interleave/deinterleave style distributions.
   The two outputs form an ordered pair, and that pairing MUST be preserved.
-- **Latency:** **`DINTLV_B32` → 9** cycles on `RV_VLDI`. **`DINTLV_B16` / `DINTLV_B8` → 9** cycles on `RV_VLDI`. **`BDINTLV` → 9** cycles on `RV_VLDI`.
+  PTO surface accepts deinterleave families. `BDINTLV` 不区分元素位宽，
+  `DINTLV` 仅支持表中列出的元素位宽。
+- **latency:** `BDINTLV` / `DINTLV` 都是 **9** cycles。
 
-**Distribution modes:** `DINTLV_B8`, `DINTLV_B16`, `DINTLV_B32`, `BDINTLV`
+**Distribution families:**
+
+| Family | Allowed element widths | C semantics | Latency |
+|------|-------------|-------------|-------------|
+| `BDINTLV` | width-agnostic | Block deinterleave into two destination vectors | **9** cycles |
+| `DINTLV` | `b8`, `b16`, `b32` | Deinterleave alternating elements into `%low` / `%high` | **9** cycles |
 
 ```c
-// DINTLV_B32: deinterleave 32-bit elements
+// DINTLV family on 32-bit elements: deinterleave 32-bit elements
 for (int i = 0; i < 64; i++) {
     low[i]  = UB[base + 8*i];       // even elements
     high[i] = UB[base + 8*i + 4];   // odd elements
@@ -238,30 +249,8 @@ for (int i = 0; i < 64; i++) {
 
 **Example — Load interleaved XY pairs into separate X/Y vectors:**
 ```mlir
-%x, %y = pto.vldx2 %ub[%offset], "DINTLV_B32" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
+%x, %y = pto.vldsx2 %ub[%offset], "DINTLV" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
 ```
-
----
-
-## Strided Loads
-
-### `pto.vsld`
-
-- **syntax:** `%result = pto.vsld %source[%offset], "STRIDE" : !pto.ptr<T, ub> -> !pto.vreg<NxT>`
-- **semantics:** Strided load with fixed stride pattern.
-- **inputs:**
-  `%source` is the UB base pointer and `%offset` is the displacement encoded
-  with the selected fixed stride mode.
-- **outputs:**
-  `%result` is the loaded vector.
-- **constraints and limitations:**
-  This is a deprecated compatibility family. The selected stride token
-  determines which sub-elements are read from each source block.
-- **Latency:** **9** cycles.
-
-**Stride modes:** `STRIDE_S3_B16`, `STRIDE_S4_B64`, `STRIDE_S8_B32`, `STRIDE_S2_B64`
-
----
 
 ### `pto.vsldb`
 
@@ -309,22 +298,31 @@ for (int i = 0; i < active_lanes; i++)
 
 ### `pto.vgatherb`
 
-- **syntax:** `%result = pto.vgatherb %source, %offsets, %active_lanes : !pto.ptr<T, ub>, !pto.vreg<NxI>, index -> !pto.vreg<NxT>`
-- **semantics:** Byte-granularity indexed gather from UB.
+- **syntax:** `%result = pto.vgatherb %source, %offsets, %mask : !pto.ptr<T, ub>, !pto.vreg<NxI>, !pto.mask<b32> -> !pto.vreg<NxT>`
+- **semantics:** Block gather load from UB.
 - **inputs:**
-  `%source` is the UB base pointer, `%offsets` contains per-block byte offsets,
-  and `%active_lanes` bounds the number of active gathered blocks.
+  `%source` is the UB base pointer, `%offsets` is a `u32` offset vector, and
+  `%mask` is a `b32` predicate over the block-index lanes.
 - **outputs:**
   `%result` is the gathered vector.
 - **constraints and limitations:**
-  This is a block gather, not a byte-per-lane gather. `%source` MUST be 32-byte
-  aligned, each participating offset MUST describe a 32-byte-aligned block, and
-  inactive blocks are zero-filled.
+  This is a 32-byte block gather, not an element gather. `%source` MUST be
+  32-byte aligned. Each participating `offsets[i]` is interpreted as a byte
+  offset and MUST itself be 32-byte aligned. Only the low `VL/8` bytes of the
+  offset vector are semantically valid; the effective block address is
+  `block_addr[i] = offsets_u32[i] + base`. If a `b32` predicate position is
+  false, the corresponding block does not participate in address coalescing,
+  does not raise overflow on that block address, and the destination block is
+  zero-filled.
 - **Latency:** **~21** cycles issue→retire.
 
 ```c
-for (int i = 0; i < active_lanes; i++)
-    dst[i] = UB[base + offsets[i]];  // byte-addressed
+for (int blk = 0; blk < VL / 32; ++blk) {
+    if (pg_b32[blk])
+        dst_block[blk] = UB_block[base + offsets_u32[blk]];
+    else
+        dst_block[blk] = 0;
+}
 ```
 
 ---
@@ -360,31 +358,35 @@ for (int i = 0; i < active_lanes; i++)
   This op has no SSA result; it writes to UB memory.
 - **constraints and limitations:**
   The effective destination address MUST satisfy the alignment rule of the
-  selected store mode. Narrowing/packing modes may only preserve a subset of the
-  source bits. Merge-channel modes reinterpret the source vector as channel
-  planes and interleave them on store.
+  selected store mode. The single-input `pto.vsts` family covers contiguous
+  store, first-element-only store, packed store, and channel-merge store.
+  Dual-input interleave store remains in `pto.vstsx2`. PTO surface exposes
+  store `dist` as family tokens, and each family only supports the element
+  widths listed below.
 
-**Distribution modes:**
+**Distribution families:**
 
-| Mode | Description | C Semantics | Latency |
-|------|-------------|-------------|---------------------|
-| `NORM_B8/B16/B32` | Contiguous store | `UB[base + i] = src[i]` | **9** cycles |
-| `PK_B16/B32` | Pack/narrowing store | `UB_i16[base + 2*i] = truncate_16(src_i32[i])` | **9** cycles |
-| `MRG4CHN_B8` | Merge 4 channels (R,G,B,A → RGBA) | Interleave 4 planes | **9** cycles |
-| `MRG2CHN_B8/B16` | Merge 2 channels | Interleave 2 planes | **9** cycles |
+| Family | Allowed element widths | C semantics | Latency |
+|------|-------------|-------------|-------------|
+| `NORM` | `b8`, `b16`, `b32` | `UB[base + i] = src[i]` | **9** cycles |
+| `1PT` | `b8`, `b16`, `b32` | Only element 0 is written to the destination footprint | **9** cycles |
+| `PK` | `b16`, `b32`, `b64` | Pack low half bits of each source element before store | **9** cycles |
+| `PK4` | `b32` | Pack low 8 bits of each `b32` element before store | **9** cycles |
+| `MRG4CHN` | `b8` | Merge 4 channel planes into an interleaved 4-channel layout | **9** cycles |
+| `MRG2CHN` | `b8`, `b16` | Merge 2 channel planes into an interleaved 2-channel layout | **9** cycles |
 
 **Example — Contiguous store:**
 ```mlir
-pto.vsts %v, %ub[%offset], %mask {dist = "NORM_B32"} : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<G>
+pto.vsts %v, %ub[%offset], %mask {dist = "NORM"} : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<G>
 ```
 
 ---
 
 ## Dual Stores (Interleave)
 
-### `pto.vstx2`
+### `pto.vstsx2`
 
-- **syntax:** `pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>`
+- **syntax:** `pto.vstsx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>`
 - **semantics:** Dual interleaved store (SoA → AoS conversion).
 - **inputs:**
   `%low` and `%high` are the two source vectors, `%dest` is the UB base pointer,
@@ -395,38 +397,26 @@ pto.vsts %v, %ub[%offset], %mask {dist = "NORM_B32"} : !pto.vreg<64xf32>, !pto.p
 - **constraints and limitations:**
   This family is only legal for interleave distributions. The two source
   vectors form an ordered pair, and the interleave semantics of that pair MUST
-  be preserved.
-- **Latency:** **`INTLV_B32` / `INTLV_B16` / `INTLV_B8` → 12** cycles on `RV_VSTI`.
+  be preserved. PTO surface accepts the `INTLV` family, which only supports the
+  element widths listed below.
+  be preserved. PTO surface accepts the `INTLV` family, which only supports the
+  element widths listed below.
+- **latency:** `INTLV` is **12** cycles。
 
-**Distribution modes:** `INTLV_B8`, `INTLV_B16`, `INTLV_B32`
+**Distribution families:**
+
+| Family | Allowed element widths | C semantics | Latency |
+|------|-------------|-------------|-------------|
+| `INTLV` | `b8`, `b16`, `b32` | Interleave `%low` / `%high` into one destination stream | **12** cycles |
+| `INTLV` | `b8`, `b16`, `b32` |
 
 ```c
-// INTLV_B32:
+// INTLV family on 32-bit elements:
 for (int i = 0; i < 64; i++) {
     UB[base + 8*i]     = low[i];
     UB[base + 8*i + 4] = high[i];
 }
 ```
-
----
-
-## Strided Stores
-
-### `pto.vsst`
-
-- **syntax:** `pto.vsst %value, %dest[%offset], "STRIDE" : !pto.vreg<NxT>, !pto.ptr<T, ub>`
-- **semantics:** Strided store with fixed stride pattern.
-- **inputs:**
-  `%value` is the source vector, `%dest` is the UB base pointer, and `%offset`
-  / `STRIDE` select the fixed strided layout.
-- **outputs:**
-  This op writes UB memory and returns no SSA value.
-- **constraints and limitations:**
-  This is a deprecated compatibility family. The stride token, not the vector
-  lane number alone, determines which destination elements are written.
-- **Latency:** **9** cycles.
-
----
 
 ### `pto.vsstb`
 

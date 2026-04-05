@@ -294,9 +294,7 @@ surface cannot faithfully express them without losing semantics.
 - `pge_b16`
 - `pge_b32`
 - `pset_b32`
-- `pld`
 - `pldi`
-- `pst`
 - `psti`
 - `pstu`
 - `pnot`
@@ -306,15 +304,12 @@ Why these are real gaps:
 
 - `pge_*` is not equivalent to `pset_*`.
 - `pnot` / `psel` cannot be reconstructed from current mask ops.
-- `pld/pst` family has distinct load/store semantics beyond current `plds/psts`.
 
 ### C2. Extended Load / Store Gaps
 
 - `vldx2` / `vldsx2`
 - `vldoncex2`
 - `vsldb`
-- `vsld`
-- `vsst`
 - `vsstb`
 - `vstus`
 - `vstas`
@@ -324,7 +319,6 @@ Why these are real gaps:
 Why these are real gaps:
 
 - x2 forms need multi-result or paired-vector semantics.
-- stride forms (`vsld/vsst`) are not the same as current `vlds/vsts`.
 - align-store/update families (`vstus/vstas/...`) need `!a5vm.align`-driven
   semantics that current `a5vm` store ops do not represent.
 
@@ -463,9 +457,6 @@ exploding the dialect surface too early.
 - `a5vm.vshrs`
 - `a5vm.vbcnt`
 - `a5vm.vcls`
-- `a5vm.vsld`
-- `a5vm.vsst`
-
 Reason:
 
 - all of these are semantically meaningful, appear in CCE wrappers, and are
@@ -547,9 +538,7 @@ present in the CCE wrapper header.
 - `vshls`
 - `vshr`
 - `vshrs`
-- `vsld`
 - `vsldb`
-- `vsst`
 - `vsstb`
 - `vst`
 - `vstar`

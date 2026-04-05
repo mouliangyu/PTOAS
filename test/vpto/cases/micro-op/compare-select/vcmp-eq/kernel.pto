@@ -56,8 +56,8 @@ module attributes {pto.target_arch = "a5"} {
         %28 = pto.vlds %0[%18] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
         %29 = pto.vlds %7[%18] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
         %30 = pto.vcmp %28, %29, %mask_0, "eq" : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.mask<b32>
-        pto.psts %27, %24[%c0] : !pto.mask<b32>, !pto.ptr<i8, ub>
-        pto.psts %30, %24[%c8] : !pto.mask<b32>, !pto.ptr<i8, ub>
+        pto.psts %27, %24[%c0], "NORM" : !pto.mask<b32>, !pto.ptr<i8, ub>, index
+        pto.psts %30, %24[%c8], "NORM" : !pto.mask<b32>, !pto.ptr<i8, ub>, index
         scf.yield %scalar_out_1 : i32
       }
     }

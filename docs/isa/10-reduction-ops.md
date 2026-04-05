@@ -45,24 +45,31 @@ for (int i = 1; i < N; i++)
 
 - **syntax:** `%result = pto.vcmax %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
 - **A5 types:** i16-i32, f16, f32
-- **semantics:** Find max element with argmax. Result value + index in lane 0.
+- **semantics:** Find max element with argmax. The lowest destination element
+  stores the maximum value, the second-lowest destination element stores the
+  index of the first maximum, and all remaining elements are zero-filled.
 
 ```c
 T mx = -INF; int idx = 0;
 for (int i = 0; i < N; i++)
     if (src[i] > mx) { mx = src[i]; idx = i; }
-dst_val[0] = mx;
-dst_idx[0] = idx;
+dst[0] = mx;
+dst[1] = idx;
+for (int i = 2; i < N; i++)
+    dst[i] = 0;
 ```
 
 - **inputs:** `%input` is the source vector and `%mask` selects participating
   lanes.
-- **outputs:** `%result` carries the reduction result in the low destination
-  positions.
-- **constraints and limitations:** This family computes both the extremum and
-  location information, but the exact packing of that information into the
-  destination vector depends on the chosen form. If all predicate bits are zero,
-  the result follows the zero-filled convention.
+- **outputs:** `%result[0]` holds the extremum value and `%result[1]` holds the
+  index. Other destination elements are zero-filled.
+- **constraints and limitations:** If there are multiple maxima, the minimum
+  index is written. For floating-point types, inactive lanes are treated as
+  `-INF`; if all lanes are inactive, `%result[0]` becomes `-INF`. For integer
+  types, inactive lanes are treated as the literal minimum value; if all lanes
+  are inactive, `%result[0]` becomes that literal minimum value. The index is
+  written into the second destination element slot of the same destination
+  vector register.
 
 ---
 
@@ -70,22 +77,31 @@ dst_idx[0] = idx;
 
 - **syntax:** `%result = pto.vcmin %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
 - **A5 types:** i16-i32, f16, f32
-- **semantics:** Find min element with argmin. Result value + index in lane 0.
+- **semantics:** Find min element with argmin. The lowest destination element
+  stores the minimum value, the second-lowest destination element stores the
+  index of the first minimum, and all remaining elements are zero-filled.
 
 ```c
 T mn = INF; int idx = 0;
 for (int i = 0; i < N; i++)
     if (src[i] < mn) { mn = src[i]; idx = i; }
-dst_val[0] = mn;
-dst_idx[0] = idx;
+dst[0] = mn;
+dst[1] = idx;
+for (int i = 2; i < N; i++)
+    dst[i] = 0;
 ```
 
 - **inputs:** `%input` is the source vector and `%mask` selects participating
   lanes.
-- **outputs:** `%result` carries the reduction result in the low destination
-  positions.
-- **constraints and limitations:** As with `pto.vcmax`, the exact value/index
-  packing depends on the chosen form and MUST be preserved consistently.
+- **outputs:** `%result[0]` holds the extremum value and `%result[1]` holds the
+  index. Other destination elements are zero-filled.
+- **constraints and limitations:** If there are multiple minima, the minimum
+  index is written. For floating-point types, inactive lanes are treated as
+  `+INF`; if all lanes are inactive, `%result[0]` becomes `+INF`. For integer
+  types, inactive lanes are treated as the literal maximum value; if all lanes
+  are inactive, `%result[0]` becomes that literal maximum value. The index is
+  written into the second destination element slot of the same destination
+  vector register.
 
 ---
 
@@ -213,7 +229,7 @@ for (int i = 1; i < N; i++)
 // Softmax: find max for numerical stability
 %max_vec = pto.vcmax %logits, %mask : !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
 // max is in lane 0, broadcast it
-%max_broadcast = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+%max_broadcast = pto.vlds %ub_tmp[%c0] {dist = "BRC"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // Row-wise sum using vcgadd (for 8-row tile)
 %row_sums = pto.vcgadd %tile, %mask : !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>

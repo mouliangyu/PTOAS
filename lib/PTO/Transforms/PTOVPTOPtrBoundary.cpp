@@ -105,11 +105,9 @@ static bool needsPtrCanonicalization(Value value) {
 }
 
 static bool isSupportedVPTOBufferLikeBoundaryOp(Operation *op) {
-  return isa<pto::VldsOp, pto::UvldOp, pto::PldsOp, pto::PldOp,
-             pto::PldiOp, pto::VsldOp, pto::VstsOp, pto::PstsOp,
-             pto::VsstOp, pto::PstOp,
-             pto::PstiOp, pto::Vldx2Op, pto::Vstx2Op, pto::VsldbOp,
-             pto::VsstbOp, pto::VstasOp, pto::VstarOp>(op);
+  return isa<pto::VldsOp, pto::UvldOp, pto::PldsOp, pto::PldiOp, pto::VstsOp,
+             pto::PstsOp, pto::PstiOp, pto::Vldsx2Op, pto::Vstsx2Op,
+             pto::VsldbOp, pto::VsstbOp, pto::VstasOp, pto::VstarOp>(op);
 }
 
 static LogicalResult canonicalizeBoundaryCastPtrOps(ModuleOp module,

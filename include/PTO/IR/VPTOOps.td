@@ -175,6 +175,23 @@ def PTO_VldsPostOp : PTO_Op<"vlds_post", [
   }];
 }
 
+def PTO_Vldsx2Op : PTO_Op<"vldsx2", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferLikeType:$source,
+    Index:$offset,
+    StrAttr:$dist
+  );
+  let results = (outs PTO_VectorType:$low, PTO_VectorType:$high);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $source `[` $offset `]` `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($low) `,` type($high)
+  }];
+}
+
 def PTO_VldasOp : PTO_Op<"vldas", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -473,25 +490,6 @@ def PTO_PldsOp : PTO_Op<"plds", [
   }];
 }
 
-// NOTE: Unvalidated predicate load/store-family abstractions. Added to cover
-// direct CCE predicate memory builtins not yet end-to-end exercised.
-def PTO_PldOp : PTO_Op<"pld", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_BufferLikeType:$source,
-    Index:$offset,
-    StrAttr:$dist
-  );
-  let results = (outs PTO_MaskTypeConstraint:$result);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $source `[` $offset `]` `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($result)
-  }];
-}
-
 def PTO_PldiOp : PTO_Op<"pldi", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -506,24 +504,6 @@ def PTO_PldiOp : PTO_Op<"pldi", [
 
   let assemblyFormat = [{
     $source `[` $offset `]` `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($result)
-  }];
-}
-
-def PTO_PstOp : PTO_Op<"pst", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_MaskTypeConstraint:$value,
-    PTO_BufferLikeType:$destination,
-    Index:$offset,
-    StrAttr:$dist
-  );
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $value `,` $destination `[` $offset `]` `,` $dist attr-dict `:` type($value) `,` type($destination) `,` type($offset)
   }];
 }
 
@@ -580,7 +560,6 @@ def PTO_VnegOp : PTO_UnaryVecOp<"vneg">;
 def PTO_VrsqrtOp : PTO_UnaryVecOp<"vrsqrt">;
 def PTO_VrecOp : PTO_UnaryVecOp<"vrec">;
 def PTO_VreluOp : PTO_UnaryVecOp<"vrelu">;
-def PTO_VmovOp : PTO_UnaryVecOp<"vmov">;
 def PTO_VnotOp : PTO_UnaryVecOp<"vnot">;
 def PTO_VcaddOp : PTO_UnaryVecOp<"vcadd">;
 def PTO_VcmaxOp : PTO_UnaryVecOp<"vcmax">;
@@ -607,6 +586,8 @@ class PTO_BinaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
 
 def PTO_VaddOp : PTO_BinaryVecOp<"vadd">;
 def PTO_VsubOp : PTO_BinaryVecOp<"vsub">;
+def PTO_VsaddOp : PTO_BinaryVecOp<"vsadd">;
+def PTO_VssubOp : PTO_BinaryVecOp<"vssub">;
 def PTO_VmulOp : PTO_BinaryVecOp<"vmul">;
 def PTO_VdivOp : PTO_BinaryVecOp<"vdiv">;
 def PTO_VmaxOp : PTO_BinaryVecOp<"vmax">;
@@ -742,14 +723,15 @@ def PTO_VcmpsOp : PTO_Op<"vcmps", [Pure]> {
   }];
 }
 
-def PTO_PdintlvB8Op : PTO_Op<"pdintlv_b8", [Pure]> {
+class PTO_PredicatePairReorderOp<string mnemonic, Type operandTy>
+    : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins
-    PTO_B8MaskTypeConstraint:$lhs,
-    PTO_B8MaskTypeConstraint:$rhs
+    operandTy:$lhs,
+    operandTy:$rhs
   );
   let results = (outs
-    PTO_B8MaskTypeConstraint:$low,
-    PTO_B8MaskTypeConstraint:$high
+    operandTy:$low,
+    operandTy:$high
   );
 
   let hasVerifier = 1;
@@ -759,22 +741,19 @@ def PTO_PdintlvB8Op : PTO_Op<"pdintlv_b8", [Pure]> {
   }];
 }
 
-def PTO_PintlvB16Op : PTO_Op<"pintlv_b16", [Pure]> {
-  let arguments = (ins
-    PTO_B16MaskTypeConstraint:$lhs,
-    PTO_B16MaskTypeConstraint:$rhs
-  );
-  let results = (outs
-    PTO_B16MaskTypeConstraint:$low,
-    PTO_B16MaskTypeConstraint:$high
-  );
+def PTO_PdintlvB8Op : PTO_PredicatePairReorderOp<"pdintlv_b8",
+    PTO_B8MaskTypeConstraint>;
+def PTO_PdintlvB16Op : PTO_PredicatePairReorderOp<"pdintlv_b16",
+    PTO_B16MaskTypeConstraint>;
+def PTO_PdintlvB32Op : PTO_PredicatePairReorderOp<"pdintlv_b32",
+    PTO_B32MaskTypeConstraint>;
 
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($low) `,` type($high)
-  }];
-}
+def PTO_PintlvB8Op : PTO_PredicatePairReorderOp<"pintlv_b8",
+    PTO_B8MaskTypeConstraint>;
+def PTO_PintlvB16Op : PTO_PredicatePairReorderOp<"pintlv_b16",
+    PTO_B16MaskTypeConstraint>;
+def PTO_PintlvB32Op : PTO_PredicatePairReorderOp<"pintlv_b32",
+    PTO_B32MaskTypeConstraint>;
 
 class PTO_VecScalarOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   let arguments = (ins
@@ -812,25 +791,21 @@ def PTO_VtrcOp : PTO_Op<"vtrc", [Pure]> {
   );
   let results = (outs PTO_VectorType:$result);
 
-  let assemblyFormat = [{
-    $input `,` $round_mode attr-dict `:` type($input) `->` type($result)
-  }];
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def PTO_VcvtOp : PTO_Op<"vcvt", [Pure]> {
   let arguments = (ins
     PTO_VectorType:$input,
-    OptionalAttr<StrAttr>:$round_mode,
+    OptionalAttr<StrAttr>:$rnd,
     OptionalAttr<StrAttr>:$sat,
     OptionalAttr<StrAttr>:$part
   );
   let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $input attr-dict `:` type($input) `->` type($result)
-  }];
+  let hasCustomAssemblyFormat = 1;
 }
 
 def PTO_VciOp : PTO_Op<"vci", [Pure]> {
@@ -847,7 +822,9 @@ def PTO_VciOp : PTO_Op<"vci", [Pure]> {
   }];
 }
 
-def PTO_VbitsortOp : PTO_Op<"vbitsort"> {
+def PTO_VbitsortOp : PTO_Op<"vbitsort", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
   let arguments = (ins
     PTO_BufferType:$destination,
     PTO_BufferType:$source,
@@ -910,14 +887,14 @@ def PTO_VgatherbOp : PTO_Op<"vgatherb", [
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_VectorType:$offsets,
-    Index:$active_lanes
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `,` $offsets `,` $active_lanes attr-dict `:` type($source) `,` type($offsets) `,` type($active_lanes) `->` type($result)
+    $source `,` $offsets `,` $mask attr-dict `:` type($source) `,` type($offsets) `,` type($mask) `->` type($result)
   }];
 }
 
@@ -940,31 +917,14 @@ def PTO_Vgather2BcOp : PTO_Op<"vgather2_bc", [
   }];
 }
 
-def PTO_VmulsOp : PTO_VecScalarOp<"vmuls">;
-def PTO_VaddsOp : PTO_VecScalarOp<"vadds">;
-def PTO_VmaxsOp : PTO_VecScalarOp<"vmaxs">;
-def PTO_VminsOp : PTO_VecScalarOp<"vmins">;
-def PTO_VlreluOp : PTO_VecScalarOp<"vlrelu">;
+def PTO_VmulsOp : PTO_VecScalarMaskedOp<"vmuls">;
+def PTO_VaddsOp : PTO_VecScalarMaskedOp<"vadds">;
+def PTO_VsaddsOp : PTO_VecScalarMaskedOp<"vsadds">;
+def PTO_VmaxsOp : PTO_VecScalarMaskedOp<"vmaxs">;
+def PTO_VminsOp : PTO_VecScalarMaskedOp<"vmins">;
+def PTO_VlreluOp : PTO_VecScalarMaskedOp<"vlrelu">;
 def PTO_VshlsOp : PTO_VecScalarMaskedOp<"vshls">;
 def PTO_VshrsOp : PTO_VecScalarMaskedOp<"vshrs">;
-
-def PTO_VsldOp : PTO_Op<"vsld", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_BufferLikeType:$source,
-    Index:$offset,
-    StrAttr:$stride
-  );
-
-  let results = (outs PTO_VectorType:$result);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $source `[` $offset `]` `,` $stride attr-dict `:` type($source) `->` type($result)
-  }];
-}
 
 def PTO_VstsOp : PTO_Op<"vsts", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
@@ -1041,27 +1001,6 @@ def PTO_PstsOp : PTO_Op<"psts", [
 
   let assemblyFormat = [{
     $value `,` $destination `[` $offset `]` `,` $dist attr-dict `:` type($value) `,` type($destination) `,` type($offset)
-  }];
-}
-
-// NOTE: Unvalidated new store-family abstraction. Added for missing CCE
-// `vsst` semantics, but not yet exercised through end-to-end PTO lowering.
-def PTO_VsstOp : PTO_Op<"vsst", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_VectorType:$value,
-    PTO_BufferLikeType:$destination,
-    Index:$offset,
-    StrAttr:$stride
-  );
-
-  let results = (outs);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $value `,` $destination `[` $offset `]` `,` $stride attr-dict `:` type($value) `,` type($destination)
   }];
 }
 
@@ -1357,24 +1296,7 @@ def PTO_VmulconvOp : PTO_Op<"vmulconv", [Pure]> {
   }];
 }
 
-def PTO_Vldx2Op : PTO_Op<"vldx2", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_BufferLikeType:$source,
-    Index:$offset,
-    StrAttr:$dist
-  );
-  let results = (outs PTO_VectorType:$low, PTO_VectorType:$high);
-
-  let hasVerifier = 1;
-
-  let assemblyFormat = [{
-    $source `[` $offset `]` `,` $dist attr-dict `:` type($source) `,` type($offset) `->` type($low) `,` type($high)
-  }];
-}
-
-def PTO_Vstx2Op : PTO_Op<"vstx2", [
+def PTO_Vstsx2Op : PTO_Op<"vstsx2", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
