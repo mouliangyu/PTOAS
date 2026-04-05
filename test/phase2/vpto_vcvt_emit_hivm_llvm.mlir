@@ -13,7 +13,7 @@ module {
     pto.vecscope {
       %mask = pto.pset_b16 "PAT_ALL" : !pto.mask<b16>
       %vec = pto.vlds %src[%idx] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-      %cvt = pto.vcvt %vec {part = "PART_ODD", round_mode = "ROUND_A", sat = "RS_ENABLE"} : !pto.vreg<64xf32> -> !pto.vreg<128xbf16>
+      %cvt = pto.vcvt %vec {part = "ODD", rnd = "A", sat = "SAT"} : !pto.vreg<64xf32> -> !pto.vreg<128xbf16>
       pto.vsts %cvt, %dst[%idx], %mask : !pto.vreg<128xbf16>, !pto.ptr<bf16, ub>, !pto.mask<b16>
     }
     return
@@ -23,7 +23,7 @@ module {
     pto.vecscope {
       %mask = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
       %vec = pto.vlds %src[%idx] : !pto.ptr<bf16, ub> -> !pto.vreg<128xbf16>
-      %cvt = pto.vcvt %vec {part = "PART_EVEN"} : !pto.vreg<128xbf16> -> !pto.vreg<64xf32>
+      %cvt = pto.vcvt %vec {part = "EVEN"} : !pto.vreg<128xbf16> -> !pto.vreg<64xf32>
       pto.vsts %cvt, %dst[%idx], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
     }
     return

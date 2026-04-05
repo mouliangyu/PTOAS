@@ -67,8 +67,8 @@
 下列 case 很可能也属于“优先修测例或修 surface 对齐”的范围，但在本轮只做了模式级确认，下一阶段应按同 family 批量复查：
 
 - `compare-select` 中其余 `vcmps` / `vselr` 相关 case
-- `vector-load-store` 中其余 `vld*` / `vsld*` / `vst*` 相关 case
-- `predicate-load-store` 中 `pst*` / `pld*` / `pstu*` 相关 case
+- `vector-load-store` 中其余 `vld*` / `vst*` 相关 case
+- `predicate-load-store` 中 `psti*` / `pldi*` / `pstu*` 相关 case
 - `materialization-predicate` 中 `p*` 变换类 case
 
 ## binary-vector
@@ -179,10 +179,10 @@
   - 观察：已按当前 `pto.vmull %lhs, %rhs, %mask -> %low, %high` surface 重写；本轮 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/dsa-sfu/vprelu-f32`
-  - 观察：当前 case 已按 `pto.vprelu %input, %alpha` surface 书写；installed wrapper 已确认 `vprelu(dst, src0, src1, mask, mode)` binary-op 形式，merge 路径还会显式经由 `vmov(dst, dstTmp, mask)`
+  - 观察：当前 case 已按 `pto.vprelu %input, %alpha` surface 书写；installed wrapper 已确认 `vprelu(dst, src0, src1, mask, mode)` binary-op 形式
   - 结论：blocked。当前 PTO surface 与 installed/LLVM 侧的 `merge-dst + 2 src + mask` 关系未收口；在不改变语义的前提下不能直接按“普通 binary op emitter 缺口”处理
 - `micro-op/dsa-sfu/vprelu-tail`
-  - 观察：当前 case 已按 `pto.vprelu %input, %alpha` surface 书写；installed wrapper 已确认 `vprelu(dst, src0, src1, mask, mode)` binary-op 形式，merge 路径还会显式经由 `vmov(dst, dstTmp, mask)`
+  - 观察：当前 case 已按 `pto.vprelu %input, %alpha` surface 书写；installed wrapper 已确认 `vprelu(dst, src0, src1, mask, mode)` binary-op 形式
   - 结论：blocked。当前 PTO surface 与 installed/LLVM 侧的 `merge-dst + 2 src + mask` 关系未收口；在不改变语义的前提下不能直接按“普通 binary op emitter 缺口”处理
 
 ## gather-scatter
@@ -200,11 +200,11 @@
   - 观察：当前 case 已按 `pto.vgather2_bc %source, %offsets, %mask` surface 书写；`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6` 并产出 kernel shared library
   - 结论：case 目标与当前写法一致；当前已越过 parse / emitter 缺口，compile-only 可通过
 - `micro-op/gather-scatter/vgatherb`
-  - 观察：当前 case 已按 `pto.vgatherb %source, %offsets, %active_lanes` surface 书写；但 installed A5 v300 wrapper 只观察到 `vgatherb(dst, base, vector_u32 indexOffset)`，没有 docs/ODS 里的 `active_lanes`。本轮按 `active_lanes -> plt mask` 产出的 `.ll` 被 bisheng verifier 以 `Intrinsic has incorrect argument type! ptr @llvm.hivm.vgatherb.v300.v64f32` 拒绝；随后已把 emitter 回退为 step `1/6` 显式报 contract 未确认
-  - 结论：blocked。当前不是普通 emitter 缺口，而是 PTO/docs surface 与 installed A5 v300 contract 未收口；在确认 `active_lanes` 与真实 LLVM 形态关系前不继续猜语义
+  - 观察：已根据 `visa.txt` 把 case 改为 `pto.vgatherb %source, %offsets, %mask`，其中 `%mask` 为 `!pto.mask<b32>`，`offsets` 按 block gather 的 `u32` byte-offset 解释；LLVM emission 走 `llvm.hivm.vgatherb.v310.v64f32(base, offsets, mask)`
+  - 结论：case 目标与当前写法一致；`2026-04-04` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
 - `micro-op/gather-scatter/vgatherb-block-boundary`
-  - 观察：当前 case 已按 `pto.vgatherb %source, %offsets, %active_lanes` surface 书写；但 installed A5 v300 wrapper 只观察到 `base + vector_u32 indexOffset` 形式，没有 docs/ODS 中的 `active_lanes`。本轮已把错误的 mask-based lowering 回退为 step `1/6` 显式阻塞
-  - 结论：blocked。当前不是普通 emitter 缺口，而是 PTO/docs surface 与 installed A5 v300 contract 未收口；边界 case 先随主 case 一并阻塞
+  - 观察：已随主 case 切到 `mask` surface，并按 `visa.txt` 的 block gather 语义保留 block-boundary 测试目标；LLVM emission 可成功导出并进入 Bisheng 编译
+  - 结论：case 目标与当前写法一致；`2026-04-04` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
 - `micro-op/gather-scatter/vscatter`
   - 观察：当前 case 已按 `pto.vscatter %value, %dest, %offsets, %active_lanes` surface 书写；`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6` 并产出 kernel shared library
   - 结论：case 目标与当前写法一致；当前已越过 parse / emitter 缺口，compile-only 可通过
@@ -224,11 +224,11 @@
   - 观察：已按当前双输入双结果 surface 重写；`pdintlv_b8` 自身 emitter 已可落到 `llvm.hivm.pdintlv.b8`，但输入构造依赖 `pto.pset_b8`，repo 当前生成的 `llvm.hivm.pset.b8` 会被 bisheng verifier 以 `Intrinsic has incorrect argument type` 拒绝
   - 结论：当前已不是用例编写或 parse 问题；case 可按现有 surface 忠实写出，但继续推进时被上游 `pset_b8` 的 LLVM intrinsic ABI 未收口所阻塞
 - `micro-op/materialization-predicate/pge-tail-mask`
-  - 观察：已按当前 pattern attribute surface 重写；installed wrapper 与 `strings bisheng` 已确认 `pge_b*` family 存在，但 repo 当前生成的 `llvm.hivm.pge.b{8,16,32}(i64, i64)` 会被 bisheng verifier 以 `Intrinsic has incorrect argument type` 拒绝
-  - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口，而不是 parser/ODS 或普通 emitter 缺口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
+  - 观察：当前 `DEVICE=SIM COMPILE_ONLY=1` 已通过；repo 官方 LLVM 导出当前生成 `llvm.hivm.pge.b{8,16,32}(i32, i32)`；text emitter 也已收口到同名 callee
+  - 结论：旧的 `i64/i64` ABI blocker 已过期；当前已不是 parser / emitter 缺口，后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/pge-tail-mask-boundary`
-  - 观察：与 `micro-op/materialization-predicate/pge-tail-mask` 相同；repo 当前生成的 `llvm.hivm.pge.b{8,16,32}(i64, i64)` 会被 bisheng verifier 以 `Intrinsic has incorrect argument type` 拒绝
-  - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口，而不是 parser/ODS 或普通 emitter 缺口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
+  - 观察：与 `micro-op/materialization-predicate/pge-tail-mask` 相同；旧的 `i64/i64` ABI 观察已过期，当前 `pge` family 已按 `i32, i32` 收口
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/pintlv_b16`
   - 观察：`pintlv_b16` emitter 已接到 `llvm.hivm.pintlv.b16`，但当前 case 输入构造仍依赖 `pset_b16`；repo 生成的 `llvm.hivm.pset.b16` 在 bisheng verifier 阶段报 `Intrinsic has incorrect argument type`
   - 结论：当前阻塞点已收敛为上游 `pset_b16` LLVM ABI 未收口，而不是 `pintlv_b16` 自身 parser / emitter 缺口
@@ -236,11 +236,11 @@
   - 观察：已按当前双输入双结果 surface 重写；`pintlv_b16` 自身 emitter 已可落到 `llvm.hivm.pintlv.b16`，但输入构造依赖 `pto.pset_b16`，repo 当前生成的 `llvm.hivm.pset.b16` 会被 bisheng verifier 以 `Intrinsic has incorrect argument type` 拒绝
   - 结论：当前已不是用例编写或 parse 问题；case 可按现有 surface 忠实写出，但继续推进时被上游 `pset_b16` 的 LLVM intrinsic ABI 未收口所阻塞
 - `micro-op/materialization-predicate/plt-tail-mask`
-  - 观察：已按当前 `%mask, %scalar_out = pto.plt_b* %scalar` surface 重写；本轮补齐 `plt_b8` emitter 后，`DEVICE=SIM COMPILE_ONLY=1` 已走到 step 4/6
+  - 观察：已按当前 `%mask, %scalar_out = pto.plt_b* %scalar` surface 重写；`DEVICE=SIM COMPILE_ONLY=1` 已通过；text emitter 当前已能导出 `llvm.hivm.plt.b8/b16/b32.v300(i32)`
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/plt-tail-mask-boundary`
-  - 观察：已按当前 `%mask, %scalar_out = pto.plt_b* %scalar` surface 重写；`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已走到 step `4/6`
-  - 结论：当前已不是 parser / emitter 缺口；compile-only 可通过，后续若继续推进，应关注 runtime / board 路径
+  - 观察：已按当前 `%mask, %scalar_out = pto.plt_b* %scalar` surface 重写；compile-only 可通过；text emitter 也已覆盖 `b8/b16/b32`
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/pnot`
   - 观察：已按当前 `pto.pnot %input, %mask` surface 重写；本轮已在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
@@ -260,27 +260,24 @@
   - 观察：已按当前 `pto.psel %src0, %src1, %mask` surface 重写；本轮已在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/pset-pattern`
-  - 观察：已按当前 pattern attribute surface 重写；installed wrapper 与 `strings bisheng` 已确认 `pset_b*` family 存在，但 repo 当前生成的 `llvm.hivm.pset.b{8,16,32}(i64)` 会被 bisheng verifier 以 `Intrinsic has incorrect argument type` 拒绝
-  - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口，而不是 parser/ODS 或普通 emitter 缺口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
+  - 观察：已按当前 pattern attribute surface 重写；`DEVICE=SIM COMPILE_ONLY=1` 已通过；repo 官方 LLVM 导出当前生成 `llvm.hivm.pset.b{8,16,32}(i32)`；text emitter 也已收口到同名 callee
+  - 结论：旧的 `i64` ABI blocker 已过期；当前已不是 parser / emitter 缺口，后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/pset-pattern-fragment`
-  - 观察：与 `micro-op/materialization-predicate/pset-pattern` 相同；repo 当前生成的 `llvm.hivm.pset.b{8,16,32}(i64)` 会被 bisheng verifier 以 `Intrinsic has incorrect argument type` 拒绝
-  - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口，而不是 parser/ODS 或普通 emitter 缺口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
+  - 观察：与 `micro-op/materialization-predicate/pset-pattern` 相同；旧的 `i64` ABI 观察已过期，当前 `pset` family 已按 `i32` 收口
+  - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 - `micro-op/materialization-predicate/pxor`
   - 观察：当前 case 已按 `pto.pxor %lhs, %rhs, %mask` surface 书写；本轮已越过旧的 `scf.for` dialect 注册缺口，并在 `DEVICE=SIM COMPILE_ONLY=1` 下走到 step 4/6
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
 
 ## predicate-load-store
 
-- `micro-op/predicate-load-store/pst-pld`
-  - 观察：`pst/pld` emitter 已接线，repo 当前生成的 `llvm.hivm.pst.b8(<256 x i1>, ptr, i32, i32, i32)` / `llvm.hivm.pld.b8(ptr, i32, i32, i32)` 在 bisheng verifier 阶段报 `Intrinsic has incorrect argument type`
-  - 结论：当前阻塞点已收敛为 LLVM intrinsic ABI 未收口；在拿到 installed frontend 的真实 LLVM 形状前不能继续猜参数表
-- `micro-op/predicate-load-store/psti-pldi`
+- `micro-op/predicate-load-store/psti-pk-pldi-us`
   - 观察：已收紧为常量 `index` offset case，并统一为 `pto.psti %value, %base[%offset], "DIST"` / `%result = pto.pldi %base[%offset], "DIST"` surface；repo 当前 lowering 在发射 `llvm.hivm.psti.b8(<256 x i1>, ptr addrspace(6), i32, i32, i32)` / `llvm.hivm.pldi.b8(ptr addrspace(6), i32, i32, i32)` 前将该常量 `index` 转为 `i32`
   - 结论：当前已打通到 compile-only kernel shared library；后续若继续推进，应关注 runtime / board 路径
-- `micro-op/predicate-load-store/psts-plds`
+- `micro-op/predicate-load-store/psts-pk-plds-us`
   - 观察：已按 `psti/pldi` 同语义的 dynamic-offset 版本收口，并统一为 `pto.psts %value, %base[%offset], "DIST"` / `%result = pto.plds %base[%offset], "DIST"` surface；`plds/psts` emitter 已接线，本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过并产出 kernel shared library
   - 结论：当前已不是 parser / emitter 缺口；后续若继续推进，应关注 runtime / board 路径
-- `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary`
+- `micro-op/predicate-load-store/psts-pk-plds-us-prefix-boundary`
   - 观察：已按 `logical_elems=1000` 的 dynamic-offset packed predicate roundtrip 重写，不再误用旧 compare skeleton
   - 结论：当前已不是 parser / emitter 缺口；本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过并产出 kernel shared library，后续若继续推进，应关注 runtime / board 路径
 - `micro-op/predicate-load-store/pstu`
@@ -367,12 +364,6 @@
 - `micro-op/unary-vector/vln-domain-boundary`
   - 观察：`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过 `step 4/6`，可完成 LLVM IR 降低、device object 编译和 kernel shared library 链接
   - 结论：当前已越过 `unsupported op` 阶段；后续若继续推进，应关注 runtime / board 路径，而不是再按 emitter 缺口处理
-- `micro-op/unary-vector/vmov`
-  - 观察：`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过 `step 4/6`，当前 LLVM IR 使用 `llvm.hivm.vmov.*.m(src, src, mask)` 形式，可完成 device object 编译和 kernel shared library 链接
-  - 结论：blocked。compile-only 虽可走通，但当前走通形式是 `vmov.*.m(src, src, mask)`；PTO unary surface 与 installed/LLVM 侧 merge 形态是否语义等价尚未收口，不能直接据此视为问题已解
-- `micro-op/unary-vector/vmov-tail`
-  - 观察：`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过 `step 4/6`，当前 LLVM IR 使用 `llvm.hivm.vmov.*.m(src, src, mask)` 形式，可完成 device object 编译和 kernel shared library 链接
-  - 结论：blocked。compile-only 虽可走通，但当前走通形式是 `vmov.*.m(src, src, mask)`；PTO unary surface 与 installed/LLVM 侧 merge 形态是否语义等价尚未收口，不能直接据此视为问题已解
 - `micro-op/unary-vector/vneg`
   - 观察：`2026-04-01` 本地 `DEVICE=SIM COMPILE_ONLY=1` 已通过 `step 4/6`，可完成 LLVM IR 降低、device object 编译和 kernel shared library 链接
   - 结论：当前已越过 parse/emitter 缺口；后续若继续推进，应关注 runtime / board 路径
@@ -463,29 +454,20 @@
   - 观察：已改为真正的 `vlds + vsts` contiguous case，并显式使用 `{dist = "NORM"}`；`ptoas --vpto-emit-hivm-llvm` 可通过
   - 结论：已改为真正的 `vlds + vsts` contiguous case，并显式使用 `{dist = "NORM"}`；`ptoas --vpto-emit-hivm-llvm` 可通过
 - `micro-op/vector-load-store/vlds-brc-b32`
-  - 观察：改为目标语义后，当前 verifier 明确拒绝 `BRC_B32`；这是 surface / 文档 / verifier 不一致，不应弱化成别的 `dist`
-  - 结论：改为目标语义后，当前 verifier 明确拒绝 `BRC_B32`；这是 surface / 文档 / verifier 不一致，不应弱化成别的 `dist`
+  - 观察：`tmp-vlds-dist.md` 已补齐 `vlds` 正式 `dist` 枚举，repo verifier / VPTO text emitter / LLVM emitter 现已接受 `BRC_B32`；本地 `--vpto-emit-hivm-llvm` 可导出 `llvm.hivm.vldsx1.v64f32(..., i32 3, i32 0)` 形态
+  - 结论：`BRC_B32` 已不再是 surface / verifier 阻塞；后续若继续推进，应转向 compile-only / Bisheng handoff 验证
 - `micro-op/vector-load-store/vlds-tail`
   - 观察：已改为真正的 tail-mask `vlds + vsts` case；`ptoas --vpto-emit-hivm-llvm` 可通过
   - 结论：已改为真正的 tail-mask `vlds + vsts` case；`ptoas --vpto-emit-hivm-llvm` 可通过
-- `micro-op/vector-load-store/vldx2-layout-check`
-  - 观察：已按当前 `pto.vldx2 %src[%off], "DINTLV_*"` surface 重写，并用 `pto.vstx2` 保留 layout 可观测路径；repo 生成的 `.ll` 已进入 bisheng verifier，但仍报 `Intrinsic has incorrect argument type! ptr @llvm.hivm.vldx2` 与 `ptr @llvm.hivm.vstx2`
-  - 结论：blocked。当前不是用例编写问题，也不宜继续猜 `vldx2/vstx2` 参数 ABI；需要先 tracing 完整 repo module 与最小 probe 的差异
-- `micro-op/vector-load-store/vldx2-vstx2`
-  - 观察：已按当前 `pto.vldx2` / `pto.vstx2` surface 重写为最小 deinterleave/interleave roundtrip；本轮复测里两条 op 都已越过 `unsupported op`，但完整 repo module 在 bisheng verifier 阶段仍报 `Intrinsic has incorrect argument type`
-  - 结论：blocked。当前不是用例编写问题，也不再是单纯 emitter 缺口；需要先 tracing 完整 repo module 与最小 probe 的 ABI 差异
-- `micro-op/vector-load-store/vsld`
-  - 观察：已按当前 `pto.vsld %source[%offset], \"STRIDE\"` surface 重写；installed generic Clang header 已确认 wrapper 为 `vsld(dst, base, offset, stride)`，`strings bisheng` 也确认 `llvm.hivm.vsld` 存在；但 repo 生成的 `.ll` 形式 `declare <64 x float> @llvm.hivm.vsld(ptr addrspace(6), i32, i32, i32)` 会被 bisheng 在 step 2 直接报 `Intrinsic has incorrect argument type`
-  - 结论：blocked。当前不是用例编写问题，也不宜继续猜 emitter 参数；首先需要把 `llvm.hivm.vsld` 的正式 LLVM ABI / 参数类型 tracing 清楚
-- `micro-op/vector-load-store/vsld-vsst-stride-boundary`
-  - 观察：已按当前 `pto.vsld/pto.vsst` strided memory surface 重写；失败已收敛为 VPTO LLVM emitter 未支持 `pto.vsld`
-  - 结论：case 目标与当前写法一致，已不是用例编写或 parse 问题；阻塞点是相关 VPTO LLVM emitter 实现缺口
+- `micro-op/vector-load-store/vldsx2-layout-check`
+  - 观察：已切到 `pto.vldsx2 %src[%off], "DINTLV_*"` surface，并可导出 typed `llvm.hivm.vldsx2.v<lanes><etype>(...)->{vec,vec}`；配套 `vstsx2` ABI 也已收口
+  - 结论：已越过 parser / emitter / compile-only 阶段；不再按 ABI blocker 管理
+- `micro-op/vector-load-store/vldsx2-vstsx2`
+  - 观察：已切到 `pto.vldsx2` / `pto.vstsx2` surface；repo 当前导出的 `vstsx2` 已与 `vsts` 同构，仅把单 `src` 扩成双 `src`，并在本地 compile-only 走到 step `4/6`
+  - 结论：已越过 parser / emitter / compile-only 阶段；不再按 ABI blocker 管理
 - `micro-op/vector-load-store/vsldb`
   - 观察：`docs/isa`、`docs/vpto-spec`、`VPTOOps.td` 现已统一为 `%block_stride: i16` + `%repeat_stride: i16` surface；case 已按该 surface 重写为 `pto.vecscope` 内合法 block-strided load，并在 `2026-04-03` 本地 `DEVICE=SIM COMPILE_ONLY=1` 走到 step `4/6`
   - 结论：当前已越过 parser / emitter / device compile 阶段；旧的 packed control-word 缺口已收敛
-- `micro-op/vector-load-store/vsst`
-  - 观察：installed A5 wrapper 当前只直接暴露 `vsst(..., S8_B16)`；而现有 case / docs 场景写的是 `STRIDE_S2_B64`。本轮复测已把失败点收敛为 `unsupported vsst stride immediate`
-  - 结论：blocked。当前不是单纯 emitter 缺口，而是 current case/docs stride 与 installed toolchain wrapper 支持面未收口；在不改变测试目标的前提下，应先确认 `vsst` 在 A5 上的正式 stride contract
 - `micro-op/vector-load-store/vsstb`
   - 观察：`docs/isa`、`docs/vpto-spec`、`VPTOOps.td` 现已统一为 `%block_stride: i16` + `%repeat_stride: i16` surface；case 已按该 surface 重写为 `pto.vecscope` 内合法 block-strided store，并在 `2026-04-03` 本地 `DEVICE=SIM COMPILE_ONLY=1` 走到 step `4/6`
   - 结论：当前已越过 parser / emitter / device compile 阶段；旧的 packed control-word 缺口已收敛
@@ -511,6 +493,6 @@
 - `micro-op/vector-load-store/vstus`
   - 观察：当前 `docs/isa/03-vector-load-store.md` 未给出与 `VPTOOps.td` 一致的 `mode` 参数表面；在不擅自发明 `mode` 的前提下，case 目标无法继续收敛到合法 surface
   - 结论：当前 skeleton case 本身不符合目标；同时文档/ODS 未提供可忠实落地的合法 surface，因此只能记录为接口漂移
-- `micro-op/vector-load-store/vstx2-layout-check`
-  - 观察：已按当前 `pto.vstx2 %low, %high, %dst[%off], "INTLV_*", %mask` surface 重写，并保留双向量 layout 可观测路径；repo 生成的 `.ll` 已进入 bisheng verifier，但仍报 `Intrinsic has incorrect argument type! ptr @llvm.hivm.vstx2`
-  - 结论：blocked。当前不是用例编写问题，也不宜继续猜 `vstx2` 的 LLVM ABI；需要先 tracing 完整 repo module 与最小 probe 的差异
+- `micro-op/vector-load-store/vstsx2-layout-check`
+  - 观察：已按当前 `pto.vstsx2 %low, %high, %dst[%off], "INTLV_*", %mask` surface 重写，并保留双向量 layout 可观测路径；repo 生成的 `.ll` 已收口为 typed `llvm.hivm.vstsx2.v<lanes><etype>(src0, src1, ptr6, offset, dist, 0, mask)`
+  - 结论：已越过 parser / emitter / compile-only 阶段；不再按 ABI blocker 管理

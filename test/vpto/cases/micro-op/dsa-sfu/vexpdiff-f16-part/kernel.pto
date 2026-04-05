@@ -37,8 +37,8 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       %_:1 = scf.for %offset = %c0 to %c1024 step %c128 iter_args(%remaining = %c1024_i32) -> (i32) {
-        %input = pto.vlds %ub_in[%offset] {dist = "UNPK_B16"} : !pto.ptr<f16, ub> -> !pto.vreg<128xf16>
-        %max = pto.vlds %ub_max[%offset] {dist = "UNPK_B16"} : !pto.ptr<f16, ub> -> !pto.vreg<128xf16>
+        %input = pto.vlds %ub_in[%offset] {dist = "UNPK"} : !pto.ptr<f16, ub> -> !pto.vreg<128xf16>
+        %max = pto.vlds %ub_max[%offset] {dist = "UNPK"} : !pto.ptr<f16, ub> -> !pto.vreg<128xf16>
         %even_mask, %remaining_after_even = pto.plt_b32 %remaining : i32 -> !pto.mask<b32>, i32
         %odd_mask, %next_remaining = pto.plt_b32 %remaining_after_even : i32 -> !pto.mask<b32>, i32
         %even = pto.vexpdiff %input, %max, "EVEN" : !pto.vreg<128xf16>, !pto.vreg<128xf16> -> !pto.vreg<64xf32>

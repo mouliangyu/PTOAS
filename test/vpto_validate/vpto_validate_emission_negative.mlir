@@ -1,5 +1,4 @@
 // RUN: ! ptoas --pto-backend=vpto --emit-vpto %s -o /dev/null 2>&1 | FileCheck %s
-// RUN: ! ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-text %s -o /dev/null 2>&1 | FileCheck %s
 // RUN: ! ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o /dev/null 2>&1 | FileCheck %s
 
 // CHECK: error: 'memref.subview' op must be eliminated before emission-stage VPTO validation

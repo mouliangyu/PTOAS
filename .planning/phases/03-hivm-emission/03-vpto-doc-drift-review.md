@@ -22,121 +22,92 @@
 
 现状：
 
-- `docs/isa/13-dsa-sfu-ops.md` 在排序章节使用短名 `pto.vmrgsort`
-- 同页 syntax / implementation summary 仍写的是 `pto.vmrgsort4`
-- `docs/vpto-spec.md` 当前也记录为 `pto.vmrgsort4`
-- 当前 scope / matrix 暂不纳入该条，命名争议由本 drift 文档单独跟踪
+- 该漂移已收口
+- `docs/isa/13-dsa-sfu-ops.md` 与 `docs/vpto-spec.md` 现统一使用 `pto.vmrgsort4`
 
 影响：
 
-- scope / matrix / 用例命名无法稳定对齐
-- 评审时难以判断“文档别名”还是“真实 surface 重命名”
+- 命名漂移已消除
 
 待确认问题：
 
-- 对外正式 surface 名称应为 `pto.vmrgsort` 还是 `pto.vmrgsort4`
-- 若保留一个、兼容一个，哪个是主名，哪个是别名
+- 无
 
 结论：
 
-- 待填写
+- 正式 surface 收口为 `pto.vmrgsort4`
 
 落地动作：
 
-- 待填写
+- 已完成：统一 `docs/isa/13-dsa-sfu-ops.md` 与 `docs/vpto-spec.md`
 
 ### 2. Vec-Scalar 汇总表未同步正文 surface
 
 现状：
 
-- `docs/isa/08-vec-scalar-ops.md` 正文已包含：
-  - `pto.vadds`
-  - `pto.vmuls`
-  - `pto.vmaxs`
-  - `pto.vmins`
-  - `pto.vshls`
-  - `pto.vshrs`
-  - `pto.vlrelu`
-  - `pto.vaddcs`
-  - `pto.vsubcs`
-- 但 `docs/vpto-spec.md` 的 group summary 仍是旧计数和旧列表，未完全反映当前正文 surface
+- `docs/vpto-spec.md` 的 vec-scalar summary 已与 `docs/isa/08-vec-scalar-ops.md` 对齐
 
 影响：
 
-- 汇总表不能作为 scope 统计依据
-- matrix 记账时会出现“正文有、summary 无”的歧义
+- 此项漂移已消除
 
 待确认问题：
 
-- group summary 是否应完整反映 `docs/isa/08` 当前正文 surface
-- 计数应如何更新
+- 无
 
 结论：
 
-- 待填写
+- group summary 应反映当前正文 surface，当前已按该口径收口
 
 落地动作：
 
-- 待填写
+- 已完成：同步 `docs/vpto-spec.md` 汇总表
 
 ### 3. Reduction 汇总表未同步正文 surface
 
 现状：
 
-- `docs/isa/10-reduction-ops.md` 正文已包含：
-  - `pto.vcadd`
-  - `pto.vcmax`
-  - `pto.vcmin`
-  - `pto.vcgadd`
-  - `pto.vcgmax`
-  - `pto.vcgmin`
-  - `pto.vcpadd`
-- 但 `docs/vpto-spec.md` 的 group summary 仍只列 `pto.vcadd`、`pto.vcmax`、`pto.vcmin`
+- `docs/vpto-spec.md` 的 reduction summary 已同步 `vcg*` 与 `vcpadd`
 
 影响：
 
-- reduction family 的汇总口径与测试范围不一致
-- `vcg*` / `vcpadd` 容易被误判为“未正式进入 surface”
+- 此项漂移已消除
 
 待确认问题：
 
-- `docs/vpto-spec.md` 的 reduction summary 是否应扩成完整 current surface
-- 若只保留“代表项”，是否需要额外注明 summary 不是完整 surface
+- 无
 
 结论：
 
-- 待填写
+- reduction summary 应反映当前正文 surface，当前已按该口径收口
 
 落地动作：
 
-- 待填写
+- 已完成：同步 `docs/vpto-spec.md` 汇总表
 
 ### 4. DSA/SFU 汇总表未同步 `vsort32`
 
 现状：
 
-- `docs/isa/13-dsa-sfu-ops.md` 正文已有 `pto.vsort32`
-- 但 `docs/vpto-spec.md` 的 DSA/SFU summary 仍未纳入 `pto.vsort32`
-- 当前 scope / matrix 暂不纳入 `vsort32`，相关结论由本 drift 文档单独跟踪
+- 该漂移已收口
+- `docs/isa/13-dsa-sfu-ops.md` 已移除 `pto.vsort32`
+- `docs/vpto-spec.md` 不再需要为 `pto.vsort32` 保留汇总项
 
 影响：
 
-- 会出现“ISA 文档有该 op，但总表没有”的口径不一致
-- 影响是否将其记为正式 in-scope surface
+- 此项漂移已消除
 
 待确认问题：
 
-- `pto.vsort32` 是否已经是正式 A5 surface
-- 若是，summary 是否应纳入
-- 若不是，`docs/isa/13-dsa-sfu-ops.md` 是否应降级表述
+- 无
 
 结论：
 
-- 待填写
+- `pto.vsort32` 不属于当前文档化 VPTO surface，因此不保留在用户文档中
 
 落地动作：
 
-- 待填写
+- 已完成：从 `docs/isa/13-dsa-sfu-ops.md` 移除 `pto.vsort32`
 
 ### 5. `VPTOOps.td` 中存在文档未完整收录的 VPTO op
 

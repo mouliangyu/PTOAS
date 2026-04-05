@@ -24,9 +24,9 @@ module attributes {pto.target_arch = "a5"} {
         %m0, %s0 = pto.plt_b8 %c1_i32 : i32 -> !pto.mask<b8>, i32
         %m1, %s1 = pto.plt_b16 %c1_i32 : i32 -> !pto.mask<b16>, i32
         %m2, %s2 = pto.plt_b32 %c1_i32 : i32 -> !pto.mask<b32>, i32
-        pto.psts %m0, %ub_out[%c0] : !pto.mask<b8>, !pto.ptr<ui8, ub>
-        pto.psts %m1, %ub_out[%c8] : !pto.mask<b16>, !pto.ptr<ui8, ub>
-        pto.psts %m2, %ub_out[%c16] : !pto.mask<b32>, !pto.ptr<ui8, ub>
+        pto.psts %m0, %ub_out[%c0], "NORM" : !pto.mask<b8>, !pto.ptr<ui8, ub>, index
+        pto.psts %m1, %ub_out[%c8], "NORM" : !pto.mask<b16>, !pto.ptr<ui8, ub>, index
+        pto.psts %m2, %ub_out[%c16], "NORM" : !pto.mask<b32>, !pto.ptr<ui8, ub>, index
       }
     }
 

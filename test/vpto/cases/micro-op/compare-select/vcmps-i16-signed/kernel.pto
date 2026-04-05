@@ -46,7 +46,7 @@ module attributes {pto.target_arch = "a5"} {
         %mask, %scalar_out = pto.plt_b16 %arg5 : i32 -> !pto.mask<b16>, i32
         %25 = pto.vlds %0[%17] : !pto.ptr<i16, ub> -> !pto.vreg<128xi16>
         %27 = pto.vcmps %25, %c5, %mask, "gt" : !pto.vreg<128xi16>, i16, !pto.mask<b16> -> !pto.mask<b16>
-        pto.psts %27, %24[%c0] : !pto.mask<b16>, !pto.ptr<i8, ub>
+        pto.psts %27, %24[%c0], "NORM" : !pto.mask<b16>, !pto.ptr<i8, ub>, index
         scf.yield %scalar_out : i32
       }
     }

@@ -3,8 +3,6 @@
 # family: binary-vector
 # target_ops: pto.vdiv
 # scenarios: core-f16, full-mask
-# NOTE: bulk-generated coverage skeleton.
-
 import os
 import sys
 import numpy as np
@@ -22,7 +20,7 @@ def compare_bin_prefix(golden_path, output_path, dtype, eps, count):
 
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
-    ok = compare_bin_prefix("golden_v3.bin", "v3.bin", np.float32, 1e-4, 1000)
+    ok = compare_bin_prefix("golden_v3.bin", "v3.bin", np.float16, 5e-3, 1000)
     if not ok:
         if strict:
             print("[ERROR] compare failed")

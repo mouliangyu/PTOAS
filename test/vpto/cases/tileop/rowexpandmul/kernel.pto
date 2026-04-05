@@ -49,10 +49,10 @@ module attributes {pto.target_arch = "a5"} {
           %23 = arith.select %22, %21, %c64 : index
           %24 = arith.addi %16, %arg5 : index
           %25 = arith.index_castui %23 : index to i32
-          %mask, %scalar_out = pto.plt_b32 %25 : i32 -> !pto.mask, i32
+          %mask, %scalar_out = pto.plt_b32 %25 : i32 -> !pto.mask<b32>, i32
           %26 = pto.vlds %0[%24] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-          %27 = pto.vmul %26, %20, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask -> !pto.vreg<64xf32>
-          pto.vsts %27, %12[%24], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask
+          %27 = pto.vmul %26, %20, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
+          pto.vsts %27, %12[%24], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
         }
       }
     }

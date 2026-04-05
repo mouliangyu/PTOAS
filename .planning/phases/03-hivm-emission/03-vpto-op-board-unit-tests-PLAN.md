@@ -106,6 +106,14 @@
   - 负责文档协作顺序与执行流程
   - 回答“先更新哪份文档、再推进哪一步”
 
+用户文档与内部台账的边界约束：
+
+- `docs/vpto-spec.md` 与 `docs/isa/*.md` 是用户文档，只描述 PTO surface、用户可见语义、输入输出约束和使用方式
+- 用户文档不暴露底层 instruction 名、installed wrapper 名、LLVM intrinsic 名、frontend trace、`visa.txt` 对齐过程等内部实现对齐信息
+- `visa.txt`、installed PTO/Clang headers、Bisheng frontend trace、LLVM intrinsic spellings、wrapper ABI 这类证据，只记录在 `.planning/` 下的内部台账中
+- 若为了收敛 docs 语义而做了底层对齐调研，结论应先沉淀到 `.planning/`，再把提炼后的用户可见语义回写到 `docs/`
+- 发现用户文档中混入上述底层实现信息时，应优先清理回 `.planning/`，而不是继续在用户文档中追加更多底层细节
+
 其中 matrix 作为覆盖台账，至少记录：
 
 - `op`
@@ -158,7 +166,7 @@
 命名约束：
 
 - 单 op 主语义 case 的 case 名默认与 op 名保持一致，例如 `pto.vadd` 对应 case `vadd`
-- 强耦合成组 case 才允许使用组合名，例如 `vldas-vldus`、`vldx2-vstx2`
+- 强耦合成组 case 才允许使用组合名，例如 `vldas-vldus`、`vldsx2-vstsx2`
 - 不再使用与 op 名无关的泛化名称，避免 matrix、case 目录和被测语义之间出现额外映射层
 
 目录组织约束：
@@ -191,8 +199,8 @@
 
 - `vldas + vldus`
 - `psts + plds`
-- `pst/psti + pld/pldi`
-- `vldx2 + vstx2`
+- `psti + pldi`
+- `vldx2 + vstsx2`
 - `vintlv* + vdintlv*`
 
 纯算子原则上一条 op 一个主 case。
