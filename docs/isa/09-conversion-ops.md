@@ -8,9 +8,11 @@ Operations that convert between data types (float/int, narrowing/widening).
 ## Common Operand Model
 
 - `%input` is the source vector register value.
+- `%mask` is the predicate mask that selects active conversion lanes.
 - `%result` is the destination vector register value.
-- `round_mode`, `sat`, and `part` control rounding, saturation, and lane-part
-  selection in attribute form.
+- `rnd`, `sat`, and `part` are optional attributes that refine
+  conversion behavior when the selected source/destination type pair needs
+  rounding, saturation, or lane placement control.
 - The single `pto.vcvt` surface covers float-int, float-float, int-float, and
   int-int conversion families.
 
@@ -32,23 +34,25 @@ Operations that convert between data types (float/int, narrowing/widening).
 
 ## `pto.vcvt`
 
-- **syntax:** `%result = pto.vcvt %input {round_mode = "ROUND_MODE", sat = "SAT_MODE", part = "PART_MODE"} : !pto.vreg<NxT0> -> !pto.vreg<MxT1>`
+- **syntax:** `%result = pto.vcvt %input, %mask {rnd = "RND", sat = "SAT", part = "PART"} : !pto.vreg<NxT0>, !pto.mask<G> -> !pto.vreg<MxT1>`
 - **semantics:** Type conversion between float/int types with rounding control.
 
 ```c
 for (int i = 0; i < min(N, M); i++)
-    dst[i] = convert(src[i], T0, T1, round_mode);
+    if (mask[i])
+        dst[i] = convert(src[i], T0, T1, rnd);
 ```
 
 - **inputs:**
-  `%input` is the source vector; attributes select rounding, saturation, and
-  even/odd placement when the conversion changes width.
+  `%input` is the source vector, `%mask` selects active lanes, and attributes
+  select rounding, saturation, and output placement when the conversion changes
+  width or packs into sub-lane positions.
 - **outputs:**
   `%result` is the converted vector.
 - **constraints and limitations:**
-  Only documented source/destination type pairs are legal. `PART_EVEN` /
-  `PART_ODD` is only meaningful for width-changing forms that pack two source
-  streams into one destination register.
+  Only documented source/destination type pairs are legal. All three
+  attributes are optional at the surface level, but only the subset meaningful
+  to the selected conversion kind should be provided.
 
 ---
 
@@ -56,12 +60,12 @@ for (int i = 0; i < min(N, M); i++)
 
 | Mode | Description |
 |------|-------------|
-| `ROUND_R` | Round to nearest, ties to even (default) |
-| `ROUND_A` | Round away from zero |
-| `ROUND_F` | Round toward negative infinity (floor) |
-| `ROUND_C` | Round toward positive infinity (ceil) |
-| `ROUND_Z` | Round toward zero (truncate) |
-| `ROUND_O` | Round to odd |
+| `R` | Round to nearest, ties to even (default) |
+| `A` | Round away from zero |
+| `F` | Round toward negative infinity (floor) |
+| `C` | Round toward positive infinity (ceil) |
+| `Z` | Round toward zero (truncate) |
+| `O` | Round to odd |
 
 ---
 
@@ -69,35 +73,109 @@ for (int i = 0; i < min(N, M); i++)
 
 | Mode | Description |
 |------|-------------|
-| `RS_ENABLE` | Saturate on overflow |
-| `RS_DISABLE` | No saturation (wrap/undefined on overflow) |
+| `SAT` | Saturate on overflow |
+| `NOSAT` | No saturation (wrap/undefined on overflow) |
 
 ---
 
-### Part Modes (for width-changing conversions)
+### Part Modes
+
+Use `part` when a width-changing conversion writes only one half of each wider
+destination lane group. This is typically used in even/odd placement forms such
+as `32 -> 16` or `16 -> 32` style conversions.
 
 | Mode | Description |
 |------|-------------|
-| `PART_EVEN` | Output to even-indexed lanes |
-| `PART_ODD` | Output to odd-indexed lanes |
+| `EVEN` | Output to even-indexed lanes |
+| `ODD` | Output to odd-indexed lanes |
 
 ---
 
-### A5 Supported Conversions
+### Attribute Guidance
 
-**Float-Float (vcvtff):**
-- f32 ↔ f16
-- f32 ↔ bf16
-- f16 ↔ bf16
+- `rnd`
+  - Use when the conversion needs an explicit rounding rule, especially for
+    float-to-int, float-to-float narrowing, or integer-to-float forms that do
+    not map exactly.
+- `mask`
+  - Use to select which source lanes participate in the conversion. In
+    width-changing conversions, `mask` works together with `part` / `pp` to
+    determine which logical lane positions are produced.
+- `sat`
+  - Use when the conversion may overflow the destination range and hardware
+    exposes a saturating form.
+- `part`
+  - Use for width-changing conversions that select the even or odd half of the
+    destination packing layout.
 
-**Float-Int (vcvtfi):**
-- f16 → i16, f16 → i32
-- f32 → i16, f32 → i32
-- bf16 → i32
+### A5 Supported Forms
 
-**Int-Float (vcvtif):**
-- i16 → f16
-- i32 → f32
+下列形式按 `visa.txt` 的能力逐条展开，使用 PTO surface 表达。未列出的
+源/目标类型组合，当前不应假定为 A5 支持。
+
+#### Float To Int
+
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<32xs64>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xs32>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xs16>`
+- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<64xs32>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<128xs16>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256xs8>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256xu8>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<64xs32>`
+
+#### Float To Float
+
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xbf16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
+
+#### Int To Float
+
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xu8>, !pto.mask<b8> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xs8>, !pto.mask<b8> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<32xs64>, !pto.mask<b64> -> !pto.vreg<64xf32>`
+
+#### Int To Int
+
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xu8>, !pto.mask<b8> -> !pto.vreg<128xu16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xu8>, !pto.mask<b8> -> !pto.vreg<64xu32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xs8>, !pto.mask<b8> -> !pto.vreg<128xs16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xs8>, !pto.mask<b8> -> !pto.vreg<64xs32>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<128xu16>, !pto.mask<b16> -> !pto.vreg<256xu8>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xu16>, !pto.mask<b16> -> !pto.vreg<64xu32>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<256xu8>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<64xu32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<64xs32>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xu32>, !pto.mask<b32> -> !pto.vreg<256xu8>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xu32>, !pto.mask<b32> -> !pto.vreg<128xu16>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xu32>, !pto.mask<b32> -> !pto.vreg<128xs16>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<256xu8>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<128xu16>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<128xs16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<32xs64>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<32xs64>, !pto.mask<b64> -> !pto.vreg<64xs32>`
+
+### A5 Supported Type Matrix
+
+下表只做总览，精确 attr 组合以上面的逐条形式为准。
+
+| `src \ dst` | `u8` | `s8` | `u16` | `s16` | `u32` | `s32` | `s64` | `f16` | `f32` | `bf16` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `u8` |  |  | Y |  | Y |  |  | Y |  |  |
+| `s8` |  |  |  | Y |  | Y |  | Y |  |  |
+| `u16` | Y |  |  |  | Y |  |  |  |  |  |
+| `s16` | Y |  |  |  | Y | Y |  | Y | Y |  |
+| `u32` | Y |  | Y | Y |  |  |  |  |  |  |
+| `s32` | Y |  | Y | Y |  |  | Y |  | Y |  |
+| `s64` |  |  |  |  |  | Y |  |  | Y |  |
+| `f16` | Y | Y |  | Y |  | Y |  |  | Y |  |
+| `f32` |  |  |  | Y |  | Y | Y | Y |  | Y |
+| `bf16` |  |  |  |  |  | Y |  |  | Y |  |
 
 ---
 
@@ -107,10 +185,10 @@ For conversions that change width (e.g., f32→f16), use even/odd parts and comb
 
 ```mlir
 // Convert two f32 vectors to one f16 vector
-%even = pto.vcvt %in0 {round_mode = "ROUND_R", sat = "RS_ENABLE", part = "PART_EVEN"}
-    : !pto.vreg<64xf32> -> !pto.vreg<128xf16>
-%odd  = pto.vcvt %in1 {round_mode = "ROUND_R", sat = "RS_ENABLE", part = "PART_ODD"}
-    : !pto.vreg<64xf32> -> !pto.vreg<128xf16>
+%even = pto.vcvt %in0, %mask {rnd = "R", sat = "SAT", part = "EVEN"}
+    : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xf16>
+%odd  = pto.vcvt %in1, %mask {rnd = "R", sat = "SAT", part = "ODD"}
+    : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xf16>
 %result = pto.vor %even, %odd, %mask : !pto.vreg<128xf16>, !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<128xf16>
 ```
 
@@ -118,28 +196,28 @@ For conversions that change width (e.g., f32→f16), use even/odd parts and comb
 
 ## `pto.vtrc`
 
-- **syntax:** `%result = pto.vtrc %input, "ROUND_MODE" : !pto.vreg<NxT> -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vtrc %input, "RND" : !pto.vreg<NxT> -> !pto.vreg<NxT>`
 - **semantics:** Truncate/round float to integer-valued float (stays in float type).
 
 ```c
 for (int i = 0; i < N; i++)
-    dst[i] = round_to_int_valued_float(src[i], round_mode);
+    dst[i] = round_to_int_valued_float(src[i], rnd);
 ```
 
 - **inputs:**
-  `%input` is the floating-point source vector and `ROUND_MODE` selects the
+  `%input` is the floating-point source vector and `RND` selects the
   truncation/rounding rule.
 - **outputs:**
   `%result` is still a floating-point vector, but each active lane now carries
   an integer-valued floating-point result.
 - **constraints and limitations:**
-  This op does not change the element type. `ROUND_O` is supported for avoiding
+  This op does not change the element type. `O` is supported for avoiding
   double-rounding errors during staged conversions.
 
 **Example:**
 ```mlir
 // Round to nearest integer, keep as float
-%rounded = pto.vtrc %input, "ROUND_R" : !pto.vreg<64xf32> -> !pto.vreg<64xf32>
+%rounded = pto.vtrc %input, "R" : !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 // input:  [1.4, 2.6, -1.5, 3.0]
 // output: [1.0, 3.0, -2.0, 3.0]
 ```
@@ -151,16 +229,16 @@ for (int i = 0; i < N; i++)
 ```mlir
 // Quantization: f32 → i8 with saturation
 %scaled = pto.vmuls %input, %scale, %mask : !pto.vreg<64xf32>, f32, !pto.mask<b32> -> !pto.vreg<64xf32>
-%quantized = pto.vcvt %scaled {round_mode = "ROUND_R", sat = "RS_ENABLE"}
-    : !pto.vreg<64xf32> -> !pto.vreg<64xi32>
+%quantized = pto.vcvt %scaled, %mask {rnd = "R", sat = "SAT"}
+    : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xi32>
 // Then narrow i32 → i8 via pack ops
 
 // Mixed precision: bf16 → f32 for accumulation
-%f32_vec = pto.vcvt %bf16_input {round_mode = "ROUND_R"}
-    : !pto.vreg<128xbf16> -> !pto.vreg<64xf32>
+%f32_vec = pto.vcvt %bf16_input, %mask {part = "EVEN"}
+    : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<64xf32>
 
 // Floor for integer division
-%floored = pto.vtrc %ratio, "ROUND_F" : !pto.vreg<64xf32> -> !pto.vreg<64xf32>
-%int_div = pto.vcvt %floored {round_mode = "ROUND_Z"}
-    : !pto.vreg<64xf32> -> !pto.vreg<64xi32>
+%floored = pto.vtrc %ratio, "F" : !pto.vreg<64xf32> -> !pto.vreg<64xf32>
+%int_div = pto.vcvt %floored, %mask {rnd = "Z"}
+    : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xi32>
 ```

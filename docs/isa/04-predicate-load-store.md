@@ -6,8 +6,12 @@
 Predicate registers (`!pto.mask<G>`) are 256-bit registers that enable per-lane conditional execution. These ops move predicate values between UB and predicate registers.
 
 In concrete examples, `G` should be chosen to match the consumer family. The
-examples below use `b32` when the loaded/stored mask is paired with `f32`
+examples below use `b32` when the loaded/stored mask is used with `f32`
 vector compares or selects.
+
+The predicate load/store ops documented on this page always use explicit
+`base[offset]` addressing. The immediate forms (`pldi`, `psti`) and dynamic
+forms (`plds`, `psts`) differ only in how `%offset` is supplied.
 
 ---
 
@@ -20,20 +24,20 @@ vector compares or selects.
   dynamic-offset form of `pto.pldi`: the predicate payload interpretation is
   the same, but `%offset` is supplied as an SSA `index` instead of a constant
   `index` immediate.
+- **DIST:** mandatory string token, one of `NORM`, `US`, `DS`.
+  - `NORM`: load the normal 256-byte predicate payload.
+  - `US`: load 128 bytes, then duplicate the loaded bits once.
+  - `DS`: load 512 bytes, then keep one bit out of every two bits.
 
-**Distribution modes:** `NORM`, `US`, `DS`.
+The loaded payload is a packed predicate image in UB. Consumer ops interpret
+the resulting `!pto.mask<G>` according to the mask granularity `G`.
+`pto.plds` only
+models the explicit `base[offset]` form.
 
 **Example:**
 ```mlir
 %mask = pto.plds %ub[%c0], "NORM" : !pto.ptr<T, ub>, index -> !pto.mask<G>
 ```
-
----
-
-### `pto.pld`
-
-- **syntax:** `%result = pto.pld %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.mask<G>`
-- **semantics:** Load predicate register with areg offset.
 
 ---
 
@@ -47,6 +51,9 @@ vector compares or selects.
   - `US`: load 128 bytes, then duplicate the loaded bits once.
   - `DS`: load 512 bytes, then keep one bit out of every two bits.
 
+Like `pto.plds`, this op reads a packed predicate payload from UB and
+materializes it as `!pto.mask<G>`.
+
 ---
 
 ## Predicate Stores
@@ -58,22 +65,17 @@ vector compares or selects.
   dynamic-offset form of `pto.psti`: the predicate payload interpretation is
   the same, but `%offset` is supplied as an SSA `index` instead of a constant
   `index` immediate.
+- **DIST:** mandatory string token, one of `NORM`, `PK`.
+  - `NORM`: store predicate payload into a normal 256-byte space.
+  - `PK`: store into a 128-byte space, keeping one bit out of every two bits.
 
-**Distribution modes:** `NORM`, `PK`
+`pto.psts` stores the packed predicate payload represented by `!pto.mask<G>`.
+It only models the explicit `base[offset]` form.
 
 **Example:**
 ```mlir
 pto.psts %mask, %ub[%c0], "NORM" : !pto.mask<G>, !pto.ptr<T, ub>, index
 ```
-
----
-
-### `pto.pst`
-
-- **syntax:** `pto.pst %value, %dest[%offset], "DIST" : !pto.mask<G>, !pto.ptr<T, ub>, index`
-- **semantics:** Store predicate register with areg offset.
-
-**Distribution modes:** `NORM`, `PK`
 
 ---
 
@@ -86,6 +88,10 @@ pto.psts %mask, %ub[%c0], "NORM" : !pto.mask<G>, !pto.ptr<T, ub>, index
   - `NORM`: store predicate payload into a normal 256-byte space.
   - `PK`: store into a 128-byte space, keeping one bit out of every two bits.
 
+`pto.psti` and `pto.psts` store the packed predicate payload represented by
+`!pto.mask<G>`. The surface distinction is only immediate-offset versus
+dynamic-offset.
+
 ---
 
 ### `pto.pstu`
@@ -93,6 +99,9 @@ pto.psts %mask, %ub[%c0], "NORM" : !pto.mask<G>, !pto.ptr<T, ub>, index
 - **syntax:** `%align_out, %base_out = pto.pstu %align_in, %value, %base : !pto.align, !pto.mask<b16>, !pto.ptr<ui16, ub> -> !pto.align, !pto.ptr<ui16, ub>`
 - **syntax:** `%align_out, %base_out = pto.pstu %align_in, %value, %base : !pto.align, !pto.mask<b32>, !pto.ptr<ui32, ub> -> !pto.align, !pto.ptr<ui32, ub>`
 - **semantics:** Predicate unaligned store with align/base state update. The base type is fixed by mask granularity: `b16 <-> ui16`, `b32 <-> ui32`.
+- **outputs:**
+  `%align_out` and `%base_out` are the updated unaligned-store state and are
+  intended to be used by a later `pto.pstu` call.
 
 ---
 

@@ -1,5 +1,4 @@
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto %s -o - 2>/dev/null | FileCheck %s --check-prefix=IR
-// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-text %s -o /dev/null
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o /dev/null
 
 // IR-LABEL: func.func @memref_boundary_kernel(

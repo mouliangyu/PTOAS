@@ -292,14 +292,14 @@ applicable:
 说明：
 
 - `vlds` / `vsts` 作为最小连续访存主路径样板
-- `vldas` / `vldus`、`vldx2` / `vstx2` 允许成组
+- `vldas` / `vldus`、`vldx2` / `vstsx2` 允许成组
 - 若某变体只在 TD 中存在、文档未落定，不直接承诺进度
 
 ### Predicate Load/Store
 
 mandatory:
 
-- packed predicate round-trip
+- predicate load/store composition
 - load/store pair semantic preservation
 - representative logical element count
 
@@ -311,7 +311,7 @@ applicable:
 
 说明：
 
-- `psts+plds`、`pst+pld`、`psti+pldi` 允许成组
+- `psts+plds`、`psti+pldi` 允许成组
 - oracle 必须按 packed predicate 的真实落盘前缀比较，不能按逻辑 mask 长度直接扩展比较
 
 ### Materialization Predicate
@@ -560,16 +560,19 @@ applicable:
   - 目标：验证 signed integer 溢出语义
   - 覆盖：`core-i16-signed, full-mask, integer-overflow`
   - 状态：待补充
-  - 备注：是否按 wraparound / saturation / 其他规则判定，需以 `docs/isa/07-binary-vector-ops.md` 与当前实现交集为准后固化 oracle
+  - 备注：当前按 `pto.vadd` 与 `pto.vsadd` 分离后的非饱和整数加法理解，oracle 采用 `i16` wraparound
 - `micro-op/binary-vector/vadd-i16-unsigned-overflow`
   - 目标：验证 unsigned integer 溢出语义
   - 覆盖：`core-i16-unsigned, full-mask, integer-overflow`
   - 状态：待补充
-  - 备注：是否按 wraparound / saturation / 其他规则判定，需以 `docs/isa/07-binary-vector-ops.md` 与当前实现交集为准后固化 oracle
+  - 备注：当前按 `pto.vadd` 与 `pto.vsadd` 分离后的非饱和整数加法理解，oracle 采用 `u16` wraparound
 - `micro-op/binary-vector/vadd-f32-exceptional`
   - 目标：验证 `f32` 异常值输入
   - 覆盖：`core-f32, full-mask, exceptional-values`
   - 输入至少包含：`+0`、`-0`、`+inf`、`-inf`、`nan` 和普通有限值
+- `micro-op/binary-vector/vsadd`
+  - 目标：验证 signed saturating add 的 `i16` 主语义
+  - 覆盖：`core-i16-signed, full-mask`
 
 当前不把 `vadd-f8*` 列为默认必测项，原因是 `docs/isa/07-binary-vector-ops.md` 还未把 `fp8-like` 明确列入 `pto.vadd` 的 A5 types。
 
@@ -589,6 +592,9 @@ applicable:
 
 `pto.vadds` 作为 `vec-scalar` family 的首个展开样板，当前预期补齐以下 case：
 
+- `visa.txt` 基线中 `VADDS/VSADDS/VMULS/VMAXS/VMINS/VLRELU` 都带显式 `Pg`
+- 因此本 family 的 case 必须显式传入 `%mask`；不能再把这些 op 视为无 mask surface
+
 - `micro-op/vec-scalar/vadds`
   - 目标：`f32` 主语义最小路径
   - 覆盖：`core-f32, full-mask, scalar-operand`
@@ -598,26 +604,26 @@ applicable:
 - `micro-op/vec-scalar/vadds-f16`
   - 目标：验证 `f16` 主语义
   - 覆盖：`core-f16, full-mask, scalar-operand`
-  - 状态：blocked
-  - 备注：`docs/isa/08-vec-scalar-ops.md` 仅给出通用 `T` 语法，尚未明确 `pto.vadds` 的 A5 type 集合
+  - 备注：整数标量形态遵循 vec-scalar 通用规则；signed 向量接受 `si<width>`/`i<width>`，unsigned 向量接受 `ui<width>`/`i<width>`
 - `micro-op/vec-scalar/vadds-bf16`
   - 目标：验证 `bf16` 主语义
   - 覆盖：`core-bf16, full-mask, scalar-operand`
-  - 状态：blocked
-  - 备注：`docs/isa/08-vec-scalar-ops.md` 仅给出通用 `T` 语法，尚未明确 `pto.vadds` 的 A5 type 集合
+  - 备注：整数标量形态遵循 vec-scalar 通用规则；signed 向量接受 `si<width>`/`i<width>`，unsigned 向量接受 `ui<width>`/`i<width>`
 - `micro-op/vec-scalar/vadds-i16-signed`
   - 目标：验证 signed integer 主语义
   - 覆盖：`core-i16-signed, full-mask, scalar-operand`
-  - 状态：blocked
-  - 备注：signed integer legality 仍需 `docs/vpto-spec.md` 与 `docs/isa/08-vec-scalar-ops.md` 的交集进一步固化
+  - 备注：覆盖 signless `arith` 标量接入路径；signed 向量接受 `si16` 或 `i16`
 - `micro-op/vec-scalar/vadds-i16-unsigned`
   - 目标：验证 unsigned integer 主语义
   - 覆盖：`core-i16-unsigned, full-mask, scalar-operand`
-  - 状态：blocked
-  - 备注：unsigned integer legality 仍需 `docs/vpto-spec.md` 与 `docs/isa/08-vec-scalar-ops.md` 的交集进一步固化
+  - 备注：覆盖 signless `arith` 标量接入路径；unsigned 向量接受 `ui16` 或 `i16`
 - `micro-op/vec-scalar/vadds-f32-exceptional`
   - 目标：验证 `f32` 异常值输入
   - 覆盖：`core-f32, full-mask, scalar-operand, exceptional-values`
+- `micro-op/vec-scalar/vsadds`
+  - 目标：验证 signed saturating vec-scalar add 的 `i16` 主语义
+  - 覆盖：`core-i16-signed, full-mask, scalar-operand`
+  - 备注：覆盖 signless `arith` 标量接入路径；`%scalar` 接受 `si16` 或 `i16`
 
 如文档后续对其他 `vec-scalar` op 给出更窄类型范围，应按 op 自身文档收缩，不直接复用 `vadds` 的全集。
 
@@ -650,13 +656,13 @@ applicable:
 - `micro-op/vec-scalar/vadds-i16-signed-overflow`
   - 目标：验证 signed integer 溢出语义
   - 覆盖：`core-i16-signed, full-mask, scalar-operand, integer-overflow`
-  - 状态：blocked
-  - 备注：`docs/isa/08-vec-scalar-ops.md` 尚未给出明确 A5 types 与 overflow 规则，暂不固化 oracle
+  - 状态：implemented
+  - 备注：`visa.txt` 已明确 `VADDS` 不是显式饱和指令；默认 overflow 走 “Other vector instructions” 规则，`SPR.CTRL[53]=0` 截断，`SPR.CTRL[53]=1` 饱和。当前不再作为语义 blocker，后续按该基线收敛 oracle
 - `micro-op/vec-scalar/vadds-i16-unsigned-overflow`
   - 目标：验证 unsigned integer 溢出语义
   - 覆盖：`core-i16-unsigned, full-mask, scalar-operand, integer-overflow`
-  - 状态：blocked
-  - 备注：`docs/isa/08-vec-scalar-ops.md` 尚未给出明确 A5 types 与 overflow 规则，暂不固化 oracle
+  - 状态：implemented
+  - 备注：`visa.txt` 已明确 `VADDS` 不是显式饱和指令；默认 overflow 走 “Other vector instructions” 规则，`SPR.CTRL[53]=0` 截断，`SPR.CTRL[53]=1` 饱和。当前不再作为语义 blocker，后续按该基线收敛 oracle
 
 assessment 驱动的补充 case：
 
@@ -707,11 +713,6 @@ assessment 驱动的补充 case：
 - `micro-op/unary-vector/vabs-f16`
   - 目标：验证 `f16` 主语义
   - 覆盖：`core-f16, full-mask`
-- `micro-op/unary-vector/vabs-bf16`
-  - 目标：验证 `bf16` 主语义
-  - 覆盖：`core-bf16, full-mask`
-  - 状态：blocked
-  - 备注：`docs/isa/06-unary-vector-ops.md` 当前未将 `bf16` 列入 `pto.vabs` 的 A5 types
 - `micro-op/unary-vector/vabs-i16-signed`
   - 目标：验证 signed integer 主语义
   - 覆盖：`core-i16-signed, full-mask`
@@ -725,8 +726,8 @@ assessment 驱动的补充 case：
 - `micro-op/unary-vector/vabs-i16-signed-overflow-edge`
   - 目标：验证 signed integer 边界值行为
   - 覆盖：`core-i16-signed, full-mask, integer-overflow`
-  - 状态：待补充
-  - 备注：重点检查最小负值绝对值等边界；oracle 以文档与实现交集固化
+  - 状态：已补充静态 case
+  - 备注：当前 case 前缀显式覆盖 `INT16_MIN`、`INT16_MIN+1` 等边界值；golden 以 `int16` 域内 `abs` 结果对齐当前 truncation 基线
 
 `pto.vexp` 作为 `unary-vector` family 中对定义域边界更敏感的样板，当前预期补齐以下 case：
 
@@ -739,11 +740,6 @@ assessment 驱动的补充 case：
 - `micro-op/unary-vector/vexp-f16`
   - 目标：验证 `f16` 主语义
   - 覆盖：`core-f16, full-mask`
-- `micro-op/unary-vector/vexp-bf16`
-  - 目标：验证 `bf16` 主语义
-  - 覆盖：`core-bf16, full-mask`
-  - 状态：blocked
-  - 备注：`docs/isa/06-unary-vector-ops.md` 当前未将 `bf16` 列入 `pto.vexp` 的 A5 types
 - `micro-op/unary-vector/vexp-f32-exceptional`
   - 目标：验证 `f32` 特殊值输入
   - 覆盖：`core-f32, full-mask, exceptional-values`
@@ -782,9 +778,6 @@ assessment 驱动的补充 case：
 - `micro-op/unary-vector/vcls`
   - 目标：验证 count-leading-sign-bits 主语义
   - 覆盖：`core-i16-signed, full-mask`
-- `micro-op/unary-vector/vmov`
-  - 目标：验证 masked register copy 主语义
-  - 覆盖：`core-f32, full-mask`
 
 assessment 驱动的补充 case：
 
@@ -803,10 +796,6 @@ assessment 驱动的补充 case：
 - `micro-op/unary-vector/vneg-f32-exceptional`
   - 目标：验证 `vneg` 对 `+0/-0/NaN/Inf` 的处理
   - 覆盖：`core-f32, exceptional-values`
-- `micro-op/unary-vector/vmov-tail`
-  - 目标：验证 `vmov` 在 `tail-mask` 下的选择性复制
-  - 覆盖：`core-f32, tail-mask`
-
 ### Binary Vector Follow-up Cases
 
 除 `vadd` 外，`binary-vector` family 还需要按相同粒度为已优先实现的样板补齐明确清单。
@@ -822,11 +811,6 @@ assessment 驱动的补充 case：
 - `micro-op/binary-vector/vdiv-f16`
   - 目标：验证 `f16` 主语义
   - 覆盖：`core-f16, full-mask`
-- `micro-op/binary-vector/vdiv-bf16`
-  - 目标：验证 `bf16` 主语义
-  - 覆盖：`core-bf16, full-mask`
-  - 状态：blocked
-  - 备注：`docs/isa/07-binary-vector-ops.md` 当前未将 `bf16` 列入 `pto.vdiv` 的 A5 types
 - `micro-op/binary-vector/vdiv-f32-exceptional`
   - 目标：验证除数 / 被除数特殊值
   - 覆盖：`core-f32, full-mask, exceptional-values`
@@ -861,6 +845,9 @@ assessment 驱动的补充 case：
 - `micro-op/binary-vector/vsub`
   - 目标：验证减法主语义
   - 覆盖：`core-f32, full-mask`
+- `micro-op/binary-vector/vssub`
+  - 目标：验证 signed saturating subtract 的 `i16` 主语义
+  - 覆盖：`core-i16-signed, full-mask`
 - `micro-op/binary-vector/vmul`
   - 目标：验证乘法主语义
   - 覆盖：`core-f32, full-mask`
@@ -991,8 +978,8 @@ assessment 驱动的补充 case：
 - `micro-op/conversion/vcvt-i32-to-i16-overflow`
   - 目标：验证整数转换溢出语义
   - 覆盖：`i32-to-i16, integer-overflow`
-  - 状态：blocked
-  - 备注：`docs/isa/09-conversion-ops.md` 当前未明确列出 `i32 -> i16` 这一 A5 conversion pair
+  - 状态：已补充并通过 compile-only
+  - 备注：当前 case 按 `sat = "SAT"` + `part = "EVEN/ODD"` 组合补齐 `s32 -> s16` overflow 场景，golden 使用 `int16` 饱和裁剪
 
 `pto.vtrc` 作为 `conversion` family 的 rounding 样板，当前预期补齐以下 case：
 
@@ -1058,9 +1045,17 @@ assessment 驱动的补充 case：
 - `pto.plt_b8` / `pto.plt_b16` / `pto.plt_b32`
   - 统一由 `plt-tail-mask` 样板覆盖
 - `pto.pdintlv_b8`
-  - 由 `pdintlv_b8` case 覆盖
+  - 由 `pdintlv_b8` / `pdintlv_b8-nontrivial` case 覆盖
+- `pto.pdintlv_b16`
+  - 由 `pdintlv_b16` / `pdintlv_b16-nontrivial` case 覆盖
+- `pto.pdintlv_b32`
+  - 由 `pdintlv_b32` / `pdintlv_b32-nontrivial` case 覆盖
+- `pto.pintlv_b8`
+  - 由 `pintlv_b8` / `pintlv_b8-nontrivial` case 覆盖
 - `pto.pintlv_b16`
-  - 由 `pintlv_b16` case 覆盖
+  - 由 `pintlv_b16` / `pintlv_b16-nontrivial` case 覆盖
+- `pto.pintlv_b32`
+  - 由 `pintlv_b32` / `pintlv_b32-nontrivial` case 覆盖
 
 - `micro-op/materialization-predicate/vbr-f32`
   - 目标：验证 scalar broadcast 到 vector 的主语义
@@ -1081,7 +1076,8 @@ assessment 驱动的补充 case：
   - 目标：验证 tail-mask 生成
   - 覆盖：`tail-mask`
 - `micro-op/materialization-predicate/plt-tail-mask`
-  - 目标：验证带 scalar_out 的 tail-mask 生成
+  - 目标：验证带 `scalar_out` surface 的 tail-mask 生成
+  - 说明：当前只要求验证第二结果存在并可用于链式传递，不要求在本阶段固定 `scalar_out` 的精确数值递推公式
   - 覆盖：`tail-mask, scalar-carry-out`
 - `micro-op/materialization-predicate/ppack-punpack`
   - 目标：验证 predicate pack/unpack round-trip
@@ -1090,7 +1086,19 @@ assessment 驱动的补充 case：
 - `micro-op/materialization-predicate/pdintlv_b8`
   - 目标：验证 predicate deinterleave
   - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pdintlv_b16`
+  - 目标：验证 predicate deinterleave
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pdintlv_b32`
+  - 目标：验证 predicate deinterleave
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pintlv_b8`
+  - 目标：验证 predicate interleave
+  - 覆盖：`predicate-transform, lane-order`
 - `micro-op/materialization-predicate/pintlv_b16`
+  - 目标：验证 predicate interleave
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pintlv_b32`
   - 目标：验证 predicate interleave
   - 覆盖：`predicate-transform, lane-order`
 - `micro-op/materialization-predicate/pand`
@@ -1118,7 +1126,8 @@ assessment 驱动的补充 case：
   - 目标：验证 tail-mask 在临界长度附近的边界行为
   - 覆盖：`tail-mask, representative-logical-elements`
 - `micro-op/materialization-predicate/plt-tail-mask-boundary`
-  - 目标：验证带 `scalar_out` 的 tail-mask 边界行为
+  - 目标：验证带 `scalar_out` surface 的 tail-mask 边界行为
+  - 说明：当前只要求验证第二结果存在并可用于链式传递，不要求在本阶段固定 `scalar_out` 的精确数值递推公式
   - 覆盖：`tail-mask, scalar-carry-out, representative-logical-elements`
 - `micro-op/materialization-predicate/ppack-punpack-nontrivial`
   - 目标：验证非平凡 predicate 模式的 pack / unpack round-trip
@@ -1127,8 +1136,20 @@ assessment 驱动的补充 case：
 - `micro-op/materialization-predicate/pdintlv_b8-nontrivial`
   - 目标：验证 `pdintlv_b8` 在非平凡 lane 模式下的顺序语义
   - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pdintlv_b16-nontrivial`
+  - 目标：验证 `pdintlv_b16` 在非平凡 lane 模式下的顺序语义
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pdintlv_b32-nontrivial`
+  - 目标：验证 `pdintlv_b32` 在非平凡 lane 模式下的顺序语义
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pintlv_b8-nontrivial`
+  - 目标：验证 `pintlv_b8` 在非平凡 lane 模式下的顺序语义
+  - 覆盖：`predicate-transform, lane-order`
 - `micro-op/materialization-predicate/pintlv_b16-nontrivial`
   - 目标：验证 `pintlv_b16` 在非平凡 lane 模式下的顺序语义
+  - 覆盖：`predicate-transform, lane-order`
+- `micro-op/materialization-predicate/pintlv_b32-nontrivial`
+  - 目标：验证 `pintlv_b32` 在非平凡 lane 模式下的顺序语义
   - 覆盖：`predicate-transform, lane-order`
 - `micro-op/materialization-predicate/psel-tail-predicate`
   - 目标：验证 predicate select 在部分激活 mask 下的选择语义
@@ -1138,28 +1159,32 @@ assessment 驱动的补充 case：
 
 `predicate-load-store` family 当前预期补齐以下 case：
 
-- `micro-op/predicate-load-store/psts-plds`
-  - 目标：验证 dynamic-offset predicate round-trip
-  - 覆盖：`packed-predicate-roundtrip, dynamic-offset, load-store-pair-preservation, representative-logical-elements`
-  - 承接：`pto.psts` 负责 dynamic-offset packed predicate store；`pto.plds` 负责对应 load 后的 packed predicate 恢复
-- `micro-op/predicate-load-store/pst-pld`
-  - 目标：验证 areg-offset predicate round-trip
-  - 覆盖：`packed-predicate-roundtrip, areg-offset, load-store-pair-preservation, representative-logical-elements`
-  - 承接：`pto.pst` 负责 areg-offset packed predicate store；`pto.pld` 负责对应 load 后的 packed predicate 恢复
-- `micro-op/predicate-load-store/psti-pldi`
-  - 目标：验证 immediate-offset predicate round-trip
-  - 覆盖：`packed-predicate-roundtrip, immediate-offset, load-store-pair-preservation, representative-logical-elements`
-  - 承接：`pto.psti` 负责 immediate-offset packed predicate store；`pto.pldi` 负责对应 load 后的 packed predicate 恢复
+- `micro-op/predicate-load-store/psts-pk-plds-us`
+  - 目标：验证 dynamic-offset `PK -> US` predicate load/store 组合行为
+  - 覆盖：`predicate-load-store-composition, dynamic-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psts` 负责 dynamic-offset `PK` store；`pto.plds` 负责对应 `US` load；组合 case 固定 `PK -> US` 串接后的可观察结果
+- `micro-op/predicate-load-store/psti-pk-pldi-us`
+  - 目标：验证 immediate-offset `PK -> US` predicate load/store 组合行为
+  - 覆盖：`predicate-load-store-composition, immediate-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psti` 负责 immediate-offset `PK` store；`pto.pldi` 负责对应 `US` load；组合 case 固定 `PK -> US` 串接后的可观察结果
+- `micro-op/predicate-load-store/psts-norm-plds-ds`
+  - 目标：验证 dynamic-offset `NORM -> DS` predicate load/store 组合行为
+  - 覆盖：`predicate-load-store-composition, dynamic-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psts` 负责 dynamic-offset `NORM` store；`pto.plds` 负责对应 `DS` load；组合 case 固定 `NORM -> DS` 串接后的可观察结果
+- `micro-op/predicate-load-store/psti-norm-pldi-ds`
+  - 目标：验证 immediate-offset `NORM -> DS` predicate load/store 组合行为
+  - 覆盖：`predicate-load-store-composition, immediate-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psti` 负责 immediate-offset `NORM` store；`pto.pldi` 负责对应 `DS` load；组合 case 固定 `NORM -> DS` 串接后的可观察结果
 - `micro-op/predicate-load-store/pstu`
   - 目标：验证 unaligned predicate store 的状态推进
   - 覆盖：`unaligned-predicate-store, state-update, representative-logical-elements`
 
 assessment 驱动的补充 case：
 
-- `micro-op/predicate-load-store/psts-plds-packed-prefix-boundary`
-  - 目标：验证 packed predicate 在非整字节前缀长度下的落盘前缀保持
-  - 覆盖：`packed-predicate-roundtrip, dynamic-offset, load-store-pair-preservation, representative-logical-elements`
-  - 承接：`pto.psts` 验证非整字节前缀长度下的 dynamic-offset packed store；`pto.plds` 验证对应 load 后的前缀保持
+- `micro-op/predicate-load-store/psts-pk-plds-us-prefix-boundary`
+  - 目标：验证 `PK -> US` 组合在非整字节前缀长度下的前缀保持
+  - 覆盖：`predicate-load-store-composition, dynamic-offset, load-store-pair-preservation, representative-logical-elements`
+  - 承接：`pto.psts` 验证非整字节前缀长度下的 dynamic-offset `PK` store；`pto.plds` 验证对应 `US` load 后的前缀保持，组合 case 只固定可观察前缀行为
 - `micro-op/predicate-load-store/pstu-state-advance-boundary`
   - 目标：验证 `pstu` 在 typed `b16 <-> ui16` contract 上的非整包长度地址推进和落盘边界
   - 覆盖：`unaligned-predicate-store, state-update, boundary, b16-mask, typed-ptr-b16`
@@ -1230,28 +1255,46 @@ assessment 驱动的补充 case：
   - 目标：验证 `vlds` 的 `tail-mask` 消费场景
   - 覆盖：`core-f32, contiguous, tail-mask, aligned, dist-norm`
 - `micro-op/vector-load-store/vlds-brc-b32`
-  - 目标：验证 broadcast distribution
+  - 目标：验证 `vlds` 的 `BRC_B32` broadcast distribution
   - 覆盖：`core-f32, full-mask, aligned, dist-brc-b32`
+- `micro-op/vector-load-store/vlds-brc-b16`
+  - 目标：验证 `vlds` 的 `BRC_B16` broadcast distribution
+  - 覆盖：`core-f16, full-mask, aligned, dist-brc-b16`
+- `micro-op/vector-load-store/vlds-us-b16`
+  - 目标：验证 `vlds` 的 `US_B16` up-sample distribution
+  - 覆盖：`core-i16, full-mask, aligned, dist-us-b16`
+- `micro-op/vector-load-store/vlds-ds-b16`
+  - 目标：验证 `vlds` 的 `DS_B16` down-sample distribution
+  - 覆盖：`core-i16, full-mask, aligned, dist-ds-b16`
+- `micro-op/vector-load-store/vlds-brc-blk`
+  - 目标：验证 `vlds` 的 `BRC_BLK` block-broadcast distribution
+  - 覆盖：`core-i8, full-mask, aligned, dist-brc-blk`
 - `micro-op/vector-load-store/vsts`
   - 目标：验证 `vsts` 的 contiguous 主路径
   - 覆盖：`core-f32, contiguous, full-mask, aligned, dist-norm`
+- `micro-op/vector-load-store/vsts-1pt-b16`
+  - 目标：验证 `vsts` 的 `1PT_B16` first-element-only distribution
+  - 覆盖：`core-i16, full-mask, aligned, dist-1pt-b16`
+- `micro-op/vector-load-store/vsts-pk-b16`
+  - 目标：验证 `vsts` 的 `PK_B16` packed-store distribution
+  - 覆盖：`core-i16, full-mask, aligned, dist-pk-b16`
+- `micro-op/vector-load-store/vsts-mrg2chn-b16`
+  - 目标：验证 `vsts` 的 `MRG2CHN_B16` channel-merge distribution
+  - 覆盖：`core-i16, full-mask, aligned, dist-mrg2chn-b16`
+- `micro-op/vector-load-store/vsts-mrg4chn-b8`
+  - 目标：验证 `vsts` 的 `MRG4CHN_B8` 4-channel merge distribution
+  - 覆盖：`core-i8, full-mask, aligned, dist-mrg4chn-b8`
 - `micro-op/vector-load-store/vldas-vldus`
   - 目标：验证 unaligned load stream
   - 覆盖：`core-f32, full-mask, unaligned, stream-state`
   - 承接：`pto.vldas` 验证 aligned stream state 基础路径；`pto.vldus` 验证 unaligned stream state 基础路径
-- `micro-op/vector-load-store/vldx2-vstx2`
+- `micro-op/vector-load-store/vldsx2-vstsx2`
   - 目标：验证 deinterleave / interleave 成组 round-trip
   - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv`
-  - 承接：`pto.vldx2` 验证双路读取后的 deinterleave 布局；`pto.vstx2` 验证对应 interleave 写回布局
-- `micro-op/vector-load-store/vsld`
-  - 目标：验证固定 stride load 主语义
-  - 覆盖：`core-f32, full-mask, strided-load`
+  - 承接：`pto.vldsx2` 验证双路读取后的 deinterleave 布局；`pto.vstsx2` 验证对应 interleave 写回布局
 - `micro-op/vector-load-store/vsldb`
   - 目标：验证 block-strided load 与 block mask
   - 覆盖：`core-f32, full-mask, block-strided-load, block-mask`
-- `micro-op/vector-load-store/vsst`
-  - 目标：验证 strided store 主语义
-  - 覆盖：`core-f32, full-mask, strided-store`
 - `micro-op/vector-load-store/vsstb`
   - 目标：验证 block-strided store 与块掩码主语义
   - 覆盖：`core-f32, full-mask, block-strided-store, block-mask`
@@ -1271,21 +1314,16 @@ assessment 驱动的补充 case：
   - 目标：验证 stream load 连续调用时的状态推进
   - 覆盖：`core-f32, full-mask, unaligned, stream-state, state-update`
   - 承接：`pto.vldas` 验证连续调用下的 aligned stream state 推进；`pto.vldus` 验证连续调用下的 unaligned stream state 推进
-- `micro-op/vector-load-store/vldx2-layout-check`
-  - 目标：验证 `vldx2` 单边 deinterleave 后的 lane 布局
+- `micro-op/vector-load-store/vldsx2-layout-check`
+  - 目标：验证 `vldsx2` 单边 deinterleave 后的 lane 布局
   - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv, lane-order`
-- `micro-op/vector-load-store/vstx2-layout-check`
-  - 目标：验证 `vstx2` 单边 interleave 写回后的 lane 布局
+- `micro-op/vector-load-store/vstsx2-layout-check`
+  - 目标：验证 `vstsx2` 单边 interleave 写回后的 lane 布局
   - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv, lane-order`
 - `micro-op/vector-load-store/vstas-vstus-offset-update`
   - 目标：验证 `vstus` 产出的 unaligned store state 继续驱动 `vstas`，并同时覆盖 immediate offset 与 state-update 的组合效果
   - 覆盖：`core-f32, full-mask, immediate-offset, state-update`
   - 承接：`pto.vstus` 验证 unaligned immediate-offset + state-update，并将 `%align_out/%base_out` 继续传给 `pto.vstas`；`pto.vstas` 在同一条有效 state 链上验证 aligned immediate-offset + state-update
-- `micro-op/vector-load-store/vsld-vsst-stride-boundary`
-  - 目标：验证 stride load/store 在边界步长下的访存效果
-  - 覆盖：`core-f32, strided-load, strided-store, block-mask`
-  - 承接：`pto.vsld` 验证 stride 读取边界；`pto.vsst` 验证对应 stride 写回边界
-
 ### Gather/Scatter Cases
 
 - `micro-op/gather-scatter/vscatter`
@@ -1394,8 +1432,8 @@ assessment 驱动的补充 case：
 - `micro-op/dsa-sfu/vbitsort`
   - 目标：验证 bit-sort surface 与基础数据重排语义
   - 覆盖：`index-generation, layout-transform`
-  - 状态：blocked
-  - 备注：`docs/vpto-spec.md` 与 `docs/isa/13-dsa-sfu-ops.md` 目前只给出 surface/接口层信息，尚未形成可稳定闭环的 oracle 语义
+  - 状态：已补充静态 case
+  - 备注：当前 case 以 `f32 score + u32 index` 覆盖降序排序、stable tie-break、输出 proposal record 8B 布局与 `repeat_times = 1` 的主路径
 
 assessment 驱动的补充 case：
 
@@ -1415,6 +1453,7 @@ assessment 驱动的补充 case：
 说明：
 
 - `pto.vlrelu` 在文档层同时出现在 vec-scalar 与 DSA/SFU 两处；测试台账统一按 DSA/SFU 归类，`docs/isa/08-vec-scalar-ops.md` 仅作为语义交叉参考
+- `visa.txt` 基线中 `VLRELU.type Vd, Vn, Sm, Pg` 带显式 `Pg`，因此相关 case 必须保留 `%mask`
 - 已转入 `[03-vpto-doc-drift-review.md](/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.planning/phases/03-hivm-emission/03-vpto-doc-drift-review.md)` 的文档漂移项，暂不继续留在本范围文档记账
 - `vmull` 的 oracle 必须分别验证 low/high 两个输出
 
@@ -1461,7 +1500,7 @@ case 命名约定：
 - `pattern-mask`
 - `pat-all`
 - `pat-vl`
-- `packed-predicate-roundtrip`
+- `predicate-load-store-composition`
 - `load-store-pair-preservation`
 - `representative-logical-elements`
 - `pack-unpack-roundtrip`

@@ -101,9 +101,9 @@ The PTO micro Instruction enforces a strict memory hierarchy. The Unified Buffer
 ```
 
 1. **GM → UB**: DMA transfer via MTE2 (`pto.copy_gm_to_ubuf`)
-2. **UB → vreg**: Vector Load instructions (`pto.vlds`, `pto.vldx2`, etc.)
+2. **UB → vreg**: Vector Load instructions (`pto.vlds`, `pto.vldsx2`, etc.)
 3. **vreg → vreg**: Compute instructions (`pto.vadd`, `pto.vmul`, etc.)
-4. **vreg → UB**: Vector Store instructions (`pto.vsts`, `pto.vstx2`, etc.)
+4. **vreg → UB**: Vector Store instructions (`pto.vsts`, `pto.vstsx2`, etc.)
 5. **UB → GM**: DMA transfer via MTE3 (`pto.copy_ubuf_to_gm`)
 
 **Load/Store Access Patterns**:
@@ -474,13 +474,13 @@ pto.vsts %value, %destination[%offset] {dist = "DIST"} : !pto.vreg<NxT>, !pto.pt
 **Dual Load (one load, two results — deinterleave):**
 
 ```mlir
-%low, %high = pto.vldx2 %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.vreg<NxT>, !pto.vreg<NxT>
+%low, %high = pto.vldsx2 %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.vreg<NxT>, !pto.vreg<NxT>
 ```
 
 **Dual Store (two inputs, one interleaved store):**
 
 ```mlir
-pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>
+pto.vstsx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>
 ```
 
 **Compare (two vectors + seed mask in, mask out):**
@@ -492,7 +492,7 @@ pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg
 **Conversion (one vector in, different-typed vector out):**
 
 ```mlir
-%result = pto.vcvt %input {round_mode = "ROUND_R", sat = "RS_ENABLE", part = "PART_EVEN"} : !pto.vreg<NxT0> -> !pto.vreg<MxT1>
+%result = pto.vcvt %input {rnd = "R", sat = "SAT", part = "EVEN"} : !pto.vreg<NxT0> -> !pto.vreg<MxT1>
 ```
 
 **Predicate construction:**
@@ -763,16 +763,6 @@ Address-form policy for this section:
   `plds(...)`
   `__builtin_cce_plds_b8`
 
-### `pto.pld`
-
-- syntax:
-  `%result = pto.pld %source[%offset], "DIST" : buf_like, index -> !pto.mask<b8>`
-- semantics:
-  TODO(user): add one-line semantics for external developers.
-- CCE correspondence:
-  `pld(...)`
-  `__builtin_cce_pld_b8`
-
 ### `pto.pldi`
 
 - syntax:
@@ -789,12 +779,13 @@ Address-form policy for this section:
   `pldi(...)`
   `__builtin_cce_pldi_b8`, `__builtin_cce_pldi_post_b8`
 
-### `pto.vldx2`
+### `pto.vldsx2`
 
 - syntax:
-  `%low, %high = pto.vldx2 %source[%offset], "DIST" : buf_like, index -> !pto.vreg<NxT>, !pto.vreg<NxT>`
+  `%low, %high = pto.vldsx2 %source[%offset], "DIST" : buf_like, index -> !pto.vreg<NxT>, !pto.vreg<NxT>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  UB dual-load/deinterleave family. PTO surface accepts `BDINTLV` and
+  `DINTLV`; `BDINTLV` 不区分元素位宽，`DINTLV` 仅支持 `b8`、`b16`、`b32`。
 - CCE correspondence:
   `vld(...)`
   `__builtin_cce_vldx2_*`
@@ -812,9 +803,12 @@ Address-form policy for this section:
 ### `pto.vgatherb`
 
 - syntax:
-  `%result = pto.vgatherb %source, %offsets, %active_lanes : !llvm.ptr<AS>, !pto.vreg<NxI>, index -> !pto.vreg<NxT>`
+  `%result = pto.vgatherb %source, %offsets, %mask : !llvm.ptr<AS>, !pto.vreg<NxI>, !pto.mask<b32> -> !pto.vreg<NxT>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  从 UB 做 32B block gather。`%offsets` 是 `u32` byte-offset vector，仅低
+  `VL/8` 字节有效；每个参与 gather 的 offset 必须 32B 对齐。`%mask` 为
+  `b32` 谓词，按 block 粒度控制哪些 block 参与地址合并和读取，关闭的位置
+  结果块清零且不触发该块地址溢出异常。
 - CCE correspondence:
   `vgatherb(...)`
   `__builtin_cce_vgatherb_*`, `__builtin_cce_vgatherb_v300_*`, `__builtin_cce_vgatherb_v310_*`
@@ -828,16 +822,6 @@ Address-form policy for this section:
 - CCE correspondence:
   `vgather2_bc(...)`
   `__builtin_cce_vgather2_bc_*`
-
-### `pto.vsld`
-
-- syntax:
-  `%result = pto.vsld %source[%offset], "STRIDE" : buf_like -> !pto.vreg<NxT>`
-- semantics:
-  TODO(user): add one-line semantics for external developers.
-- CCE correspondence:
-  `vsld(...)`
-  `__builtin_cce_vsld_*`
 
 ### `pto.vsldb`
 
@@ -1094,6 +1078,26 @@ Address-form policy for this section:
   `vsub(...)`
   `__builtin_cce_vsub_*`
 
+### `pto.vsadd`
+
+- syntax:
+  `%result = pto.vsadd %lhs, %rhs : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<NxT>`
+- semantics:
+  signed saturating lane-wise add; current A5 support is `!pto.vreg<128xi16>`
+- CCE correspondence:
+  `vsadd(...)`
+  `__builtin_cce_vsadd_*`
+
+### `pto.vssub`
+
+- syntax:
+  `%result = pto.vssub %lhs, %rhs : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<NxT>`
+- semantics:
+  signed saturating lane-wise subtract; current A5 support is `!pto.vreg<128xi16>`
+- CCE correspondence:
+  `vssub(...)`
+  `__builtin_cce_vssub_*`
+
 ### `pto.vmul`
 
 - syntax:
@@ -1189,7 +1193,7 @@ Address-form policy for this section:
 ### `pto.vmuls`
 
 - syntax:
-  `%result = pto.vmuls %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vmuls %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1199,17 +1203,27 @@ Address-form policy for this section:
 ### `pto.vadds`
 
 - syntax:
-  `%result = pto.vadds %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
   `vadds(...)`
   `__builtin_cce_vadds_*`
 
+### `pto.vsadds`
+
+- syntax:
+  `%result = pto.vsadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
+- semantics:
+  signed saturating vector-scalar add; current A5 support is `!pto.vreg<128xi16>` with `i16` scalar
+- CCE correspondence:
+  `vsadds(...)`
+  `__builtin_cce_vsadds_*`
+
 ### `pto.vmaxs`
 
 - syntax:
-  `%result = pto.vmaxs %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vmaxs %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1219,7 +1233,7 @@ Address-form policy for this section:
 ### `pto.vmins`
 
 - syntax:
-  `%result = pto.vmins %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vmins %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1229,7 +1243,7 @@ Address-form policy for this section:
 ### `pto.vlrelu`
 
 - syntax:
-  `%result = pto.vlrelu %input, %scalar : !pto.vreg<NxT>, T -> !pto.vreg<NxT>`
+  `%result = pto.vlrelu %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1464,7 +1478,7 @@ Address-form policy for this section:
 ### `pto.vtrc`
 
 - syntax:
-  `%result = pto.vtrc %input, "ROUND_MODE" : !pto.vreg<NxT> -> !pto.vreg<NxT>`
+  `%result = pto.vtrc %input, "RND" : !pto.vreg<NxT> -> !pto.vreg<NxT>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1474,7 +1488,7 @@ Address-form policy for this section:
 ### `pto.vcvt`
 
 - syntax:
-  `%result = pto.vcvt %input {round_mode = "ROUND_MODE", sat = "SAT_MODE", part = "PART_MODE"} : !pto.vreg<NxT0> -> !pto.vreg<NxT1>`
+  `%result = pto.vcvt %input {rnd = "RND", sat = "SAT", part = "PART"} : !pto.vreg<NxT0> -> !pto.vreg<NxT1>`
 - semantics:
   TODO(user): add one-line semantics for external developers.
 - CCE correspondence:
@@ -1497,7 +1511,7 @@ Address-form policy for this section:
 - syntax:
   `pto.vbitsort %destination, %source, %indices, %repeat_times : !llvm.ptr<AS>, !llvm.ptr<AS>, !llvm.ptr<AS>, index`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Sort score/index pairs in UB and write sorted proposal records to `%destination`.
 - CCE correspondence:
   `vbitsort(...)`
   `__builtin_cce_vbitsort_*`
@@ -1548,7 +1562,9 @@ Address-form policy for this section:
 - syntax:
   `pto.vsts %value, %destination[%offset] {dist = "DIST"} : !pto.vreg<NxT>, buf_like`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  UB single-input store family. PTO surface accepts `NORM`、`1PT`、`PK`、
+  `PK4`、`MRG4CHN`、`MRG2CHN`；各 family 的可用元素位宽以
+  `docs/isa/03-vector-load-store.md` 为准。
 - CCE correspondence:
   `vst(...)`, `vsts(...)`
   `__builtin_cce_vstx1_*`, `__builtin_cce_vstsx1_*`
@@ -1587,16 +1603,6 @@ Address-form policy for this section:
   `psts(...)`
   `__builtin_cce_psts_b8`, `__builtin_cce_psts_post_b8`
 
-### `pto.pst`
-
-- syntax:
-  `pto.pst %value, %destination[%offset], "DIST" : !pto.mask<b8>, buf_like, index`
-- semantics:
-  TODO(user): add one-line semantics for external developers.
-- CCE correspondence:
-  `pst(...)`
-  `__builtin_cce_pst_b8`
-
 ### `pto.psti`
 
 - syntax:
@@ -1612,22 +1618,13 @@ Address-form policy for this section:
   `psti(...)`
   `__builtin_cce_psti_b8`, `__builtin_cce_psti_post_b8`
 
-### `pto.vsst`
+### `pto.vstsx2`
 
 - syntax:
-  `pto.vsst %value, %destination[%offset], "STRIDE" : !pto.vreg<NxT>, buf_like`
+  `pto.vstsx2 %low, %high, %destination[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, buf_like, index, !pto.mask<G>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
-- CCE correspondence:
-  `vsst(...)`
-  `__builtin_cce_vsst_*`
-
-### `pto.vstx2`
-
-- syntax:
-  `pto.vstx2 %low, %high, %destination[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, buf_like, index, !pto.mask<G>`
-- semantics:
-  TODO(user): add one-line semantics for external developers.
+  UB dual-input interleave store family. PTO surface accepts `INTLV`，仅支持
+  `b8`、`b16`、`b32`。
 - CCE correspondence:
   `vst(...)`
   `__builtin_cce_vstx2_*`
@@ -1813,9 +1810,9 @@ for (int g = 0; g < 8; g++) {
 | `"EVENT_ID"` | Event identifier: `"EVENT_ID0"` etc. |
 | `"DIST"` | Distribution mode string (see the relevant load/store ISA group in Part III) |
 | `"CMP_MODE"` | Compare predicate: `eq \| ne \| lt \| le \| gt \| ge` |
-| `"ROUND_MODE"` | Rounding mode: `ROUND_R \| ROUND_A \| ROUND_F \| ROUND_C \| ROUND_Z` |
-| `"SAT_MODE"` | Saturation: `RS_ENABLE \| RS_DISABLE` |
-| `"PART_MODE"` | Half selector: `PART_EVEN \| PART_ODD` |
+| `"RND"` | Rounding mode: `R \| A \| F \| C \| Z \| O` |
+| `"SAT"` | Saturation: `SAT \| NOSAT` |
+| `"PART"` | Half selector: `EVEN \| ODD` |
 | `"PAT_*"` | Predicate pattern literal |
 | `T` | Element type (f32, f16, bf16, i32, i16, i8, etc.) |
 | `N` | Lane count (`N * bitwidth(T) = 2048`) |
@@ -1835,17 +1832,17 @@ This section provides a categorized overview of all PTO micro Instruction operat
 |---|-------|-------------|-------|---------|
 | 1 | [Pipeline Sync](isa/01-pipeline-sync.md) | Intra-core pipeline synchronization | 5 | `pto.set_flag`, `pto.wait_flag`, `pto.pipe_barrier`, `pto.get_buf`, `pto.rls_buf` |
 | 2 | [DMA Copy Programming](isa/02-dma-copy.md) | DMA configuration and transfer between GM↔UB | 9 | `pto.set_loop*_stride_*`, `pto.set_loop_size_*`, `pto.copy_gm_to_ubuf`, `pto.copy_ubuf_to_ubuf`, `pto.copy_ubuf_to_gm` |
-| 3 | [Vector Load/Store](isa/03-vector-load-store.md) | UB↔vreg data movement with various access patterns | ~20 | `pto.vlds`, `pto.vldx2`, `pto.vgather2`, `pto.vsts`, `pto.vstx2`, `pto.vscatter`, etc. |
-| 4 | [Predicate Load/Store](isa/04-predicate-load-store.md) | UB↔mask register movement | 7 | `pto.plds`, `pto.pld`, `pto.pldi`, `pto.psts`, `pto.pst`, `pto.psti`, `pto.pstu` |
+| 3 | [Vector Load/Store](isa/03-vector-load-store.md) | UB↔vreg data movement with various access patterns | ~20 | `pto.vlds`, `pto.vldsx2`, `pto.vgather2`, `pto.vsts`, `pto.vstsx2`, `pto.vscatter`, etc. |
+| 4 | [Predicate Load/Store](isa/04-predicate-load-store.md) | UB↔mask register movement | 5 | `pto.plds`, `pto.pldi`, `pto.psts`, `pto.psti`, `pto.pstu` |
 | 5 | [Materialization & Predicate Ops](isa/05-materialization-predicate.md) | Scalar broadcast, predicate generation and manipulation | ~17 | `pto.vbr`, `pto.vdup`, `pto.pset_b*`, `pto.pge_b*`, `pto.plt_b*`, `pto.ppack`, `pto.punpack`, `pto.pnot`, `pto.psel`, etc. |
 | 6 | [Unary Vector Ops](isa/06-unary-vector-ops.md) | Single-input element-wise operations | 9 | `pto.vabs`, `pto.vexp`, `pto.vln`, `pto.vsqrt`, `pto.vrec`, `pto.vrelu`, `pto.vnot`, `pto.vbcnt`, `pto.vcls` |
-| 7 | [Binary Vector Ops](isa/07-binary-vector-ops.md) | Two-input element-wise operations | 13 | `pto.vadd`, `pto.vsub`, `pto.vmul`, `pto.vdiv`, `pto.vmax`, `pto.vmin`, `pto.vand`, `pto.vor`, `pto.vxor`, `pto.vshl`, `pto.vshr`, `pto.vaddc`, `pto.vsubc` |
-| 8 | [Vec-Scalar Ops](isa/08-vec-scalar-ops.md) | Vector-scalar operations | 8 | `pto.vadds`, `pto.vmuls`, `pto.vmaxs`, `pto.vmins`, `pto.vlrelu`, `pto.vshls`, `pto.vshrs`, `pto.vaddcs`, `pto.vsubcs` |
+| 7 | [Binary Vector Ops](isa/07-binary-vector-ops.md) | Two-input element-wise operations | 15 | `pto.vadd`, `pto.vsub`, `pto.vsadd`, `pto.vssub`, `pto.vmul`, `pto.vdiv`, `pto.vmax`, `pto.vmin`, `pto.vand`, `pto.vor`, `pto.vxor`, `pto.vshl`, `pto.vshr`, `pto.vaddc`, `pto.vsubc` |
+| 8 | [Vec-Scalar Ops](isa/08-vec-scalar-ops.md) | Vector-scalar operations | 10 | `pto.vadds`, `pto.vsadds`, `pto.vmuls`, `pto.vmaxs`, `pto.vmins`, `pto.vlrelu`, `pto.vshls`, `pto.vshrs`, `pto.vaddcs`, `pto.vsubcs` |
 | 9 | [Conversion Ops](isa/09-conversion-ops.md) | Type conversion with rounding/saturation control | 2 | `pto.vcvt`, `pto.vtrc` |
-| 10 | [Reduction Ops](isa/10-reduction-ops.md) | Vector reductions | 3 | `pto.vcadd`, `pto.vcmax`, `pto.vcmin` |
+| 10 | [Reduction Ops](isa/10-reduction-ops.md) | Vector reductions | 7 | `pto.vcadd`, `pto.vcmax`, `pto.vcmin`, `pto.vcgadd`, `pto.vcgmax`, `pto.vcgmin`, `pto.vcpadd` |
 | 11 | [Compare & Select](isa/11-compare-select.md) | Comparison and conditional selection | 4 (+1 not A5) | `pto.vcmp`, `pto.vcmps`, `pto.vsel`, `pto.vselr` (`pto.vselrv2` removed: not A5) |
 | 12 | [Data Rearrangement](isa/12-data-rearrangement.md) | In-register data movement and permutation | 2 (+2 not A5) | `pto.vintlv`, `pto.vdintlv` (`pto.vintlvv2`, `pto.vdintlvv2` removed: not A5) |
-| 13 | [DSA/SFU Ops](isa/13-dsa-sfu-ops.md) | Specialized ops, index generation, and sorting helpers | 5 | `pto.vmull`, `pto.vmula`, `pto.vci`, `pto.vbitsort`, `pto.vmrgsort4` |
+| 13 | [DSA/SFU Ops](isa/13-dsa-sfu-ops.md) | Specialized ops, index generation, and sorting helpers | 9 | `pto.vlrelu`, `pto.vprelu`, `pto.vexpdiff`, `pto.vaxpy`, `pto.vmull`, `pto.vmula`, `pto.vci`, `pto.vbitsort`, `pto.vmrgsort4` |
 | 14 | [Arith (Shared MLIR Dialect)](isa/14-shared-arith.md) | Full scalar `arith` surface used around PTO ops; the companion page lists categories and representative examples | all scalar ops | `arith.constant`, `arith.addi`, `arith.addf`, `arith.cmpi`, `arith.cmpf`, `arith.select`, `arith.index_cast`, `arith.extsi`, `arith.trunci`, `arith.andi`, `arith.shli`, etc. |
 | 15 | [SCF (Shared MLIR Dialect)](isa/15-shared-scf.md) | Structured loops, branches, and loop-carried state around PTO regions | 5 | `scf.for`, `scf.if`, `scf.while`, `scf.condition`, `scf.yield` |
 
@@ -1861,9 +1858,9 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | UB→GM DMA | 2 | `pto.copy_ubuf_to_gm` |
 | UB→UB Copy | 2 | `pto.copy_ubuf_to_ubuf` |
 | Contiguous Load | 3 | `pto.vlds` with `NORM` dist |
-| Broadcast Load | 3 | `pto.vlds` with `BRC_*` dist |
+| Broadcast Load | 3 | `pto.vlds` with `BRC` family dist |
 | Gather | 3 | `pto.vgather2`, `pto.vgatherb` |
-| Contiguous Store | 3 | `pto.vsts` with `NORM_*` dist |
+| Contiguous Store | 3 | `pto.vsts` with `NORM` dist |
 | Scatter | 3 | `pto.vscatter` |
 
 ### Compute Operations
@@ -1932,7 +1929,7 @@ Group 14 covers the full scalar `arith` surface. The rows below list common PTO 
 // 1. Find max
 %max_vec = pto.vcmax %logits, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 pto.vsts %max_vec, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
-%max_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+%max_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // 2. exp(x - max) using fused op
 %exp = pto.vexpdiff %logits, %max_bc, "ODD" : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
@@ -1940,7 +1937,7 @@ pto.vsts %max_vec, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !
 // 3. Sum
 %sum = pto.vcadd %exp, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 pto.vsts %sum, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
-%sum_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+%sum_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // 4. Divide
 %softmax = pto.vdiv %exp, %sum_bc, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
@@ -1964,10 +1961,10 @@ pto.vsts %sum, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.
 
 ```mlir
 // AoS → SoA (deinterleave)
-%x, %y = pto.vldx2 %ub_xy[%offset], "DINTLV_B32" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
+%x, %y = pto.vldsx2 %ub_xy[%offset], "DINTLV" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
 
 // SoA → AoS (interleave)
-pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.ptr<f32, ub>, index, !pto.mask<b32>
+pto.vstsx2 %x, %y, %ub_xy[%offset], "INTLV", %all_mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.ptr<f32, ub>, index, !pto.mask<b32>
 ```
 
 ---
@@ -1995,7 +1992,7 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 | 11 | __VEC_SCOPE__ | Kept verbatim | vpto-spec.md |
 | 12 | Element types | **EXPANDED** with FP8/FP4 | a5_intrinsic_ir.md |
 | 13 | Load dist tokens | **EXPANDED** (BRC, US, DS, SPLT, UNPK) | a5_intrinsic_ir.md |
-| 14 | Store dist tokens | **EXPANDED** (NORM_B*, PK_B*, MRG*) | a5_intrinsic_ir.md |
+| 14 | Store dist tokens | **EXPANDED** into PTO families (`1PT`, `PK`, `PK4`, `MRG4CHN`, `MRG2CHN`; `INTLV` split to `vstsx2`) | a5_intrinsic_ir.md |
 | 15 | mem_bar tokens | **ADDED** | a5_intrinsic_ir.md |
 
 ### Part II Changes
@@ -2022,7 +2019,6 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 | 9 | Sec 6: vneg, vrsqrt | **ADDED** | a5_intrinsic_ir.md |
 | 10 | Sec 6: vcgadd, vcgmax, vcgmin | **ADDED** per-VLane reductions | a5_intrinsic_ir.md |
 | 11 | Sec 6: vcpadd | **ADDED** prefix sum | a5_intrinsic_ir.md |
-| 12 | Sec 6: vmov | **ADDED** | a5_intrinsic_ir.md |
 
 ### Part 3B Changes (Sections 7–10)
 
@@ -2045,7 +2041,7 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 | 3 | Sec 12: vmull | C semantics + A5 type info added | Both |
 | 4 | Sec 12: vmula | Kept from vpto-spec.md | vpto-spec.md |
 | 6 | Sec 12: vaxpy | **ADDED** AXPY | a5_intrinsic_ir.md |
-| 8 | Sec 13: vsts dist modes | **EXPANDED** — PK_B*, MRG* C semantics | a5_intrinsic_ir.md |
+| 8 | Sec 13: vsts dist modes | **EXPANDED** — `1PT`, `PK`, `PK4`, `MRG4CHN`, `MRG2CHN` for `vsts`; `INTLV` for `vstsx2` | a5_intrinsic_ir.md |
 | 9 | Sec 13-14: All store ops | C semantics added where missing | Both |
 
 ## Appendix B: Discussion Points
@@ -2054,7 +2050,9 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 
 1. **mem_bar as pto op:** Should `pto.mem_bar` be a formal pto dialect op, or is there an existing mechanism?
 2. **UB size parameterization:** Is 256KB always fixed, or should spec allow for architecture variants?
-3. **Dist token expansion:** The added BRC/US/DS/SPLT/MRG tokens need verifier implementation. Are all confirmed for A5?
+3. **Dist family surface:** load/store `dist` 现按 PTO family token 建模；各
+   family 的用户可见约束已写入 ISA 文档，仍需持续与 installed PTO /
+   `visa.txt` 校验。
 4. **MERGING predication:** Intentionally omitted (SW-emulated, perf overhead). Revisit if needed later.
 
 ### Part II
@@ -2064,9 +2062,8 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 
 ### Part 3A
 
-1. **pto.vmov:** May not need a dedicated op if MLIR copy semantics suffice. Confirm if needed.
-2. **pto.vdupi:** Is this distinct from `pto.vdup` with an immediate operand, or can `pto.vdup` handle both?
-3. **Predicate ops (pand/por/pxor and predicate movement forms):** These need MLIR op definitions and verifier rules. Confirm priority.
+1. **pto.vdupi:** Is this distinct from `pto.vdup` with an immediate operand, or can `pto.vdup` handle both?
+2. **Predicate ops (pand/por/pxor and predicate movement forms):** These need MLIR op definitions and verifier rules. Confirm priority.
 
 ### Part 3B
 
@@ -2075,6 +2072,8 @@ pto.vstx2 %x, %y, %ub_xy[%offset], "INTLV_B32", %all_mask : !pto.vreg<64xf32>, !
 ### Part 3C
 
 2. **vmrgsort4:** Kept from vpto-spec.md but no a5_intrinsic mapping found. Confirm if A5 supports this.
-3. **Store dist token completeness:** PK_B16, MRG4CHN_B8, MRG2CHN_B8, MRG2CHN_B16 added. Are there other store distribution modes on A5?
+3. **Store dist family completeness:** `vsts` 目前覆盖 `NORM`, `1PT`, `PK`,
+   `PK4`, `MRG4CHN`, `MRG2CHN`；`vstsx2` 覆盖 `INTLV`。这些 family 的
+   surface 约束是否已经足够清晰，仍需结合实现继续校验。
 4. **vcvt width-changing pattern:** The even/odd + vor pattern for f32→f16 is the standard compiler lowering. Confirm this is the intended representation in the spec.
 5. **Stateful store ops (Section 14):** These are complex with SSA state threading. Are they all needed for A5, or can some be simplified?

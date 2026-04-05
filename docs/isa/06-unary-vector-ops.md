@@ -31,9 +31,9 @@ for (int i = 0; i < N; i++)
 - **inputs:** `%input` supplies the source lanes and `%mask` selects which lanes
   participate.
 - **outputs:** `%result` receives the lane-wise absolute values.
-- **constraints and limitations:** Source and result types MUST match. Integer
-  overflow on the most-negative signed value follows the target-defined
-  behavior.
+- **constraints and limitations:** Source and result types MUST match. On A5,
+  integer overflow follows the ISA default truncation behavior for this family;
+  `pto.vabs` is not an explicit saturating op.
 
 ---
 
@@ -214,23 +214,6 @@ for (int i = 0; i < N; i++)
 ---
 
 ## Movement
-
-### `pto.vmov`
-
-- **syntax:** `%result = pto.vmov %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **semantics:** Vector register copy.
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = src[i];
-```
-
-- **inputs:** `%input` is the source vector and `%mask` selects active lanes.
-- **outputs:** `%result` is a copy of the source vector.
-- **constraints and limitations:** Predicated `pto.vmov` behaves like a masked
-  copy, while the unpredicated form behaves like a full-register copy.
-
----
 
 ## Typical Usage
 

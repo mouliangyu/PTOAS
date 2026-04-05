@@ -188,9 +188,9 @@ public:
             VsturOp>(op))
       return VPTOBufferAddressFamily::PtrOnly;
 
-    if (isa<VldsOp, UvldOp, PldsOp, PldOp, PldiOp, VsldOp, VstsOp, PstOp,
-            PstiOp, PstsOp, VsstOp, VbitsortOp, Vmrgsort4Op, Vgather2Op,
-            VgatherbOp, Vgather2BcOp, VscatterOp, Vldx2Op, Vstx2Op, VsldbOp,
+    if (isa<VldsOp, UvldOp, PldsOp, PldiOp, VstsOp, PstiOp, PstsOp,
+            VbitsortOp, Vmrgsort4Op, Vgather2Op,
+            VgatherbOp, Vgather2BcOp, VscatterOp, Vldsx2Op, Vstsx2Op, VsldbOp,
             VsstbOp, VstasOp, VstarOp>(op))
       return VPTOBufferAddressFamily::BufferLike;
 
@@ -515,7 +515,8 @@ private:
             [](PnotOp concreteOp) { return validateMaskOnlyPnotContract(concreteOp); })
         .Case<PselOp>(
             [](PselOp concreteOp) { return validateMaskOnlyPselContract(concreteOp); })
-        .Case<PdintlvB8Op, PintlvB16Op>([](auto concreteOp) {
+        .Case<PdintlvB8Op, PdintlvB16Op, PdintlvB32Op,
+              PintlvB8Op, PintlvB16Op, PintlvB32Op>([](auto concreteOp) {
           return validatePredicateMovementContract(concreteOp);
         })
         .Case<VselOp>([](VselOp concreteOp) {
@@ -531,7 +532,7 @@ private:
         .Case<VstsOp, VstsPostOp, VsstbOp>([](auto concreteOp) {
           return validateValueMaskVectorConsumer(concreteOp);
         })
-        .Case<Vstx2Op>([](Vstx2Op concreteOp) {
+        .Case<Vstsx2Op>([](Vstsx2Op concreteOp) {
           return validateMaskMatchesVectorFamily(concreteOp,
                                                  concreteOp.getMask().getType(),
                                                  "mask type",

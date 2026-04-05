@@ -38,21 +38,28 @@ Vector loads move data from Unified Buffer (UB) to vector registers (`vreg`). Ve
   distribution mode. `NORM` reads one full vector footprint. Broadcast,
   upsample, downsample, unpack, split-channel, and deinterleave modes change
   how memory bytes are mapped into destination lanes, but they do not change the
-  fact that the source is UB memory.
+  fact that the source is UB memory. PTO surface exposes load `dist` as family
+  tokens, and each family only supports the element widths listed below.
 
-**Distribution modes:**
+**Distribution families:**
 
-| Mode | Description | C Semantics |
-|------|-------------|-------------|
-| `NORM` | Contiguous 256B load | `dst[i] = UB[base + i * sizeof(T)]` |
-| `BRC_B8/B16/B32` | Broadcast single element | `dst[i] = UB[base]` for all i |
-| `US_B8/B16` | Upsample (duplicate each element) | `dst[2*i] = dst[2*i+1] = UB[base + i]` |
-| `DS_B8/B16` | Downsample (every 2nd element) | `dst[i] = UB[base + 2*i]` |
-| `UNPK_B8/B16/B32` | Unpack (zero-extend to wider type) | `dst_i32[i] = (uint32_t)UB_i16[base + 2*i]` |
-| `SPLT4CHN_B8` | Split 4-channel (RGBA → R plane) | Extract every 4th byte |
-| `SPLT2CHN_B8/B16` | Split 2-channel | Extract every 2nd element |
-| `DINTLV_B32` | Deinterleave 32-bit | Even elements only |
-| `BLK` | Block load | Blocked access pattern |
+| Family | Allowed element widths |
+|------|-------------|
+| `NORM` | width-agnostic |
+| `BRC` | `b8`, `b16`, `b32` |
+| `US` | `b8`, `b16` |
+| `DS` | `b8`, `b16` |
+| `UNPK` | `b8`, `b16`, `b32` |
+| `BRC_BLK` | width-agnostic |
+| `E2B` | `b16`, `b32` |
+| `UNPK4` | `b8` |
+| `SPLT4CHN` | `b8` |
+| `SPLT2CHN` | `b8`, `b16` |
+
+`pto.vlds` 当前只承载单结果 load family。双结果 deinterleave 形式在 PTO
+surface 上单独归到 [`pto.vldsx2`](#ptovldsx2)：`BDINTLV` 为 block
+deinterleave family，`DINTLV` 为按元素位宽变化的 deinterleave family。
+为兼容仓库中已有 lowering，`BLK` 仍作为 `BRC_BLK` 的别名被接受。
 
 **Example — Contiguous load:**
 ```mlir
@@ -61,7 +68,7 @@ Vector loads move data from Unified Buffer (UB) to vector registers (`vreg`). Ve
 
 **Example — Broadcast scalar to all lanes:**
 ```mlir
-%v = pto.vlds %ub[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+%v = pto.vlds %ub[%c0] {dist = "BRC"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 ```
 
 ---
@@ -108,9 +115,9 @@ Vector loads move data from Unified Buffer (UB) to vector registers (`vreg`). Ve
 
 ## Dual Loads (Deinterleave)
 
-### `pto.vldx2`
+### `pto.vldsx2`
 
-- **syntax:** `%low, %high = pto.vldx2 %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.vreg<NxT>, !pto.vreg<NxT>`
+- **syntax:** `%low, %high = pto.vldsx2 %source[%offset], "DIST" : !pto.ptr<T, ub>, index -> !pto.vreg<NxT>, !pto.vreg<NxT>`
 - **semantics:** Dual load with deinterleave (AoS → SoA conversion).
 - **inputs:**
   `%source` is the UB base pointer, `%offset` is the displacement, and `DIST`
@@ -120,11 +127,18 @@ Vector loads move data from Unified Buffer (UB) to vector registers (`vreg`). Ve
 - **constraints and limitations:**
   This family is only legal for interleave/deinterleave style distributions.
   The two outputs form an ordered pair, and that pairing MUST be preserved.
+  PTO surface accepts deinterleave families. `BDINTLV` 不区分元素位宽，
+  `DINTLV` 仅支持表中列出的元素位宽。
 
-**Distribution modes:** `DINTLV_B8`, `DINTLV_B16`, `DINTLV_B32`, `BDINTLV`
+**Distribution families:**
+
+| Family | Allowed element widths |
+|------|-------------|
+| `BDINTLV` | width-agnostic |
+| `DINTLV` | `b8`, `b16`, `b32` |
 
 ```c
-// DINTLV_B32: deinterleave 32-bit elements
+// DINTLV family on 32-bit elements: deinterleave 32-bit elements
 for (int i = 0; i < 64; i++) {
     low[i]  = UB[base + 8*i];       // even elements
     high[i] = UB[base + 8*i + 4];   // odd elements
@@ -133,29 +147,8 @@ for (int i = 0; i < 64; i++) {
 
 **Example — Load interleaved XY pairs into separate X/Y vectors:**
 ```mlir
-%x, %y = pto.vldx2 %ub[%offset], "DINTLV_B32" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
+%x, %y = pto.vldsx2 %ub[%offset], "DINTLV" : !pto.ptr<f32, ub>, index -> !pto.vreg<64xf32>, !pto.vreg<64xf32>
 ```
-
----
-
-## Strided Loads
-
-### `pto.vsld`
-
-- **syntax:** `%result = pto.vsld %source[%offset], "STRIDE" : !pto.ptr<T, ub> -> !pto.vreg<NxT>`
-- **semantics:** Strided load with fixed stride pattern.
-- **inputs:**
-  `%source` is the UB base pointer and `%offset` is the displacement encoded
-  with the selected fixed stride mode.
-- **outputs:**
-  `%result` is the loaded vector.
-- **constraints and limitations:**
-  This is a deprecated compatibility family. The selected stride token
-  determines which sub-elements are read from each source block.
-
-**Stride modes:** `STRIDE_S3_B16`, `STRIDE_S4_B64`, `STRIDE_S8_B32`, `STRIDE_S2_B64`
-
----
 
 ### `pto.vsldb`
 
@@ -201,21 +194,30 @@ for (int i = 0; i < active_lanes; i++)
 
 ### `pto.vgatherb`
 
-- **syntax:** `%result = pto.vgatherb %source, %offsets, %active_lanes : !pto.ptr<T, ub>, !pto.vreg<NxI>, index -> !pto.vreg<NxT>`
-- **semantics:** Byte-granularity indexed gather from UB.
+- **syntax:** `%result = pto.vgatherb %source, %offsets, %mask : !pto.ptr<T, ub>, !pto.vreg<NxI>, !pto.mask<b32> -> !pto.vreg<NxT>`
+- **semantics:** Block gather load from UB.
 - **inputs:**
-  `%source` is the UB base pointer, `%offsets` contains per-block byte offsets,
-  and `%active_lanes` bounds the number of active gathered blocks.
+  `%source` is the UB base pointer, `%offsets` is a `u32` offset vector, and
+  `%mask` is a `b32` predicate over the block-index lanes.
 - **outputs:**
   `%result` is the gathered vector.
 - **constraints and limitations:**
-  This is a block gather, not a byte-per-lane gather. `%source` MUST be 32-byte
-  aligned, each participating offset MUST describe a 32-byte-aligned block, and
-  inactive blocks are zero-filled.
+  This is a 32-byte block gather, not an element gather. `%source` MUST be
+  32-byte aligned. Each participating `offsets[i]` is interpreted as a byte
+  offset and MUST itself be 32-byte aligned. Only the low `VL/8` bytes of the
+  offset vector are semantically valid; the effective block address is
+  `block_addr[i] = offsets_u32[i] + base`. If a `b32` predicate position is
+  false, the corresponding block does not participate in address coalescing,
+  does not raise overflow on that block address, and the destination block is
+  zero-filled.
 
 ```c
-for (int i = 0; i < active_lanes; i++)
-    dst[i] = UB[base + offsets[i]];  // byte-addressed
+for (int blk = 0; blk < VL / 32; ++blk) {
+    if (pg_b32[blk])
+        dst_block[blk] = UB_block[base + offsets_u32[blk]];
+    else
+        dst_block[blk] = 0;
+}
 ```
 
 ---
@@ -250,31 +252,35 @@ for (int i = 0; i < active_lanes; i++)
   This op has no SSA result; it writes to UB memory.
 - **constraints and limitations:**
   The effective destination address MUST satisfy the alignment rule of the
-  selected store mode. Narrowing/packing modes may only preserve a subset of the
-  source bits. Merge-channel modes reinterpret the source vector as channel
-  planes and interleave them on store.
+  selected store mode. The single-input `pto.vsts` family covers contiguous
+  store, first-element-only store, packed store, and channel-merge store.
+  Dual-input interleave store remains in `pto.vstsx2`. PTO surface exposes
+  store `dist` as family tokens, and each family only supports the element
+  widths listed below.
 
-**Distribution modes:**
+**Distribution families:**
 
-| Mode | Description | C Semantics |
+| Family | Allowed element widths | C semantics |
 |------|-------------|-------------|
-| `NORM_B8/B16/B32` | Contiguous store | `UB[base + i] = src[i]` |
-| `PK_B16/B32` | Pack/narrowing store | `UB_i16[base + 2*i] = truncate_16(src_i32[i])` |
-| `MRG4CHN_B8` | Merge 4 channels (R,G,B,A → RGBA) | Interleave 4 planes |
-| `MRG2CHN_B8/B16` | Merge 2 channels | Interleave 2 planes |
+| `NORM` | `b8`, `b16`, `b32` | `UB[base + i] = src[i]` |
+| `1PT` | `b8`, `b16`, `b32` | Only element 0 is written; predicate is ignored |
+| `PK` | `b16`, `b32`, `b64` | Pack low half bits of each element before store |
+| `PK4` | `b32` | Pack low 8 bits of each `b32` element before store |
+| `MRG4CHN` | `b8` | Merge 4 interleaved `b8` channels within each 32B block |
+| `MRG2CHN` | `b8`, `b16` | Merge 2 interleaved channels within each 32B block |
 
 **Example — Contiguous store:**
 ```mlir
-pto.vsts %v, %ub[%offset], %mask {dist = "NORM_B32"} : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<G>
+pto.vsts %v, %ub[%offset], %mask {dist = "NORM"} : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<G>
 ```
 
 ---
 
 ## Dual Stores (Interleave)
 
-### `pto.vstx2`
+### `pto.vstsx2`
 
-- **syntax:** `pto.vstx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>`
+- **syntax:** `pto.vstsx2 %low, %high, %dest[%offset], "DIST", %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.ptr<T, ub>, index, !pto.mask<G>`
 - **semantics:** Dual interleaved store (SoA → AoS conversion).
 - **inputs:**
   `%low` and `%high` are the two source vectors, `%dest` is the UB base pointer,
@@ -285,36 +291,22 @@ pto.vsts %v, %ub[%offset], %mask {dist = "NORM_B32"} : !pto.vreg<64xf32>, !pto.p
 - **constraints and limitations:**
   This family is only legal for interleave distributions. The two source
   vectors form an ordered pair, and the interleave semantics of that pair MUST
-  be preserved.
+  be preserved. PTO surface accepts the `INTLV` family, which only supports the
+  element widths listed below.
 
-**Distribution modes:** `INTLV_B8`, `INTLV_B16`, `INTLV_B32`
+**Distribution families:**
+
+| Family | Allowed element widths |
+|------|-------------|
+| `INTLV` | `b8`, `b16`, `b32` |
 
 ```c
-// INTLV_B32:
+// INTLV family on 32-bit elements:
 for (int i = 0; i < 64; i++) {
     UB[base + 8*i]     = low[i];
     UB[base + 8*i + 4] = high[i];
 }
 ```
-
----
-
-## Strided Stores
-
-### `pto.vsst`
-
-- **syntax:** `pto.vsst %value, %dest[%offset], "STRIDE" : !pto.vreg<NxT>, !pto.ptr<T, ub>`
-- **semantics:** Strided store with fixed stride pattern.
-- **inputs:**
-  `%value` is the source vector, `%dest` is the UB base pointer, and `%offset`
-  / `STRIDE` select the fixed strided layout.
-- **outputs:**
-  This op writes UB memory and returns no SSA value.
-- **constraints and limitations:**
-  This is a deprecated compatibility family. The stride token, not the vector
-  lane number alone, determines which destination elements are written.
-
----
 
 ### `pto.vsstb`
 

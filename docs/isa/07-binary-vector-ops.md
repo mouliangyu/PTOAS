@@ -52,6 +52,44 @@ for (int i = 0; i < N; i++)
 
 ---
 
+### `pto.vsadd`
+
+- **syntax:** `%result = pto.vsadd %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
+- **A5 types:** s16
+
+```c
+for (int i = 0; i < N; i++)
+    dst[i] = saturate(src0[i] + src1[i], T);
+```
+
+- **inputs:** `%lhs` and `%rhs` are added lane-wise; `%mask` selects active
+  lanes.
+- **outputs:** `%result` is the lane-wise saturated sum.
+- **constraints and limitations:** Signed integer element types only. The
+  destination type is the saturation range. This op is the explicit saturating
+  add family and is not interchangeable with `pto.vadd`.
+
+---
+
+### `pto.vssub`
+
+- **syntax:** `%result = pto.vssub %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
+- **A5 types:** s16
+
+```c
+for (int i = 0; i < N; i++)
+    dst[i] = saturate(src0[i] - src1[i], T);
+```
+
+- **inputs:** `%lhs` is the minuend, `%rhs` is the subtrahend, and `%mask`
+  selects active lanes.
+- **outputs:** `%result` is the lane-wise saturated difference.
+- **constraints and limitations:** Signed integer element types only. The
+  destination type is the saturation range. This op is the explicit saturating
+  subtract family and is not interchangeable with `pto.vsub`.
+
+---
+
 ### `pto.vmul`
 
 - **syntax:** `%result = pto.vmul %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`

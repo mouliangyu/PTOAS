@@ -1,12 +1,4 @@
-// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-text %s -o - 2>/dev/null | FileCheck --check-prefix=TEXT %s
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o - 2>/dev/null | FileCheck --check-prefix=LLVM %s
-
-// TEXT-LABEL: define void @memref_form(
-// TEXT: call <64 x float> @llvm.hivm.vldsx1{{.*}}(ptr addrspace(6)
-// TEXT: call void @llvm.hivm.vstsx1{{.*}}(<64 x float>
-// TEXT-LABEL: define void @ptr_form(
-// TEXT: call <64 x float> @llvm.hivm.vldsx1{{.*}}(ptr addrspace(6)
-// TEXT: call void @llvm.hivm.vstsx1{{.*}}(<64 x float>
 
 // LLVM-LABEL: define{{.*}} @memref_form(
 // LLVM: call <64 x float> @llvm.hivm.vldsx1{{.*}}(ptr addrspace(6)

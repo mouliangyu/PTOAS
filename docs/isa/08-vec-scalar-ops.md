@@ -13,6 +13,16 @@ Operations that combine a vector with a scalar value, applying the scalar to eve
 - `%result` is the destination vector register value.
 - For 32-bit scalar forms, the scalar source MUST satisfy the backend's legal
   scalar-source constraints for this family.
+- For elementwise vec-scalar families whose scalar conceptually matches the
+  vector element type (`pto.vadds`, `pto.vsadds`, `pto.vmuls`, `pto.vmaxs`,
+  `pto.vmins`, `pto.vlrelu`):
+  - signed integer vectors accept signed integer scalars with the same width,
+    and also accept signless `i<width>`
+  - unsigned integer vectors accept unsigned integer scalars with the same
+    width, and also accept signless `i<width>`
+  - signless integer vectors accept signless `i<width>`
+- `pto.vshls` and `pto.vshrs` are not part of that rule; their scalar operand
+  is the shift amount and remains fixed to `i16`.
 
 ---
 
@@ -21,6 +31,7 @@ Operations that combine a vector with a scalar value, applying the scalar to eve
 ### `pto.vadds`
 
 - **syntax:** `%result = pto.vadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
+- **A5 types:** `s8`, `s16`, `s32`, `u8`, `u16`, `u32`, `f16`, `bf16`, `f32`
 
 ```c
 for (int i = 0; i < N; i++)
@@ -28,11 +39,32 @@ for (int i = 0; i < N; i++)
 ```
 
 - **inputs:** `%input` is the source vector, `%scalar` is broadcast logically to
-  each active lane, and `%mask` selects active lanes.
+  each lane, and `%mask` selects active lanes.
 - **outputs:** `%result` is the lane-wise sum.
-- **constraints and limitations:** Inactive lanes follow the predication
-  behavior defined for this family. On the current surface, inactive lanes are
-  treated as zeroing lanes.
+- **constraints and limitations:** Input vector element type, scalar type, and
+  result vector element type MUST match. For integer vector forms, `%scalar`
+  may also use matching-signedness integer or signless `i<width>` with the same
+  bit width as the vector element type, so it can be fed directly from `arith`
+  constants.
+
+---
+
+### `pto.vsadds`
+
+- **syntax:** `%result = pto.vsadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
+- **A5 types:** s16
+
+```c
+for (int i = 0; i < N; i++)
+    dst[i] = saturate(src[i] + scalar, T);
+```
+
+- **inputs:** `%input` is the source vector, `%scalar` is broadcast logically to
+  each lane, and `%mask` selects active lanes.
+- **outputs:** `%result` is the lane-wise saturated sum.
+- **constraints and limitations:** Signed integer element types only. This op
+  is the explicit saturating vector-scalar add family and is not interchangeable
+  with `pto.vadds`. `%scalar` may use `si16` or signless `i16`.
 
 ---
 
@@ -48,7 +80,10 @@ for (int i = 0; i < N; i++)
 - **inputs:** `%input`, `%scalar`, and `%mask` as above.
 - **outputs:** `%result` is the lane-wise product.
 - **constraints and limitations:** Supported element types are hardware-family
-  specific; the current PTO micro Instruction documentation covers the common numeric cases.
+  specific; the current PTO micro Instruction documentation covers the common
+  numeric cases. For integer vector forms, `%scalar` may use matching-signedness
+  integer or signless `i<width>` with the same bit width as the vector element
+  type.
 
 ---
 
@@ -63,7 +98,9 @@ for (int i = 0; i < N; i++)
 
 - **inputs:** `%input`, `%scalar`, and `%mask` as above.
 - **outputs:** `%result` is the lane-wise maximum.
-- **constraints and limitations:** Input and result types MUST match.
+- **constraints and limitations:** Input and result types MUST match. For
+  integer vector forms, `%scalar` may use matching-signedness integer or
+  signless `i<width>` with the same bit width as the vector element type.
 
 ---
 
@@ -78,7 +115,9 @@ for (int i = 0; i < N; i++)
 
 - **inputs:** `%input`, `%scalar`, and `%mask` as above.
 - **outputs:** `%result` is the lane-wise minimum.
-- **constraints and limitations:** Input and result types MUST match.
+- **constraints and limitations:** Input and result types MUST match. For
+  integer vector forms, `%scalar` may use matching-signedness integer or
+  signless `i<width>` with the same bit width as the vector element type.
 
 ---
 
@@ -194,5 +233,5 @@ for (int i = 0; i < N; i++) {
 %clamped = pto.vmins %clamped_low, %c255, %mask : !pto.vreg<64xf32>, f32, !pto.mask<G> -> !pto.vreg<64xf32>
 
 // Shift right by fixed amount
-%shifted = pto.vshrs %data, %c4, %mask : !pto.vreg<64xi32>, i32, !pto.mask<G> -> !pto.vreg<64xi32>
+%shifted = pto.vshrs %data, %c4, %mask : !pto.vreg<64xi32>, i16, !pto.mask<G> -> !pto.vreg<64xi32>
 ```

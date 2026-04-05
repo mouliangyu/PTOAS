@@ -38,7 +38,7 @@ module attributes {pto.target_arch = "a5"} {
         %mask, %next_remaining = pto.plt_b32 %remaining : i32 -> !pto.mask<b32>, i32
         %vec = pto.vlds %ub_in[%lhs_offset] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
         %pred = pto.vcmps %vec, %nan, %mask, "eq" : !pto.vreg<64xf32>, f32, !pto.mask<b32> -> !pto.mask<b32>
-        pto.psts %pred, %ub_out[%store_offset] : !pto.mask<b32>, !pto.ptr<ui8, ub>
+        pto.psts %pred, %ub_out[%store_offset], "NORM" : !pto.mask<b32>, !pto.ptr<ui8, ub>, index
         scf.yield %next_remaining : i32
       }
     }

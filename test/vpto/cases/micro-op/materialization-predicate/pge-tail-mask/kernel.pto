@@ -22,9 +22,9 @@ module attributes {pto.target_arch = "a5"} {
         %m0 = pto.pge_b8 "PAT_VL8" : !pto.mask<b8>
         %m1 = pto.pge_b16 "PAT_VL8" : !pto.mask<b16>
         %m2 = pto.pge_b32 "PAT_VL8" : !pto.mask<b32>
-        pto.psts %m0, %ub_out[%c0] : !pto.mask<b8>, !pto.ptr<ui8, ub>
-        pto.psts %m1, %ub_out[%c8] : !pto.mask<b16>, !pto.ptr<ui8, ub>
-        pto.psts %m2, %ub_out[%c16] : !pto.mask<b32>, !pto.ptr<ui8, ub>
+        pto.psts %m0, %ub_out[%c0], "NORM" : !pto.mask<b8>, !pto.ptr<ui8, ub>, index
+        pto.psts %m1, %ub_out[%c8], "NORM" : !pto.mask<b16>, !pto.ptr<ui8, ub>, index
+        pto.psts %m2, %ub_out[%c16], "NORM" : !pto.mask<b32>, !pto.ptr<ui8, ub>, index
       }
     }
 

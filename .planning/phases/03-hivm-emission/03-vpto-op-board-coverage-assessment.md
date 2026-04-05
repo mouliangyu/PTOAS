@@ -1,6 +1,6 @@
 # VPTO 微指令测试集覆盖评估
 
-更新时间：2026-03-31
+更新时间：2026-04-05
 
 目的：
 
@@ -31,20 +31,18 @@
 
 - `scope` 与 `matrix` 已对齐，且 `planned = 0`
 - 覆盖率推进阶段已经完成
-- 但这不等于“全部跑通”
-- 当前仍有大量 `implemented` 与少量文档层 `blocked`
+- 但这不等于“全部上板跑通”
+- 当前已没有 `planned`、`implemented` 或文档层 `blocked`
+- 现阶段台账主要分布为 `compiled` 与少量 `board-passed`
 - 后续主任务已经转为：
-  - 清理 `blocked`
-  - 把更多 `implemented` 推进到 `board-passed`
+  - 把更多 `compiled` 推进到 `board-passed`
 
 状态口径：
 
+- `compiled`
+  - case 已静态落地，并且 `COMPILE_ONLY` 已能稳定走到编译产物
 - `board-passed`
   - 已完成上板验证
-- `implemented`
-  - case 已静态落地到仓库；即便 parser / verifier / lowering / codegen / runtime / board 失败，也仍算 coverage 已补齐
-- `blocked`
-  - 当前无法仅依据 `docs/vpto-spec.md` 与 `docs/isa/` 写出语义明确的 case
 
 ## Statistics
 
@@ -85,10 +83,10 @@
   - `总op数`：7
   - `已测op数`：7
   - `op覆盖率`：100.0%
-  - `当前case数`：6
-  - `scope细化case数`：6
+  - `当前case数`：7
+  - `scope细化case数`：7
   - `scope-matrix缺口`：0
-  - `评估`：coverage 台账已补齐；后续工作是把 round-trip / state-update case 从 `implemented` 推到 `board-passed`
+  - `评估`：coverage 台账已补齐；旧的泛化 round-trip case 已拆成明确 `PK -> US` 与 `NORM -> DS` 组合 case，后续工作是把这些组合 case 与 `pstu` state-update case 从 `implemented` 推到 `board-passed`
 
 - `materialization-predicate`
   - `总op数`：20
@@ -184,27 +182,26 @@
   - `总op数`：120
   - `已测op数`：120
   - `op覆盖率`：100.0%
-  - `当前case数`：236
-  - `scope细化case数`：236
+  - `当前case数`：238
+  - `scope细化case数`：238
   - `scope-matrix缺口`：0
   - `评估`：coverage 台账已完全补齐；当前阶段目标已从“清理 planned”切换为“清理 blocker / 提升通过率”
 
 ## Conclusion
 
-- 当前 `scope` 已细化到 `236` 条 case，`matrix` 也保持同样规模。
+- 当前 `scope` 已细化到 `238` 条 case，`matrix` 也保持同样规模。
 - 当前 `scope` 与 `matrix` 已对齐，`scope-matrix缺口 = 0`。
 - 当前 `matrix` 中状态分布为：
   - `board-passed`：4
-  - `implemented`：216
-  - `blocked`：16
+  - `compiled`：224
+  - `implemented`：0
+  - `blocked`：0
   - `planned`：0
 - 因此，当前结论应表述为：
   - 覆盖率推进阶段已经完成
-  - 文档层 `blocked` 只剩 16 条
   - 后续主任务已经转为：
-    - 补文档缺口
-    - 清理 parser / verifier / lowering / codegen / runtime / board 问题
-    - 把更多 `implemented/blocked` 收敛到 `board-passed`
+    - 继续清理 compile-only 之后的 runtime / board 问题
+    - 把更多 `compiled` 收敛到 `board-passed`
 
 ## Usage
 

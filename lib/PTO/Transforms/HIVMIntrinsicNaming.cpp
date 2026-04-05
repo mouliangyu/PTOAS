@@ -195,10 +195,65 @@ static FailureOr<IntrinsicSelection> selectConfigLike(Operation *op) {
 
 static FailureOr<IntrinsicSelection> selectPredicateIntrinsic(Operation *op) {
   llvm::SmallVector<std::string, 4> usedFields;
-  llvm::SmallVector<std::string, 2> missingFields = {"confirmed_hivm_name"};
-
+  if (auto pset = dyn_cast<pto::PsetB8Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(pset.getResult().getType());
+    usedFields = {"family=pset", "bitwidth=8", "result=" + resultFragment,
+                  "pattern=i32"};
+    return makeResolved(op, "llvm.hivm.pset.b8", usedFields, resultFragment);
+  }
+  if (auto pset = dyn_cast<pto::PsetB16Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(pset.getResult().getType());
+    usedFields = {"family=pset", "bitwidth=16", "result=" + resultFragment,
+                  "pattern=i32"};
+    return makeResolved(op, "llvm.hivm.pset.b16", usedFields, resultFragment);
+  }
+  if (auto pset = dyn_cast<pto::PsetB32Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(pset.getResult().getType());
+    usedFields = {"family=pset", "bitwidth=32", "result=" + resultFragment,
+                  "pattern=i32"};
+    return makeResolved(op, "llvm.hivm.pset.b32", usedFields, resultFragment);
+  }
+  if (auto pge = dyn_cast<pto::PgeB8Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(pge.getResult().getType());
+    usedFields = {"family=pge", "bitwidth=8", "result=" + resultFragment,
+                  "pattern=i32", "variant=i32_zero"};
+    return makeResolved(op, "llvm.hivm.pge.b8", usedFields, resultFragment);
+  }
+  if (auto pge = dyn_cast<pto::PgeB16Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(pge.getResult().getType());
+    usedFields = {"family=pge", "bitwidth=16", "result=" + resultFragment,
+                  "pattern=i32", "variant=i32_zero"};
+    return makeResolved(op, "llvm.hivm.pge.b16", usedFields, resultFragment);
+  }
+  if (auto pge = dyn_cast<pto::PgeB32Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(pge.getResult().getType());
+    usedFields = {"family=pge", "bitwidth=32", "result=" + resultFragment,
+                  "pattern=i32", "variant=i32_zero"};
+    return makeResolved(op, "llvm.hivm.pge.b32", usedFields, resultFragment);
+  }
+  if (auto plt = dyn_cast<pto::PltB8Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(plt.getMask().getType());
+    usedFields = {"family=plt", "bitwidth=8", "result=" + resultFragment,
+                  "variant=v300", "scalar=i32", "scalar_out=i32"};
+    return makeResolved(op, "llvm.hivm.plt.b8.v300", usedFields, resultFragment);
+  }
+  if (auto plt = dyn_cast<pto::PltB16Op>(op)) {
+    const std::string resultFragment =
+        getVectorTypeFragment(plt.getMask().getType());
+    usedFields = {"family=plt", "bitwidth=16", "result=" + resultFragment,
+                  "variant=v300", "scalar=i32", "scalar_out=i32"};
+    return makeResolved(op, "llvm.hivm.plt.b16.v300", usedFields, resultFragment);
+  }
   if (auto plt = dyn_cast<pto::PltB32Op>(op)) {
-    const std::string resultFragment = getVectorTypeFragment(plt.getMask().getType());
+    const std::string resultFragment =
+        getVectorTypeFragment(plt.getMask().getType());
     usedFields = {"family=plt", "bitwidth=32", "result=" + resultFragment,
                   "variant=v300", "scalar=i32", "scalar_out=i32"};
     return makeResolved(op, "llvm.hivm.plt.b32.v300", usedFields, resultFragment);
@@ -459,15 +514,8 @@ FailureOr<IntrinsicSelection> selectStoreIntrinsic(Operation *op) {
     usedFields = {"family=copy_ubuf_to_gm"};
     if (!elemFragment.empty())
       usedFields.push_back("element=" + elemFragment);
-    if (elemFragment == "f32")
-      return makeResolved(op, "llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2.DV",
-                          usedFields, "");
-    std::string candidate = "llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2";
-    if (!elemFragment.empty())
-      candidate += "." + elemFragment + ".DV";
-    missingFields.push_back("element_type_mapping");
-    return makeUnresolved(op, "copy_ubuf_to_gm", candidate, usedFields,
-                          missingFields, "");
+    return makeResolved(op, "llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2.DV",
+                        usedFields, "");
   }
 
   if (isa<pto::CopyUbufToUbufOp>(op)) {

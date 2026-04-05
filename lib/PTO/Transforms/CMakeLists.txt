@@ -3,7 +3,6 @@ add_mlir_dialect_library(PTOTransforms
   TileFusion/FusionOpSemantics.cpp
   HIVMIntrinsicNaming.cpp
   VPTOLowering.cpp
-  VPTOTextEmitter.cpp
   VPTOLLVMEmitter.cpp
   PTOVPTOVersionSelection.cpp
   PTOVPTOTrivialLoopCanonicalize.cpp

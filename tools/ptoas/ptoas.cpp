@@ -10,7 +10,6 @@
 #include "PTO/IR/PTO.h"
 #include "PTO/Transforms/VPTOLowering.h"
 #include "PTO/Transforms/VPTOLLVMEmitter.h"
-#include "PTO/Transforms/VPTOTextEmitter.h"
 #include "PTO/Transforms/BufferizableOpInterfaceImpl.h"
 #include "PTO/Transforms/CppEmitter.h"
 #include "PTO/Transforms/Passes.h"
@@ -358,13 +357,6 @@ static llvm::cl::opt<std::string> ptoSeamIRFile(
 static llvm::cl::opt<bool> vptoPrintIntrinsics(
     "vpto-print-intrinsics",
     llvm::cl::desc("Print VPTO intrinsic selection decisions to stderr"),
-    llvm::cl::init(false));
-
-static llvm::cl::opt<bool> vptoEmitHIVMText(
-    "vpto-emit-hivm-text",
-    llvm::cl::desc(
-        "After lowering to VPTO IR, emit textual LLVM/HIVM instead of raw "
-        "VPTO IR"),
     llvm::cl::init(false));
 
 static llvm::cl::opt<bool> vptoEmitHIVMOfficialLLVM(
@@ -1257,16 +1249,14 @@ int main(int argc, char **argv) {
   }
 
   if (emitVPTO &&
-      (vptoEmitHIVMText || vptoEmitHIVMOfficialLLVM ||
-       vptoEmitHIVMOfficialBitcode)) {
+      (vptoEmitHIVMOfficialLLVM || vptoEmitHIVMOfficialBitcode)) {
     llvm::errs() << "Error: --emit-vpto cannot be used together with HIVM "
                     "emission flags.\n";
     return 1;
   }
 
   if (effectiveBackend != PTOBackend::VPTO &&
-      (vptoEmitHIVMText || vptoEmitHIVMOfficialLLVM ||
-       vptoEmitHIVMOfficialBitcode || emitVPTO ||
+      (vptoEmitHIVMOfficialLLVM || vptoEmitHIVMOfficialBitcode || emitVPTO ||
        vptoPrintIntrinsics || vptoAllowUnresolved ||
        !vptoUnresolvedReport.empty() || !hivmUnresolvedReport.empty() ||
        ptoPrintSeamIR || !ptoSeamIRFile.empty())) {
@@ -1617,8 +1607,8 @@ int main(int argc, char **argv) {
           "+MOVX8,+SPR7bits,+SyncV,+dav-c310-vec";
     }
 
-    if (emitVPTO || vptoEmitHIVMText ||
-        (!vptoEmitHIVMOfficialLLVM && !vptoEmitHIVMOfficialBitcode)) {
+    if (emitVPTO || (!vptoEmitHIVMOfficialLLVM &&
+                     !vptoEmitHIVMOfficialBitcode)) {
       FailureOr<OwningOpRef<ModuleOp>> emissionModule =
           pto::prepareVPTOEmissionModule(*module, &llvm::errs());
       if (failed(emissionModule)) {
@@ -1626,22 +1616,13 @@ int main(int argc, char **argv) {
         return 1;
       }
 
-      if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
+      if (emitVPTO || (!vptoEmitHIVMOfficialLLVM &&
                        !vptoEmitHIVMOfficialBitcode)) {
         (*emissionModule)->print(outputFile.os());
         outputFile.os() << "\n";
         outputFile.keep();
         return 0;
       }
-
-      if (failed(pto::translateVPTOModuleToText(**emissionModule,
-                                                outputFile.os(), options,
-                                                llvm::errs()))) {
-        llvm::errs() << "Error: Failed to emit VPTO text.\n";
-        return 1;
-      }
-      outputFile.keep();
-      return 0;
     }
 
     LogicalResult emissionStatus =

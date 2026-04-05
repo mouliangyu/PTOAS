@@ -169,30 +169,38 @@ for (int i = 0; i < N; i++)
 
 ## Sorting Operations
 
-### `pto.vsort32`
+### `pto.vbitsort`
 
-- **syntax:** `pto.vsort32 %dest, %src, %config : !pto.ptr<T, ub>, !pto.ptr<T, ub>, i64`
-- **semantics:** Sort 32 elements in UB.
-- **inputs:** `%dest` and `%src` are UB pointers and `%config` is the ISA
-  control/config word.
-- **outputs:** This op writes UB memory and returns no SSA value.
-- **constraints and limitations:** This is a UB-to-UB accelerator helper, not a
-  pure vector-register op.
+- **syntax:** `pto.vbitsort %dest, %src, %indices, %repeat_times : !pto.ptr<...>, !pto.ptr<...>, !pto.ptr<...>, index`
+- **semantics:** Sort 32 region proposals by score and materialize sorted
+  proposal records into `%dest`.
+- **inputs:** `%dest` is the UB destination buffer. `%src` is the UB score
+  buffer. `%indices` is the UB index buffer. `%repeat_times` is the repeat
+  count; each repeat processes the next adjacent group of 32 scores and 32
+  indices.
+- **outputs:** This op writes UB memory and returns no SSA value. Each output
+  record occupies 8 bytes: the upper 4 bytes hold the index and the lower
+  4 bytes hold the score. For `f16` score forms, the score uses the lower
+  2 bytes of that 4-byte score field and the upper 2 bytes are reserved.
+- **constraints and limitations:** `%dest`, `%src`, and `%indices` MUST be
+  UB-backed pointers and SHOULD satisfy the backend alignment contract expected
+  by the A5 `VBS32` instruction. Scores are sorted in descending order, so the
+  highest score is written to the lowest destination address. Equal-score ties
+  preserve the earlier input proposal first. This is a UB helper, not a pure
+  `vreg -> vreg` op.
 
 ---
 
-### `pto.vmrgsort`
+### `pto.vmrgsort4`
 
-- **syntax:** `pto.vmrgsort4 %dest, %src0, %src1, %src2, %src3, %count, %config : !pto.ptr<T, ub>, !pto.ptr<T, ub> x4, i64, i64`
+- **syntax:** `pto.vmrgsort4 %dest, %src0, %src1, %src2, %src3, %count, %config : !pto.ptr<T, ub>, !pto.ptr<T, ub>, !pto.ptr<T, ub>, !pto.ptr<T, ub>, !pto.ptr<T, ub>, i64, i64`
 - **semantics:** Merge-sort 4 pre-sorted input vectors.
 - **inputs:** `%dest` is the UB destination, `%src0..%src3` are the four
   pre-sorted UB inputs, `%count` is the number of valid elements, and `%config`
   is the operation control word.
 - **outputs:** This op writes UB memory and returns no SSA value.
 - **constraints and limitations:** Inputs MUST already be sorted according to
-  the sort order encoded by `%config`. This page uses the shorter mnemonic
-  `pto.vmrgsort`, while the current implementation summary still refers to
-  `pto.vmrgsort4`.
+  the sort order encoded by `%config`.
 
 ---
 
@@ -210,7 +218,7 @@ for (int i = 0; i < N; i++)
 
 ```mlir
 // Softmax with fused expdiff
-%max_broadcast = pto.vlds %ub_max[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
+%max_broadcast = pto.vlds %ub_max[%c0] {dist = "BRC"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 %exp_stable = pto.vexpdiff %logits, %max_broadcast : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
 // Leaky ReLU activation

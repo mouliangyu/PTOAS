@@ -21,8 +21,8 @@ module attributes {pto.target_arch = "a5"} {
         %src = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
         %packed = pto.ppack %src, "LOWER" : !pto.mask<b32> -> !pto.mask<b32>
         %roundtrip = pto.punpack %packed, "LOWER" : !pto.mask<b32> -> !pto.mask<b32>
-        pto.psts %packed, %ub_out[%c0] : !pto.mask<b32>, !pto.ptr<ui8, ub>
-        pto.psts %roundtrip, %ub_out[%c8] : !pto.mask<b32>, !pto.ptr<ui8, ub>
+        pto.psts %packed, %ub_out[%c0], "NORM" : !pto.mask<b32>, !pto.ptr<ui8, ub>, index
+        pto.psts %roundtrip, %ub_out[%c8], "NORM" : !pto.mask<b32>, !pto.ptr<ui8, ub>, index
       }
     }
 

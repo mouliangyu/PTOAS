@@ -26,11 +26,11 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       %_:1 = scf.for %offset = %c0 to %c1024 step %c128 iter_args(%remaining = %c1024_i32) -> (i32) {
-        %loaded = pto.vlds %ub_in[%offset] {dist = "UNPK_B16"} : !pto.ptr<f16, ub> -> !pto.vreg<128xf16>
+        %loaded = pto.vlds %ub_in[%offset] {dist = "UNPK"} : !pto.ptr<f16, ub> -> !pto.vreg<128xf16>
         %low_mask, %remaining_after_low = pto.plt_b32 %remaining : i32 -> !pto.mask<b32>, i32
         %high_mask, %next_remaining = pto.plt_b32 %remaining_after_low : i32 -> !pto.mask<b32>, i32
-        %out_low = pto.vcvt %loaded {part = "PART_EVEN"} : !pto.vreg<128xf16> -> !pto.vreg<64xf32>
-        %out_high = pto.vcvt %loaded {part = "PART_ODD"} : !pto.vreg<128xf16> -> !pto.vreg<64xf32>
+        %out_low = pto.vcvt %loaded {part = "EVEN"} : !pto.vreg<128xf16> -> !pto.vreg<64xf32>
+        %out_high = pto.vcvt %loaded {part = "ODD"} : !pto.vreg<128xf16> -> !pto.vreg<64xf32>
         %high_offset = arith.addi %offset, %c64 : index
         pto.vsts %out_low, %ub_out[%offset], %low_mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
         pto.vsts %out_high, %ub_out[%high_offset], %high_mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
