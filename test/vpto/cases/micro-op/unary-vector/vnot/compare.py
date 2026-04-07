@@ -3,7 +3,7 @@
 # family: unary-vector
 # target_ops: pto.vnot
 # scenarios: core-i16-signed, full-mask
-# NOTE: bulk-generated coverage skeleton.
+# NOTE: lane-wise bitwise inversion on signed i16 source lanes.
 # coding=utf-8
 
 import os
@@ -187,7 +187,7 @@ def compare_packed_pred_mask(golden_path, output_path, logical_elems, src_elem_b
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
     ok = True
-    ok = compare_bin("golden_v2.bin", "v2.bin", np.float32, 0.0001) and ok
+    ok = compare_bin("golden_v2.bin", "v2.bin", np.int16, 0.0) and ok
     if not ok:
         if strict:
             print("[ERROR] compare failed")

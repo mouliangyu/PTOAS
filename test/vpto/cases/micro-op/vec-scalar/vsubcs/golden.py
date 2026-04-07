@@ -2,9 +2,7 @@
 # case: micro-op/vec-scalar/vsubcs
 # family: vec-scalar
 # target_ops: pto.vsubcs
-# scenarios: core-i16-unsigned, full-mask, scalar-operand, carry-chain
-# NOTE: bulk-generated coverage skeleton.
-# coding=utf-8
+# scenarios: core-u32-unsigned, full-mask, carry-chain
 
 import argparse
 from pathlib import Path
@@ -12,26 +10,34 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+LANES = 64
 SEED = 19
-SCALE = np.float32(3.14)
-LOGICAL_ELEMS = 1000
+
+
+def pack_mask_bits(bits):
+    out = np.zeros(256, dtype=np.uint8)
+    for idx, bit in enumerate(bits):
+        if bit:
+            out[idx // 8] |= np.uint8(1 << (idx % 8))
+    return out
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.random((ROWS, COLS), dtype=np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2.reshape(-1)[:LOGICAL_ELEMS] = (
-        v1.reshape(-1)[:LOGICAL_ELEMS] * SCALE
-    ).astype(np.float32, copy=False)
+    lhs = rng.integers(0, 0xFFFFFFFF, size=LANES, dtype=np.uint32)
+    rhs = rng.integers(0, 0xFFFFFFFF, size=LANES, dtype=np.uint32)
+    subtrahend = rhs.astype(np.uint64) + np.uint64(1)
+    lhs64 = lhs.astype(np.uint64)
+    borrow = lhs64 < subtrahend
+    result = ((lhs64 - subtrahend) & np.uint64(0xFFFFFFFF)).astype(np.uint32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
-    golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
+    lhs.tofile(output_dir / "v1.bin")
+    rhs.tofile(output_dir / "v2.bin")
+    np.zeros(LANES, dtype=np.uint32).tofile(output_dir / "v3.bin")
+    np.zeros(256, dtype=np.uint8).tofile(output_dir / "v4.bin")
+    result.tofile(output_dir / "golden_v3.bin")
+    pack_mask_bits(borrow).tofile(output_dir / "golden_v4.bin")
 
 
 def main() -> None:

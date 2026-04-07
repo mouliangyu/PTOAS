@@ -2,8 +2,7 @@
 # case: micro-op/materialization-predicate/pdintlv_b16-nontrivial
 # family: materialization-predicate
 # target_ops: pto.pdintlv_b16
-# scenarios: predicate-transform, lane-order
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: predicate-transform, lane-order, representative-logical-elements
 # coding=utf-8
 
 import argparse
@@ -12,25 +11,25 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
 SEED = 19
-VALUE = np.float32(-2.5)
+OUTPUT_WORDS = 32
+GOLDEN_PREFIX_WORDS = np.array([85, 0, 0, 0, 286331153, 286331153, 286331153, 286331153, 85, 0, 0, 0, 0, 0, 0, 0], dtype=np.uint32)
 
 
 def generate(output_dir: Path, seed: int) -> None:
     del seed
-    v1 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v1 = np.full((ROWS, COLS), VALUE, dtype=np.float32)
+    output_init = np.zeros((OUTPUT_WORDS,), dtype=np.uint32)
+    golden = np.zeros((OUTPUT_WORDS,), dtype=np.uint32)
+    golden[: GOLDEN_PREFIX_WORDS.size] = GOLDEN_PREFIX_WORDS
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    golden_v1.reshape(-1).tofile(output_dir / "golden_v1.bin")
+    output_init.tofile(output_dir / "v1.bin")
+    golden.tofile(output_dir / "golden_v1.bin")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vdup-scalar validation."
+        description="Generate packed predicate golden for VPTO micro-op validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

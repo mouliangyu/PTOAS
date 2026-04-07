@@ -39,10 +39,10 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vec_add_scalar_kernel_2d(__gm__ float *v1,
-                                                                __gm__ float *v2);
+extern "C" __global__ AICORE void vci_kernel_2d(__gm__ int *v1,
+                                                __gm__ int *v2);
 
-void LaunchVec_add_scalar_kernel_2d(float *v1, float *v2, void *stream) {
-  vec_add_scalar_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                                        (__gm__ float *)v2);
+void LaunchVci_kernel_2d(int *v1, int *v2, void *stream) {
+  vci_kernel_2d<<<1, nullptr, stream>>>((__gm__ int *)v1,
+                                        (__gm__ int *)v2);
 }

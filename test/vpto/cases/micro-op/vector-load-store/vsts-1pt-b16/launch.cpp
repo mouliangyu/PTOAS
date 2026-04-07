@@ -58,9 +58,10 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vabs_kernel_2d(__gm__ float *v1,
-                                                 __gm__ float *v2);
+extern "C" __global__ AICORE void vsts_1pt_b16_kernel(__gm__ float *v1,
+                                                      __gm__ float *v2);
 
 void LaunchVabs_kernel_2d(float *v1, float *v2, void *stream) {
-  vabs_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1, (__gm__ float *)v2);
+  vsts_1pt_b16_kernel<<<1, nullptr, stream>>>((__gm__ float *)v1,
+                                              (__gm__ float *)v2);
 }

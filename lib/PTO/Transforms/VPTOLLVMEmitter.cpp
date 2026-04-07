@@ -123,6 +123,7 @@ struct FunctionABISpec {
 };
 
 static Type getElementTypeFromVectorLike(Type type);
+static Type getElementTypeFromPointerLike(Type type);
 static std::optional<int64_t> getElementCountFromVectorLike(Type type);
 static func::FuncOp getOrCreateExternalFunc(ModuleOp module, StringRef name,
                                             FunctionType type);
@@ -409,27 +410,28 @@ static std::string getVbrScalarFragment(Type type) {
   return {};
 }
 
-static std::string getCopyElementFragment(Type type) {
-  auto ptrType = dyn_cast<pto::PtrType>(type);
-  if (!ptrType)
+static std::string getCopyElementFragment(Type elementType) {
+  if (!elementType)
     return {};
-  Type elementType = ptrType.getElementType();
-  unsigned byteWidth = 0;
-  if (auto floatType = dyn_cast<FloatType>(elementType))
-    byteWidth = (floatType.getWidth() + 7) / 8;
-  else if (auto intType = dyn_cast<IntegerType>(elementType))
-    byteWidth = (intType.getWidth() + 7) / 8;
-  switch (byteWidth) {
-  case 1:
-    return "u8";
-  case 2:
-    return "u16";
-  case 4:
-  case 8:
-    return "u32";
-  default:
-    return {};
+  if (elementType.isF16())
+    return "f16";
+  if (elementType.isBF16())
+    return "bf16";
+  if (elementType.isF32())
+    return "f32";
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return intType.isUnsigned() ? "u8" : "s8";
+    case 16:
+      return intType.isUnsigned() ? "u16" : "s16";
+    case 32:
+      return intType.isUnsigned() ? "u32" : "s32";
+    default:
+      return {};
+    }
   }
+  return {};
 }
 
 static std::optional<ABIExpr> buildABIExprFromValue(Value value);
@@ -1204,6 +1206,17 @@ struct ConvertPtoPtrCarrierOp final : ConversionPattern {
 
 static LogicalResult normalizePtoPtrsToLLVM(ModuleOp module, llvm::raw_ostream &diagOS) {
   MLIRContext *context = module.getContext();
+
+  for (func::FuncOp funcOp : module.getOps<func::FuncOp>()) {
+    if (funcOp.isExternal())
+      continue;
+    Block &entry = funcOp.getBody().front();
+    for (BlockArgument arg : entry.getArguments()) {
+      if (Type elementType = getElementTypeFromPointerLike(arg.getType()))
+        abiPointerElementTypes[arg] = elementType;
+    }
+  }
+
   TypeConverter typeConverter;
   typeConverter.addConversion([](Type type) { return type; });
   typeConverter.addConversion([&](pto::PtrType type) -> Type {
@@ -1313,6 +1326,10 @@ static Type getElementTypeFromABIValue(Value value) {
       if (call.getCallee() == "llvm.hivm.vstus.post" && result.getResultNumber() == 1 &&
           !call.getArgOperands().empty())
         return getElementTypeFromVectorLike(call.getArgOperands().front().getType());
+      if ((call.getCallee() == "llvm.hivm.pstu.b16" ||
+           call.getCallee() == "llvm.hivm.pstu.b32") &&
+          result.getResultNumber() == 1 && call.getNumOperands() >= 2)
+        return getElementTypeFromABIValue(call.getOperand(1));
     }
   }
   return {};
@@ -1397,6 +1414,39 @@ static FailureOr<Value> requirePointerABIAddress(Operation *anchor, Value addres
   anchor->print(diagOS);
   diagOS << "\n";
   return failure();
+}
+
+static FailureOr<Value> materializeAlignABIValue(Operation *anchor, Value align,
+                                                 llvm::raw_ostream &diagOS) {
+  if (!align)
+    return failure();
+  if (isa<VectorType>(align.getType()))
+    return align;
+
+  auto alignType = dyn_cast<pto::AlignType>(align.getType());
+  if (!alignType) {
+    diagOS << "VPTO LLVM emission failed: expected align ABI value, but saw "
+           << align.getType() << "\n";
+    return failure();
+  }
+
+  Operation *def = align.getDefiningOp();
+  if (!def || def->getName().getStringRef() != "ub.poison") {
+    diagOS << "VPTO LLVM emission failed: unsupported non-ABI align producer ";
+    if (def)
+      diagOS << def->getName();
+    else
+      diagOS << "<block-argument>";
+    diagOS << " for " << alignType << "\n";
+    return failure();
+  }
+
+  OpBuilder builder(anchor);
+  builder.setInsertionPoint(anchor);
+  auto abiType = cast<VectorType>(convertVPTOType(alignType, builder));
+  auto zeroAttr = DenseElementsAttr::get(abiType, builder.getI8IntegerAttr(0));
+  return builder.create<arith::ConstantOp>(anchor->getLoc(), abiType, zeroAttr)
+      .getResult();
 }
 
 static Value getI64Constant(OpBuilder &builder, Location loc, uint64_t value) {
@@ -1513,34 +1563,6 @@ static FailureOr<Value> buildDynamicPltMask(IRRewriter &builder, ModuleOp module
   auto callee = getOrCreateExternalFunc(module, calleeName, funcType);
   auto call = builder.create<func::CallOp>(loc, callee, ValueRange{laneCountI32});
   return call.getResult(0);
-}
-
-static FailureOr<Value> buildPsetB32Mask(IRRewriter &builder, Location loc,
-                                         ModuleOp module, pto::PsetB32Op pset,
-                                         llvm::raw_ostream &diagOS) {
-  StringRef pattern = pset.getPattern();
-  if (pattern == "PAT_ALL")
-    // For PAT_ALL specifically, the verified emitc LLVM/HIVM path canonicalizes
-    // full-mask construction to plt_b32(64) before instruction selection,
-    // even though the source-level PTO mapping is still
-    // pset_b32(PAT_ALL) -> __builtin_cce_pset_b32.
-    return buildPltB32Mask(builder, module, loc, /*laneCount=*/64, diagOS);
-
-  diagOS << "VPTO LLVM emission failed: unsupported pset_b32 pattern "
-         << pattern << "\n";
-  return failure();
-}
-
-static FailureOr<Value> buildPsetB16Mask(IRRewriter &builder, Location loc,
-                                         ModuleOp module, pto::PsetB16Op pset,
-                                         llvm::raw_ostream &diagOS) {
-  StringRef pattern = pset.getPattern();
-  if (pattern == "PAT_ALL")
-    return buildPltB16Mask(builder, module, loc, /*laneCount=*/128, diagOS);
-
-  diagOS << "VPTO LLVM emission failed: unsupported pset_b16 pattern "
-         << pattern << "\n";
-  return failure();
 }
 
 static FailureOr<Value> packLoopPair(Operation *anchor, Value low, Value high) {
@@ -1704,10 +1726,13 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.SET.LOOP1.STRIDE.UBTOOUT");
   if (isa<pto::SetLoopSizeUbToOutOp>(op))
     return std::string("llvm.hivm.SET.LOOP.SIZE.UBTOOUT");
-  if (isa<pto::CopyGmToUbufOp>(op)) {
-    std::string elem = getCopyElementFragment(op->getOperand(0).getType());
+  if (auto copy = dyn_cast<pto::CopyGmToUbufOp>(op)) {
+    Type elementType = getElementTypeFromABIValue(copy.getSource());
+    if (!elementType)
+      elementType = getElementTypeFromABIValue(copy.getDestination());
+    std::string elem = getCopyElementFragment(elementType);
     if (elem.empty())
-      elem = "f32";
+      return failure();
     return "llvm.hivm.MOV.OUT.TO.UB.ALIGN.V2." + elem + ".DV";
   }
   if (isa<pto::CopyUbufToGmOp>(op))
@@ -2501,26 +2526,6 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   builder.setInsertionPoint(op);
   Location loc = op->getLoc();
 
-  if (auto pset = dyn_cast<pto::PsetB32Op>(op)) {
-    if (pset.getPattern() == "PAT_ALL") {
-      auto mask = buildPsetB32Mask(builder, loc, module, pset, diagOS);
-      if (failed(mask))
-        return failure();
-      builder.replaceOp(op, *mask);
-      return success();
-    }
-  }
-
-  if (auto pset = dyn_cast<pto::PsetB16Op>(op)) {
-    if (pset.getPattern() == "PAT_ALL") {
-      auto mask = buildPsetB16Mask(builder, loc, module, pset, diagOS);
-      if (failed(mask))
-        return failure();
-      builder.replaceOp(op, *mask);
-      return success();
-    }
-  }
-
   if (auto vbr = dyn_cast<pto::VbrOp>(op)) {
     auto calleeName = getConfirmedCallee(op);
     if (failed(calleeName)) {
@@ -2682,27 +2687,31 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto vstus = dyn_cast<pto::VstusOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vstus.getValue().getType());
     auto basePtr = requirePointerABIAddress(op, vstus.getBase(), diagOS);
+    auto alignValue = materializeAlignABIValue(op, vstus.getAlignIn(), diagOS);
     if (!elementType || failed(basePtr))
       return failure();
     auto offsetBytes = convertElementOffsetToBytes(op, vstus.getOffset(), elementType);
-    if (failed(offsetBytes))
+    if (failed(offsetBytes) || failed(alignValue))
       return failure();
     callArgs.push_back(vstus.getValue());
     callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
-    callArgs.push_back(vstus.getAlignIn());
+    callArgs.push_back(*alignValue);
   } else if (auto vstur = dyn_cast<pto::VsturOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, vstur.getBase(), diagOS);
     auto postMode = parsePostModeImmediate(vstur.getMode());
+    auto alignValue = materializeAlignABIValue(op, vstur.getAlignIn(), diagOS);
     if (failed(basePtr) || !postMode) {
       if (!postMode)
         diagOS << "VPTO LLVM emission failed: unsupported vstur mode "
                << vstur.getMode() << "\n";
       return failure();
     }
+    if (failed(alignValue))
+      return failure();
     callArgs.push_back(vstur.getValue());
     callArgs.push_back(*basePtr);
-    callArgs.push_back(vstur.getAlignIn());
+    callArgs.push_back(*alignValue);
     callArgs.push_back(getI32Constant(builder, loc, *postMode));
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
@@ -3094,15 +3103,17 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     }
   } else if (auto vstar = dyn_cast<pto::VstarOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, vstar.getDestination(), diagOS);
-    if (failed(basePtr))
+    auto alignValue = materializeAlignABIValue(op, vstar.getValue(), diagOS);
+    if (failed(basePtr) || failed(alignValue))
       return failure();
-    callArgs.push_back(vstar.getValue());
+    callArgs.push_back(*alignValue);
     callArgs.push_back(*basePtr);
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (auto vstas = dyn_cast<pto::VstasOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, vstas.getDestination(), diagOS);
+    auto alignValue = materializeAlignABIValue(op, vstas.getValue(), diagOS);
     Type elementType = getElementTypeFromABIValue(vstas.getDestination());
-    if (failed(basePtr) || !elementType) {
+    if (failed(basePtr) || failed(alignValue) || !elementType) {
       diagOS << "VPTO LLVM emission failed: could not materialize vstas ABI "
                 "inputs; destination type="
              << vstas.getDestination().getType() << ", element type="
@@ -3117,7 +3128,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
              << elementType << "\n";
       return failure();
     }
-    callArgs.push_back(vstas.getValue());
+    callArgs.push_back(*alignValue);
     callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, 0));
@@ -3339,18 +3350,20 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(getI32Constant(builder, loc, 0));
   } else if (op->getName().getStringRef() == "pto.pstu") {
     auto basePtr = requirePointerABIAddress(op, op->getOperand(2), diagOS);
-    if (failed(basePtr))
+    auto alignValue = materializeAlignABIValue(op, op->getOperand(0), diagOS);
+    if (failed(basePtr) || failed(alignValue))
       return failure();
     callArgs.push_back(op->getOperand(1));
     callArgs.push_back(*basePtr);
-    callArgs.push_back(op->getOperand(0));
+    callArgs.push_back(*alignValue);
   } else if (auto pstu = dyn_cast<pto::PstuOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, pstu.getBase(), diagOS);
-    if (failed(basePtr))
+    auto alignValue = materializeAlignABIValue(op, pstu.getAlignIn(), diagOS);
+    if (failed(basePtr) || failed(alignValue))
       return failure();
     callArgs.push_back(pstu.getValue());
     callArgs.push_back(*basePtr);
-    callArgs.push_back(pstu.getAlignIn());
+    callArgs.push_back(*alignValue);
   } else if (auto psti = dyn_cast<pto::PstiOp>(op)) {
     auto basePtr = requirePointerABIAddress(op, psti.getDestination(), diagOS);
     Value offset = castIntegerLikeTo(op, psti.getOffset(), builder.getI32Type());
@@ -3459,6 +3472,22 @@ static LogicalResult rewriteVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) 
     if (op->getName().getDialectNamespace() == "pto")
       hasVPTO = true;
   });
+
+  SmallVector<Operation *> poisonOps;
+  module.walk([&](Operation *op) {
+    if (op->getName().getStringRef() == "ub.poison" && op->getNumResults() == 1 &&
+        isa<pto::AlignType>(op->getResult(0).getType()))
+      poisonOps.push_back(op);
+  });
+  for (Operation *op : poisonOps) {
+    OpBuilder builder(op);
+    auto abiType = cast<VectorType>(convertVPTOType(op->getResult(0).getType(), builder));
+    auto zeroAttr = DenseElementsAttr::get(abiType, builder.getI8IntegerAttr(0));
+    auto zero = builder.create<arith::ConstantOp>(op->getLoc(), abiType, zeroAttr);
+    op->getResult(0).replaceAllUsesWith(zero.getResult());
+    op->erase();
+  }
+
   return success(!hasVPTO);
 }
 

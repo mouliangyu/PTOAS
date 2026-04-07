@@ -267,9 +267,9 @@ for (int i = 0; i < N; i++) {
   lanes.
 - **outputs:** `%result` is the truncated arithmetic result and `%carry` is the
   carry/overflow predicate per lane.
+- **A5 types:** `i32`, `s32`, `u32`
 - **constraints and limitations:** This is a carry-chain integer add family. On
-  the current A5 surface, it SHOULD be treated as an unsigned integer
-  operation.
+  the current A5 surface, only 32-bit integer element types are supported.
 
 ---
 
@@ -289,9 +289,9 @@ for (int i = 0; i < N; i++) {
   active lanes.
 - **outputs:** `%result` is the arithmetic difference and `%borrow` marks lanes
   that borrowed.
-- **constraints and limitations:** This operation SHOULD be treated as an
-  unsigned 32-bit carry-chain family unless and until the verifier states
-  otherwise.
+- **A5 types:** `i32`, `s32`, `u32`
+- **constraints and limitations:** This operation is currently restricted to
+  the 32-bit integer carry/borrow-chain family.
 
 ---
 

@@ -16,9 +16,9 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vsub_tail_kernel_2d(__gm__ float *v1,
-                                                      __gm__ float *v2,
-                                                      __gm__ float *v3) {
+extern "C" __global__ AICORE void vshr_shift_boundary_kernel(__gm__ uint16_t *v1,
+                                                             __gm__ uint16_t *v2,
+                                                             __gm__ uint16_t *v3) {
   (void)v1;
   (void)v2;
   (void)v3;

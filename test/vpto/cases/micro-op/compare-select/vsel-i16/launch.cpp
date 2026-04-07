@@ -1,11 +1,3 @@
-// -----------------------------------------------------------------------------
-// case: micro-op/compare-select/vsel-i16
-// family: compare-select
-// target_ops: pto.vsel
-// scenarios: core-i16-signed, full-mask
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
-// -----------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // PTOAS compatibility layer
 // ---------------------------------------------------------------------------
@@ -43,13 +35,12 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vcmp_eq_kernel_2d(__gm__ float *v1,
-                                                    __gm__ float *v2,
-                                                    __gm__ unsigned char *v3);
+extern "C" __global__ AICORE void vsel_i16_kernel_2d(__gm__ int16_t *v1,
+                                                     __gm__ int16_t *v2,
+                                                     __gm__ int16_t *v3);
 
-void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
-                             void *stream) {
-  vcmp_eq_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                            (__gm__ float *)v2,
-                                            (__gm__ unsigned char *)v3);
+void LaunchVsel_i16_kernel_2d(int16_t *v1, int16_t *v2, int16_t *v3, void *stream) {
+  vsel_i16_kernel_2d<<<1, nullptr, stream>>>((__gm__ int16_t *)v1,
+                                             (__gm__ int16_t *)v2,
+                                             (__gm__ int16_t *)v3);
 }

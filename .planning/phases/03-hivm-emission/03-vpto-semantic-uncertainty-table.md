@@ -32,7 +32,23 @@
 
 ## Semantic Decisions Needed
 
-- 当前无保留条目
+1. `pto.vusqz` 的用户文档语义与当前实跑行为不一致
+
+- docs 签名：
+  - `%result = pto.vusqz %src, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
+- vpto 签名：
+  - `%result = pto.vusqz %src, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
+- llvm 签名：
+  - `declare <vec> @llvm.hivm.vusqz.<suffix>(<vec>, <256 x i1>)`
+- 当前 docs 语义：
+  - “按 `%mask` 把 `%src` 的 active-prefix payload 展开到激活位置，其余位置补 0”
+- 当前实跑观察：
+  - `micro-op/rearrangement/vusqz`
+  - `micro-op/rearrangement/vusqz-nontrivial-mask`
+  - 都已进入真实 `DEVICE=SIM` 运行，并能看到 `RV_VUSQZ`
+  - 但输出模式与当前 docs 语义明显不一致，不能继续按 docs 稳定定义 oracle
+- 当前阻塞点：
+  - 需要 docs 贡献者明确 `pto.vusqz` 的真实用户语义；在结论明确前，这两条 case 保持 `blocked`
 
 ## Interface / Surface Alignment Needed
 
@@ -54,6 +70,34 @@
 3. `03-vpto-doc-drift-review.md`
 
 ## Incremental Updates
+
+### 2026-04-07 Batch 05
+
+本批次继续只追加新观察，不改写上面的既有台账编号。
+
+#### Semantic Decisions Needed Additions
+
+1. `pto.vsts` 的 `PK` / `MRG2CHN` / `MRG4CHN` 用户文档不足以唯一写出稳定 oracle
+
+当前新增观察：
+
+- 代表 case：
+  - `micro-op/vector-load-store/vsts-pk-b16`
+  - `micro-op/vector-load-store/vsts-mrg2chn-b16`
+  - `micro-op/vector-load-store/vsts-mrg4chn-b8`
+- 当前 `docs/isa/03-vector-load-store.md` 只给出：
+  - `PK`: “Pack low half bits of each element before store”
+  - `MRG2CHN`: “Merge 2 interleaved channels within each 32B block”
+  - `MRG4CHN`: “Merge 4 interleaved b8 channels within each 32B block”
+- 文档尚未明确：
+  - packed/merged 后的目标 UB 布局
+  - 未被覆盖的目标字节是否保持原值还是置零
+  - `b16` / `b8` 场景下一个 vector chunk 对应多少目标字节、如何跨 32B block 映射
+
+当前阻塞点：
+
+- 在不猜底层布局的前提下，现有用户文档不足以唯一写出这三条 case 的稳定 `golden.py`
+- 在 docs 补齐用户可见布局语义前，这三条 case 不应通过臆造 oracle 推进
 
 ### 2026-04-01 Batch 01
 

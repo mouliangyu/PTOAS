@@ -167,6 +167,16 @@ for (int i = 0; i < 64; i++) {
   intrinsics. If a block is masked off, the corresponding destination block is
   zeroed and MUST NOT raise an address overflow exception for that block.
 
+```c
+// Block-strided load on 32-bit elements: one 32B block = 8 lanes.
+for (int blk = 0; blk < 8; ++blk) {
+    if (pg_b32[blk])
+        dst_block[blk] = UB_block[base + repeat_stride + blk * block_stride];
+    else
+        dst_block[blk] = 0;
+}
+```
+
 ---
 
 ## Gather (Indexed) Loads
@@ -323,6 +333,14 @@ for (int i = 0; i < 64; i++) {
   packs the two `i16` fields as `(block_stride << 16) | repeat_stride` before
   calling `llvm.hivm.vsstb(vreg, ptr6, packed, 0, mask)`. Masked-off blocks
   MUST NOT issue memory writes.
+
+```c
+// Block-strided store on 32-bit elements: one 32B block = 8 lanes.
+for (int blk = 0; blk < 8; ++blk) {
+    if (pg_b32[blk])
+        UB_block[base + repeat_stride + blk * block_stride] = src_block[blk];
+}
+```
 
 ---
 

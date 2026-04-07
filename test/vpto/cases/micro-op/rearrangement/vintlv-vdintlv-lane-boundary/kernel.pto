@@ -16,7 +16,7 @@ module attributes {pto.target_arch = "a5"} {
     %c32_i64 = arith.constant 32 : i64
     %c128_i64 = arith.constant 128 : i64
     %c4096_i64 = arith.constant 4096 : i64
-    %c129_i32 = arith.constant 129 : i32
+    %c1024_i32 = arith.constant 1024 : i32
 
     %ub_in = pto.castptr %c0_i64 : i64 -> !pto.ptr<f32, ub>
     %ub_out = pto.castptr %c4096_i64 : i64 -> !pto.ptr<f32, ub>
@@ -29,7 +29,7 @@ module attributes {pto.target_arch = "a5"} {
     pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
 
     pto.vecscope {
-      %_:1 = scf.for %offset = %c0 to %c1024 step %c128 iter_args(%remaining = %c129_i32) -> (i32) {
+      %_:1 = scf.for %offset = %c0 to %c1024 step %c128 iter_args(%remaining = %c1024_i32) -> (i32) {
         %mask, %next_remaining = pto.plt_b32 %remaining : i32 -> !pto.mask<b32>, i32
         %rhs_offset = arith.addi %offset, %c64 : index
         %lhs = pto.vlds %ub_in[%offset] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>

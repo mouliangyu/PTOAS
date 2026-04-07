@@ -3,7 +3,7 @@
 # family: unary-vector
 # target_ops: pto.vexp
 # scenarios: core-f16, full-mask
-# NOTE: bulk-generated coverage skeleton.
+# NOTE: f16 vector exp baseline.
 # coding=utf-8
 
 import argparse
@@ -19,9 +19,9 @@ SEED = 19
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.abs(v1).astype(np.float32, copy=False)
+    v1 = rng.uniform(-4.0, 4.0, size=(ROWS, COLS)).astype(np.float16)
+    v2 = np.zeros((ROWS, COLS), dtype=np.float16)
+    golden_v2 = np.exp(v1.astype(np.float32)).astype(np.float16)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
@@ -31,7 +31,7 @@ def generate(output_dir: Path, seed: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vabs validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vexp f16 validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

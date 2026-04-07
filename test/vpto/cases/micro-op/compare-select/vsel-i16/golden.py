@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# coding=utf-8
 
 import argparse
 from pathlib import Path
@@ -7,33 +6,29 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+LANES = 128
 SEED = 19
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.integers(-200, 200, size=(ROWS, COLS), dtype=np.int16)
-    v2 = rng.integers(-200, 200, size=(ROWS, COLS), dtype=np.int16)
+    v1 = rng.integers(-200, 200, size=(LANES,), dtype=np.int16)
+    v2 = rng.integers(-200, 200, size=(LANES,), dtype=np.int16)
     golden_v3 = np.where(v1 > v2, v1, v2).astype(np.int16, copy=False)
-    v3 = np.zeros((ROWS, COLS), dtype=np.int16)
+    v3 = np.zeros((LANES,), dtype=np.int16)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
-    v3.reshape(-1).tofile(output_dir / "v3.bin")
-    golden_v3.reshape(-1).tofile(output_dir / "golden_v3.bin")
+    v1.tofile(output_dir / "v1.bin")
+    v2.tofile(output_dir / "v2.bin")
+    v3.tofile(output_dir / "v3.bin")
+    golden_v3.tofile(output_dir / "golden_v3.bin")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vsel i16 validation."
-    )
+    parser = argparse.ArgumentParser(description="Generate inputs/golden for VPTO vsel-i16.")
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)
     args = parser.parse_args()
-
     generate(args.output_dir, args.seed)
 
 

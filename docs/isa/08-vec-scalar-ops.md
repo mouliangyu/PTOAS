@@ -192,9 +192,10 @@ for (int i = 0; i < N; i++) {
   incoming carry predicate, and `%mask` selects active lanes.
 - **outputs:** `%result` is the arithmetic result and `%carry` is the carry-out
   predicate.
+- **A5 types:** `i32`, `s32`, `u32`
 - **constraints and limitations:** This is the scalar-extended carry-chain
-  family. Treat it as an unsigned integer operation unless the verifier states a
-  wider legal domain.
+  family. On the current A5 surface, only 32-bit integer element types are
+  supported.
 
 ---
 
@@ -214,8 +215,9 @@ for (int i = 0; i < N; i++) {
   incoming borrow predicate, and `%mask` selects active lanes.
 - **outputs:** `%result` is the arithmetic result and `%borrow` is the
   borrow-out predicate.
+- **A5 types:** `i32`, `s32`, `u32`
 - **constraints and limitations:** This is the scalar-extended borrow-chain
-  family and SHOULD be treated as an unsigned integer operation.
+  family and is currently restricted to 32-bit integer element types.
 
 ---
 

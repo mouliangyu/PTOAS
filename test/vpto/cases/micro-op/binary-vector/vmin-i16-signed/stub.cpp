@@ -3,8 +3,6 @@
 // family: binary-vector
 // target_ops: pto.vmin
 // scenarios: core-i16-signed, full-mask
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
 // -----------------------------------------------------------------------------
 #include <pto/common/type.hpp>
 
@@ -16,9 +14,9 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vsub_tail_kernel_2d(__gm__ float *v1,
-                                                      __gm__ float *v2,
-                                                      __gm__ float *v3) {
+extern "C" __global__ AICORE void vmin_i16_signed_kernel(__gm__ int16_t *v1,
+                                                         __gm__ int16_t *v2,
+                                                         __gm__ int16_t *v3) {
   (void)v1;
   (void)v2;
   (void)v3;

@@ -3,7 +3,6 @@
 # family: binary-vector
 # target_ops: pto.vadd
 # scenarios: core-i16-signed, full-mask
-# NOTE: bulk-generated coverage skeleton.
 # coding=utf-8
 
 import argparse
@@ -15,18 +14,12 @@ import numpy as np
 ROWS = 32
 COLS = 32
 SEED = 19
-LOGICAL_ELEMS = 1000
-
-
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.random((ROWS, COLS), dtype=np.float32)
-    v2 = rng.random((ROWS, COLS), dtype=np.float32)
-    v3 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v3 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v3.reshape(-1)[:LOGICAL_ELEMS] = (
-        v1.reshape(-1)[:LOGICAL_ELEMS] - v2.reshape(-1)[:LOGICAL_ELEMS]
-    ).astype(np.float32, copy=False)
+    v1 = rng.integers(-1000, 1001, size=(ROWS, COLS), dtype=np.int16)
+    v2 = rng.integers(-1000, 1001, size=(ROWS, COLS), dtype=np.int16)
+    v3 = np.zeros((ROWS, COLS), dtype=np.int16)
+    golden_v3 = (v1.astype(np.int32) + v2.astype(np.int32)).astype(np.int16)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")

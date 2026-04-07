@@ -16,8 +16,10 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vec_add_scalar_kernel_2d(__gm__ float *v1,
-                                                                __gm__ float *v2) {
+extern "C" __global__ AICORE void vprelu_tail_kernel_2d(__gm__ float *v1,
+                                                        __gm__ float *v2,
+                                                        __gm__ float *v3) {
   (void)v1;
   (void)v2;
+  (void)v3;
 }

@@ -402,6 +402,14 @@ This is intentionally different from a lane-vector model such as `mask<64xi1>`:
 - `64` is only the derived logical lane count for the `b32` view;
 - value-level patterns such as `PAT_VL32` describe which lanes are active, not a different type.
 
+For carry/borrow families such as `pto.vaddc`, `pto.vsubc`, `pto.vaddcs`, and
+`pto.vsubcs`, the predicate result should also be read at this logical-granularity
+level: `!pto.mask<b32>` means one logical predicate value per 32-bit lane. It
+does not mean the physical register is packed as a dense `64 x i1` bit-vector.
+At the hardware level, the predicate register still uses the target's native
+predicate-bit encoding for `b32` granularity, and predicate load/store ops are
+responsible for materializing that encoding to or from memory.
+
 **Predication Behavior (Zero-Merge):**
 
 The native hardware predication mode is **ZEROING** — inactive lanes produce zero:
@@ -1277,7 +1285,12 @@ Address-form policy for this section:
 - syntax:
   `%result, %carry = pto.vaddc %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Add two 32-bit integer vectors lane-wise and return both the truncated
+  32-bit sum and the carry-out predicate for active lanes.
+- constraints:
+  `T` is currently restricted to `i32`, `s32`, or `u32`.
+  The carry result uses `!pto.mask<b32>` as a logical per-lane predicate view,
+  not a dense packed `64 x i1` vector.
 - CCE correspondence:
   `vaddc(...)`
   `__builtin_cce_vaddc_*`
@@ -1287,7 +1300,10 @@ Address-form policy for this section:
 - syntax:
   `%result, %carry = pto.vsubc %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Subtract two 32-bit integer vectors lane-wise and return both the truncated
+  32-bit difference and the borrow/carry predicate for active lanes.
+- constraints:
+  `T` is currently restricted to `i32`, `s32`, or `u32`.
 - CCE correspondence:
   `vsubc(...)`
   `__builtin_cce_vsubc_*`
@@ -1297,7 +1313,12 @@ Address-form policy for this section:
 - syntax:
   `%result, %carry = pto.vaddcs %lhs, %rhs, %carry_in, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Add two 32-bit integer vectors lane-wise with carry-in and return both the
+  truncated 32-bit sum and the carry-out predicate for active lanes.
+- constraints:
+  `T` is currently restricted to `i32`, `s32`, or `u32`.
+  The carry input/output uses `!pto.mask<b32>` as a logical per-lane predicate
+  view, not a dense packed `64 x i1` vector.
 - CCE correspondence:
   `vaddcs(...)`
   `__builtin_cce_vaddcs_*`
@@ -1307,7 +1328,11 @@ Address-form policy for this section:
 - syntax:
   `%result, %carry = pto.vsubcs %lhs, %rhs, %carry_in, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
 - semantics:
-  TODO(user): add one-line semantics for external developers.
+  Subtract two 32-bit integer vectors lane-wise with borrow/carry-in and
+  return both the truncated 32-bit difference and the borrow/carry-out
+  predicate for active lanes.
+- constraints:
+  `T` is currently restricted to `i32`, `s32`, or `u32`.
 - CCE correspondence:
   `vsubcs(...)`
   `__builtin_cce_vsubcs_*`

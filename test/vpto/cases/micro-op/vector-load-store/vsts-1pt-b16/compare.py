@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# case: micro-op/vector-load-store/vsts
+# case: micro-op/vector-load-store/vsts-1pt-b16
 # family: vector-load-store
 # target_ops: pto.vsts
-# scenarios: core-f32, contiguous, full-mask, aligned, dist-norm
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: core-i16, full-mask, aligned, dist-1pt-b16
 # coding=utf-8
 
 import os
@@ -187,7 +186,7 @@ def compare_packed_pred_mask(golden_path, output_path, logical_elems, src_elem_b
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
     ok = True
-    ok = compare_bin("golden_v2.bin", "v2.bin", np.float32, 0.0001) and ok
+    ok = compare_bin("golden_v2.bin", "v2.bin", np.int16, 0.0) and ok
     if not ok:
         if strict:
             print("[ERROR] compare failed")
