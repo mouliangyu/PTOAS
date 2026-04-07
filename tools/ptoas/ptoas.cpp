@@ -1090,6 +1090,7 @@ int main(int argc, char **argv) {
   }
 
   if (effectiveBackend == PTOBackend::VPTO) {
+    convertVPTOEmissionBoundaryToPtr(*module, &llvm::errs());
     PassManager prepPM(module->getContext());
     prepPM.enableVerifier();
     prepPM.addNestedPass<func::FuncOp>(createPTOVPTOExpandBridgeOpsPass());
