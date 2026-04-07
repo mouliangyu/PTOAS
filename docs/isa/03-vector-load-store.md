@@ -270,6 +270,16 @@ for (int i = 0; i < 64; i++) {
   zeroed and MUST NOT raise an address overflow exception for that block.
 - **Latency:** **9** cycles.
 
+```c
+// Block-strided load on 32-bit elements: one 32B block = 8 lanes.
+for (int blk = 0; blk < 8; ++blk) {
+    if (pg_b32[blk])
+        dst_block[blk] = UB_block[base + repeat_stride + blk * block_stride];
+    else
+        dst_block[blk] = 0;
+}
+```
+
 ---
 
 ## Gather (Indexed) Loads
@@ -434,6 +444,14 @@ for (int i = 0; i < 64; i++) {
   calling `llvm.hivm.vsstb(vreg, ptr6, packed, 0, mask)`. Masked-off blocks
   MUST NOT issue memory writes.
 - **Latency:** **9** cycles.
+
+```c
+// Block-strided store on 32-bit elements: one 32B block = 8 lanes.
+for (int blk = 0; blk < 8; ++blk) {
+    if (pg_b32[blk])
+        UB_block[base + repeat_stride + blk * block_stride] = src_block[blk];
+}
+```
 
 ---
 

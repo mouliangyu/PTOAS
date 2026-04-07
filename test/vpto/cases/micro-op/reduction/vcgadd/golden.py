@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-# case: micro-op/reduction/vcgadd
-# family: reduction
-# target_ops: pto.vcgadd
-# scenarios: group-reduction, result-placement
-# NOTE: bulk-generated coverage skeleton.
 # coding=utf-8
 
 import argparse
@@ -21,13 +16,17 @@ LANES = 64
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
+
     v2 = np.zeros((ROWS, COLS), dtype=np.float32)
     golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
     flat_in = v1.reshape(-1)
     flat_out = golden_v2.reshape(-1)
+    group_elems = 8
     for offset in range(0, flat_in.size, LANES):
         chunk = flat_in[offset:offset + LANES]
-        flat_out[offset] = np.sum(chunk, dtype=np.float32)
+        for group in range(0, LANES, group_elems):
+            flat_out[offset + group] = np.sum(chunk[group:group + group_elems], dtype=np.float32)
+
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")

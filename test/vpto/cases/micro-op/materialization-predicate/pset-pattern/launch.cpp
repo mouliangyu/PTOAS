@@ -58,8 +58,8 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vdup_scalar_kernel_2d(__gm__ float *v1);
+extern "C" __global__ AICORE void pset_pattern_kernel_2d(__gm__ uint32_t *v1);
 
-void LaunchVdup_scalar_kernel_2d(float *v1, void *stream) {
-  vdup_scalar_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1);
+void LaunchPset_pattern_kernel_2d(uint32_t *v1, void *stream) {
+  pset_pattern_kernel_2d<<<1, nullptr, stream>>>((__gm__ uint32_t *)v1);
 }

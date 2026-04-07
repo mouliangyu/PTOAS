@@ -2,27 +2,47 @@
 # case: micro-op/vec-scalar/vsubcs-borrow-boundary
 # family: vec-scalar
 # target_ops: pto.vsubcs
-# scenarios: core-i16-unsigned, full-mask, scalar-operand, carry-chain
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: core-u32-unsigned, full-mask, carry-chain, integer-overflow
 
 import os
 import sys
 import numpy as np
 
 
-def compare_bin_prefix(golden_path, output_path, dtype, eps, count):
-    if not os.path.exists(golden_path) or not os.path.exists(output_path):
+REPEAT_BYTES = 256
+LOGICAL_ELEMS = 64
+SRC_ELEM_BYTES = 4
+
+
+def _ceil_div(x, y):
+    return (x + y - 1) // y
+
+
+def _packed_pred_storage_bytes(logical_elems, src_elem_bytes):
+    repeat_elems = REPEAT_BYTES // src_elem_bytes
+    repeat_times = _ceil_div(logical_elems, repeat_elems) + 1
+    loop_count = repeat_times // 2
+    return loop_count * 16
+
+
+def compare_result():
+    golden = np.fromfile("golden_v3.bin", dtype=np.uint32, count=64)
+    output = np.fromfile("v3.bin", dtype=np.uint32, count=64)
+    return golden.shape == output.shape and np.array_equal(golden, output)
+
+
+def compare_borrow():
+    prefix_bytes = _packed_pred_storage_bytes(LOGICAL_ELEMS, SRC_ELEM_BYTES)
+    golden = np.fromfile("golden_v4.bin", dtype=np.uint8)
+    output = np.fromfile("v4.bin", dtype=np.uint8)
+    if golden.size < prefix_bytes or output.size < prefix_bytes:
         return False
-    golden = np.fromfile(golden_path, dtype=dtype, count=count)
-    output = np.fromfile(output_path, dtype=dtype, count=count)
-    return golden.shape == output.shape and np.allclose(
-        golden, output, atol=eps, rtol=eps, equal_nan=True
-    )
+    return np.array_equal(golden[:prefix_bytes], output[:prefix_bytes])
 
 
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
-    ok = compare_bin_prefix("golden_v2.bin", "v2.bin", np.float32, 1e-4, 1000)
+    ok = compare_result() and compare_borrow()
     if not ok:
         if strict:
             print("[ERROR] compare failed")

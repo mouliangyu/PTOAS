@@ -2,9 +2,7 @@
 // case: micro-op/vec-scalar/vaddcs
 // family: vec-scalar
 // target_ops: pto.vaddcs
-// scenarios: core-i16-unsigned, full-mask, scalar-operand, carry-chain
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: core-u32-unsigned, full-mask, carry-chain
 // -----------------------------------------------------------------------------
 #include <pto/common/type.hpp>
 
@@ -16,8 +14,11 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vmuls_tail_kernel_2d(__gm__ float *v1,
-                                                       __gm__ float *v2) {
+extern "C" __global__ AICORE void
+vaddcs_kernel(__gm__ uint32_t *v1, __gm__ uint32_t *v2, __gm__ uint32_t *v3,
+              __gm__ uint8_t *v4) {
   (void)v1;
   (void)v2;
+  (void)v3;
+  (void)v4;
 }

@@ -19,9 +19,23 @@ SEED = 19
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
+    v1 = rng.uniform(0.0, 16.0, size=(ROWS, COLS)).astype(np.float32)
+    flat = v1.reshape(-1)
+    flat[:8] = np.array(
+        [
+            np.float32(0.0),
+            np.nextafter(np.float32(0.0), np.float32(1.0), dtype=np.float32),
+            np.float32(1.0),
+            np.float32(4.0),
+            np.float32(9.0),
+            np.float32(16.0),
+            np.float32(1024.0),
+            np.float32(np.finfo(np.float32).max),
+        ],
+        dtype=np.float32,
+    )
     v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.abs(v1).astype(np.float32, copy=False)
+    golden_v2 = np.sqrt(v1).astype(np.float32, copy=False)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
@@ -31,7 +45,7 @@ def generate(output_dir: Path, seed: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vabs validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vsqrt domain-boundary validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

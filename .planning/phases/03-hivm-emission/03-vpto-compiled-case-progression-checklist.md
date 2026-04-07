@@ -1,0 +1,1424 @@
+# VPTO Compiled Runtime Progression Checklist
+
+## Purpose
+
+本文件是当前 `compiled` case 从 `compiled` 推进到“运行校验无误 / 阻塞已明确”的临时执行台账。
+
+它的唯一职责是防止以下问题：
+
+- 遗忘某条 `compiled` case 还没推进
+- 多轮推进时重复检查同一条 case
+- 阶段性同步后丢失“下一条该看什么”
+
+本文件不替代 `03-vpto-op-board-unit-tests-matrix.md` 的正式状态台账。
+
+## Status Contract
+
+每条 case 只允许使用以下状态：
+
+- `todo`
+  - 还没开始清扫
+- `checking`
+  - 正在清扫，尚未形成最终运行结论
+- `ready`
+  - 已完成 case 自身问题修正与静态核对，下一步应立即进入运行尝试
+- `sim-passed`
+  - 已完成专项核对，并已在默认模型路径跑到 `compare passed`
+- `sim-blocked`
+  - 已完成专项核对与 `DEVICE=SIM` 运行尝试，剩余问题确认属于 runtime / backend / toolchain，或 docs/runtime 已存在真实不一致
+- `board-blocked`
+  - 已完成专项核对与运行尝试，剩余问题确认属于 runtime / backend / toolchain
+- `blocked`
+  - 经开发者确认后，当前无法仅依据 `docs/vpto-spec.md` 与 `docs/isa/` 保持原测试目标继续推进
+
+本轮允许停止的唯一条件是：
+
+- 本文件中不再存在 `todo`
+- 本文件中不再存在 `checking`
+- 本文件中不再存在 `ready`
+- 每条原始 `compiled` case 都已落到 `sim-passed`、`sim-blocked`、`board-blocked` 或 `blocked`
+
+## Entry Template
+
+以下模板仅用于说明字段，不属于当前工作集，后续脚本不得把本节内容计入 case 统计。
+
+```text
+- `case`: `<matrix case path>`
+  - `family`: `<family>`
+  - `checklist_status`: `todo|checking|ready|sim-passed|sim-blocked|board-blocked|blocked`
+  - `readiness_findings`: `- | kernel | golden | compare | host | runner | runtime | docs`
+  - `current_conclusion`: `<one-line latest conclusion>`
+  - `evidence`: `<workspace/log/path>`
+```
+
+`board-blocked` 填写约束：
+
+- 只能用于已完成 1-5 核对且已实际运行失败的 case
+- 不接受“怀疑是 runtime/backend/toolchain”这类无证据结论
+- 必须在 `current_conclusion` 中写明失败现象与归因结论
+- `evidence` 必须指向失败命令日志、工作目录或可复核产物路径
+
+## Working Set
+
+执行时从 `03-vpto-op-board-unit-tests-matrix.md` 中提取当前状态为 `compiled` 的 case，按 family 追加到本文件。
+
+当前工作集已按 `matrix` 填充。后续执行中必须持续更新到没有 `todo` / `checking` / `ready` 为止。
+
+### binary-vector
+
+- `case`: `micro-op/binary-vector/vadd-tail`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `SIM 模型路径已 compare passed；直板路径早先出现的 step 6 挂起不再作为本条当前终态`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-tail-sim/micro-op_binary-vector_vadd-tail`
+- `case`: `micro-op/binary-vector/vadd-f16`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正为真实 f16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-f16-sim/micro-op_binary-vector_vadd-f16`
+- `case`: `micro-op/binary-vector/vadd-bf16`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的 f32/tail-mask 漂移，收口为真实 bf16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-bf16-sim/micro-op_binary-vector_vadd-bf16`
+- `case`: `micro-op/binary-vector/vadd-i16-signed`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的 f32/tail-mask 漂移，收口为真实 i16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-i16-signed-sim/micro-op_binary-vector_vadd-i16-signed`
+- `case`: `micro-op/binary-vector/vadd-i16-unsigned`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的 f32/tail-mask 漂移，收口为真实 ui16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-i16-unsigned-sim/micro-op_binary-vector_vadd-i16-unsigned`
+- `case`: `micro-op/binary-vector/vadd-i16-signed-overflow`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体与 wraparound oracle 一致，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-i16-signed-overflow-sim/micro-op_binary-vector_vadd-i16-signed-overflow`
+- `case`: `micro-op/binary-vector/vadd-i16-unsigned-overflow`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体与 wraparound oracle 一致，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-i16-unsigned-overflow-sim/micro-op_binary-vector_vadd-i16-unsigned-overflow`
+- `case`: `micro-op/binary-vector/vadd-f32-exceptional`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `异常值 case 在 SIM 模型路径 compare passed；运行日志会打印 vec_err_idata_inf_nan_t0，但当前不影响 oracle 一致性`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-f32-exceptional-sim/micro-op_binary-vector_vadd-f32-exceptional`
+- `case`: `micro-op/binary-vector/vsadd`
+  - `family`: `binary-vector`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体已核对无漂移；SIM 运行在 RV_VSADD type.S16 处触发 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 实现缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vsadd-sim/micro-op_binary-vector_vsadd`
+- `case`: `micro-op/binary-vector/vsub`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体已核对无漂移，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vsub-sim/micro-op_binary-vector_vsub`
+- `case`: `micro-op/binary-vector/vssub`
+  - `family`: `binary-vector`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体已核对无漂移；SIM 运行在 RV_VSSUB type.S16 处触发 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 实现缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vssub-sim/micro-op_binary-vector_vssub`
+- `case`: `micro-op/binary-vector/vmul`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体已核对无漂移，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vmul-sim/micro-op_binary-vector_vmul`
+- `case`: `micro-op/binary-vector/vdiv-tail`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `tail-mask case 本体已核对无漂移，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vdiv-tail-sim/micro-op_binary-vector_vdiv-tail`
+- `case`: `micro-op/binary-vector/vdiv-f16`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `f16 case 本体已核对无漂移，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vdiv-f16-sim/micro-op_binary-vector_vdiv-f16`
+- `case`: `micro-op/binary-vector/vdiv-f32-exceptional`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `异常值 case 在 SIM 模型路径 compare passed；运行日志会打印 vec_err_idata_inf_nan_t0，但当前不影响 oracle 一致性`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vdiv-f32-exceptional-sim/micro-op_binary-vector_vdiv-f32-exceptional`
+- `case`: `micro-op/binary-vector/vmax`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `case 本体已核对无漂移，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vmax-sim/micro-op_binary-vector_vmax`
+- `case`: `micro-op/binary-vector/vmin-tail`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `tail-mask case 本体已核对无漂移，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vmin-tail-sim/micro-op_binary-vector_vmin-tail`
+- `case`: `micro-op/binary-vector/vmin-f16`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的 f32/tail-mask 漂移，收口为真实 f16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vmin-f16-sim/micro-op_binary-vector_vmin-f16`
+- `case`: `micro-op/binary-vector/vmin-bf16`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的 f32/tail-mask 漂移与坏补丁残留，收口为真实 bf16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vmin-bf16-sim/micro-op_binary-vector_vmin-bf16`
+- `case`: `micro-op/binary-vector/vmin-i16-signed`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的错名 host/compare 漂移，收口为真实 i16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vmin-i16-signed-sim/micro-op_binary-vector_vmin-i16-signed`
+- `case`: `micro-op/binary-vector/vmin-i16-unsigned`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `已修正旧 skeleton 中残留的错名 host/compare 漂移，收口为真实 ui16/full-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vmin-i16-unsigned-sim/micro-op_binary-vector_vmin-i16-unsigned`
+- `case`: `micro-op/binary-vector/vmin-f32-exceptional`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `SIM 运行日志会打印 vec exceptional 提示，但最终 compare passed；按 plan 以 oracle 结果为准，记为模型路径通过`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vadd-f32-exceptional-sim/micro-op_binary-vector_vadd-f32-exceptional`
+- `case`: `micro-op/binary-vector/vand`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已从旧的 f32/tail-mask skeleton 收口为真实 ui16/full-mask bitwise case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vand-sim-rerun/micro-op_binary-vector_vand`
+- `case`: `micro-op/binary-vector/vor`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已从旧的 f32/tail-mask skeleton 收口为真实 ui16/full-mask bitwise case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vor-sim-rerun/micro-op_binary-vector_vor`
+- `case`: `micro-op/binary-vector/vxor`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已从旧的 f32/tail-mask skeleton 收口为真实 ui16/full-mask bitwise case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vxor-sim-rerun/micro-op_binary-vector_vxor`
+- `case`: `micro-op/binary-vector/vshl`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已从旧 skeleton 收口为真实 ui16/full-mask logical-left-shift case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vshl-sim-rerun/micro-op_binary-vector_vshl`
+- `case`: `micro-op/binary-vector/vshr`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已收口为真实 ui16/full-mask logical-right-shift case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vshr-sim-rerun/micro-op_binary-vector_vshr`
+- `case`: `micro-op/binary-vector/vaddc`
+  - `family`: `binary-vector`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 已按 u32 carry-chain surface 收口并完成 SIM 运行；LLVM IR 已完整发射 vaddc + vstsx1 + psti，但运行结果与 carry 输出均为全 0，当前证据指向 runtime/backend 实现缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vaddc-sim/micro-op_binary-vector_vaddc`
+- `case`: `micro-op/binary-vector/vsubc`
+  - `family`: `binary-vector`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 已按 u32 carry-chain surface 收口并完成 SIM 运行；LLVM IR 已完整发射 vsubc + vstsx1 + psti，但运行结果与 borrow 输出均为全 0，当前证据指向 runtime/backend 实现缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vsubc-sim-rerun/micro-op_binary-vector_vsubc`
+- `case`: `micro-op/binary-vector/vsub-tail`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vsub-tail-sim/micro-op_binary-vector_vsub-tail`
+- `case`: `micro-op/binary-vector/vmul-tail`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vmul-tail-sim/micro-op_binary-vector_vmul-tail`
+- `case`: `micro-op/binary-vector/vmax-tail`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vmax-tail-sim/micro-op_binary-vector_vmax-tail`
+- `case`: `micro-op/binary-vector/vand-mask-edge`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 scope 收口为交错 bit-pattern 下的 ui16/full-mask 位与 case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vand-mask-edge-sim-rerun/micro-op_binary-vector_vand-mask-edge`
+- `case`: `micro-op/binary-vector/vor-mask-edge`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 scope 收口为交错 bit-pattern 下的 ui16/full-mask 位或 case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vor-mask-edge-sim-rerun/micro-op_binary-vector_vor-mask-edge`
+- `case`: `micro-op/binary-vector/vxor-mask-edge`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 scope 收口为交错 bit-pattern 下的 ui16/full-mask 位异或 case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vxor-mask-edge-sim-rerun/micro-op_binary-vector_vxor-mask-edge`
+- `case`: `micro-op/binary-vector/vshl-shift-boundary`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 scope 收口为临界 shift 量的 ui16/full-mask 左移边界 case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vshl-shift-boundary-sim-rerun/micro-op_binary-vector_vshl-shift-boundary`
+- `case`: `micro-op/binary-vector/vshr-shift-boundary`
+  - `family`: `binary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 scope 收口为临界 shift 量的 ui16/full-mask 右移边界 case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vshr-shift-boundary-sim-rerun/micro-op_binary-vector_vshr-shift-boundary`
+- `case`: `micro-op/binary-vector/vaddc-carry-boundary`
+  - `family`: `binary-vector`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 已按 u32 carry-chain boundary surface 收口并完成 SIM 运行；LLVM IR 已完整发射 vaddc + vstsx1 + psti，但结果与 carry 输出均全 0，当前证据指向 runtime/backend 实现缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vaddc-carry-boundary-sim-rerun/micro-op_binary-vector_vaddc-carry-boundary`
+- `case`: `micro-op/binary-vector/vsubc-borrow-boundary`
+  - `family`: `binary-vector`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 已按 u32 carry-chain boundary surface 收口并完成 SIM 运行；LLVM IR 已完整发射 vsubc + vstsx1 + psti，但结果与 borrow 输出均全 0，当前证据指向 runtime/backend 实现缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_binary-vector_vsubc-borrow-boundary-sim-rerun2/micro-op_binary-vector_vsubc-borrow-boundary`
+
+### compare-select
+
+- `case`: `micro-op/compare-select/vcmp-eq`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧的 1024-element 双-store skeleton 收口为真实 64-lane 单次 vcmp+psts case，并按 b32 predicate nibble layout 修正 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmp-eq-sim/micro-op_compare-select_vcmp-eq`
+- `case`: `micro-op/compare-select/vcmp-lt`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧的 1024-element 双-store skeleton 收口为真实 64-lane 单次 vcmp+psts case，并按 b32 predicate nibble layout 修正 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmp-lt-sim/micro-op_compare-select_vcmp-lt`
+- `case`: `micro-op/compare-select/vcmp-tail`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧的 1000-element 双-store skeleton 收口为真实 64-lane tail-mask 单次 vcmp+psts case，inactive tail 已体现在 oracle 中；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmp-tail-sim/micro-op_compare-select_vcmp-tail`
+- `case`: `micro-op/compare-select/vcmp-i16-signed`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 128-lane i16/b16 单次 vcmp+psts case；修正了 host wrapper 对 kernel 符号名的漂移，并按 b16 2-bit-per-lane 布局生成 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmp-i16-signed-sim/micro-op_compare-select_vcmp-i16-signed`
+- `case`: `micro-op/compare-select/vcmp-i16-unsigned`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 128-lane ui16/b16 单次 vcmp+psts case；修正了 host wrapper 对 kernel 符号名/参数类型的漂移，并按 b16 2-bit-per-lane 布局生成 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmp-i16-unsigned-sim/micro-op_compare-select_vcmp-i16-unsigned`
+- `case`: `micro-op/compare-select/vcmp-f32-exceptional`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 64-lane 异常值单次 vcmp+psts case，输入显式覆盖 inf/-inf/nan/-0/+0；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmp-f32-exceptional-sim/micro-op_compare-select_vcmp-f32-exceptional`
+- `case`: `micro-op/compare-select/vsel`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 64-lane 单次 `vcmp+vsel+vsts` case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vsel-sim/micro-op_compare-select_vsel`
+- `case`: `micro-op/compare-select/vsel-tail`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 64-lane tail-mask `vcmp+vsel+vsts` case，并将 inactive tail 保持为零；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vsel-tail-sim/micro-op_compare-select_vsel-tail`
+- `case`: `micro-op/compare-select/vsel-i16`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 128-lane `i16` 单次 `vcmp+vsel+vsts` case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vsel-i16-sim/micro-op_compare-select_vsel-i16`
+- `case`: `micro-op/compare-select/vselr`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已修正 lane-select golden 建模，按 64-lane block 而非矩阵 axis 解释 `%idx`；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vselr-sim-rerun2/micro-op_compare-select_vselr`
+- `case`: `micro-op/compare-select/vselr-f16`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 `f16 + idx` lane-select 语义重写并完成 SIM 模型路径 compare`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vselr-f16-sim/micro-op_compare-select_vselr-f16`
+- `case`: `micro-op/compare-select/vselr-u8`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已按 `u8 + idx` lane-select 语义重写并完成 SIM 模型路径 compare`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vselr-u8-sim/micro-op_compare-select_vselr-u8`
+- `case`: `micro-op/compare-select/vcmps-f32`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 64-lane 单次 `vcmps+psts` case，并按 `mask<b32>` 的 nibble-packed `psts NORM` 布局修正 compare；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmps-f32-sim-rerun/micro-op_compare-select_vcmps-f32`
+- `case`: `micro-op/compare-select/vcmps-tail`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为单次 64-lane tail-mask `vcmps+psts` case，并将 inactive tail 直接体现在 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmps-tail-sim/micro-op_compare-select_vcmps-tail`
+- `case`: `micro-op/compare-select/vcmps-i16-signed`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 128-lane `i16` scalar-compare case，并按 `mask<b16>` 的 2-bit-per-lane `psts NORM` 布局生成 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmps-i16-signed-sim-rerun/micro-op_compare-select_vcmps-i16-signed`
+- `case`: `micro-op/compare-select/vcmps-i16-unsigned`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 128-lane `ui16` scalar-compare case，并按 `mask<b16>` 的 2-bit-per-lane `psts NORM` 布局生成 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmps-i16-unsigned-sim-rerun/micro-op_compare-select_vcmps-i16-unsigned`
+- `case`: `micro-op/compare-select/vcmps-f32-exceptional`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 64-lane 异常值单次 `vcmps+psts` case，输入显式覆盖 `inf/-inf/nan/-0/+0`，并按 `mask<b32>` 的 nibble-packed `psts NORM` 布局生成 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vcmps-f32-exceptional-sim/micro-op_compare-select_vcmps-f32-exceptional`
+- `case`: `micro-op/compare-select/vcmp-unordered-f32`
+  - `family`: `compare-select`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `scope, docs`
+  - `current_conclusion`: `scope 明确要求“NaN 参与时的 unordered 比较路径”，但 docs/isa/11-compare-select.md 当前对 `pto.vcmp` 仅暴露 `eq/ne/lt/le/gt/ge` 六种 `CMP_MODE`；在用户文档补齐 unordered surface 前，不应臆造隐藏 mode`
+  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-op-board-test-scope.md:1027, docs/isa/11-compare-select.md`
+- `case`: `micro-op/compare-select/vcmps-unordered-f32`
+  - `family`: `compare-select`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `scope, docs`
+  - `current_conclusion`: `scope 明确要求“NaN 参与时的 unordered 比较路径”，但 docs/isa/11-compare-select.md 当前对 `pto.vcmps` 仅继承 `eq/ne/lt/le/gt/ge` 这组六种 compare mode；在用户文档补齐 unordered surface 前，不应臆造隐藏 mode`
+  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-op-board-test-scope.md:1030, docs/isa/11-compare-select.md`
+- `case`: `micro-op/compare-select/vsel-predicate-edge`
+  - `family`: `compare-select`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧的 1024-element 双-store skeleton 收口为真实 64-lane 单次 `vcmp+vsel+vsts` case，并按交错 edge predicate 构造输入；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_compare-select_vsel-predicate-edge-sim/micro-op_compare-select_vsel-predicate-edge`
+
+### conversion
+
+- `case`: `micro-op/conversion/vcvt-f32-to-f16`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已确认 `f32 -> f16` narrowing 需按 `EVEN/ODD + vor` 的交织布局生成 oracle；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vcvt-f32-to-f16-sim-rerun/micro-op_conversion_vcvt-f32-to-f16`
+- `case`: `micro-op/conversion/vcvt-f16-to-f32`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `真实 `DEVICE=SIM` 运行仅产出每个 128-lane block 的前 64 个 `f32` 结果；repo-generated `.ll` 已发射两次 `llvm.hivm.vcvtff.f162f32.x(..., part=0/1)`，但 `part=1` 路径当前未在最终输出中体现，属于 LLVM-path widening contract 阻塞`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vcvt-f16-to-f32-sim-rerun-4/micro-op_conversion_vcvt-f16-to-f32`
+- `case`: `micro-op/conversion/vcvt-tail`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将 tail oracle 对齐到 `EVEN/ODD + vor` 的交织布局，并保持 `LOGICAL_ELEMS=1000` 前缀 tail 目标不变；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vcvt-tail-sim-rerun-2/micro-op_conversion_vcvt-tail`
+- `case`: `micro-op/conversion/vcvt-f32-special`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将异常值 narrowing oracle 对齐到 `EVEN/ODD + vor` 的交织布局；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vcvt-f32-special-sim-rerun-2/micro-op_conversion_vcvt-f32-special`
+- `case`: `micro-op/conversion/vcvt-i32-to-i16-overflow`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将 `i32 -> i16` 饱和 narrowing oracle 对齐到 `EVEN/ODD + vor` 的交织布局，并保留整数溢出目标；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vcvt-i32-to-i16-overflow-sim-rerun-2/micro-op_conversion_vcvt-i32-to-i16-overflow`
+- `case`: `micro-op/conversion/vtrc-f32-rounding`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已验证 `round-r / round-z / round-f` 组合 rounding case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vtrc-f32-rounding-sim-rerun-1/micro-op_conversion_vtrc-f32-rounding`
+- `case`: `micro-op/conversion/vtrc-f32-special`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已验证异常值 `vtrc` case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vtrc-f32-special-sim-rerun-1/micro-op_conversion_vtrc-f32-special`
+- `case`: `micro-op/conversion/vcvt-f16-special`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `与 `vcvt-f16-to-f32` 相同。`2026-04-07` 在统一 SIM 环境复跑已出现真实 `block_start/block_end`，但最终 `compare failed`；输出仍只覆盖 widening 结果的前半部分，当前应与基础 widening case 归并为同一 LLVM-path contract 阻塞`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcvt-f16-special-rerun-20260407/micro-op_conversion_vcvt-f16-special`
+- `case`: `micro-op/conversion/vtrc-rounding-boundary`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已验证 rounding boundary case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vtrc-rounding-boundary-sim-rerun-1/micro-op_conversion_vtrc-rounding-boundary`
+- `case`: `micro-op/conversion/vcvt-tail-special`
+  - `family`: `conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将异常值 tail oracle 对齐到 `EVEN/ODD + vor` 的交织布局，并保持 `LOGICAL_ELEMS=1000` tail 目标不变；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_conversion_vcvt-tail-special-sim-rerun-1/micro-op_conversion_vcvt-tail-special`
+
+### dsa-sfu
+
+- `case`: `micro-op/dsa-sfu/vlrelu-f32`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已验证 `vlrelu f32 + scalar alpha + full-mask` case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vlrelu-f32-sim-rerun-1/micro-op_dsa-sfu_vlrelu-f32`
+- `case`: `micro-op/dsa-sfu/vlrelu-tail`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已验证 `vlrelu f32 + scalar alpha + tail-mask` case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vlrelu-tail-sim-rerun-1/micro-op_dsa-sfu_vlrelu-tail`
+- `case`: `micro-op/dsa-sfu/vlrelu-f16`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将错误的 f32 skeleton 改写为真实 `vlrelu f16 + scalar alpha + full-mask` case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vlrelu-f16-sim-rerun-2/micro-op_dsa-sfu_vlrelu-f16`
+- `case`: `micro-op/dsa-sfu/vprelu-f32`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将错误的双入参 skeleton 改写为真实 `src + alpha-vector + output` 三入参 case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vprelu-f32-sim-rerun-1/micro-op_dsa-sfu_vprelu-f32`
+- `case`: `micro-op/dsa-sfu/vexpdiff-f32`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已修正 host 侧残留的 `vec_add_scalar_kernel_2d` 旧 skeleton；重新运行后出现真实 `block_start/block_end`，SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vexpdiff-f32-rerun-20260407/micro-op_dsa-sfu_vexpdiff-f32`
+- `case`: `micro-op/dsa-sfu/vexpdiff-f16-part`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `repo-generated `.ll` 已发射两次 `llvm.hivm.vexpdif.v128f16f32(..., part=0/1)`。`2026-04-07` 在统一 SIM 环境复跑已出现真实 `block_start/block_end`，但最终 `compare failed`；当前仍保持为 part 相关 runtime/backend 阻塞`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vexpdiff-f16-part-rerun-20260407/micro-op_dsa-sfu_vexpdiff-f16-part`
+- `case`: `micro-op/dsa-sfu/vaxpy-f32`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将错误的双入参 skeleton 改写为真实 `src0 + src1 + output` 三入参 case；SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vaxpy-f32-sim-rerun-1/micro-op_dsa-sfu_vaxpy-f32`
+- `case`: `micro-op/dsa-sfu/vmull`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已修正 `kernel.pto` 中残留的 `vec_add_scalar_kernel_2d` 旧 skeleton；重新运行后出现真实 `block_start/block_end`，SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vmull-rerun-20260407/micro-op_dsa-sfu_vmull`
+- `case`: `micro-op/dsa-sfu/vmula`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 本体原本已符合 `acc + lhs * rhs` 目标；已修正旧 oracle skeleton，SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vmula-sim-rerun-1/micro-op_dsa-sfu_vmula`
+- `case`: `micro-op/dsa-sfu/vbitsort`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 本体与文档中的 `f32 score + u32 index -> packed proposal records` 目标一致。旧失败根因是把 `pto.vbitsort` 错误放进 `pto.vecscope`；改为 scope 外后，`2026-04-07` 在统一 SIM 环境复跑 compare passed，且 authoring 约束已同步收紧`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vbitsort-rerun3-20260407/micro-op_dsa-sfu_vbitsort`
+- `case`: `micro-op/dsa-sfu/vlrelu-f32-exceptional`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `异常值 case 在 SIM 模型路径 compare passed；运行日志会打印 `vec_err_idata_inf_nan_t0`，当前按计划以 oracle 一致性为准记为通过`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vlrelu-f32-exceptional-sim-rerun-1/micro-op_dsa-sfu_vlrelu-f32-exceptional`
+- `case`: `micro-op/dsa-sfu/vprelu-tail`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 `src + alpha-vector + output` 的 tail-mask case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vprelu-tail-sim-rerun-1/micro-op_dsa-sfu_vprelu-tail`
+- `case`: `micro-op/dsa-sfu/vexpdiff-boundary`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已将旧 skeleton 收口为真实 `input + max + output` 的 exceptional/overflow-underflow case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vexpdiff-boundary-sim-rerun-1/micro-op_dsa-sfu_vexpdiff-boundary`
+- `case`: `micro-op/dsa-sfu/vmula-accumulator-boundary`
+  - `family`: `dsa-sfu`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `case 本体原本已符合 boundary 目标；已修正旧 oracle skeleton，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vmula-accumulator-boundary-sim-rerun-1/micro-op_dsa-sfu_vmula-accumulator-boundary`
+
+### dsa-sfu / conversion
+
+- `case`: `micro-op/dsa-sfu/vci`
+  - `family`: `dsa-sfu / conversion`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `kernel/oracle 本体成立；已修正旧 host `float` skeleton，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_dsa-sfu_vci-sim-rerun-1/micro-op_dsa-sfu_vci`
+
+### gather-scatter
+
+- `case`: `micro-op/gather-scatter/vscatter`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `kernel/golden 本体成立；已修正旧 host ABI/symbol skeleton，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_gather-scatter_vscatter-sim-rerun-1/micro-op_gather-scatter_vscatter`
+- `case`: `micro-op/gather-scatter/vgather2`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 SIM 已进入真实 block 执行，但 `vgather2` 结果仍与 oracle 不符，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vgather2-rerun2-20260407/micro-op_gather-scatter_vgather2`
+- `case`: `micro-op/gather-scatter/vgatherb`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 SIM 已进入真实 block 执行，但 `vgatherb` 结果仍与 oracle 不符，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vgatherb-rerun-20260407/micro-op_gather-scatter_vgatherb`
+- `case`: `micro-op/gather-scatter/vgather2_bc`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 SIM 已进入真实 block 执行，但 `vgather2_bc` 结果仍与 oracle 不符，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vgather2-bc-rerun-20260407/micro-op_gather-scatter_vgather2_bc`
+- `case`: `micro-op/gather-scatter/vgather2-duplicate-index`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 duplicate-index 变体在 SIM 上已进入真实 block 执行，但结果仍与 oracle 不符，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vgather2-dup-rerun-20260407/micro-op_gather-scatter_vgather2-duplicate-index`
+- `case`: `micro-op/gather-scatter/vgather2_bc-sparse-mask`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 sparse-mask 变体在 SIM 上已进入真实 block 执行，但结果仍与 oracle 不符，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vgather2-bc-sparse-rerun-20260407/micro-op_gather-scatter_vgather2_bc-sparse-mask`
+- `case`: `micro-op/gather-scatter/vgatherb-block-boundary`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `board-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 block-boundary 变体在 SIM 上已进入真实 block 执行，但结果仍与 oracle 不符，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vgatherb-boundary-rerun-20260407/micro-op_gather-scatter_vgatherb-block-boundary`
+- `case`: `micro-op/gather-scatter/vscatter-out-of-order-index`
+  - `family`: `gather-scatter`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `已修正旧 vabs skeleton 残留，收口为真实 3 参 vscatter out-of-order case，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_gather-scatter_vscatter-out-of-order-index-sim-rerun-2/micro-op_gather-scatter_vscatter-out-of-order-index`
+
+### materialization-predicate
+
+- `case`: `micro-op/materialization-predicate/vbr-f32`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `case 本体与 host ABI 已核对，无漂移`
+  - `current_conclusion`: `定向 DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/vbr-i32`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `case 本体与 host ABI 已核对，无漂移`
+  - `current_conclusion`: `定向 DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/vdup-scalar`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `case 本体与 host ABI 已核对，无漂移`
+  - `current_conclusion`: `定向 DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/vdup-lane`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `case 本体与 host ABI 已核对，无漂移`
+  - `current_conclusion`: `定向 DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pset-pattern`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `按 packed-predicate 落盘布局核对 oracle`
+  - `current_conclusion`: `定向 DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pge-tail-mask`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已将 psts 落盘槽位收紧到 32B 对齐`
+  - `current_conclusion`: `有效前缀 compare 收口后 DEVICE=SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_materialization-predicate_pge-tail-mask-sim-rerun-3/micro-op_materialization-predicate_pge-tail-mask`
+- `case`: `micro-op/materialization-predicate/plt-tail-mask`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已将 psts 落盘槽位收紧到 32B 对齐`
+  - `current_conclusion`: `有效前缀 compare 收口后 DEVICE=SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_materialization-predicate_plt-tail-mask-sim-rerun-3/micro-op_materialization-predicate_plt-tail-mask`
+- `case`: `micro-op/materialization-predicate/ppack-punpack`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pdintlv_b8`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pdintlv_b16`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pdintlv_b32`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pintlv_b8`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pintlv_b16`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pintlv_b32`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pand`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/por`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pxor`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pnot`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/psel`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pset-pattern-fragment`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pge-tail-mask-boundary`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已将 psts 落盘槽位收紧到 32B 对齐`
+  - `current_conclusion`: `有效前缀 compare 收口后 DEVICE=SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_materialization-predicate_pge-tail-mask-boundary-sim-rerun-3/micro-op_materialization-predicate_pge-tail-mask-boundary`
+- `case`: `micro-op/materialization-predicate/plt-tail-mask-boundary`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已将 psts 落盘槽位收紧到 32B 对齐`
+  - `current_conclusion`: `有效前缀 compare 收口后 DEVICE=SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_materialization-predicate_plt-tail-mask-boundary-sim-rerun-3/micro-op_materialization-predicate_plt-tail-mask-boundary`
+- `case`: `micro-op/materialization-predicate/ppack-punpack-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pdintlv_b8-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pdintlv_b16-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pdintlv_b32-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pintlv_b8-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pintlv_b16-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/pintlv_b32-nontrivial`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已按 packed-predicate 有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `-`
+- `case`: `micro-op/materialization-predicate/psel-tail-predicate`
+  - `family`: `materialization-predicate`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `已修正第二个 32B predicate 槽位的 UB->GM 拷贝长度到 64B，并按有效前缀更新 oracle/compare`
+  - `current_conclusion`: `DEVICE=SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/micro-op_materialization-predicate_psel-tail-predicate-sim-rerun-5/micro-op_materialization-predicate_psel-tail-predicate`
+
+### predicate-load-store
+
+- `case`: `micro-op/predicate-load-store/pstu`
+  - `family`: `predicate-load-store`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `SIM 已实际发射并运行到 RV_WMOV type.B8 报 Unsupported Instr/Type，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-pstu-sim-20260406/micro-op_predicate-load-store_pstu`
+- `case`: `micro-op/predicate-load-store/pstu-state-advance-boundary`
+  - `family`: `predicate-load-store`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `SIM 已实际发射并运行到 RV_WMOV type.B8 报 Unsupported Instr/Type，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-pstu-boundary-rerun-20260407/micro-op_predicate-load-store_pstu-state-advance-boundary`
+
+### rearrangement
+
+- `case`: `micro-op/rearrangement/vintlv-vdintlv`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `旧 empty-run 结论来自 host 侧仍调用 `vabs_kernel_2d`；修正 host symbol 并切到已验证可用的 `/usr/local/Ascend/cann-9.0.0/.../dav_3510/lib` 后，在 `/home/mouliangyu/tmp/vpto-vintlv-fix-20260407/micro-op_rearrangement_vintlv-vdintlv` 复跑已进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vintlv-fix-20260407/micro-op_rearrangement_vintlv-vdintlv`
+- `case`: `micro-op/rearrangement/vslide`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已按空运行经验再次实跑；在 `/home/mouliangyu/tmp/vpto-vslide-rerun-20260407/micro-op_rearrangement_vslide` 中可见真实 `block_start`，随后稳定报 `RV_VSLIDE type.B32 Unsupported Instr/Type`，当前归因到 simulator/runtime backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vslide-rerun-20260407/micro-op_rearrangement_vslide`
+- `case`: `micro-op/rearrangement/vsqz`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, case, runtime`
+  - `current_conclusion`: `原始 `golden.py` 为旧 `vabs` skeleton，且 host 侧也残留错误 kernel symbol；修正后在 `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz` 的 `DEVICE=SIM` 复跑已进入真实 `RV_VSQZ + RV_VSTS` 指令流，但随后稳定触发 veccore `ISU stall`，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz`
+- `case`: `micro-op/rearrangement/vusqz`
+  - `family`: `rearrangement`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `docs, runtime`
+  - `current_conclusion`: `docs 当前定义为按 mask 把前缀 payload 展开到激活位置并对其余位置补 0，但实跑结果与该语义明显不一致；在 docs 结论明确前不继续改写 oracle`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-rearrangement-fixes-sim-20260407/vusqz/micro-op_rearrangement_vusqz`
+- `case`: `micro-op/rearrangement/vpack`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, runtime`
+  - `current_conclusion`: `已修正 UB->GM 导回长度只覆盖一半 payload 的问题；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vpack-fix-sim-20260407/micro-op_rearrangement_vpack`
+- `case`: `micro-op/rearrangement/vsunpack`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `旧 empty-run 结论来自 host 侧仍调用 `vabs_kernel_2d`；修正 host symbol 并切到已验证可用的 `/usr/local/Ascend/cann-9.0.0/.../dav_3510/lib` 后，在 `/home/mouliangyu/tmp/vpto-vsunpack-fix-20260407/micro-op_rearrangement_vsunpack` 复跑已进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsunpack-fix-20260407/micro-op_rearrangement_vsunpack`
+- `case`: `micro-op/rearrangement/vzunpack`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `旧 empty-run 结论来自 host 侧仍调用 `vabs_kernel_2d`；修正 host symbol 并切到已验证可用的 `/usr/local/Ascend/cann-9.0.0/.../dav_3510/lib` 后，在 `/home/mouliangyu/tmp/vpto-vzunpack-fix-20260407/micro-op_rearrangement_vzunpack` 复跑已进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vzunpack-fix-20260407/micro-op_rearrangement_vzunpack`
+- `case`: `micro-op/rearrangement/vintlv-vdintlv-lane-boundary`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, kernel, runtime`
+  - `current_conclusion`: `旧 empty-run 结论来自 host 侧仍调用 `vabs_kernel_2d`；修正 host symbol 后，首次复跑已进入真实 block 执行，但暴露出 kernel 中把 `%remaining` 错写成 `129` 的实现漂移。按测例目标收口回全量 roundtrip 后，在 `/home/mouliangyu/tmp/vpto-vintlv-boundary-fix2-20260407/micro-op_rearrangement_vintlv-vdintlv-lane-boundary` 复跑 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vintlv-boundary-fix2-20260407/micro-op_rearrangement_vintlv-vdintlv-lane-boundary`
+- `case`: `micro-op/rearrangement/vslide-tail-window`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已按空运行经验再次实跑；在 `/home/mouliangyu/tmp/vpto-vslide-tail-rerun-20260407/micro-op_rearrangement_vslide-tail-window` 中可见真实 `block_start`，随后稳定报 `RV_VSLIDE type.B32 Unsupported Instr/Type`，当前归因到 simulator/runtime backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vslide-tail-rerun-20260407/micro-op_rearrangement_vslide-tail-window`
+- `case`: `micro-op/rearrangement/vsqz-nontrivial-mask`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `host 侧原本残留错误 kernel symbol；修正后在 `/home/mouliangyu/tmp/vpto-vsqz-nontrivial-rerun-20260407/micro-op_rearrangement_vsqz-nontrivial-mask` 的 `DEVICE=SIM` 复跑已进入真实 `RV_VSQZ + RV_VSTS` 指令流，但 veccore 仍出现 `ISU stall`，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsqz-nontrivial-rerun-20260407/micro-op_rearrangement_vsqz-nontrivial-mask`
+- `case`: `micro-op/rearrangement/vusqz-nontrivial-mask`
+  - `family`: `rearrangement`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `docs, runtime`
+  - `current_conclusion`: `docs 当前定义与实跑行为不一致；在 docs/语义结论明确前不继续改写非平凡 mask 的 oracle`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-rearrangement-fixes-sim-20260407/vusqz-nontrivial-mask/micro-op_rearrangement_vusqz-nontrivial-mask`
+
+### reduction
+
+- `case`: `micro-op/reduction/vcadd`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_reduction_vcadd-sim-rerun/micro-op_reduction_vcadd`
+- `case`: `micro-op/reduction/vcadd-tail`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `tail-mask case 在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_reduction_vcadd-tail-sim-rerun/micro-op_reduction_vcadd-tail`
+- `case`: `micro-op/reduction/vcmax`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已按 value/f32 + index/u32-bits ABI 修正 oracle，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/micro-op_reduction_vcmax-sim-rerun3/micro-op_reduction_vcmax`
+- `case`: `micro-op/reduction/vcmin`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已按 value/f32 + index/u32-bits ABI 修正 oracle，并在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/micro-op_reduction_vcmin-sim-rerun3/micro-op_reduction_vcmin`
+- `case`: `micro-op/reduction/vcgadd`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, golden, runtime, docs`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vcgadd-rerun-20260407/micro-op_reduction_vcgadd` 的 `DEVICE=SIM` 复跑已进入真实 `block_start/block_end`，但 SIM 仍按每个 64-lane chunk 的首 8 lane 连续写 group 结果，不符合 docs 里的 `0,8,16,...,56` 布局`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcgadd-rerun-20260407/micro-op_reduction_vcgadd`
+- `case`: `micro-op/reduction/vcgmax`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, golden, runtime, docs`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vcgmax-rerun-20260407/micro-op_reduction_vcgmax` 的 `DEVICE=SIM` 复跑已进入真实 `block_start/block_end`，但 SIM 仍按每个 64-lane chunk 的首 8 lane 连续写 group 结果，不符合 docs 里的 `0,8,16,...,56` 布局`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcgmax-rerun-20260407/micro-op_reduction_vcgmax`
+- `case`: `micro-op/reduction/vcgmin`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, golden, runtime, docs`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vcgmin-rerun-20260407/micro-op_reduction_vcgmin` 的 `DEVICE=SIM` 复跑已进入真实 `block_start/block_end`，但 SIM 仍按每个 64-lane chunk 的首 8 lane 连续写 group 结果，不符合 docs 里的 `0,8,16,...,56` 布局`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcgmin-rerun-20260407/micro-op_reduction_vcgmin`
+- `case`: `micro-op/reduction/vcpadd`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, golden, runtime, docs`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vcpadd-rerun-20260407/micro-op_reduction_vcpadd` 的 `DEVICE=SIM` 复跑已进入真实 `block_start/block_end`，但 SIM 非零输出仍只落在 `[0..31], [64..95], ...` 子区间，未对齐 docs 的整向量 prefix 语义`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcpadd-rerun-20260407/micro-op_reduction_vcpadd`
+- `case`: `micro-op/reduction/vcpadd-tail`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, runtime, docs`
+  - `current_conclusion`: `tail case 已收口到真实 `LOGICAL_ELEMS=1000` 并复跑；SIM 仍未体现 docs 的整向量 prefix 语义，而是只在每个 64-lane chunk 的前 32 lanes 写出 prefix 结果。tail 区间同样被切成 `[896..927]` 与 `[960..979]` 这类 32-lane 子区间，末尾 prefix 直接断掉`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcpadd-tail-rerun-20260407/micro-op_reduction_vcpadd-tail`
+- `case`: `micro-op/reduction/vcgadd-tail`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, runtime, docs`
+  - `current_conclusion`: `tail case 已收口到真实 `LOGICAL_ELEMS=1000` 并复跑；SIM 仍不符合 docs 定义的结果槽位布局：前面完整 chunk 仍把 8 个 group result 连续写到首 8 lanes，最后仅剩 40 elem 的 tail chunk 也把 5 个结果连续写到 `[0..4]`，而不是 docs 规定的 `0,8,16,24,32` 槽位`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcgadd-tail-rerun-20260407/micro-op_reduction_vcgadd-tail`
+- `case`: `micro-op/reduction/vcgmax-tie`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, golden, runtime, docs`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 tie case 已进入真实 `block_start/block_end`，但仍为首 8 lane 连续写入 `7.0`、其余 lane 清零，与 docs 的 group-result placement 不符`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcgmax-tie-rerun-20260407/micro-op_reduction_vcgmax-tie`
+- `case`: `micro-op/reduction/vcgmin-tie`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, golden, runtime, docs`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 tie case 已进入真实 `block_start/block_end`，但仍为首 8 lane 连续写入 `-7.0`、其余 lane 清零，与 docs 的 group-result placement 不符`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcgmin-tie-rerun-20260407/micro-op_reduction_vcgmin-tie`
+- `case`: `micro-op/reduction/vcpadd-tail`
+  - `family`: `reduction`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, runtime, docs`
+  - `current_conclusion`: `tail case 已收口到真实 `LOGICAL_ELEMS=1000`，但 SIM 结果仍未对齐 docs 的整向量 prefix 语义`
+  - `evidence`: `/home/mouliangyu/tmp/micro-op_reduction_vcpadd-sim-rerun2/micro-op_reduction_vcpadd`
+
+### unary-vector
+
+- `case`: `micro-op/unary-vector/vabs`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs`
+- `case`: `micro-op/unary-vector/vabs-tail`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `tail-mask case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs-tail`
+- `case`: `micro-op/unary-vector/vabs-f16`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `f16 case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs-f16`
+- `case`: `micro-op/unary-vector/vabs-i16-signed`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `i16 signed case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs-i16-signed`
+- `case`: `micro-op/unary-vector/vabs-i16-unsigned`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `i16 unsigned case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs-i16-unsigned`
+- `case`: `micro-op/unary-vector/vabs-f32-exceptional`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `异常值 case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs-f32-exceptional`
+- `case`: `micro-op/unary-vector/vabs-i16-signed-overflow-edge`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `整数溢出边界 case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vabs-i16-signed-overflow-edge`
+- `case`: `micro-op/unary-vector/vexp`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vexp`
+- `case`: `micro-op/unary-vector/vexp-tail`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `tail-mask case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vexp-tail`
+- `case`: `micro-op/unary-vector/vexp-f16`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 `f16/full-mask` case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vexpf16-rerun-20260407/micro-op_unary-vector_vexp-f16`
+- `case`: `micro-op/unary-vector/vexp-f32-exceptional`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `异常值 case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vexp-f32-exceptional`
+- `case`: `micro-op/unary-vector/vexp-f32-over-underflow`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `上下溢 case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-vector-sim-20260406/micro-op_unary-vector_vexp-f32-over-underflow`
+- `case`: `micro-op/unary-vector/vneg`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 oracle 为真实 -x，并在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-1/micro-op_unary-vector_vneg`
+- `case`: `micro-op/unary-vector/vln`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 oracle 为真实 log(x)，并在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-3/micro-op_unary-vector_vln`
+- `case`: `micro-op/unary-vector/vsqrt`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 oracle 为真实 sqrt(x)，并在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-5/micro-op_unary-vector_vsqrt`
+- `case`: `micro-op/unary-vector/vrsqrt`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vrsqrt-rerun-20260407/micro-op_unary-vector_vrsqrt` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后在 `RV_VRSQRT type.F32` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vrsqrt-rerun-20260407/micro-op_unary-vector_vrsqrt`
+- `case`: `micro-op/unary-vector/vrec`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vrec-rerun-20260407/micro-op_unary-vector_vrec` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后在 `RV_VREC type.F32` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vrec-rerun-20260407/micro-op_unary-vector_vrec`
+- `case`: `micro-op/unary-vector/vrelu`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 oracle 为真实 max(x, 0)，并在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-6/micro-op_unary-vector_vrelu`
+- `case`: `micro-op/unary-vector/vnot`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 `i16/full-mask` bitwise-not case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vnot-rerun-20260407/micro-op_unary-vector_vnot`
+- `case`: `micro-op/unary-vector/vbcnt`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vbcnt-rerun-20260407/micro-op_unary-vector_vbcnt` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后在 `RV_VBCNT type.B32` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vbcnt-rerun-20260407/micro-op_unary-vector_vbcnt`
+- `case`: `micro-op/unary-vector/vcls`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vcls-rerun-20260407/micro-op_unary-vector_vcls` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后在 `RV_VCLS type.S32` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vcls-rerun-20260407/micro-op_unary-vector_vcls`
+- `case`: `micro-op/unary-vector/vln-domain-boundary`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已将正域边界输入收紧到运行时可稳定观测的区间，并在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-4c/micro-op_unary-vector_vln-domain-boundary`
+- `case`: `micro-op/unary-vector/vsqrt-domain-boundary`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `非负边界 case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-9/micro-op_unary-vector_vsqrt-domain-boundary`
+- `case`: `micro-op/unary-vector/vrsqrt-zero-inf`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vrsqrt-zero-inf-rerun-20260407/micro-op_unary-vector_vrsqrt-zero-inf` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后在 `RV_VRSQRT type.F32` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vrsqrt-zero-inf-rerun-20260407/micro-op_unary-vector_vrsqrt-zero-inf`
+- `case`: `micro-op/unary-vector/vrec-zero-inf`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正旧 skeleton 残留的错误 kernel symbol；修正后 `/home/mouliangyu/tmp/vpto-vrec-zero-inf-rerun-20260407/micro-op_unary-vector_vrec-zero-inf` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后在 `RV_VREC type.F32` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vrec-zero-inf-rerun-20260407/micro-op_unary-vector_vrec-zero-inf`
+- `case`: `micro-op/unary-vector/vneg-f32-exceptional`
+  - `family`: `unary-vector`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `异常值 case 已修正 oracle 为真实 -x，并在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-unary-fixes-sim-20260407-2/micro-op_unary-vector_vneg-f32-exceptional`
+
+### vec-scalar
+
+- `case`: `micro-op/vec-scalar/vadds-tail`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-tail-sim/micro-op_vec-scalar_vadds-tail`
+- `case`: `micro-op/vec-scalar/vadds-f16`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-f16-sim/micro-op_vec-scalar_vadds-f16`
+- `case`: `micro-op/vec-scalar/vadds-bf16`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-bf16-sim/micro-op_vec-scalar_vadds-bf16`
+- `case`: `micro-op/vec-scalar/vadds-i16-signed`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-i16-signed-sim/micro-op_vec-scalar_vadds-i16-signed`
+- `case`: `micro-op/vec-scalar/vadds-i16-unsigned`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-i16-unsigned-sim/micro-op_vec-scalar_vadds-i16-unsigned`
+- `case`: `micro-op/vec-scalar/vadds-f32-exceptional`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `异常值输入场景在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-f32-exceptional-sim/micro-op_vec-scalar_vadds-f32-exceptional`
+- `case`: `micro-op/vec-scalar/vadds-i16-signed-overflow`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `有符号 wraparound overflow 场景在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-i16-signed-overflow-sim/micro-op_vec-scalar_vadds-i16-signed-overflow`
+- `case`: `micro-op/vec-scalar/vadds-i16-unsigned-overflow`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `无符号 wraparound overflow 场景在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-i16-unsigned-overflow-sim/micro-op_vec-scalar_vadds-i16-unsigned-overflow`
+- `case`: `micro-op/vec-scalar/vsadds`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, host`
+  - `current_conclusion`: `SIM 模型在执行 `RV_VSADDS type.S16` 时直接报 `Unsupported Instr/Type` 并 abort，当前属于真实运行阻塞而非 case 漂移`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vsadds-sim/micro-op_vec-scalar_vsadds`
+- `case`: `micro-op/vec-scalar/vmuls`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vmuls-sim/micro-op_vec-scalar_vmuls`
+- `case`: `micro-op/vec-scalar/vmaxs`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vmaxs-sim/micro-op_vec-scalar_vmaxs`
+- `case`: `micro-op/vec-scalar/vmins`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vmins-sim/micro-op_vec-scalar_vmins`
+- `case`: `micro-op/vec-scalar/vshls`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后真实 `ui16/full-mask` shift-left case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vshls-rerun-20260407/micro-op_vec-scalar_vshls`
+- `case`: `micro-op/vec-scalar/vshrs`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后真实 `ui16/full-mask` shift-right case 在 SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vshrs-rerun-20260407/micro-op_vec-scalar_vshrs`
+- `case`: `micro-op/vec-scalar/vaddcs`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已收口为真实 `u32 + carry-in + carry-out` 双输出 case；`COMPILE_ONLY` 全通，SIM 也实际执行到 `block_end`，`.ll` 已发射 `vaddcs + vstsx1 + psti`，但 `v3.bin` 与 `v4.bin` 均全 0，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vaddcs-sim/micro-op_vec-scalar_vaddcs`
+- `case`: `micro-op/vec-scalar/vsubcs`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已收口为真实 `u32 + borrow-in + borrow-out` 双输出 case；`COMPILE_ONLY` 全通，SIM 也实际执行到 `block_end`，`.ll` 已发射 `vsubcs + vstsx1 + psti`，但 `v3.bin` 与 `v4.bin` 均全 0，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vsubcs-sim/micro-op_vec-scalar_vsubcs`
+- `case`: `micro-op/vec-scalar/vmuls-tail`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `tail-mask 场景在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vmuls-tail-sim/micro-op_vec-scalar_vmuls-tail`
+- `case`: `micro-op/vec-scalar/vmaxs-tail`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `tail-mask 场景在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vmaxs-tail-sim/micro-op_vec-scalar_vmaxs-tail`
+- `case`: `micro-op/vec-scalar/vmins-tail`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host`
+  - `current_conclusion`: `tail-mask 场景在 SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vmins-tail-sim/micro-op_vec-scalar_vmins-tail`
+- `case`: `micro-op/vec-scalar/vshls-shift-boundary`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 `ui16/full-mask` shift-left boundary case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vshls-rerun-20260407/micro-op_vec-scalar_vshls`
+- `case`: `micro-op/vec-scalar/vshrs-shift-boundary`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 `ui16/full-mask` shift-right boundary case 在 SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vshrs-boundary-rerun-20260407/micro-op_vec-scalar_vshrs-shift-boundary`
+- `case`: `micro-op/vec-scalar/vaddcs-carry-boundary`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `边界 case 已收口为真实 `u32` overflow/carry 双输出场景；`COMPILE_ONLY` 全通且 SIM 实际执行，但 `v3.bin` 与 `v4.bin` 仍全 0，表现与基础 `vaddcs` case 一致，当前归因到同一 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vaddcs-carry-boundary-sim/micro-op_vec-scalar_vaddcs-carry-boundary`
+- `case`: `micro-op/vec-scalar/vsubcs-borrow-boundary`
+  - `family`: `vec-scalar`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `边界 case 已收口为真实 `u32` borrow 双输出场景；`COMPILE_ONLY` 全通且 SIM 实际执行，但 `v3.bin` 与 `v4.bin` 仍全 0，表现与基础 `vsubcs` case 一致，当前归因到同一 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vsubcs-borrow-boundary-sim/micro-op_vec-scalar_vsubcs-borrow-boundary`
+
+### vector-load-store
+
+- `case`: `micro-op/vector-load-store/vlds`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 bulk skeleton 残留的 vabs oracle 漂移，按纯 load/store identity 收口后 `DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vls-rerun2-sim-20260407/micro-op_vector-load-store_vlds/micro-op_vector-load-store_vlds`
+- `case`: `micro-op/vector-load-store/vlds-tail`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 tail-mask case 的旧 vabs oracle 漂移，收口为前 1000 lane identity + 余下 lane 置 0；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vlds-fixed-sim-20260407/micro-op_vector-load-store_vlds-tail`
+- `case`: `micro-op/vector-load-store/vlds-brc-b32`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正旧 vabs oracle 漂移，按每个 64-lane chunk 广播首个 f32 元素收口；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vlds-fixed-sim-20260407/micro-op_vector-load-store_vlds-brc-b32`
+- `case`: `micro-op/vector-load-store/vlds-brc-b16`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已将 case 从漂移的 f32 skeleton 收口为真实 f16 输入/比较，并按每个 128-lane chunk 广播首个 f16 元素收口；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vlds-fixed-sim-20260407/micro-op_vector-load-store_vlds-brc-b16`
+- `case`: `micro-op/vector-load-store/vlds-us-b16`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已将 case 从漂移的 f32 skeleton 收口为真实 i16 输入/比较，并按 docs 语义收口为每个源 i16 元素重复 2 次；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vlds-fixed-sim-20260407/micro-op_vector-load-store_vlds-us-b16`
+- `case`: `micro-op/vector-load-store/vlds-ds-b16`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已将 case 从漂移的 f32 skeleton 收口为真实 i16 输入/比较，并按 docs 语义收口为 256-element source window 每隔 1 个 i16 取 1 个；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vlds-fixed-sim-20260407/micro-op_vector-load-store_vlds-ds-b16`
+- `case`: `micro-op/vector-load-store/vlds-brc-blk`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已将 case 从漂移的 f32 skeleton 收口为真实 u8 输入/比较，并按 docs 语义收口为每个 256B chunk 重复首个 32B block；`DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vlds-fixed-sim-20260407/micro-op_vector-load-store_vlds-brc-blk`
+- `case`: `micro-op/vector-load-store/vsts`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 SIM 进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsts-launchfix-20260407/micro-op_vector-load-store_vsts`
+- `case`: `micro-op/vector-load-store/vsts-1pt-b16`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, compare, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 SIM 进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsts-1pt-launchfix-20260407/micro-op_vector-load-store_vsts-1pt-b16`
+- `case`: `micro-op/vector-load-store/vsts-pk-b16`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `docs`
+  - `current_conclusion`: `当前用户文档只给出“Pack low half bits of each element before store”，不足以唯一确定 `b16` 场景下的目标 UB 布局与未覆盖字节语义；在 docs 补齐前不继续臆造 oracle`
+  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-semantic-uncertainty-table.md`
+- `case`: `micro-op/vector-load-store/vsts-mrg2chn-b16`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `docs`
+  - `current_conclusion`: `当前用户文档只给出“Merge 2 interleaved channels within each 32B block”，不足以唯一确定 `b16` 场景下的目标 UB 布局；在 docs 补齐前不继续臆造 oracle`
+  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-semantic-uncertainty-table.md`
+- `case`: `micro-op/vector-load-store/vsts-mrg4chn-b8`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `blocked`
+  - `readiness_findings`: `docs`
+  - `current_conclusion`: `当前用户文档只给出“Merge 4 interleaved b8 channels within each 32B block”，不足以唯一确定目标 UB 布局；在 docs 补齐前不继续臆造 oracle`
+  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-semantic-uncertainty-table.md`
+- `case`: `micro-op/vector-load-store/vldas-vldus`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, runtime`
+  - `current_conclusion`: `已修正 bulk skeleton 残留的 vabs oracle 漂移，收口为 `base+1` 的单次 unaligned load 观测后 `DEVICE=SIM` compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-vls-rerun2-sim-20260407/micro-op_vector-load-store_vldas-vldus/micro-op_vector-load-store_vldas-vldus`
+- `case`: `micro-op/vector-load-store/vldsx2-vstsx2`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol 与旧 oracle；修正后 SIM 进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vldsx2-vstsx2-rerun-20260407/micro-op_vector-load-store_vldsx2-vstsx2`
+- `case`: `micro-op/vector-load-store/vsldb`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol，并按文档补齐 block-stride 语义 oracle；修正后 SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsldb-launchfix-20260407-rerun/micro-op_vector-load-store_vsldb`
+- `case`: `micro-op/vector-load-store/vsstb`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, kernel, golden, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol，并将观测路径收口为 `vsstb + vsldb` 自洽 roundtrip；修正后 SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsstb-launchfix-20260407-rerun2/micro-op_vector-load-store_vsstb`
+- `case`: `micro-op/vector-load-store/vstar`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, case, runtime`
+  - `current_conclusion`: `原始 skeleton 直接用 `vldas -> vstar`，不符合 docs 中“`vstar` 必须终止前置 stateful store 链”的约束；同时 host 侧原本也残留错误 kernel symbol。已修正为最小合法链 `vlds -> vldas(dest) -> vstur -> vstar` 并对齐 host symbol 后，在 `/home/mouliangyu/tmp/vpto-vstar-rerun3-20260407/micro-op_vector-load-store_vstar` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后仍在 `RV_WMOV type.B8` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vstar-rerun3-20260407/micro-op_vector-load-store_vstar`
+- `case`: `micro-op/vector-load-store/vstur`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, case, runtime`
+  - `current_conclusion`: `已按 matrix 目标把 case 从 aligned 形态收口为真实 unaligned `%ub_out + 1` 的最小链 `vlds -> vldas(dest+1) -> vstur(NO_POST_UPDATE) -> vstar`；同时 host 侧原本也残留错误 kernel symbol。对齐 host symbol 后，在 `/home/mouliangyu/tmp/vpto-vstur-rerun3-20260407/micro-op_vector-load-store_vstur` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后仍在 `RV_WMOV type.B8` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vstur-rerun3-20260407/micro-op_vector-load-store_vstur`
+- `case`: `micro-op/vector-load-store/vsts-tail`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 SIM 进入真实 block 执行并 compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vsts-tail-launchfix-20260407/micro-op_vector-load-store_vsts-tail`
+- `case`: `micro-op/vector-load-store/vldas-vldus-state-chain`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `host 侧原本残留错误 kernel symbol；对齐后在 `/home/mouliangyu/tmp/vpto-vldas-vldus-chain-rerun2-20260407/micro-op_vector-load-store_vldas-vldus-state-chain` 的 `DEVICE=SIM` 复跑已完成真实 `block_start/block_end`，但 compare failed。进一步核对输出可见 `out[64:128] == gold[0:64]` 且 `gold[64:128] != gold[0:64]`，说明第二条 `vldus` 的确重复消费了首条 stream state，当前归因到 runtime/backend 的 `vldus` state-update 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vldas-vldus-chain-rerun2-20260407/micro-op_vector-load-store_vldas-vldus-state-chain`
+- `case`: `micro-op/vector-load-store/vldsx2-layout-check`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol，并将 case 收口为单独观测 `vldsx2` lane-order；修正后 SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vldsx2-layout-rerun-20260407/micro-op_vector-load-store_vldsx2-layout-check`
+- `case`: `micro-op/vector-load-store/vstsx2-layout-check`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, runtime`
+  - `current_conclusion`: `已修正 host 侧错误 kernel symbol，并将 oracle 收口为真实 `INTLV` lane-order；修正后 SIM compare passed`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vstsx2-layout-rerun-20260407/micro-op_vector-load-store_vstsx2-layout-check`
+- `case`: `micro-op/vector-load-store/vstas-vstus-offset-update`
+  - `family`: `vector-load-store`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `host, runtime`
+  - `current_conclusion`: `host 侧原本残留错误 kernel symbol；对齐后在 `/home/mouliangyu/tmp/vpto-vstas-vstus-rerun2-20260407/micro-op_vector-load-store_vstas-vstus-offset-update` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后仍稳定在 `RV_WMOV type.B8` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
+  - `evidence`: `/home/mouliangyu/tmp/vpto-vstas-vstus-rerun2-20260407/micro-op_vector-load-store_vstas-vstus-offset-update`

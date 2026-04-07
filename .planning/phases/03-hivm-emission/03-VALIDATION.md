@@ -11,6 +11,10 @@ created: 2026-03-19
 
 > Per-phase validation contract for feedback sampling during execution.
 
+运行类问题导航：
+
+- 当前 `test/vpto` 的 SIM / NPU 运行阶段已知问题、环境结论和临时规避方式，统一记录在 [03-vpto-runtime-issues-log.md](/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.planning/phases/03-hivm-emission/03-vpto-runtime-issues-log.md)
+
 ---
 
 ## Test Infrastructure

@@ -35,16 +35,16 @@ void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
                              void *stream);
 
 int main() {
-  size_t elemCount_v1 = 1024;
-  size_t fileSize_v1 = elemCount_v1 * sizeof(float);
-  size_t elemCount_v2 = 1024;
-  size_t fileSize_v2 = elemCount_v2 * sizeof(float);
-  size_t elemCount_v3 = 1024;
+  size_t elemCount_v1 = 128;
+  size_t fileSize_v1 = elemCount_v1 * sizeof(short);
+  size_t elemCount_v2 = 128;
+  size_t fileSize_v2 = elemCount_v2 * sizeof(short);
+  size_t elemCount_v3 = 32;
   size_t fileSize_v3 = elemCount_v3 * sizeof(unsigned char);
-  float *v1Host = nullptr;
-  float *v1Device = nullptr;
-  float *v2Host = nullptr;
-  float *v2Device = nullptr;
+  short *v1Host = nullptr;
+  short *v1Device = nullptr;
+  short *v2Host = nullptr;
+  short *v2Device = nullptr;
   unsigned char *v3Host = nullptr;
   unsigned char *v3Device = nullptr;
 
@@ -79,7 +79,8 @@ int main() {
   ACL_CHECK(aclrtMemcpy(v3Device, fileSize_v3, v3Host, fileSize_v3,
                         ACL_MEMCPY_HOST_TO_DEVICE));
 
-  LaunchVcmp_eq_kernel_2d(v1Device, v2Device, v3Device, stream);
+  LaunchVcmp_eq_kernel_2d(reinterpret_cast<float *>(v1Device),
+                          reinterpret_cast<float *>(v2Device), v3Device, stream);
 
   ACL_CHECK(aclrtSynchronizeStream(stream));
   ACL_CHECK(aclrtMemcpy(v3Host, fileSize_v3, v3Device, fileSize_v3,

@@ -26,16 +26,16 @@
 // =============================================================================
 
 module attributes {pto.target_arch = "a5"} {
-  func.func @pand_kernel_2d(%arg0: !pto.ptr<f32, gm>) {
+  func.func @pand_kernel_2d(%arg0: !pto.ptr<ui32, gm>) {
     %c0 = arith.constant 0 : index
     %c0_i64 = arith.constant 0 : i64
     %c1_i64 = arith.constant 1 : i64
-    %c8_i64 = arith.constant 8 : i64
+    %c32_i64 = arith.constant 32 : i64
     %c7 = arith.constant 7 : i32
     %c13 = arith.constant 13 : i32
 
     %ub_out = pto.castptr %c0_i64 : i64 -> !pto.ptr<ui8, ub>
-    %gm_out = pto.castptr %arg0 : !pto.ptr<f32, gm> -> !pto.ptr<ui8, gm>
+    %gm_out = pto.castptr %arg0 : !pto.ptr<ui32, gm> -> !pto.ptr<ui8, gm>
 
     pto.vecscope {
       %all = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
@@ -48,7 +48,7 @@ module attributes {pto.target_arch = "a5"} {
     pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-    pto.copy_ubuf_to_gm %ub_out, %gm_out, %c0_i64, %c1_i64, %c8_i64, %c0_i64, %c8_i64, %c8_i64 : !pto.ptr<ui8, ub>, !pto.ptr<ui8, gm>, i64, i64, i64, i64, i64, i64
+    pto.copy_ubuf_to_gm %ub_out, %gm_out, %c0_i64, %c1_i64, %c32_i64, %c0_i64, %c32_i64, %c32_i64 : !pto.ptr<ui8, ub>, !pto.ptr<ui8, gm>, i64, i64, i64, i64, i64, i64
     pto.barrier #pto.pipe<PIPE_ALL>
     return
   }

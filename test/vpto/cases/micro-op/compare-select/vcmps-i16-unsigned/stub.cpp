@@ -1,11 +1,3 @@
-// -----------------------------------------------------------------------------
-// case: micro-op/compare-select/vcmps-i16-unsigned
-// family: compare-select
-// target_ops: pto.vcmps
-// scenarios: core-i16-unsigned, full-mask, scalar-operand
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
-// -----------------------------------------------------------------------------
 #include <pto/common/type.hpp>
 
 #ifndef __global__
@@ -16,10 +8,8 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vcmp_eq_kernel_2d(__gm__ float *v1,
-                                                    __gm__ float *v2,
-                                                    __gm__ unsigned char *v3) {
+extern "C" __global__ AICORE void vcmps_i16_unsigned_kernel_2d(__gm__ uint16_t *v1,
+                                                               __gm__ unsigned char *v2) {
   (void)v1;
   (void)v2;
-  (void)v3;
 }

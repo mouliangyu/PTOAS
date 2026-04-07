@@ -45,8 +45,20 @@ def generate(output_dir: Path, seed: int) -> None:
     flat[LOGICAL_ELEMS:] = 0.0
     v1 = flat.reshape(ROWS, COLS)
     v2 = np.zeros((ROWS, COLS), dtype=np.float16)
-    golden_v2 = np.zeros((ROWS, COLS), dtype=np.float16)
-    golden_v2.reshape(-1)[:LOGICAL_ELEMS] = flat[:LOGICAL_ELEMS].astype(np.float16)
+    golden_flat = np.zeros(ROWS * COLS, dtype=np.float16)
+
+    remaining = LOGICAL_ELEMS
+    for offset in range(0, ROWS * COLS, 128):
+        lower = flat[offset : offset + 64].astype(np.float16)
+        upper = flat[offset + 64 : offset + 128].astype(np.float16)
+        merged = np.empty(128, dtype=np.float16)
+        merged[0::2] = lower
+        merged[1::2] = upper
+        active = min(remaining, 128)
+        golden_flat[offset : offset + active] = merged[:active]
+        remaining = max(remaining - 128, 0)
+
+    golden_v2 = golden_flat.reshape(ROWS, COLS)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")

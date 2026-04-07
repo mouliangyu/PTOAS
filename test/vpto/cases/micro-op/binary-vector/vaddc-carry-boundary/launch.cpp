@@ -2,7 +2,7 @@
 // case: micro-op/binary-vector/vaddc-carry-boundary
 // family: binary-vector
 // target_ops: pto.vaddc
-// scenarios: core-i16-unsigned, full-mask, carry-chain
+// scenarios: core-u32-unsigned, full-mask, carry-chain
 // NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
 // still a valid test conclusion in the current coverage-first phase.
 // -----------------------------------------------------------------------------
@@ -39,12 +39,14 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vsub_tail_kernel_2d(__gm__ float *v1,
-                                                      __gm__ float *v2,
-                                                      __gm__ float *v3);
+extern "C" __global__ AICORE void
+vaddc_carry_boundary_kernel_2d(__gm__ uint32_t *v1, __gm__ uint32_t *v2,
+                               __gm__ uint32_t *v3, __gm__ uint8_t *v4);
 
-void LaunchVadd_tail_kernel_2d(float *v1, float *v2, float *v3, void *stream) {
-  vsub_tail_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                              (__gm__ float *)v2,
-                                              (__gm__ float *)v3);
+void LaunchVaddc_carry_boundary_kernel_2d(uint32_t *v1, uint32_t *v2,
+                                          uint32_t *v3, uint8_t *v4,
+                                          void *stream) {
+  vaddc_carry_boundary_kernel_2d<<<1, nullptr, stream>>>(
+      (__gm__ uint32_t *)v1, (__gm__ uint32_t *)v2, (__gm__ uint32_t *)v3,
+      (__gm__ uint8_t *)v4);
 }

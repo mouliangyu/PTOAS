@@ -50,9 +50,9 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vexp_kernel_2d(__gm__ float *v1,
+extern "C" __global__ AICORE void vrec_kernel_2d(__gm__ float *v1,
                                                  __gm__ float *v2);
 
-void LaunchVexp_kernel_2d(float *v1, float *v2, void *stream) {
-  vexp_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1, (__gm__ float *)v2);
+void LaunchVrec_kernel_2d(float *v1, float *v2, void *stream) {
+  vrec_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1, (__gm__ float *)v2);
 }

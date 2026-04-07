@@ -2,7 +2,7 @@
 # case: micro-op/binary-vector/vsubc-borrow-boundary
 # family: binary-vector
 # target_ops: pto.vsubc
-# scenarios: core-i16-unsigned, full-mask, carry-chain
+# scenarios: core-u32-unsigned, full-mask, carry-chain
 # NOTE: bulk-generated coverage skeleton.
 # coding=utf-8
 
@@ -12,27 +12,33 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+LANES = 64
 SEED = 19
-LOGICAL_ELEMS = 1000
 
 
 def generate(output_dir: Path, seed: int) -> None:
-    rng = np.random.default_rng(seed)
-    v1 = rng.random((ROWS, COLS), dtype=np.float32)
-    v2 = rng.random((ROWS, COLS), dtype=np.float32)
-    v3 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v3 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v3.reshape(-1)[:LOGICAL_ELEMS] = (
-        v1.reshape(-1)[:LOGICAL_ELEMS] - v2.reshape(-1)[:LOGICAL_ELEMS]
-    ).astype(np.float32, copy=False)
+    del seed
+    v1 = np.zeros(LANES, dtype=np.uint32)
+    v2 = np.zeros(LANES, dtype=np.uint32)
+    pattern_lhs = np.array([0x00000000, 0x00000001, 0x7FFFFFFF, 0x80000000], dtype=np.uint32)
+    pattern_rhs = np.array([0x00000001, 0x00000002, 0x80000000, 0xFFFFFFFF], dtype=np.uint32)
+    reps = LANES // pattern_lhs.size
+    v1[:] = np.tile(pattern_lhs, reps)
+    v2[:] = np.tile(pattern_rhs, reps)
+    borrow = v1 < v2
+    result = (v1 - v2).astype(np.uint32, copy=False)
+    packed = np.zeros(256, dtype=np.uint8)
+    for idx, bit in enumerate(borrow):
+        if bit:
+            packed[idx // 8] |= np.uint8(1 << (idx % 8))
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
-    v3.reshape(-1).tofile(output_dir / "v3.bin")
-    golden_v3.reshape(-1).tofile(output_dir / "golden_v3.bin")
+    v1.tofile(output_dir / "v1.bin")
+    v2.tofile(output_dir / "v2.bin")
+    np.zeros(LANES, dtype=np.uint32).tofile(output_dir / "v3.bin")
+    np.zeros(256, dtype=np.uint8).tofile(output_dir / "v4.bin")
+    result.tofile(output_dir / "golden_v3.bin")
+    packed.tofile(output_dir / "golden_v4.bin")
 
 
 def main() -> None:

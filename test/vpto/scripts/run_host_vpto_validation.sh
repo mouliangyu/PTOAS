@@ -267,6 +267,8 @@ link_kernel_so() {
   local repack_obj="$4"
   local repack_so="$5"
   local module_id="$6"
+  local extra_lib_dirs=()
+  local extra_link_libs=()
 
   "${CCE_LD_BIN}" \
     "${LD_LLD_BIN}" \
@@ -280,12 +282,25 @@ link_kernel_so() {
     -cce-inputs-number 1 \
     "${host_stub_obj}"
 
+  if [[ "${DEVICE}" == "SIM" ]]; then
+    [[ -n "${SIM_LIB_DIR}" && -d "${SIM_LIB_DIR}" ]] ||
+      die "SIM_LIB_DIR is not set or invalid for DEVICE=SIM: ${SIM_LIB_DIR}"
+    extra_lib_dirs+=(-L "${SIM_LIB_DIR}" -Wl,-rpath,"${SIM_LIB_DIR}")
+    extra_link_libs+=(-Wl,--no-as-needed -lruntime_camodel)
+  else
+    extra_link_libs+=(-Wl,--no-as-needed -lruntime)
+  fi
+
   "${BISHENG_BIN}" \
     -fPIC -s -Wl,-z,relro -Wl,-z,now --cce-fatobj-link \
     -shared -Wl,-soname,"lib${case_name}_kernel.so" \
+    -L "${ASCEND_HOME_PATH}/lib64" \
+    "${extra_lib_dirs[@]}" \
+    -Wl,-rpath,"${ASCEND_HOME_PATH}/lib64" \
     -o "${repack_so}" \
     "${repack_obj}" \
-    "${launch_obj}"
+    "${launch_obj}" \
+    "${extra_link_libs[@]}"
 }
 
 build_host_executable() {
@@ -298,9 +313,9 @@ build_host_executable() {
     [[ -n "${SIM_LIB_DIR}" && -d "${SIM_LIB_DIR}" ]] ||
       die "SIM_LIB_DIR is not set or invalid for DEVICE=SIM: ${SIM_LIB_DIR}"
     extra_lib_dirs+=(-L "${SIM_LIB_DIR}" -Wl,-rpath,"${SIM_LIB_DIR}")
-    extra_ldflags+=(-lruntime_camodel)
+    extra_ldflags+=(-Wl,--allow-shlib-undefined -lruntime_camodel)
   else
-    extra_ldflags+=(-lruntime)
+    extra_ldflags+=(-Wl,--allow-shlib-undefined -lruntime)
   fi
 
   "${BISHENG_BIN}" \
@@ -315,9 +330,9 @@ build_host_executable() {
     -Wl,-rpath,"${out_dir}" \
     -Wl,-rpath,"${ASCEND_HOME_PATH}/lib64" \
     -o "${out_dir}/${case_token}" \
+    -l"${case_token}_kernel" \
     "${extra_ldflags[@]}" \
-    -lstdc++ -lascendcl -lm -ltiling_api -lplatform -lc_sec -ldl -lnnopbase \
-    -l"${case_token}_kernel"
+    -lstdc++ -lascendcl -lm -ltiling_api -lplatform -lc_sec -ldl -lnnopbase
 }
 
 build_one_impl() {

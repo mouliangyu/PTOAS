@@ -1,17 +1,10 @@
-// -----------------------------------------------------------------------------
-// case: micro-op/compare-select/vcmps-i16-unsigned
-// family: compare-select
-// target_ops: pto.vcmps
-// scenarios: core-i16-unsigned, full-mask, scalar-operand
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
-// -----------------------------------------------------------------------------
 /**
 Copyright (c) 2025 Huawei Technologies Co., Ltd.
 */
 
 #include "test_common.h"
 #include "acl/acl.h"
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 
@@ -31,22 +24,17 @@ using namespace PtoTestCommon;
     }                                                                            \
   } while (0)
 
-void LaunchVcmp_eq_kernel_2d(float *v1, float *v2, unsigned char *v3,
-                             void *stream);
+void LaunchVcmps_i16_unsigned_kernel_2d(uint16_t *v1, unsigned char *v2, void *stream);
 
 int main() {
-  size_t elemCount_v1 = 1024;
-  size_t fileSize_v1 = elemCount_v1 * sizeof(float);
-  size_t elemCount_v2 = 1024;
-  size_t fileSize_v2 = elemCount_v2 * sizeof(float);
-  size_t elemCount_v3 = 1024;
-  size_t fileSize_v3 = elemCount_v3 * sizeof(unsigned char);
-  float *v1Host = nullptr;
-  float *v1Device = nullptr;
-  float *v2Host = nullptr;
-  float *v2Device = nullptr;
-  unsigned char *v3Host = nullptr;
-  unsigned char *v3Device = nullptr;
+  size_t elemCount_v1 = 128;
+  size_t fileSize_v1 = elemCount_v1 * sizeof(uint16_t);
+  size_t elemCount_v2 = 32;
+  size_t fileSize_v2 = elemCount_v2 * sizeof(unsigned char);
+  uint16_t *v1Host = nullptr;
+  uint16_t *v1Device = nullptr;
+  unsigned char *v2Host = nullptr;
+  unsigned char *v2Device = nullptr;
 
   int rc = 0;
   bool aclInited = false;
@@ -64,35 +52,28 @@ int main() {
 
   ACL_CHECK(aclrtMallocHost((void **)(&v1Host), fileSize_v1));
   ACL_CHECK(aclrtMallocHost((void **)(&v2Host), fileSize_v2));
-  ACL_CHECK(aclrtMallocHost((void **)(&v3Host), fileSize_v3));
   ACL_CHECK(aclrtMalloc((void **)&v1Device, fileSize_v1, ACL_MEM_MALLOC_HUGE_FIRST));
   ACL_CHECK(aclrtMalloc((void **)&v2Device, fileSize_v2, ACL_MEM_MALLOC_HUGE_FIRST));
-  ACL_CHECK(aclrtMalloc((void **)&v3Device, fileSize_v3, ACL_MEM_MALLOC_HUGE_FIRST));
 
   ReadFile("./v1.bin", fileSize_v1, v1Host, fileSize_v1);
   ReadFile("./v2.bin", fileSize_v2, v2Host, fileSize_v2);
-  ReadFile("./v3.bin", fileSize_v3, v3Host, fileSize_v3);
   ACL_CHECK(aclrtMemcpy(v1Device, fileSize_v1, v1Host, fileSize_v1,
                         ACL_MEMCPY_HOST_TO_DEVICE));
   ACL_CHECK(aclrtMemcpy(v2Device, fileSize_v2, v2Host, fileSize_v2,
                         ACL_MEMCPY_HOST_TO_DEVICE));
-  ACL_CHECK(aclrtMemcpy(v3Device, fileSize_v3, v3Host, fileSize_v3,
-                        ACL_MEMCPY_HOST_TO_DEVICE));
 
-  LaunchVcmp_eq_kernel_2d(v1Device, v2Device, v3Device, stream);
+  LaunchVcmps_i16_unsigned_kernel_2d(v1Device, v2Device, stream);
 
   ACL_CHECK(aclrtSynchronizeStream(stream));
-  ACL_CHECK(aclrtMemcpy(v3Host, fileSize_v3, v3Device, fileSize_v3,
+  ACL_CHECK(aclrtMemcpy(v2Host, fileSize_v2, v2Device, fileSize_v2,
                         ACL_MEMCPY_DEVICE_TO_HOST));
-  WriteFile("./v3.bin", v3Host, fileSize_v3);
+  WriteFile("./v2.bin", v2Host, fileSize_v2);
 
 cleanup:
   aclrtFree(v1Device);
   aclrtFree(v2Device);
-  aclrtFree(v3Device);
   aclrtFreeHost(v1Host);
   aclrtFreeHost(v2Host);
-  aclrtFreeHost(v3Host);
   if (stream != nullptr)
     aclrtDestroyStream(stream);
   if (deviceSet)

@@ -3,8 +3,6 @@
 # family: vec-scalar
 # target_ops: pto.vshrs
 # scenarios: core-i16-unsigned, full-mask, scalar-operand
-# NOTE: bulk-generated coverage skeleton.
-# coding=utf-8
 
 import argparse
 from pathlib import Path
@@ -12,25 +10,21 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+ELEMS = 1024
 SEED = 19
 SHIFT = 3
-LOGICAL_ELEMS = 1000
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.integers(0, np.iinfo(np.uint32).max, size=(ROWS, COLS), dtype=np.uint32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.int32)
-    golden_v2 = np.zeros((ROWS, COLS), dtype=np.int32)
-    flat = (v1.reshape(-1)[:LOGICAL_ELEMS] >> SHIFT).astype(np.uint32, copy=False)
-    golden_v2.reshape(-1)[:LOGICAL_ELEMS] = flat.view(np.int32)
+    v1 = rng.integers(0, np.iinfo(np.uint16).max + 1, size=ELEMS, dtype=np.uint16)
+    v2 = np.zeros(ELEMS, dtype=np.uint16)
+    golden_v2 = np.right_shift(v1, SHIFT)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.view(np.int32).reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
-    golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
+    v1.tofile(output_dir / "v1.bin")
+    v2.tofile(output_dir / "v2.bin")
+    golden_v2.tofile(output_dir / "golden_v2.bin")
 
 
 def main() -> None:

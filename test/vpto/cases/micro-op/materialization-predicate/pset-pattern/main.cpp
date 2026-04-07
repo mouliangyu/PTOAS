@@ -49,13 +49,13 @@ struct MrgSortExecutedNumList {
         }                                                                                        \
     } while (0)
 
-void LaunchVdup_scalar_kernel_2d(float *v1, void *stream);
+void LaunchPset_pattern_kernel_2d(uint32_t *v1, void *stream);
 
 int main() {
-        size_t elemCount_v1 = 1024;
-    size_t fileSize_v1 = elemCount_v1 * sizeof(float);
-    float *v1Host = nullptr;
-    float *v1Device = nullptr;
+    size_t elemCount_v1 = 24;
+    size_t fileSize_v1 = elemCount_v1 * sizeof(uint32_t);
+    uint32_t *v1Host = nullptr;
+    uint32_t *v1Device = nullptr;
 
     int rc = 0;
     bool aclInited = false;
@@ -72,16 +72,16 @@ int main() {
     deviceSet = true;
     ACL_CHECK(aclrtCreateStream(&stream));
 
-        ACL_CHECK(aclrtMallocHost((void **)(&v1Host), fileSize_v1));
-        ACL_CHECK(aclrtMalloc((void **)&v1Device, fileSize_v1, ACL_MEM_MALLOC_HUGE_FIRST));
+    ACL_CHECK(aclrtMallocHost((void **)(&v1Host), fileSize_v1));
+    ACL_CHECK(aclrtMalloc((void **)&v1Device, fileSize_v1, ACL_MEM_MALLOC_HUGE_FIRST));
 
-        ReadFile("./v1.bin", fileSize_v1, v1Host, fileSize_v1);
-        ACL_CHECK(aclrtMemcpy(v1Device, fileSize_v1, v1Host, fileSize_v1, ACL_MEMCPY_HOST_TO_DEVICE));
-        LaunchVdup_scalar_kernel_2d(v1Device, stream);
+    ReadFile("./v1.bin", fileSize_v1, v1Host, fileSize_v1);
+    ACL_CHECK(aclrtMemcpy(v1Device, fileSize_v1, v1Host, fileSize_v1, ACL_MEMCPY_HOST_TO_DEVICE));
+    LaunchPset_pattern_kernel_2d(v1Device, stream);
 
     ACL_CHECK(aclrtSynchronizeStream(stream));
-        ACL_CHECK(aclrtMemcpy(v1Host, fileSize_v1, v1Device, fileSize_v1, ACL_MEMCPY_DEVICE_TO_HOST));
-        WriteFile("./v1.bin", v1Host, fileSize_v1);
+    ACL_CHECK(aclrtMemcpy(v1Host, fileSize_v1, v1Device, fileSize_v1, ACL_MEMCPY_DEVICE_TO_HOST));
+    WriteFile("./v1.bin", v1Host, fileSize_v1);
 
 cleanup:
         aclrtFree(v1Device);

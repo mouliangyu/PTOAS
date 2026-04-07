@@ -3,7 +3,7 @@
 # family: rearrangement
 # target_ops: pto.vdintlv, pto.vintlv
 # scenarios: paired-roundtrip, lane-order
-# NOTE: bulk-generated coverage skeleton.
+# NOTE: paired vintlv+vdintlv roundtrip should recover the original input, including lane-boundary patterns.
 # coding=utf-8
 
 import argparse
@@ -19,9 +19,12 @@ SEED = 19
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
+    flat = rng.uniform(-8.0, 8.0, size=ROWS * COLS).astype(np.float32)
+    for base in range(0, flat.size, 128):
+        flat[base + 62 : base + 66] = np.array([-62.0, -1.0, 1.0, 62.0], dtype=np.float32)
+    v1 = flat.reshape(ROWS, COLS)
     v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.abs(v1).astype(np.float32, copy=False)
+    golden_v2 = v1.astype(np.float32, copy=True)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
@@ -31,7 +34,7 @@ def generate(output_dir: Path, seed: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vabs validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vintlv+vdintlv lane-boundary validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

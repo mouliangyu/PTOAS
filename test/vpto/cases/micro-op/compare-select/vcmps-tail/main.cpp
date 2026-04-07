@@ -26,9 +26,9 @@ using namespace PtoTestCommon;
 void LaunchVcmps_tail_kernel_2d(float *v1, unsigned char *v2, void *stream);
 
 int main() {
-  size_t elemCount_v1 = 1024;
+  size_t elemCount_v1 = 64;
   size_t fileSize_v1 = elemCount_v1 * sizeof(float);
-  size_t elemCount_v2 = 1024;
+  size_t elemCount_v2 = 32;
   size_t fileSize_v2 = elemCount_v2 * sizeof(unsigned char);
   float *v1Host = nullptr;
   float *v1Device = nullptr;

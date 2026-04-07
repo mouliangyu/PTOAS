@@ -31,9 +31,9 @@ void LaunchVusqz_kernel_2d(int32_t *v1, float *v2, int32_t *v3, void *stream);
 
 int main() {
     constexpr size_t elemCount = 1024;
-    const size_t fileSizeV1 = elemCount * sizeof(int32_t);
-    const size_t fileSizeV2 = elemCount * sizeof(float);
-    const size_t fileSizeV3 = elemCount * sizeof(int32_t);
+    size_t fileSizeV1 = elemCount * sizeof(int32_t);
+    size_t fileSizeV2 = elemCount * sizeof(float);
+    size_t fileSizeV3 = elemCount * sizeof(int32_t);
     int32_t *v1Host = nullptr;
     int32_t *v1Device = nullptr;
     float *v2Host = nullptr;
