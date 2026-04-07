@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# coding=utf-8
 
 import argparse
 from pathlib import Path
@@ -7,92 +6,41 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+LANES = 64
+LOGICAL_ELEMS = 40
 SEED = 19
-SRC_ELEM_BYTES = 4
-REPEAT_BYTES = 256
 THRESHOLD = np.float32(0.5)
-LOGICAL_ELEMS = 1000
+OUTPUT_BYTES = 32
 
 
-def _ceil_div(x: int, y: int) -> int:
-    return (x + y - 1) // y
-
-
-def _packed_pred_storage_bytes(logical_elems: int, src_elem_bytes: int) -> int:
-    if logical_elems <= 0:
-        raise ValueError(f"logical_elems must be > 0, got {logical_elems}")
-    if src_elem_bytes not in (1, 2, 4):
-        raise ValueError(f"unsupported packed predicate source size: {src_elem_bytes}")
-
-    repeat_elems = REPEAT_BYTES // src_elem_bytes
-    if src_elem_bytes == 4:
-        repeat_times = _ceil_div(logical_elems, repeat_elems) + 1
-        loop_count = repeat_times // 2
-        return loop_count * 16
-
-    repeat_times = _ceil_div(logical_elems, repeat_elems)
-    return repeat_times * (repeat_elems // 8)
-
-
-def _pack_predicate_mask(mask: np.ndarray, src_elem_bytes: int) -> np.ndarray:
-    if mask.dtype != np.bool_:
-        raise TypeError(f"expected bool mask, got {mask.dtype}")
-    if mask.shape != (ROWS, COLS):
-        raise ValueError(f"expected mask shape {(ROWS, COLS)}, got {mask.shape}")
-
-    logical_elems = LOGICAL_ELEMS
-    stored_bytes = _packed_pred_storage_bytes(logical_elems, src_elem_bytes)
-    packed_bits = np.packbits(mask.reshape(-1).astype(np.uint8, copy=False), bitorder="little")
-    out = np.zeros((logical_elems,), dtype=np.uint8)
-    out[:stored_bytes] = 0
-    out[: packed_bits.size] = packed_bits
+def encode_b32_mask(mask: np.ndarray) -> np.ndarray:
+    out = np.zeros((OUTPUT_BYTES,), dtype=np.uint8)
+    for i, bit in enumerate(mask.astype(np.uint8, copy=False)):
+        if bit:
+            byte_index = i // 2
+            nibble_shift = 4 * (i % 2)
+            out[byte_index] |= np.uint8(1 << nibble_shift)
     return out
 
 
-def generate(output_dir: Path, seed: int, src_elem_bytes: int) -> None:
+def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-
-    v1 = rng.uniform(-1.0, 1.0, size=(ROWS, COLS)).astype(np.float32)
-    mask = np.greater(v1, THRESHOLD).reshape(-1)
+    v1 = rng.uniform(-1.0, 1.0, size=(LANES,)).astype(np.float32)
+    mask = np.greater(v1, THRESHOLD)
     mask[LOGICAL_ELEMS:] = False
-    mask = mask.reshape(ROWS, COLS)
-
-    packed_mask = _pack_predicate_mask(mask, src_elem_bytes)
-    output_init = np.zeros((ROWS * COLS,), dtype=np.uint8)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    output_init.tofile(output_dir / "v2.bin")
-    packed_mask.tofile(output_dir / "golden_v2.bin")
+    v1.tofile(output_dir / "v1.bin")
+    np.zeros((OUTPUT_BYTES,), dtype=np.uint8).tofile(output_dir / "v2.bin")
+    encode_b32_mask(mask).tofile(output_dir / "golden_v2.bin")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vcmps-f32 validation."
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path("."),
-        help="Directory where v1.bin/v2.bin/golden_v2.bin are written.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=SEED,
-        help="Numpy random seed.",
-    )
-    parser.add_argument(
-        "--src-elem-bytes",
-        type=int,
-        default=SRC_ELEM_BYTES,
-        help="Source element byte width used by TCMP/TCMPS semantics.",
-    )
+    parser = argparse.ArgumentParser(description="Generate inputs/golden for VPTO vcmps-tail.")
+    parser.add_argument("--output-dir", type=Path, default=Path("."))
+    parser.add_argument("--seed", type=int, default=SEED)
     args = parser.parse_args()
-
-    generate(args.output_dir, args.seed, args.src_elem_bytes)
+    generate(args.output_dir, args.seed)
 
 
 if __name__ == "__main__":

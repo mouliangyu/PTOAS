@@ -28,7 +28,7 @@ using namespace PtoTestCommon;
     }                                                                            \
   } while (0)
 
-void LaunchVec_add_scalar_kernel_2d(float *v1, float *v2, void *stream);
+void LaunchVexpdiff_kernel_2d(float *v1, float *v2, void *stream);
 
 int main() {
   size_t elemCount_v1 = 1024;
@@ -62,7 +62,7 @@ int main() {
                         ACL_MEMCPY_HOST_TO_DEVICE));
   ACL_CHECK(aclrtMemcpy(v2Device, fileSize_v2, v2Host, fileSize_v2,
                         ACL_MEMCPY_HOST_TO_DEVICE));
-  LaunchVec_add_scalar_kernel_2d(v1Device, v2Device, stream);
+  LaunchVexpdiff_kernel_2d(v1Device, v2Device, stream);
   ACL_CHECK(aclrtSynchronizeStream(stream));
   ACL_CHECK(aclrtMemcpy(v2Host, fileSize_v2, v2Device, fileSize_v2,
                         ACL_MEMCPY_DEVICE_TO_HOST));

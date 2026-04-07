@@ -14,6 +14,7 @@
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeUtilities.h"
+#include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -66,6 +67,27 @@ static LogicalResult verifyMaskTypeWithGranularityLike(Operation *op, Type type,
   if (maskType.getGranularity() != granularity) {
     return op->emitOpError()
            << roleDescription << " must be " << formatMaskType(granularity);
+  }
+  return success();
+}
+
+static LogicalResult verifyEnclosingLoopLike(Operation *op,
+                                             StringRef opNameForDiag) {
+  if (!op->getParentOfType<LoopLikeOpInterface>()) {
+    return op->emitOpError()
+           << "requires enclosing loop structure for " << opNameForDiag
+           << " lowering";
+  }
+  return success();
+}
+
+static LogicalResult verifyNotNestedInVecScope(Operation *op,
+                                               StringRef opNameForDiag) {
+  if (op->getParentOfType<VecScopeOp>() ||
+      op->getParentOfType<StrictVecScopeOp>()) {
+    return op->emitOpError()
+           << "must not be nested under pto.vecscope/pto.strict_vecscope; "
+           << opNameForDiag << " is a UB helper op rather than a vecscope op";
   }
   return success();
 }
@@ -948,6 +970,8 @@ LogicalResult VbitsortOp::verify() {
     return emitOpError("requires UB-backed destination/source/indices");
   if (!getRepeatTimes().getType().isIndex())
     return emitOpError("repeat_times must be index");
+  if (failed(verifyNotNestedInVecScope(*this, "pto.vbitsort")))
+    return failure();
   return success();
 }
 
@@ -1278,6 +1302,8 @@ LogicalResult PldsOp::verify() {
     return emitOpError("requires index offset");
   if (!isSupportedPredicateLoadDist(getDist()))
     return emitOpError("requires predicate load dist to be NORM, US, or DS");
+  if (failed(verifyEnclosingLoopLike(*this, "pto.plds")))
+    return failure();
   return success();
 }
 
@@ -1298,6 +1324,8 @@ LogicalResult PldiOp::verify() {
     return emitOpError("requires offset to be a constant index immediate");
   if (!isSupportedPredicateLoadDist(getDist()))
     return emitOpError("requires predicate load dist to be NORM, US, or DS");
+  if (failed(verifyEnclosingLoopLike(*this, "pto.pldi")))
+    return failure();
   return success();
 }
 

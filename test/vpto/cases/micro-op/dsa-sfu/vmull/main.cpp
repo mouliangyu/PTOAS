@@ -28,17 +28,17 @@ using namespace PtoTestCommon;
     }                                                                            \
   } while (0)
 
-void LaunchVec_add_scalar_kernel_2d(float *v1, float *v2, void *stream);
+void LaunchVmull_kernel_2d(int *v1, int *v2, void *stream);
 
 int main() {
   size_t elemCount_v1 = 1024;
-  size_t fileSize_v1 = elemCount_v1 * sizeof(float);
+  size_t fileSize_v1 = elemCount_v1 * sizeof(int);
   size_t elemCount_v2 = 1024;
-  size_t fileSize_v2 = elemCount_v2 * sizeof(float);
-  float *v1Host = nullptr;
-  float *v1Device = nullptr;
-  float *v2Host = nullptr;
-  float *v2Device = nullptr;
+  size_t fileSize_v2 = elemCount_v2 * sizeof(int);
+  int *v1Host = nullptr;
+  int *v1Device = nullptr;
+  int *v2Host = nullptr;
+  int *v2Device = nullptr;
   int rc = 0;
   bool aclInited = false;
   bool deviceSet = false;
@@ -62,7 +62,7 @@ int main() {
                         ACL_MEMCPY_HOST_TO_DEVICE));
   ACL_CHECK(aclrtMemcpy(v2Device, fileSize_v2, v2Host, fileSize_v2,
                         ACL_MEMCPY_HOST_TO_DEVICE));
-  LaunchVec_add_scalar_kernel_2d(v1Device, v2Device, stream);
+  LaunchVmull_kernel_2d(v1Device, v2Device, stream);
   ACL_CHECK(aclrtSynchronizeStream(stream));
   ACL_CHECK(aclrtMemcpy(v2Host, fileSize_v2, v2Device, fileSize_v2,
                         ACL_MEMCPY_DEVICE_TO_HOST));

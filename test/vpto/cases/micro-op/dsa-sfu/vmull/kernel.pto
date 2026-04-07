@@ -5,8 +5,8 @@
 // scenarios: widening-op, hi-lo-split
 // -----------------------------------------------------------------------------
 module attributes {pto.target_arch = "a5"} {
-  func.func @vec_add_scalar_kernel_2d(%arg0: !pto.ptr<f32, gm>,
-                                      %arg1: !pto.ptr<f32, gm>) {
+  func.func @vmull_kernel_2d(%arg0: !pto.ptr<f32, gm>,
+                             %arg1: !pto.ptr<f32, gm>) {
     %c0 = arith.constant 0 : index
     %c64 = arith.constant 64 : index
     %c512 = arith.constant 512 : index

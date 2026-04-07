@@ -186,6 +186,7 @@ case scope 文档。它负责三件事：
 - 前处理 / 主体 / 后处理三段式清晰
 - 向量 UB 访问和向量算子位于 `pto.vecscope` 内
 - mask 计算位于对应 `pto.vecscope` 内
+- 已被 verifier / runtime 结论明确为非 vecscope UB helper 的 op 必须留在 `pto.vecscope` 外；当前已确认的约束项是 `pto.vbitsort`
 - 所有测例统一采用 `GM→UB→计算→UB→GM` 的可观测路径
 - 对需要 operand feed 的向量 / mask / align 测例，输入只能通过访问 UB 的指令加载
 - 对生成类 op，可在 `pto.vecscope` 内直接生成结果，但结果仍需先写回 UB，再导回 GM 做 host compare
@@ -969,6 +970,12 @@ assessment 驱动的补充 case：
 - `micro-op/conversion/vcvt-f16-to-f32`
   - 目标：验证扩宽转换
   - 覆盖：`f16-to-f32, full-mask`
+- `micro-op/conversion/vcvt-f16-to-f32-part-even`
+  - 目标：独立验证扩宽转换的 `PART_EVEN` 半边输出
+  - 覆盖：`f16-to-f32, full-mask, part-even`
+- `micro-op/conversion/vcvt-f16-to-f32-part-odd`
+  - 目标：独立验证扩宽转换的 `PART_ODD` 半边输出
+  - 覆盖：`f16-to-f32, full-mask, part-odd`
 - `micro-op/conversion/vcvt-tail`
   - 目标：验证 `tail-mask`
   - 覆盖：`f32-to-f16, tail-mask`
@@ -1159,6 +1166,18 @@ assessment 驱动的补充 case：
 
 `predicate-load-store` family 当前预期补齐以下 case：
 
+- `micro-op/predicate-load-store/psti-pk`
+  - 目标：验证 immediate-offset `PK` predicate store 的 raw packed 落盘结果
+  - 覆盖：`packed-store, immediate-offset, representative-logical-elements`
+  - 承接：`pto.psti` 负责将 `!pto.mask<b8>` 以 `PK` 形式写入 UB；case 直接观测 UB->GM 导出的 raw packed bytes，不串接 `pldi`
+- `micro-op/predicate-load-store/pldi-norm`
+  - 目标：验证 immediate-offset `NORM` predicate load 的 raw packed 取数结果
+  - 覆盖：`packed-load, immediate-offset, representative-logical-elements`
+  - 承接：host 直接准备 packed predicate bytes，经 GM->UB 搬运后由 `pto.pldi` 读取，并作为 `pto.vsel` 的 mask 输入影响 `256xui8` 向量结果；向量结果经 `pto.vsts` 与 UB->GM 导出
+- `micro-op/predicate-load-store/plds-norm`
+  - 目标：验证 dynamic-offset `NORM` predicate load 的 raw packed 取数结果
+  - 覆盖：`packed-load, dynamic-offset, representative-logical-elements`
+  - 承接：host 直接准备 packed predicate bytes，经 GM->UB 搬运后由 `pto.plds` 读取，并作为 `pto.vsel` 的 mask 输入影响 `256xui8` 向量结果；向量结果经 `pto.vsts` 与 UB->GM 导出
 - `micro-op/predicate-load-store/psts-pk-plds-us`
   - 目标：验证 dynamic-offset `PK -> US` predicate load/store 组合行为
   - 覆盖：`predicate-load-store-composition, dynamic-offset, load-store-pair-preservation, representative-logical-elements`
@@ -1263,6 +1282,9 @@ assessment 驱动的补充 case：
 - `micro-op/vector-load-store/vlds-us-b16`
   - 目标：验证 `vlds` 的 `US_B16` up-sample distribution
   - 覆盖：`core-i16, full-mask, aligned, dist-us-b16`
+- `micro-op/vector-load-store/vlds-unpk-b16`
+  - 目标：验证 `vlds` 的 `UNPK_B16` unpack distribution
+  - 覆盖：`core-f16, full-mask, aligned, dist-unpk-b16`
 - `micro-op/vector-load-store/vlds-ds-b16`
   - 目标：验证 `vlds` 的 `DS_B16` down-sample distribution
   - 覆盖：`core-i16, full-mask, aligned, dist-ds-b16`
@@ -1433,7 +1455,7 @@ assessment 驱动的补充 case：
   - 目标：验证 bit-sort surface 与基础数据重排语义
   - 覆盖：`index-generation, layout-transform`
   - 状态：已补充静态 case
-  - 备注：当前 case 以 `f32 score + u32 index` 覆盖降序排序、stable tie-break、输出 proposal record 8B 布局与 `repeat_times = 1` 的主路径
+  - 备注：当前 case 以 `f32 score + u32 index` 覆盖降序排序、stable tie-break、输出 proposal record 8B 布局与 `repeat_times = 1` 的主路径；`pto.vbitsort` 本体必须放在 `pto.vecscope` 外
 
 assessment 驱动的补充 case：
 

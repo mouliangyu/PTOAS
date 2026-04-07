@@ -15,19 +15,18 @@ import numpy as np
 ROWS = 32
 COLS = 32
 SEED = 19
-ALPHA = np.float32(0.125)
-
-
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.where(v1 >= 0.0, v1, v1 * ALPHA).astype(np.float32, copy=False)
+    v2 = rng.uniform(0.05, 0.5, size=(ROWS, COLS)).astype(np.float32)
+    v3 = np.zeros((ROWS, COLS), dtype=np.float32)
+    golden_v3 = np.where(v1 >= 0.0, v1, v1 * v2).astype(np.float32, copy=False)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
     v2.reshape(-1).tofile(output_dir / "v2.bin")
-    golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
+    v3.reshape(-1).tofile(output_dir / "v3.bin")
+    golden_v3.reshape(-1).tofile(output_dir / "golden_v3.bin")
 
 
 def main() -> None:

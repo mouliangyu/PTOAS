@@ -3,7 +3,7 @@
 # family: vector-load-store
 # target_ops: pto.vlds
 # scenarios: core-u8, full-mask, aligned, dist-brc-blk
-# NOTE: bulk-generated coverage skeleton.
+# NOTE: BRC_BLK repeats the first 32-byte block across each 256-byte vector chunk.
 # coding=utf-8
 
 import argparse
@@ -12,26 +12,31 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+ELEMENTS = 4096
+ACTIVE_ELEMS = 1024
+LANES = 256
+BLOCK_BYTES = 32
 SEED = 19
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.abs(v1).astype(np.float32, copy=False)
+    v1 = rng.integers(0, 256, size=(ELEMENTS,), dtype=np.uint8)
+    v2 = np.zeros((ELEMENTS,), dtype=np.uint8)
+    golden_v2 = np.zeros((ELEMENTS,), dtype=np.uint8)
+    repeats = LANES // BLOCK_BYTES
+    for offset in range(0, ACTIVE_ELEMS, LANES):
+        golden_v2[offset : offset + LANES] = np.tile(v1[offset : offset + BLOCK_BYTES], repeats)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
-    golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
+    v1.tofile(output_dir / "v1.bin")
+    v2.tofile(output_dir / "v2.bin")
+    golden_v2.tofile(output_dir / "golden_v2.bin")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vabs validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vlds block-broadcast validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

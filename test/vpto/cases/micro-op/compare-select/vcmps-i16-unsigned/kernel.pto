@@ -1,68 +1,45 @@
-// -----------------------------------------------------------------------------
-// case: micro-op/compare-select/vcmps-i16-unsigned
-// family: compare-select
-// target_ops: pto.vcmps
-// scenarios: core-i16-unsigned, full-mask, scalar-operand
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
-// -----------------------------------------------------------------------------
 module attributes {pto.target_arch = "a5"} {
-  func.func @vcmps_i16_unsigned_kernel_2d(%arg0: !pto.ptr<ui16, gm>, %arg1: !pto.ptr<ui16, gm>,
-                                          %arg2: !pto.ptr<ui8, gm>) {
-    %c4096_i64 = arith.constant 4096 : i64
-    %c0_i64 = arith.constant 0 : i64
-    %c16 = arith.constant 16 : index
-    %c32 = arith.constant 32 : index
-    %c8 = arith.constant 8 : index
-    %c128 = arith.constant 128 : index
-    %0 = pto.castptr %c0_i64 : i64 -> !pto.ptr<ui16, ub>
-    %1 = arith.index_castui %c32 : index to i64
-    %c1_i64 = arith.constant 1 : i64
-    %c32_i64 = arith.constant 32 : i64
-    %c2_i64 = arith.constant 2 : i64
-    %2 = arith.muli %1, %c2_i64 : i64
-    %c64_i64 = arith.constant 64 : i64
-    %3 = pto.castptr %arg0 : !pto.ptr<ui16, gm> -> !pto.ptr<i8, gm>
-    %4 = arith.index_castui %c0_i64 : i64 to index
-    %threshold_i16 = arith.constant 513 : i16
-    %threshold = builtin.unrealized_conversion_cast %threshold_i16 : i16 to ui16
-    %5 = pto.addptr %3, %4 : <i8, gm> -> <i8, gm>
-    pto.set_loop2_stride_outtoub %c4096_i64, %c4096_i64 : i64, i64
-    pto.set_loop1_stride_outtoub %c4096_i64, %c4096_i64 : i64, i64
-    pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
-    %6 = pto.castptr %5 : !pto.ptr<i8, gm> -> !pto.ptr<ui16, gm>
-    %false = arith.constant false
-    pto.copy_gm_to_ubuf %6, %0, %c0_i64, %c32_i64, %2, %c0_i64, %c0_i64, %false, %c0_i64, %c64_i64, %c64_i64 : !pto.ptr<ui16, gm>, !pto.ptr<ui16, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64
-    pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
-    pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
-    %11 = pto.castptr %c4096_i64 : i64 -> !pto.ptr<ui8, ub>
+  func.func @vcmps_i16_unsigned_kernel_2d(%arg0: !pto.ptr<ui16, gm>, %arg1: !pto.ptr<ui8, gm>) {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
-    %c1024_i32 = arith.constant 1024 : i32
+    %c0_i64 = arith.constant 0 : i64
+    %c1_i64 = arith.constant 1 : i64
+    %c32_i64 = arith.constant 32 : i64
+    %c64_i64 = arith.constant 64 : i64
+    %c256_i64 = arith.constant 256 : i64
+    %c128_i32 = arith.constant 128 : i32
+    %threshold_i16 = arith.constant 513 : i16
+    %threshold = builtin.unrealized_conversion_cast %threshold_i16 : i16 to ui16
+    %false = arith.constant false
+
+    %ub_src = pto.castptr %c0_i64 : i64 -> !pto.ptr<ui16, ub>
+    %ub_out = pto.castptr %c256_i64 : i64 -> !pto.ptr<ui8, ub>
+
+    pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
+    pto.set_loop1_stride_outtoub %c256_i64, %c256_i64 : i64, i64
+    pto.set_loop2_stride_outtoub %c256_i64, %c256_i64 : i64, i64
+    pto.copy_gm_to_ubuf %arg0, %ub_src, %c0_i64, %c64_i64, %c256_i64, %c0_i64, %c0_i64, %false, %c0_i64, %c256_i64, %c256_i64 : !pto.ptr<ui16, gm>, !pto.ptr<ui16, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64
+
+    pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
+    pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
+
     pto.vecscope {
-      %16 = scf.for %arg4 = %c0 to %c8 step %c1 iter_args(%arg5 = %c1024_i32) -> (i32) {
-        %17 = arith.muli %arg4, %c128 : index
-        %19 = arith.muli %arg4, %c16 : index
-        %22 = pto.castptr %11 : !pto.ptr<ui8, ub> -> !pto.ptr<i8, ub>
-        %24 = pto.addptr %22, %19 : <i8, ub> -> <i8, ub>
-        %mask, %scalar_out = pto.plt_b16 %arg5 : i32 -> !pto.mask<b16>, i32
-        %25 = pto.vlds %0[%17] : !pto.ptr<ui16, ub> -> !pto.vreg<128xui16>
-        %27 = pto.vcmps %25, %threshold, %mask, "gt" : !pto.vreg<128xui16>, ui16, !pto.mask<b16> -> !pto.mask<b16>
-        pto.psts %27, %24[%c0], "NORM" : !pto.mask<b16>, !pto.ptr<i8, ub>, index
-        scf.yield %scalar_out : i32
+      %_:1 = scf.for %iv = %c0 to %c1 step %c1 iter_args(%remaining = %c128_i32) -> (i32) {
+        %active, %next = pto.plt_b16 %remaining : i32 -> !pto.mask<b16>, i32
+        %src = pto.vlds %ub_src[%c0] : !pto.ptr<ui16, ub> -> !pto.vreg<128xui16>
+        %pred = pto.vcmps %src, %threshold, %active, "gt" : !pto.vreg<128xui16>, ui16, !pto.mask<b16> -> !pto.mask<b16>
+        pto.psts %pred, %ub_out[%c0], "NORM" : !pto.mask<b16>, !pto.ptr<ui8, ub>, index
+        scf.yield %next : i32
       }
     }
+
     pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
-    %c1024_i64 = arith.constant 1024 : i64
-    %12 = arith.muli %1, %c2_i64 : i64
-    %13 = pto.castptr %arg2 : !pto.ptr<ui8, gm> -> !pto.ptr<i8, gm>
-    %14 = pto.addptr %13, %4 : <i8, gm> -> <i8, gm>
+
     pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-    pto.set_loop1_stride_ubtoout %c1024_i64, %c1024_i64 : i64, i64
-    pto.set_loop2_stride_ubtoout %c1024_i64, %c1024_i64 : i64, i64
-    %15 = pto.castptr %14 : !pto.ptr<i8, gm> -> !pto.ptr<ui8, gm>
-    pto.copy_ubuf_to_gm %11, %15, %c0_i64, %c32_i64, %12, %c0_i64, %c32_i64, %c32_i64 : !pto.ptr<ui8, ub>, !pto.ptr<ui8, gm>, i64, i64, i64, i64, i64, i64
+    pto.set_loop1_stride_ubtoout %c32_i64, %c32_i64 : i64, i64
+    pto.set_loop2_stride_ubtoout %c32_i64, %c32_i64 : i64, i64
+    pto.copy_ubuf_to_gm %ub_out, %arg1, %c0_i64, %c32_i64, %c32_i64, %c0_i64, %c32_i64, %c32_i64 : !pto.ptr<ui8, ub>, !pto.ptr<ui8, gm>, i64, i64, i64, i64, i64, i64
     pto.barrier #pto.pipe<PIPE_ALL>
     return
   }

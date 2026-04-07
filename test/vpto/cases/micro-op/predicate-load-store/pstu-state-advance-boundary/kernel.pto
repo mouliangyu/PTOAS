@@ -13,6 +13,7 @@ module attributes {pto.target_arch = "a5"} {
     %c0_i64 = arith.constant 0 : i64
     %c1_i64 = arith.constant 1 : i64
     %c32_i64 = arith.constant 32 : i64
+    %c0_i32 = arith.constant 0 : i32
     %c1_i32 = arith.constant 1 : i32
     %c127 = arith.constant 127 : i32
 
@@ -20,11 +21,12 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       scf.for %iter = %c0 to %c1 step %c1 {
-        %align0 = pto.vldas %ub_mask : !pto.ptr<ui16, ub> -> !pto.align
+        %align0 = ub.poison : !pto.align
         %value0, %next0 = pto.plt_b16 %c1_i32 : i32 -> !pto.mask<b16>, i32
         %align1, %base1 = pto.pstu %align0, %value0, %ub_mask : !pto.align, !pto.mask<b16>, !pto.ptr<ui16, ub> -> !pto.align, !pto.ptr<ui16, ub>
         %value1, %next1 = pto.plt_b16 %c127 : i32 -> !pto.mask<b16>, i32
         %align2, %base2 = pto.pstu %align1, %value1, %base1 : !pto.align, !pto.mask<b16>, !pto.ptr<ui16, ub> -> !pto.align, !pto.ptr<ui16, ub>
+        pto.vstas %align2, %base2, %c0_i32 : !pto.align, !pto.ptr<ui16, ub>, i32
       }
     }
 

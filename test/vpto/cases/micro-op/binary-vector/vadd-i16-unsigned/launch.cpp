@@ -3,8 +3,6 @@
 // family: binary-vector
 // target_ops: pto.vadd
 // scenarios: core-i16-unsigned, full-mask
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
 // -----------------------------------------------------------------------------
 #ifndef __VEC_SCOPE__
 #define __VEC_SCOPE__
@@ -39,12 +37,13 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vsub_tail_kernel_2d(__gm__ float *v1,
-                                                      __gm__ float *v2,
-                                                      __gm__ float *v3);
+extern "C" __global__ AICORE void vadd_i16_unsigned_kernel(__gm__ uint16_t *v1,
+                                                           __gm__ uint16_t *v2,
+                                                           __gm__ uint16_t *v3);
 
-void LaunchVadd_tail_kernel_2d(float *v1, float *v2, float *v3, void *stream) {
-  vsub_tail_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                              (__gm__ float *)v2,
-                                              (__gm__ float *)v3);
+void LaunchVadd_i16_unsigned_kernel(uint16_t *v1, uint16_t *v2, uint16_t *v3,
+                                    void *stream) {
+  vadd_i16_unsigned_kernel<<<1, nullptr, stream>>>((__gm__ uint16_t *)v1,
+                                                   (__gm__ uint16_t *)v2,
+                                                   (__gm__ uint16_t *)v3);
 }

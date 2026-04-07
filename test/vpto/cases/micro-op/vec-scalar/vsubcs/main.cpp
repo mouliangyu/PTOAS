@@ -2,9 +2,7 @@
 // case: micro-op/vec-scalar/vsubcs
 // family: vec-scalar
 // target_ops: pto.vsubcs
-// scenarios: core-i16-unsigned, full-mask, scalar-operand, carry-chain
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: core-u32-unsigned, full-mask, carry-chain
 // -----------------------------------------------------------------------------
 /**
 Copyright (c) 2025 Huawei Technologies Co., Ltd.
@@ -28,17 +26,26 @@ using namespace PtoTestCommon;
     }                                                                            \
   } while (0)
 
-void LaunchVadds_tail_kernel_2d(float *v1, float *v2, void *stream);
+void LaunchVsubcs_kernel(uint32_t *v1, uint32_t *v2, uint32_t *v3, uint8_t *v4,
+                         void *stream);
 
 int main() {
-  size_t elemCount_v1 = 1024;
-  size_t fileSize_v1 = elemCount_v1 * sizeof(float);
-  size_t elemCount_v2 = 1024;
-  size_t fileSize_v2 = elemCount_v2 * sizeof(float);
-  float *v1Host = nullptr;
-  float *v1Device = nullptr;
-  float *v2Host = nullptr;
-  float *v2Device = nullptr;
+  size_t elemCount_v1 = 64;
+  size_t fileSize_v1 = elemCount_v1 * sizeof(uint32_t);
+  size_t elemCount_v2 = 64;
+  size_t fileSize_v2 = elemCount_v2 * sizeof(uint32_t);
+  size_t elemCount_v3 = 64;
+  size_t fileSize_v3 = elemCount_v3 * sizeof(uint32_t);
+  size_t elemCount_v4 = 256;
+  size_t fileSize_v4 = elemCount_v4 * sizeof(uint8_t);
+  uint32_t *v1Host = nullptr;
+  uint32_t *v1Device = nullptr;
+  uint32_t *v2Host = nullptr;
+  uint32_t *v2Device = nullptr;
+  uint32_t *v3Host = nullptr;
+  uint32_t *v3Device = nullptr;
+  uint8_t *v4Host = nullptr;
+  uint8_t *v4Device = nullptr;
   int rc = 0;
   bool aclInited = false;
   bool deviceSet = false;
@@ -54,25 +61,42 @@ int main() {
   ACL_CHECK(aclrtCreateStream(&stream));
   ACL_CHECK(aclrtMallocHost((void **)(&v1Host), fileSize_v1));
   ACL_CHECK(aclrtMallocHost((void **)(&v2Host), fileSize_v2));
+  ACL_CHECK(aclrtMallocHost((void **)(&v3Host), fileSize_v3));
+  ACL_CHECK(aclrtMallocHost((void **)(&v4Host), fileSize_v4));
   ACL_CHECK(aclrtMalloc((void **)&v1Device, fileSize_v1, ACL_MEM_MALLOC_HUGE_FIRST));
   ACL_CHECK(aclrtMalloc((void **)&v2Device, fileSize_v2, ACL_MEM_MALLOC_HUGE_FIRST));
+  ACL_CHECK(aclrtMalloc((void **)&v3Device, fileSize_v3, ACL_MEM_MALLOC_HUGE_FIRST));
+  ACL_CHECK(aclrtMalloc((void **)&v4Device, fileSize_v4, ACL_MEM_MALLOC_HUGE_FIRST));
   ReadFile("./v1.bin", fileSize_v1, v1Host, fileSize_v1);
   ReadFile("./v2.bin", fileSize_v2, v2Host, fileSize_v2);
+  ReadFile("./v3.bin", fileSize_v3, v3Host, fileSize_v3);
+  ReadFile("./v4.bin", fileSize_v4, v4Host, fileSize_v4);
   ACL_CHECK(aclrtMemcpy(v1Device, fileSize_v1, v1Host, fileSize_v1,
                         ACL_MEMCPY_HOST_TO_DEVICE));
   ACL_CHECK(aclrtMemcpy(v2Device, fileSize_v2, v2Host, fileSize_v2,
                         ACL_MEMCPY_HOST_TO_DEVICE));
-  LaunchVadds_tail_kernel_2d(v1Device, v2Device, stream);
+  ACL_CHECK(aclrtMemcpy(v3Device, fileSize_v3, v3Host, fileSize_v3,
+                        ACL_MEMCPY_HOST_TO_DEVICE));
+  ACL_CHECK(aclrtMemcpy(v4Device, fileSize_v4, v4Host, fileSize_v4,
+                        ACL_MEMCPY_HOST_TO_DEVICE));
+  LaunchVsubcs_kernel(v1Device, v2Device, v3Device, v4Device, stream);
   ACL_CHECK(aclrtSynchronizeStream(stream));
-  ACL_CHECK(aclrtMemcpy(v2Host, fileSize_v2, v2Device, fileSize_v2,
+  ACL_CHECK(aclrtMemcpy(v3Host, fileSize_v3, v3Device, fileSize_v3,
                         ACL_MEMCPY_DEVICE_TO_HOST));
-  WriteFile("./v2.bin", v2Host, fileSize_v2);
+  ACL_CHECK(aclrtMemcpy(v4Host, fileSize_v4, v4Device, fileSize_v4,
+                        ACL_MEMCPY_DEVICE_TO_HOST));
+  WriteFile("./v3.bin", v3Host, fileSize_v3);
+  WriteFile("./v4.bin", v4Host, fileSize_v4);
 
 cleanup:
   aclrtFree(v1Device);
   aclrtFree(v2Device);
+  aclrtFree(v3Device);
+  aclrtFree(v4Device);
   aclrtFreeHost(v1Host);
   aclrtFreeHost(v2Host);
+  aclrtFreeHost(v3Host);
+  aclrtFreeHost(v4Host);
   if (stream != nullptr)
     aclrtDestroyStream(stream);
   if (deviceSet)

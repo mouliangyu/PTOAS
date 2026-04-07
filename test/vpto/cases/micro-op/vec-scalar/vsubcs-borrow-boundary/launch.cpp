@@ -2,9 +2,7 @@
 // case: micro-op/vec-scalar/vsubcs-borrow-boundary
 // family: vec-scalar
 // target_ops: pto.vsubcs
-// scenarios: core-i16-unsigned, full-mask, scalar-operand, carry-chain
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// scenarios: core-u32-unsigned, full-mask, carry-chain, integer-overflow
 // -----------------------------------------------------------------------------
 #ifndef __VEC_SCOPE__
 #define __VEC_SCOPE__
@@ -39,10 +37,13 @@ struct MrgSortExecutedNumList {
 #include "acl/acl.h"
 #endif
 
-extern "C" __global__ AICORE void vmuls_tail_kernel_2d(__gm__ float *v1,
-                                                       __gm__ float *v2);
+extern "C" __global__ AICORE void vsubcs_borrow_boundary_kernel(
+    __gm__ uint32_t *v1, __gm__ uint32_t *v2, __gm__ uint32_t *v3,
+    __gm__ uint8_t *v4);
 
-void LaunchVadds_tail_kernel_2d(float *v1, float *v2, void *stream) {
-  vmuls_tail_kernel_2d<<<1, nullptr, stream>>>((__gm__ float *)v1,
-                                               (__gm__ float *)v2);
+void LaunchVsubcsBorrowBoundaryKernel(uint32_t *v1, uint32_t *v2, uint32_t *v3,
+                                      uint8_t *v4, void *stream) {
+  vsubcs_borrow_boundary_kernel<<<1, nullptr, stream>>>(
+      (__gm__ uint32_t *)v1, (__gm__ uint32_t *)v2, (__gm__ uint32_t *)v3,
+      (__gm__ uint8_t *)v4);
 }

@@ -19,11 +19,12 @@ SEED = 19
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-3.0, 3.0, size=(ROWS, COLS)).astype(np.float32, copy=False)
-    idx = np.arange(ROWS * COLS, dtype=np.int32).reshape(ROWS, COLS)
-    lane_ids = np.arange(64, dtype=np.int32).reshape(16, 64)
-    idx = (lane_ids[:, ::-1] + (lane_ids // 8) * 3) % 64
-    idx = idx.reshape(ROWS, COLS).astype(np.int32, copy=False)
-    golden_v3 = np.take_along_axis(v1, idx, axis=1).astype(np.float32, copy=False)
+    src = v1.reshape(16, 64)
+    lane_ids = np.arange(64, dtype=np.int32)
+    idx = np.empty((16, 64), dtype=np.int32)
+    for row in range(16):
+        idx[row] = (lane_ids[::-1] + row * 3 + (lane_ids // 8) * 3) % 64
+    golden_v3 = np.take_along_axis(src, idx, axis=1).astype(np.float32, copy=False).reshape(ROWS, COLS)
     v3 = np.zeros((ROWS, COLS), dtype=np.float32)
 
     output_dir.mkdir(parents=True, exist_ok=True)

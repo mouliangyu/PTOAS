@@ -12,27 +12,23 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 32
-COLS = 32
+ELEMS = 1024
 SEED = 19
-LOGICAL_ELEMS = 1000
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.integers(0, 1 << 16, size=(ROWS, COLS), dtype=np.uint32)
-    shift_cycle = np.array([0, 1, 15, 16, 30, 31, 31, 30], dtype=np.uint32)
-    v2 = np.resize(shift_cycle, ROWS * COLS).reshape(ROWS, COLS)
-    v3 = np.zeros((ROWS, COLS), dtype=np.int32)
-    golden_v3 = np.zeros((ROWS, COLS), dtype=np.int32)
-    flat = (v1.reshape(-1)[:LOGICAL_ELEMS] << (v2.reshape(-1)[:LOGICAL_ELEMS] & 31)).astype(np.uint32, copy=False)
-    golden_v3.reshape(-1)[:LOGICAL_ELEMS] = flat.view(np.int32)
+    v1 = rng.integers(0, 1 << 16, size=ELEMS, dtype=np.uint16)
+    shift_cycle = np.array([0, 1, 14, 15, 15, 14, 1, 0], dtype=np.uint16)
+    v2 = np.resize(shift_cycle, ELEMS).astype(np.uint16, copy=False)
+    v3 = np.zeros(ELEMS, dtype=np.uint16)
+    golden_v3 = np.left_shift(v1, v2 & np.uint16(15)).astype(np.uint16, copy=False)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.view(np.int32).reshape(-1).tofile(output_dir / "v1.bin")
-    v2.view(np.int32).reshape(-1).tofile(output_dir / "v2.bin")
-    v3.reshape(-1).tofile(output_dir / "v3.bin")
-    golden_v3.reshape(-1).tofile(output_dir / "golden_v3.bin")
+    v1.tofile(output_dir / "v1.bin")
+    v2.tofile(output_dir / "v2.bin")
+    v3.tofile(output_dir / "v3.bin")
+    golden_v3.tofile(output_dir / "golden_v3.bin")
 
 
 def main() -> None:

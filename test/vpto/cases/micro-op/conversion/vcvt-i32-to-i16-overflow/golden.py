@@ -24,7 +24,15 @@ def generate(output_dir: Path, seed: int) -> None:
         32767, 32768, 40000, 70000, -70000, 65535, -65535, 123456,
     ], dtype=np.int32)
     data[:edge.size] = edge
-    golden = np.clip(data, I16_MIN, I16_MAX).astype(np.int16)
+    clipped = np.clip(data, I16_MIN, I16_MAX).astype(np.int16)
+    golden = np.zeros(ELEMS, dtype=np.int16)
+    for offset in range(0, ELEMS, 128):
+        lower = clipped[offset : offset + 64]
+        upper = clipped[offset + 64 : offset + 128]
+        merged = np.empty(128, dtype=np.int16)
+        merged[0::2] = lower
+        merged[1::2] = upper
+        golden[offset : offset + 128] = merged
 
     output_dir.mkdir(parents=True, exist_ok=True)
     data.tofile(output_dir / "v1.bin")

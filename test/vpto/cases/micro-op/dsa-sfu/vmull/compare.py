@@ -20,7 +20,7 @@ def compare_bin(golden_path, output_path, dtype, eps):
 
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
-    ok = compare_bin("golden_v2.bin", "v2.bin", np.float32, 1e-4)
+    ok = compare_bin("golden_v2.bin", "v2.bin", np.int32, 0)
     if not ok:
         if strict:
             print("[ERROR] compare failed")

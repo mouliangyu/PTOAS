@@ -81,6 +81,9 @@
 - `03-vpto-op-board-coverage-assessment.md`
 - `03-vpto-op-board-unit-tests-PLAN.md`
 - `03-vpto-op-board-unit-tests-matrix.md`
+- `03-vpto-compiled-case-progression-PLAN.md`
+- `03-vpto-compiled-case-progression-checklist.md`
+- `03-vpto-runtime-issues-log.md`
 
 维护关系约定：
 
@@ -88,8 +91,10 @@
 - `coverage assessment` 负责统计当前 coverage 缺口，并明确 `scope` 还需要继续细化哪些 family 与 case
 - `matrix` 严格按 `scope` 已显式列出的 case 与覆盖标签登记当前状态，不额外发明 `scope` 外的 case
 - `PLAN` 只维护执行组织、目录约束、文档协作顺序和状态流转，不单独扩写 `scope` 之外的 case
+- 当工作重心从“补 case”切换为“把 `compiled` case 推进到 `board-passed`、`board-blocked` 或阻塞已明确”时，专项执行规则由 `03-vpto-compiled-case-progression-PLAN.md` 驱动，逐条推进台账由 `03-vpto-compiled-case-progression-checklist.md` 驱动
 - 新增或调整测试范围时，先更新 `coverage assessment`，再回写 `scope`，最后才更新 `matrix`
 - 进入测例构造、上板验证和回归阶段后，`scope` 不是绝对只读；只要 `coverage assessment` 仍显示 case 缺口或 case 目标缺失，就必须继续细化 `scope`
+- 运行阶段若遇到已知环境、脚本接线、SIM/NPU链路或 oracle 漂移问题，先检索 `03-vpto-runtime-issues-log.md`，避免重复定位
 
 文档职责边界：
 
@@ -105,6 +110,15 @@
 - `03-vpto-op-board-unit-tests-PLAN.md`
   - 负责文档协作顺序与执行流程
   - 回答“先更新哪份文档、再推进哪一步”
+- `03-vpto-runtime-issues-log.md`
+  - 负责沉淀已复现且已收敛的运行阶段问题
+  - 回答“遇到相同运行现象时应先检查什么、已有结论是什么”
+- `03-vpto-compiled-case-progression-PLAN.md`
+  - 负责本轮 `compiled` case 从 `compiled` 推进到 `board-passed / board-blocked / blocked` 的专项执行规则
+  - 回答“如何避免阶段性停下、每条 case 如何推进到运行校验无误或阻塞已明确”
+- `03-vpto-compiled-case-progression-checklist.md`
+  - 负责本轮全部 `compiled` case 的逐条执行台账
+  - 回答“当前已经清扫到哪条、哪条还没看、哪条已经形成运行结论”
 
 用户文档与内部台账的边界约束：
 
@@ -186,9 +200,9 @@
 - 若当前 surface / lowering / emitter 还无法同时满足“语法合法”和“测试目标成立”，应将其记为 surface / implementation 问题，而不是弱化测例目标
 - 用例骨架参考 `test/vpto/cases/tileop/abs/`，尤其是 GM↔UB 搬运方式与同步方式
 - 前处理负责按 `tileop/abs` 的方式完成 GM→UB DMA 与必要同步
-- 主体在 `pto.vecscope` region 内执行被测 VPTO op
+- 主体默认在 `pto.vecscope` region 内执行被测 VPTO op；但若某条 op 已在 docs / verifier / runtime issue 中明确标注为非 vecscope UB helper，则必须保持在 `pto.vecscope` 外
 - 不再新写 dummy loop carrier；统一以 `pto.vecscope` 作为 vecscope 边界表达
-- 向量 / mask / align 相关的任何被测语义都必须位于 `pto.vecscope` 内，不允许把相关计算放到 region 外
+- 向量 / mask / align 相关的任何被测语义都必须位于 `pto.vecscope` 内，不允许把相关计算放到 region 外；`pto.vbitsort` 这类非 vecscope UB helper 不适用该条，且禁止放入 `pto.vecscope`
 - 所有测例统一采用 GM→UB→计算→UB→GM 的可观测路径
 - 对需要 operand feed 的向量 / mask / align 测例，输入只能通过访问 UB 的指令加载；不允许绕过 UB 直接消费 GM 数据
 - 对生成类 op，可在 `pto.vecscope` 内直接生成结果，但结果仍需先写回 UB，再由后处理导回 GM 做 host compare

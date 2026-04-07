@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-# case: micro-op/reduction/vcpadd-tail
-# family: reduction
-# target_ops: pto.vcpadd
-# scenarios: prefix-op, tail-mask
-# NOTE: bulk-generated coverage skeleton.
 # coding=utf-8
 
 import argparse
@@ -16,18 +11,21 @@ ROWS = 32
 COLS = 32
 SEED = 19
 LANES = 64
+LOGICAL_ELEMS = 1000
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
+
     v2 = np.zeros((ROWS, COLS), dtype=np.float32)
     golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
     flat_in = v1.reshape(-1)
     flat_out = golden_v2.reshape(-1)
-    for offset in range(0, flat_in.size, LANES):
-        chunk = flat_in[offset:offset + LANES]
-        flat_out[offset] = np.sum(chunk, dtype=np.float32)
+    for offset in range(0, LOGICAL_ELEMS, LANES):
+        chunk = flat_in[offset:min(offset + LANES, LOGICAL_ELEMS)]
+        flat_out[offset:offset + chunk.size] = np.cumsum(chunk, dtype=np.float32)
+
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
