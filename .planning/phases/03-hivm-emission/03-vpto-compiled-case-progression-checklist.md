@@ -848,10 +848,10 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vslide-rerun-20260407/micro-op_rearrangement_vslide`
 - `case`: `micro-op/rearrangement/vsqz`
   - `family`: `rearrangement`
-  - `checklist_status`: `sim-blocked`
-  - `readiness_findings`: `host, case, runtime`
-  - `current_conclusion`: `原始 `golden.py` 为旧 `vabs` skeleton，且 host 侧也残留错误 kernel symbol；修正后在 `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz` 的 `DEVICE=SIM` 复跑已进入真实 `RV_VSQZ + RV_VSTS` 指令流，但随后稳定触发 veccore `ISU stall`，当前归因到 runtime/backend 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `runtime`
+  - `current_conclusion`: `按 VSQZ/VSTUR 契约修正 emitter 的 `#st` hint 策略后，`vsqz` case 在 `DEVICE=SIM` 路径已不再触发 `ISU stall`，并 compare passed`
+  - `evidence`: `/tmp/vpto-vsqz-runtime-check-20260408/micro-op_rearrangement_vsqz`
 - `case`: `micro-op/rearrangement/vusqz`
   - `family`: `rearrangement`
   - `checklist_status`: `sim-passed`
@@ -890,10 +890,10 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vslide-tail-rerun-20260407/micro-op_rearrangement_vslide-tail-window`
 - `case`: `micro-op/rearrangement/vsqz-nontrivial-mask`
   - `family`: `rearrangement`
-  - `checklist_status`: `sim-blocked`
-  - `readiness_findings`: `host, runtime`
-  - `current_conclusion`: `host 侧原本残留错误 kernel symbol；修正后在 `/home/mouliangyu/tmp/vpto-vsqz-nontrivial-rerun-20260407/micro-op_rearrangement_vsqz-nontrivial-mask` 的 `DEVICE=SIM` 复跑已进入真实 `RV_VSQZ + RV_VSTS` 指令流，但 veccore 仍出现 `ISU stall`，当前归因到 runtime/backend 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-vsqz-nontrivial-rerun-20260407/micro-op_rearrangement_vsqz-nontrivial-mask`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, runtime`
+  - `current_conclusion`: `已将 case 从旧 skeleton 收口为真实 nontrivial-mask `vsqz` 语义（`vcmps` 产 mask + `vsqz` 压缩 + full-mask `vsts` 回写），并同步 golden/compare 后在 `DEVICE=SIM` 路径 compare passed`
+  - `evidence`: `/tmp/vpto-vsqz-nontrivial-fix-runtime-20260408/micro-op_rearrangement_vsqz-nontrivial-mask`
 - `case`: `micro-op/rearrangement/vusqz-nontrivial-mask`
   - `family`: `rearrangement`
   - `checklist_status`: `sim-passed`
