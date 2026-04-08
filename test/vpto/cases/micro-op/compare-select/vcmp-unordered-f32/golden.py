@@ -3,7 +3,10 @@
 # family: compare-select
 # target_ops: pto.vcmp
 # scenarios: core-f32, full-mask, exceptional-values
-# NOTE: bulk-generated coverage skeleton.
+# NOTE: blocked placeholder case. The current PTO surface and docs only expose
+# eq/ne/lt/le/gt/ge compare modes for pto.vcmp, so a true unordered compare
+# case cannot be expressed yet. This script only materializes placeholder
+# inputs for the host harness; it is not a semantic oracle.
 # coding=utf-8
 
 import argparse
@@ -16,63 +19,26 @@ ROWS = 32
 COLS = 32
 SEED = 19
 SRC_ELEM_BYTES = 4
-REPEAT_BYTES = 256
-
-
-def _ceil_div(x: int, y: int) -> int:
-    return (x + y - 1) // y
-
-
-def _packed_pred_storage_bytes(logical_elems: int, src_elem_bytes: int) -> int:
-    if logical_elems <= 0:
-        raise ValueError(f"logical_elems must be > 0, got {logical_elems}")
-    if src_elem_bytes not in (1, 2, 4):
-        raise ValueError(f"unsupported packed predicate source size: {src_elem_bytes}")
-
-    repeat_elems = REPEAT_BYTES // src_elem_bytes
-    if src_elem_bytes == 4:
-        repeat_times = _ceil_div(logical_elems, repeat_elems) + 1
-        loop_count = repeat_times // 2
-        return loop_count * 16
-
-    repeat_times = _ceil_div(logical_elems, repeat_elems)
-    return repeat_times * (repeat_elems // 8)
-
-
-def _pack_predicate_mask(mask: np.ndarray, src_elem_bytes: int) -> np.ndarray:
-    if mask.dtype != np.bool_:
-        raise TypeError(f"expected bool mask, got {mask.dtype}")
-    if mask.shape != (ROWS, COLS):
-        raise ValueError(f"expected mask shape {(ROWS, COLS)}, got {mask.shape}")
-
-    logical_elems = ROWS * COLS
-    stored_bytes = _packed_pred_storage_bytes(logical_elems, src_elem_bytes)
-    packed_bits = np.packbits(mask.reshape(-1).astype(np.uint8, copy=False), bitorder="little")
-    out = np.zeros((logical_elems,), dtype=np.uint8)
-    out[:stored_bytes] = 0
-    out[: packed_bits.size] = packed_bits
-    return out
+BLOCKED_REASON = (
+    "blocked placeholder: unordered compare is not part of the current "
+    "pto.vcmp surface; docs/isa/11-compare-select.md only defines "
+    "eq/ne/lt/le/gt/ge"
+)
 
 
 def generate(output_dir: Path, seed: int, src_elem_bytes: int) -> None:
     rng = np.random.default_rng(seed)
 
     v1 = rng.uniform(-3.0, 3.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = v1.copy()
-    col_ids = np.arange(COLS, dtype=np.int32)
-    row_ids = np.arange(ROWS, dtype=np.int32)[:, None]
-    mismatch = ((row_ids + col_ids) % 3) == 1
-    v2[mismatch] = (v2[mismatch] + np.float32(1.25)).astype(np.float32)
-    mask = np.equal(v1, v2)
-
-    packed_mask = _pack_predicate_mask(mask, src_elem_bytes)
+    v2 = rng.uniform(-3.0, 3.0, size=(ROWS, COLS)).astype(np.float32)
     output_init = np.zeros((ROWS * COLS,), dtype=np.uint8)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
     v2.reshape(-1).tofile(output_dir / "v2.bin")
     output_init.tofile(output_dir / "v3.bin")
-    packed_mask.tofile(output_dir / "golden_v3.bin")
+    output_init.tofile(output_dir / "golden_v3.bin")
+    (output_dir / "BLOCKED.txt").write_text(BLOCKED_REASON + "\n", encoding="ascii")
 
 
 def main() -> None:
@@ -95,7 +61,7 @@ def main() -> None:
         "--src-elem-bytes",
         type=int,
         default=SRC_ELEM_BYTES,
-        help="Source element byte width used by TCMP/TCMPS semantics.",
+        help="Unused placeholder argument kept for harness compatibility.",
     )
     args = parser.parse_args()
 

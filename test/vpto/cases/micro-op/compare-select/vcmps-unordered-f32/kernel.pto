@@ -3,6 +3,10 @@
 // family: compare-select
 // target_ops: pto.vcmps
 // scenarios: core-f32, full-mask, scalar-operand, exceptional-values
+// NOTE: blocked placeholder case. The current PTO surface and docs only expose
+// eq/ne/lt/le/gt/ge compare modes for pto.vcmps, so a true unordered compare
+// case cannot be expressed yet. Keep this file as a shape placeholder only; do
+// not treat its runtime behavior as a precision oracle.
 // -----------------------------------------------------------------------------
 module attributes {pto.target_arch = "a5"} {
   func.func @vcmps_unordered_kernel_2d(%arg0: !pto.ptr<f32, gm>,
