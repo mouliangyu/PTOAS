@@ -1340,22 +1340,22 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vsts-1pt-launchfix-20260407/micro-op_vector-load-store_vsts-1pt-b16`
 - `case`: `micro-op/vector-load-store/vsts-pk-b16`
   - `family`: `vector-load-store`
-  - `checklist_status`: `blocked`
-  - `readiness_findings`: `docs`
-  - `current_conclusion`: `当前用户文档只给出“Pack low half bits of each element before store”，不足以唯一确定 `b16` 场景下的目标 UB 布局与未覆盖字节语义；在 docs 补齐前不继续臆造 oracle`
-  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-semantic-uncertainty-table.md`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已按“仅比较 `vsts` 明确写入 footprint”收口 compare（不再比较写入范围外字节）；`DEVICE=SIM` 复跑 compare passed，其中 `1024/4096` 表示 `writable_bytes/output_buffer_bytes`（本 case 仅前 1024B 可语义比较）`
+  - `evidence`: `/tmp/vpto-vsts-rerun-20260408-pk/micro-op_vector-load-store_vsts-pk-b16`
 - `case`: `micro-op/vector-load-store/vsts-mrg2chn-b16`
   - `family`: `vector-load-store`
-  - `checklist_status`: `blocked`
-  - `readiness_findings`: `docs`
-  - `current_conclusion`: `当前用户文档只给出“Merge 2 interleaved channels within each 32B block”，不足以唯一确定 `b16` 场景下的目标 UB 布局；在 docs 补齐前不继续臆造 oracle`
-  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-semantic-uncertainty-table.md`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已按写入 footprint 比较（`2048/4096 = writable_bytes/output_buffer_bytes`），写入区与 golden 一致；但 `DEVICE=SIM` 运行日志仍稳定报 `RV_VSTS ... illegal dist_mode: 39 (MEG2CHN_B16)`，当前归因为 runtime/simulator 支持冲突，暂不记为稳定通过`
+  - `evidence`: `/tmp/vpto-vsts-rerun-20260408-mrg2/micro-op_vector-load-store_vsts-mrg2chn-b16/validation.log`
 - `case`: `micro-op/vector-load-store/vsts-mrg4chn-b8`
   - `family`: `vector-load-store`
-  - `checklist_status`: `blocked`
-  - `readiness_findings`: `docs`
-  - `current_conclusion`: `当前用户文档只给出“Merge 4 interleaved b8 channels within each 32B block”，不足以唯一确定目标 UB 布局；在 docs 补齐前不继续臆造 oracle`
-  - `evidence`: `.planning/phases/03-hivm-emission/03-vpto-semantic-uncertainty-table.md`
+  - `checklist_status`: `sim-blocked`
+  - `readiness_findings`: `golden, compare, runtime`
+  - `current_conclusion`: `已按写入 footprint 比较（`1024/4096 = writable_bytes/output_buffer_bytes`），写入区与 golden 一致；但 `DEVICE=SIM` 运行日志仍稳定报 `RV_VSTS ... illegal dist_mode: 37 (MEG4CHN_B8)`，当前归因为 runtime/simulator 支持冲突，暂不记为稳定通过`
+  - `evidence`: `/tmp/vpto-vsts-rerun-20260408-mrg4/micro-op_vector-load-store_vsts-mrg4chn-b8/validation.log`
 - `case`: `micro-op/vector-load-store/vldas-vldus`
   - `family`: `vector-load-store`
   - `checklist_status`: `sim-passed`
