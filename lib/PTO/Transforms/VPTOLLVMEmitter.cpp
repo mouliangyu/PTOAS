@@ -67,6 +67,8 @@ using namespace mlir;
 namespace mlir::pto {
 namespace {
 
+constexpr StringLiteral kAIVScopeDummyCallee = "aivscope_dummy";
+
 struct QueriedTargetAttrs {
   std::string targetCPU;
   std::string targetFeatures;
@@ -3798,28 +3800,24 @@ static void normalizeFuncSignaturesForOfficialLLVMLowering(ModuleOp module) {
   }
 }
 
-static llvm::StringMap<unsigned>
-collectVecScopeLoopCounts(ModuleOp module) {
-  llvm::StringMap<unsigned> counts;
-  module.walk([&](pto::VecScopeOp vecScope) {
-    auto func = vecScope->getParentOfType<func::FuncOp>();
-    if (!func)
-      return;
-    counts[func.getName().str()]++;
-  });
-  module.walk([&](pto::StrictVecScopeOp vecScope) {
-    auto func = vecScope->getParentOfType<func::FuncOp>();
-    if (!func)
-      return;
-    counts[func.getName().str()]++;
-  });
-  return counts;
+static void ensureAIVScopeDummyDecl(ModuleOp module) {
+  SymbolTable symbolTable(module);
+  if (symbolTable.lookup<func::FuncOp>(kAIVScopeDummyCallee))
+    return;
+
+  OpBuilder builder(module.getBodyRegion());
+  builder.setInsertionPointToStart(module.getBody());
+  auto funcType = builder.getFunctionType(TypeRange{}, TypeRange{});
+  auto dummy = builder.create<func::FuncOp>(module.getLoc(),
+                                            kAIVScopeDummyCallee, funcType);
+  dummy.setPrivate();
 }
 
 static void materializeVecScopeCarrierLoops(ModuleOp module) {
   MLIRContext *ctx = module.getContext();
   (void)ctx->getOrLoadDialect<arith::ArithDialect>();
   (void)ctx->getOrLoadDialect<scf::SCFDialect>();
+  ensureAIVScopeDummyDecl(module);
 
   SmallVector<pto::VecScopeOp, 16> scopes;
   module.walk([&](pto::VecScopeOp vecScope) { scopes.push_back(vecScope); });
@@ -3842,6 +3840,9 @@ static void materializeVecScopeCarrierLoops(ModuleOp module) {
                                         vecScopeBody.getOperations(),
                                         vecScopeBody.begin(),
                                         vecScopeBody.end());
+    rewriter.setInsertionPoint(yield);
+    rewriter.create<func::CallOp>(loc, kAIVScopeDummyCallee, TypeRange{},
+                                  ValueRange{});
     rewriter.eraseOp(vecScope);
   }
 
@@ -3871,6 +3872,8 @@ static void materializeVecScopeCarrierLoops(ModuleOp module) {
     rewriter.setInsertionPoint(yield);
     for (Operation &nested : strictBody.getOperations())
       rewriter.clone(nested, mapping);
+    rewriter.create<func::CallOp>(loc, kAIVScopeDummyCallee, TypeRange{},
+                                  ValueRange{});
 
     rewriter.eraseOp(strictVecScope);
   }
@@ -3890,25 +3893,12 @@ static bool satisfiesAIVectorScopeLatchPostcondition(llvm::Loop *loop) {
          predTerm->getSuccessor(0) == latch;
 }
 
-static llvm::SmallVector<llvm::Loop *, 8>
-collectTopLevelLoopsInPreorder(llvm::LoopInfo &loopInfo) {
-  llvm::SmallVector<llvm::Loop *, 8> loops;
-  for (llvm::Loop *loop : loopInfo)
-    loops.push_back(loop);
-  return loops;
-}
-
 // Bisheng imposes a strict CFG contract on loops carrying
 // `llvm.loop.aivector_scope` metadata:
 //   1. the latch must have exactly one predecessor
 //   2. that predecessor must have exactly one successor, namely the latch
 //
 // The generic SCF/LLVM lowering pipeline does not preserve this shape for us.
-// Unary-style lowering can legitimately materialize extra CFG around the loop
-// backedge, for example a fast-path/slow-path `scf.if` whose branches both feed
-// the latch. Even if the condition later folds to a constant, the exported LLVM
-// CFG can still violate the Bisheng-only latch contract.
-//
 // Therefore VPTO LLVM emission treats this as a required postcondition instead
 // of a best-effort cleanup:
 //   - if the loop already satisfies the contract, keep it as-is
@@ -3952,100 +3942,82 @@ static LogicalResult ensureDummyPredForAIVectorScopeLatch(llvm::Loop *loop,
   return success();
 }
 
-// Bisheng's vector-thread extraction does not reliably retain side-effecting
-// void calls that remain in the loop latch block. For stateful VPTO chains like
-// `vstur -> vstar`, leaving `vstar` in the latch causes the final flush to drop
-// out of the emitted vec thread even though the LLVM IR still contains it.
-//
-// When the latch already satisfies the single-predecessor/single-successor
-// contract we can safely sink those void calls into the unique predecessor
-// block. This keeps the observable vector side effects inside the vec thread
-// while preserving CFG shape and the scalar induction update in the latch.
-static void sinkAIVectorScopeLatchVoidCalls(llvm::Loop *loop) {
-  llvm::BasicBlock *latch = loop->getLoopLatch();
-  if (!latch)
-    return;
-
-  llvm::SmallVector<llvm::BasicBlock *, 4> preds(llvm::predecessors(latch));
-  if (preds.size() != 1)
-    return;
-
-  llvm::BasicBlock *pred = preds.front();
-  auto *predTerm = pred->getTerminator();
-  if (!predTerm || predTerm->getNumSuccessors() != 1 ||
-      predTerm->getSuccessor(0) != latch)
-    return;
-
-  llvm::SmallVector<llvm::Instruction *, 4> toMove;
-  for (llvm::Instruction &inst : *latch) {
-    if (isa<llvm::PHINode>(inst) || inst.isTerminator())
-      continue;
-    auto *call = dyn_cast<llvm::CallInst>(&inst);
-    if (!call || !call->getType()->isVoidTy())
-      continue;
-    toMove.push_back(&inst);
-  }
-
-  for (llvm::Instruction *inst : toMove)
-    inst->moveBefore(*pred, predTerm->getIterator());
-}
-
 static LogicalResult attachAIVectorScopeMetadata(
-    llvm::Module &llvmModule, const llvm::StringMap<unsigned> &counts,
-    llvm::raw_ostream &diagOS) {
-  for (llvm::Function &function : llvmModule) {
-    auto it = counts.find(function.getName());
-    if (it == counts.end() || it->second == 0)
-      continue;
+    llvm::Module &llvmModule, llvm::raw_ostream &diagOS) {
+  llvm::Function *dummyCallee = llvmModule.getFunction(kAIVScopeDummyCallee);
+  if (!dummyCallee)
+    return success();
 
+  for (llvm::Function &function : llvmModule) {
+    if (function.isDeclaration())
+      continue;
     llvm::DominatorTree dt(function);
     llvm::LoopInfo loopInfo(dt);
-    if (loopInfo.empty()) {
-      diagOS << "VPTO LLVM emission failed: expected " << it->second
-             << " aivscope loop(s) in function " << function.getName()
-             << ", but no LLVM loops were found\n";
-      return failure();
+
+    // Stage 1: collect the lowered vecscope markers in this function. Each
+    // marker should end up inside the final LLVM loop that carries one
+    // `pto.vecscope` / `pto.strict_vecscope`.
+    llvm::SmallVector<llvm::CallInst *, 4> dummyCalls;
+    for (llvm::BasicBlock &block : function) {
+      for (llvm::Instruction &inst : block) {
+        auto *call = dyn_cast<llvm::CallInst>(&inst);
+        if (call && call->getCalledFunction() == dummyCallee)
+          dummyCalls.push_back(call);
+      }
     }
 
-    unsigned expectedCount = it->second;
-    for (unsigned index = 0; index < expectedCount; ++index) {
-      auto loops = collectTopLevelLoopsInPreorder(loopInfo);
-      if (loops.size() <= index) {
-        diagOS << "VPTO LLVM emission failed: expected at least "
-               << expectedCount << " top-level loop(s) in function "
-               << function.getName() << ", but only found " << loops.size()
-               << " after lowering\n";
+    for (llvm::CallInst *dummyCall : dummyCalls) {
+      llvm::BasicBlock *markedBlock = dummyCall->getParent();
+      llvm::Loop *loop = loopInfo.getLoopFor(markedBlock);
+      if (!loop) {
+        diagOS << "VPTO LLVM emission failed: aivscope_dummy in function "
+               << function.getName() << " does not belong to an LLVM loop\n";
         return failure();
       }
 
-      llvm::Loop *loop = loops[index];
+      // Stage 2: if the marker ended up in the loop latch, split the block so
+      // the eventual latch stays as a clean backedge block instead of carrying
+      // vector-thread side effects.
+      if (markedBlock == loop->getLoopLatch() &&
+          dummyCall != markedBlock->getTerminator()) {
+        markedBlock->splitBasicBlock(dummyCall->getIterator(), "aivscope.latch");
+        dt.recalculate(function);
+        loopInfo.releaseMemory();
+        loopInfo.analyze(dt);
+        markedBlock = dummyCall->getParent();
+        loop = loopInfo.getLoopFor(markedBlock);
+        if (!loop) {
+          diagOS << "VPTO LLVM emission failed: split aivscope latch in "
+                 << function.getName()
+                 << " no longer belongs to an LLVM loop\n";
+          return failure();
+        }
+      }
+
       if (failed(ensureDummyPredForAIVectorScopeLatch(loop, diagOS)))
         return failure();
 
+      // Stage 3: after any CFG surgery, re-query the loop and attach
+      // `llvm.loop.aivector_scope` to the normalized latch backedge. The dummy
+      // marker has served its purpose by this point and is removed.
       dt.recalculate(function);
       loopInfo.releaseMemory();
       loopInfo.analyze(dt);
-      loops = collectTopLevelLoopsInPreorder(loopInfo);
-      if (loops.size() <= index) {
-        diagOS << "VPTO LLVM emission failed: aivscope loop disappeared after "
-                  "latch normalization in function "
-               << function.getName() << "\n";
+      loop = loopInfo.getLoopFor(markedBlock);
+      if (!loop) {
+        diagOS << "VPTO LLVM emission failed: aivscope_dummy in function "
+               << function.getName()
+               << " lost its loop after latch normalization\n";
         return failure();
       }
-      loop = loops[index];
 
       llvm::BasicBlock *latch = loop->getLoopLatch();
-      if (!latch) {
-        diagOS << "VPTO LLVM emission failed: aivscope loop has no latch after "
-                  "normalization in function "
-               << function.getName() << "\n";
-        return failure();
-      }
-      auto *terminator = latch->getTerminator();
-      if (!terminator) {
-        diagOS << "VPTO LLVM emission failed: aivscope latch has no terminator "
-                  "in function "
-               << function.getName() << "\n";
+      auto *branch = dyn_cast_or_null<llvm::BranchInst>(
+          latch ? latch->getTerminator() : nullptr);
+      if (!branch || branch->isConditional()) {
+        diagOS << "VPTO LLVM emission failed: normalized aivscope loop in "
+               << function.getName()
+               << " does not have an unconditional latch backedge\n";
         return failure();
       }
 
@@ -4054,9 +4026,13 @@ static LogicalResult attachAIVectorScopeMetadata(
           nullptr, llvm::MDNode::get(ctx, llvm::MDString::get(ctx, "llvm.loop.aivector_scope"))};
       auto *loopID = llvm::MDNode::getDistinct(ctx, ops);
       loopID->replaceOperandWith(0, loopID);
-      terminator->setMetadata(llvm::LLVMContext::MD_loop, loopID);
+      branch->setMetadata(llvm::LLVMContext::MD_loop, loopID);
+      dummyCall->eraseFromParent();
     }
   }
+
+  if (dummyCallee->use_empty())
+    dummyCallee->eraseFromParent();
   return success();
 }
 
@@ -4544,7 +4520,6 @@ buildLLVMModuleFromPreparedVPTO(ModuleOp module,
                                 llvm::LLVMContext &llvmContext,
                                 const VPTOEmissionOptions &options,
                                 llvm::raw_ostream &diagOS) {
-  auto vecScopeCounts = collectVecScopeLoopCounts(module);
   materializeVecScopeCarrierLoops(module);
 
   if (failed(normalizePtoMemRefSpaces(module, diagOS)))
@@ -4588,7 +4563,7 @@ buildLLVMModuleFromPreparedVPTO(ModuleOp module,
     return nullptr;
   }
 
-  if (failed(attachAIVectorScopeMetadata(*llvmModule, vecScopeCounts, diagOS)))
+  if (failed(attachAIVectorScopeMetadata(*llvmModule, diagOS)))
     return nullptr;
   attachHIVMKernelAnnotations(*llvmModule);
   llvmModule->setModuleIdentifier("ptoas.hivm.official");
