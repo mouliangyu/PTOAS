@@ -32,23 +32,7 @@
 
 ## Semantic Decisions Needed
 
-1. `pto.vusqz` 的用户文档语义与当前实跑行为不一致
-
-- docs 签名：
-  - `%result = pto.vusqz %src, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- vpto 签名：
-  - `%result = pto.vusqz %src, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- llvm 签名：
-  - `declare <vec> @llvm.hivm.vusqz.<suffix>(<vec>, <256 x i1>)`
-- 当前 docs 语义：
-  - “按 `%mask` 把 `%src` 的 active-prefix payload 展开到激活位置，其余位置补 0”
-- 当前实跑观察：
-  - `micro-op/rearrangement/vusqz`
-  - `micro-op/rearrangement/vusqz-nontrivial-mask`
-  - 都已进入真实 `DEVICE=SIM` 运行，并能看到 `RV_VUSQZ`
-  - 但输出模式与当前 docs 语义明显不一致，不能继续按 docs 稳定定义 oracle
-- 当前阻塞点：
-  - 需要 docs 贡献者明确 `pto.vusqz` 的真实用户语义；在结论明确前，这两条 case 保持 `blocked`
+- 当前无保留条目
 
 ## Interface / Surface Alignment Needed
 
@@ -98,6 +82,34 @@
 
 - 在不猜底层布局的前提下，现有用户文档不足以唯一写出这三条 case 的稳定 `golden.py`
 - 在 docs 补齐用户可见布局语义前，这三条 case 不应通过臆造 oracle 推进
+
+### 2026-04-08 Batch 06
+
+本批次记录已收口条目，便于追溯“为何从本表移除”。
+
+#### Semantic Decisions Resolved
+
+1. `pto.vusqz` 语义不确定性已收口
+
+当前新增观察：
+
+- `docs/isa/12-data-rearrangement.md` 已将 `pto.vusqz` 语义更新为
+  predicate prefix-count：
+  - `%result[0] = 0`
+  - `%result[i] = count(%mask[0:i))`
+- 对应 testcase 已完成语义对齐：
+  - `micro-op/rearrangement/vusqz`
+  - `micro-op/rearrangement/vusqz-nontrivial-mask`
+  - 两条 case 的 `golden.py` 均改为 prefix-count oracle
+- 使用重建后的 `ptoas` 在 `DEVICE=SIM` 完成单 case 全流程验证：
+  - `/tmp/vpto-vusqz-sim-20260408-rerun/micro-op_rearrangement_vusqz`
+  - `/tmp/vpto-vusqz-nontrivial-sim-20260408-rerun/micro-op_rearrangement_vusqz-nontrivial-mask`
+  - 两条均 compare passed
+
+增量结论：
+
+- 该问题已不再构成“文档不足以定义稳定 oracle”的待确认事项
+- 从 `Semantic Decisions Needed` 正文移除，后续按已收口语义维护
 
 ### 2026-04-01 Batch 01
 
