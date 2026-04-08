@@ -367,6 +367,7 @@ build_one_impl() {
     -march="${AICORE_ARCH}" \
     --cce-aicore-arch="${AICORE_ARCH}" \
     --cce-aicore-only \
+    -O2 \
     -c -x ir "${llvm_ir}" \
     -o "${device_obj}"
 

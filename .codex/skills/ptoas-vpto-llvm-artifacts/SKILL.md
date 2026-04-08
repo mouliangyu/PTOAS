@@ -178,6 +178,7 @@ bisheng \
   -march=dav-c310-vec \
   --cce-aicore-arch=dav-c310-vec \
   --cce-aicore-only \
+  -O2 \
   -c -x ir /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.cpp \
   -o /tmp/ptoas-vpto-hivm-bc/Abs/abs-pto.o
 ```
@@ -194,6 +195,7 @@ bisheng \
   -march=dav-c310-vec \
   --cce-aicore-arch=dav-c310-vec \
   --cce-aicore-only \
+  -O2 \
   -c -x ir /tmp/ptoas-vpto-hivm-llvm/Abs/abs-pto.cpp \
   -o /tmp/abs_ir_path_artifacts/kernel_from_llvm_ir.o
 ```
