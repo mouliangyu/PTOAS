@@ -2,7 +2,7 @@
 // case: micro-op/rearrangement/vusqz
 // family: rearrangement
 // target_ops: pto.vusqz
-// scenarios: predicate-driven-rearrangement, placement
+// scenarios: predicate-driven-rearrangement, prefix-count
 // -----------------------------------------------------------------------------
 module attributes {pto.target_arch = "a5"} {
   func.func @vusqz_kernel_2d(%arg0: !pto.ptr<i32, gm>,

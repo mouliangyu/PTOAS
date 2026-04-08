@@ -2,7 +2,7 @@
 # case: micro-op/rearrangement/vusqz-nontrivial-mask
 # family: rearrangement
 # target_ops: pto.vusqz
-# scenarios: predicate-driven-rearrangement, placement
+# scenarios: predicate-driven-rearrangement, prefix-count
 
 import argparse
 from pathlib import Path
@@ -24,12 +24,15 @@ def build_case() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     out = np.zeros((BLOCKS, LANES), dtype=np.int32)
 
     for block in range(BLOCKS):
-      values = np.arange(block * 100 + 1, block * 100 + len(ACTIVE_POSITIONS) + 1,
-                         dtype=np.int32)
-      src[block, :len(ACTIVE_POSITIONS)] = values
-      for idx, pos in enumerate(ACTIVE_POSITIONS):
-        mask_seed[block, pos] = 1.0
-        out[block, pos] = values[idx]
+        src[block] = np.arange(block * 1000 + 7, block * 1000 + 7 + LANES, dtype=np.int32)
+        for pos in ACTIVE_POSITIONS:
+            mask_seed[block, pos] = 1.0
+        active_count = 0
+        out[block, 0] = 0
+        for lane in range(1, LANES):
+            if mask_seed[block, lane - 1] > 0.0:
+                active_count += 1
+            out[block, lane] = active_count
 
     return src.reshape(ROWS, COLS), mask_seed.reshape(ROWS, COLS), out.reshape(ROWS, COLS)
 
@@ -44,7 +47,7 @@ def generate(output_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate vusqz nontrivial placement inputs/golden."
+        description="Generate vusqz nontrivial prefix-count inputs/golden."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

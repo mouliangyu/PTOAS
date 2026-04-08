@@ -854,10 +854,10 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz`
 - `case`: `micro-op/rearrangement/vusqz`
   - `family`: `rearrangement`
-  - `checklist_status`: `blocked`
-  - `readiness_findings`: `docs, runtime`
-  - `current_conclusion`: `docs 当前定义为按 mask 把前缀 payload 展开到激活位置并对其余位置补 0，但实跑结果与该语义明显不一致；在 docs 结论明确前不继续改写 oracle`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-rearrangement-fixes-sim-20260407/vusqz/micro-op_rearrangement_vusqz`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `docs, kernel, golden, compare, runtime`
+  - `current_conclusion`: `已按确认后的 `prefix-count` 语义收口 docs 与 testcase（`result[i] = count(mask[0:i))`）；重建 `ptoas` 后在 `DEVICE=SIM` 路径完成 6/6 全流程并 compare passed`
+  - `evidence`: `/tmp/vpto-vusqz-sim-20260408-rerun/micro-op_rearrangement_vusqz`
 - `case`: `micro-op/rearrangement/vpack`
   - `family`: `rearrangement`
   - `checklist_status`: `sim-passed`
@@ -896,10 +896,10 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vsqz-nontrivial-rerun-20260407/micro-op_rearrangement_vsqz-nontrivial-mask`
 - `case`: `micro-op/rearrangement/vusqz-nontrivial-mask`
   - `family`: `rearrangement`
-  - `checklist_status`: `blocked`
-  - `readiness_findings`: `docs, runtime`
-  - `current_conclusion`: `docs 当前定义与实跑行为不一致；在 docs/语义结论明确前不继续改写非平凡 mask 的 oracle`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-rearrangement-fixes-sim-20260407/vusqz-nontrivial-mask/micro-op_rearrangement_vusqz-nontrivial-mask`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `docs, kernel, golden, compare, runtime`
+  - `current_conclusion`: `非平凡 mask case 已同步切到 `prefix-count` 语义并完成 oracle 对齐；重建 `ptoas` 后在 `DEVICE=SIM` 路径完成 6/6 全流程并 compare passed`
+  - `evidence`: `/tmp/vpto-vusqz-nontrivial-sim-20260408-rerun/micro-op_rearrangement_vusqz-nontrivial-mask`
 
 ### reduction
 

@@ -2,7 +2,7 @@
 // case: micro-op/rearrangement/vusqz
 // family: rearrangement
 // target_ops: pto.vusqz
-// scenarios: predicate-driven-rearrangement, placement
+// scenarios: predicate-driven-rearrangement, prefix-count
 // -----------------------------------------------------------------------------
 #include "test_common.h"
 #include "acl/acl.h"

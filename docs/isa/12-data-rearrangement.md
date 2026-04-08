@@ -109,23 +109,23 @@ while (j < N) dst[j++] = 0;
 ### `pto.vusqz`
 
 - **syntax:** `%result = pto.vusqz %src, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **semantics:** Expand — scatter front elements to active positions.
+- **semantics:** Generate per-lane prefix counts from the governing predicate.
 
 ```c
-int j = 0;
-for (int i = 0; i < N; i++)
-    if (mask[i]) dst[i] = src_front[j++];
-    else dst[i] = 0;
+dst[0] = 0;
+for (int i = 1; i < N; i++)
+    dst[i] = mask[i - 1] ? (dst[i - 1] + 1) : dst[i - 1];
 ```
 
-- **inputs:** `%src` provides the compacted front stream; `%mask` is the
-  expansion/placement predicate.
-- **outputs:** `%result` is the expanded vector image.
+- **inputs:** `%mask` is the governing predicate. The current PTO surface keeps
+  `%src` in the operand list for interface compatibility, but the observable
+  result semantics are determined by `%mask`.
+- **outputs:** `%result[i]` equals the number of active lanes in `%mask[0:i)`,
+  with `%result[0] = 0`.
 - **constraints and limitations:** `T` is currently limited to `s8`, `s16`,
-  or `s32`. `%src` provides the compacted front stream in lane order; lanes
-  beyond the active-prefix payload should be treated as zero-initialized for
-  merge-style execution. Lane placement for active and inactive positions MUST
-  be preserved exactly.
+  or `s32`. This operation is a predicate-derived counting/rearrangement
+  primitive rather than a value-placement primitive. The final predicate lane
+  does not contribute to a later output lane because there is no `dst[N]`.
 
 ---
 
