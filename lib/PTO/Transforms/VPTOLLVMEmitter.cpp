@@ -38,7 +38,6 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -67,8 +66,6 @@ using namespace mlir;
 
 namespace mlir::pto {
 namespace {
-
-static llvm::DenseMap<Value, Type> abiPointerElementTypes;
 
 struct QueriedTargetAttrs {
   std::string targetCPU;
@@ -1047,8 +1044,6 @@ struct ConvertPtoAddPtrOp final : OpConversionPattern<pto::AddPtrOp> {
     auto gep = rewriter.create<LLVM::GEPOp>(
         op.getLoc(), llvmPtrType, cast<pto::PtrType>(op.getPtr().getType()).getElementType(),
         adaptor.getPtr(), ValueRange{offset});
-    abiPointerElementTypes[gep.getResult()] =
-        cast<pto::PtrType>(op.getResult().getType()).getElementType();
     rewriter.replaceOp(op, gep.getResult());
     return success();
   }
@@ -1073,12 +1068,9 @@ struct ConvertPtoCastPtrOp final : OpConversionPattern<pto::CastPtrOp> {
     }
 
     if (auto llvmPtrType = dyn_cast<LLVM::LLVMPointerType>(convertedResultType)) {
-      auto resultElementType =
-          cast<pto::PtrType>(op.getResult().getType()).getElementType();
       if (isa<IntegerType>(inputType)) {
         auto intToPtr =
             rewriter.create<LLVM::IntToPtrOp>(op.getLoc(), llvmPtrType, input);
-        abiPointerElementTypes[intToPtr.getResult()] = resultElementType;
         rewriter.replaceOp(op, intToPtr.getResult());
         return success();
       }
@@ -1088,7 +1080,6 @@ struct ConvertPtoCastPtrOp final : OpConversionPattern<pto::CastPtrOp> {
       if (sourcePtrType.getAddressSpace() == llvmPtrType.getAddressSpace()) {
         auto bitcast =
             rewriter.create<LLVM::BitcastOp>(op.getLoc(), llvmPtrType, input);
-        abiPointerElementTypes[bitcast.getResult()] = resultElementType;
         rewriter.replaceOp(op, bitcast.getResult());
         return success();
       }
@@ -1305,11 +1296,6 @@ static LogicalResult normalizePtoPtrsToLLVM(ModuleOp module, llvm::raw_ostream &
   for (func::FuncOp funcOp : module.getOps<func::FuncOp>()) {
     if (funcOp.isExternal())
       continue;
-    Block &entry = funcOp.getBody().front();
-    for (BlockArgument arg : entry.getArguments()) {
-      if (Type elementType = getElementTypeFromPointerLike(arg.getType()))
-        abiPointerElementTypes[arg] = elementType;
-    }
   }
 
   TypeConverter typeConverter;
@@ -1504,61 +1490,12 @@ static Type getElementTypeFromPointerLike(Type type) {
   return {};
 }
 
-static Type getElementTypeFromABIValueImpl(
-    Value value, llvm::SmallPtrSetImpl<void *> &visited) {
-  if (!value || !visited.insert(value.getAsOpaquePointer()).second)
+static Type getElementTypeFromABIValue(Value value) {
+  if (!value)
     return {};
   if (Type direct = getElementTypeFromPointerLike(value.getType()))
     return direct;
-  auto it = abiPointerElementTypes.find(value);
-  if (it != abiPointerElementTypes.end())
-    return it->second;
-  if (auto blockArg = dyn_cast<BlockArgument>(value)) {
-    auto forOp = dyn_cast<scf::ForOp>(blockArg.getOwner()->getParentOp());
-    if (!forOp)
-      return {};
-    unsigned argNumber = blockArg.getArgNumber();
-    unsigned ivCount = forOp.getNumInductionVars();
-    if (argNumber < ivCount)
-      return {};
-    unsigned iterIdx = argNumber - ivCount;
-    if (iterIdx >= forOp.getInitArgs().size())
-      return {};
-    return getElementTypeFromABIValueImpl(forOp.getInitArgs()[iterIdx], visited);
-  }
-  if (auto result = dyn_cast<OpResult>(value)) {
-    if (auto forOp = dyn_cast<scf::ForOp>(result.getOwner())) {
-      unsigned resultIdx = result.getResultNumber();
-      if (resultIdx >= forOp.getYieldedValues().size())
-        return {};
-      return getElementTypeFromABIValueImpl(forOp.getYieldedValues()[resultIdx],
-                                            visited);
-    }
-    if (auto call = dyn_cast<func::CallOp>(result.getOwner())) {
-      if (call.getCallee() == "llvm.hivm.vstus.post" &&
-          result.getResultNumber() == 1 && !call.getArgOperands().empty())
-        return getElementTypeFromVectorLike(call.getArgOperands().front().getType());
-      if ((call.getCallee() == "llvm.hivm.pstu.b16" ||
-           call.getCallee() == "llvm.hivm.pstu.b32") &&
-          result.getResultNumber() == 1 && call.getNumOperands() >= 2)
-        return getElementTypeFromABIValueImpl(call.getOperand(1), visited);
-    }
-  }
   return {};
-}
-
-static Type getElementTypeFromABIValue(Value value) {
-  llvm::SmallPtrSet<void *, 8> visited;
-  return getElementTypeFromABIValueImpl(value, visited);
-}
-
-static void recordPointerElementTypes(ValueRange oldResults, ValueRange newResults) {
-  for (auto [oldValue, newValue] : llvm::zip(oldResults, newResults)) {
-    Type elementType = getElementTypeFromPointerLike(oldValue.getType());
-    if (!elementType)
-      continue;
-    abiPointerElementTypes[newValue] = elementType;
-  }
 }
 
 static std::optional<int64_t> getElementCountFromVectorLike(Type type) {
@@ -1620,10 +1557,34 @@ static FailureOr<Value> convertElementOffsetToBytes(Operation *anchor, Value off
       .getResult();
 }
 
+static Value buildBridgeCast(OpBuilder &builder, Location loc, Value input,
+                             Type targetType) {
+  if (input.getType() == targetType)
+    return input;
+  if ((isa<pto::PtrType>(input.getType()) &&
+       isa<LLVM::LLVMPointerType>(targetType)) ||
+      (isa<LLVM::LLVMPointerType>(input.getType()) &&
+       isa<pto::PtrType>(targetType))) {
+    return builder
+        .create<UnrealizedConversionCastOp>(loc, TypeRange{targetType}, input)
+        .getResult(0);
+  }
+  return builder.create<arith::BitcastOp>(loc, targetType, input).getResult();
+}
+
 static FailureOr<Value> requirePointerABIAddress(Operation *anchor, Value address,
                                                  llvm::raw_ostream &diagOS) {
   if (isa<LLVM::LLVMPointerType>(address.getType()))
     return address;
+  if (auto ptrType = dyn_cast<pto::PtrType>(address.getType())) {
+    OpBuilder builder(anchor);
+    builder.setInsertionPoint(anchor);
+    auto llvmPtrType = LLVM::LLVMPointerType::get(
+        builder.getContext(),
+        static_cast<unsigned>(ptrType.getMemorySpace().getAddressSpace()));
+    Value abiAddress = buildBridgeCast(builder, anchor->getLoc(), address, llvmPtrType);
+    return abiAddress;
+  }
 
   diagOS << "VPTO LLVM emission failed: expected pointer-ABI address after "
             "pre-emit canonicalization, but saw "
@@ -2787,10 +2748,14 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     return failure();
   }
 
-  SmallVector<Type> resultTypes;
-  for (Type type : op->getResultTypes())
-    resultTypes.push_back(convertVPTOType(type, builder));
-  SmallVector<Type> intrinsicResultTypes(resultTypes.begin(), resultTypes.end());
+  SmallVector<Type> surfaceResultTypes(op->getResultTypes().begin(),
+                                       op->getResultTypes().end());
+  SmallVector<Type> loweredResultTypes;
+  loweredResultTypes.reserve(surfaceResultTypes.size());
+  for (Type type : surfaceResultTypes)
+    loweredResultTypes.push_back(convertVPTOType(type, builder));
+  SmallVector<Type> intrinsicResultTypes(loweredResultTypes.begin(),
+                                         loweredResultTypes.end());
   if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
     Type sourceType = convertVPTOType(vldus.getSource().getType(), builder);
     if (!sourceType) {
@@ -2801,11 +2766,6 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   }
 
   SmallVector<Value> callArgs;
-  auto buildBridgeCast = [&](Value input, Type targetType) -> Value {
-    if (input.getType() == targetType)
-      return input;
-    return builder.create<arith::BitcastOp>(loc, targetType, input).getResult();
-  };
 
   if (isa<pto::SetLoop2StrideOutToUbOp, pto::SetLoop1StrideOutToUbOp,
           pto::SetLoop2StrideUbToOutOp, pto::SetLoop1StrideUbToOutOp>(op)) {
@@ -2821,19 +2781,25 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto copy = dyn_cast<pto::CopyGmToUbufOp>(op)) {
     auto config0 = packCopyGmToUbConfig0(op, copy, op->getOperands());
     auto config1 = packCopyGmToUbConfig1(op, op->getOperands());
-    if (failed(config0) || failed(config1))
+    auto destination = requirePointerABIAddress(op, copy.getDestination(), diagOS);
+    auto source = requirePointerABIAddress(op, copy.getSource(), diagOS);
+    if (failed(config0) || failed(config1) || failed(destination) ||
+        failed(source))
       return failure();
-    callArgs.push_back(op->getOperand(1));
-    callArgs.push_back(op->getOperand(0));
+    callArgs.push_back(*destination);
+    callArgs.push_back(*source);
     callArgs.push_back(*config0);
     callArgs.push_back(*config1);
-  } else if (isa<pto::CopyUbufToGmOp>(op)) {
+  } else if (auto copy = dyn_cast<pto::CopyUbufToGmOp>(op)) {
     auto config0 = packCopyUbToGmConfig0(op, op->getOperands());
     auto config1 = packCopyUbToGmConfig1(op, op->getOperands());
-    if (failed(config0) || failed(config1))
+    auto destination = requirePointerABIAddress(op, copy.getDestination(), diagOS);
+    auto source = requirePointerABIAddress(op, copy.getSource(), diagOS);
+    if (failed(config0) || failed(config1) || failed(destination) ||
+        failed(source))
       return failure();
-    callArgs.push_back(op->getOperand(1));
-    callArgs.push_back(op->getOperand(0));
+    callArgs.push_back(*destination);
+    callArgs.push_back(*source);
     callArgs.push_back(*config0);
     callArgs.push_back(*config1);
   } else if (auto setFlag = dyn_cast<pto::SetFlagOp>(op)) {
@@ -2929,9 +2895,15 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (isa<pto::InitAlignOp>(op)) {
     // llvm.hivm.init.vector.align.data() has no operands.
   } else if (auto vldas = dyn_cast<pto::VldasOp>(op)) {
-    callArgs.push_back(vldas.getSource());
+    auto source = requirePointerABIAddress(op, vldas.getSource(), diagOS);
+    if (failed(source))
+      return failure();
+    callArgs.push_back(*source);
   } else if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
-    callArgs.push_back(vldus.getSource());
+    auto source = requirePointerABIAddress(op, vldus.getSource(), diagOS);
+    if (failed(source))
+      return failure();
+    callArgs.push_back(*source);
     callArgs.push_back(vldus.getAlign());
   } else if (auto vstus = dyn_cast<pto::VstusOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vstus.getValue().getType());
@@ -2975,7 +2947,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
         diagOS << "VPTO LLVM emission failed: unsupported vlds dist immediate\n";
       return failure();
     }
-    callArgs.push_back(op->getOperand(0));
+    callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
@@ -2983,18 +2955,19 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     Type elementType = getElementTypeFromVectorLike(vldsPost.getResult().getType());
     auto offsetBytes = convertElementOffsetToBytes(
         op, vldsPost.getOffset(), elementType);
+    auto basePtr = requirePointerABIAddress(op, vldsPost.getSource(), diagOS);
     auto dist =
         parseLoadDistImmediate(vldsPost.getDist().value_or("NORM"), elementType);
-    if (!elementType || failed(offsetBytes) || !dist)
+    if (!elementType || failed(offsetBytes) || failed(basePtr) || !dist)
       return failure();
-    callArgs.push_back(vldsPost.getSource());
+    callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 1));
   } else if (auto vabs = dyn_cast<pto::VabsOp>(op)) {
     Value input = op->getOperand(0);
     Value mask = op->getOperand(1);
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected vabs operand types\n";
@@ -3005,7 +2978,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VexpOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3017,7 +2990,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VlnOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3029,7 +3002,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VnegOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3041,7 +3014,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VsqrtOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3053,7 +3026,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VrsqrtOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3065,7 +3038,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VrecOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3077,7 +3050,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VreluOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3089,7 +3062,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VnotOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3101,7 +3074,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VbcntOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3113,7 +3086,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto unary = dyn_cast<pto::VclsOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
-    Type vecType = resultTypes.front();
+    Type vecType = loweredResultTypes.front();
     Type maskType = convertVPTOType(mask.getType(), builder);
     if (input.getType() != vecType || mask.getType() != maskType) {
       diagOS << "VPTO LLVM emission failed: unexpected "
@@ -3129,7 +3102,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       diagOS << "VPTO LLVM emission failed: unexpected vdup operand types\n";
       return failure();
     }
-    if (vectorInput && vdup.getInput().getType() != resultTypes.front()) {
+    if (vectorInput && vdup.getInput().getType() != loweredResultTypes.front()) {
       diagOS << "VPTO LLVM emission failed: vector-input vdup requires matching result type\n";
       return failure();
     }
@@ -3501,7 +3474,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       return failure();
     }
     callArgs.push_back(op->getOperand(0));
-    callArgs.push_back(op->getOperand(1));
+    callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 0));
@@ -3509,12 +3482,13 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto vstsPost = dyn_cast<pto::VstsPostOp>(op)) {
     Type elementType = getElementTypeFromVectorLike(vstsPost.getValue().getType());
     auto offsetBytes = convertElementOffsetToBytes(op, vstsPost.getOffset(), elementType);
+    auto basePtr = requirePointerABIAddress(op, vstsPost.getDestination(), diagOS);
     auto dist = parseStoreDistImmediate(vstsPost.getDist().value_or("NORM"),
                                         elementType);
-    if (!elementType || failed(offsetBytes) || !dist)
+    if (!elementType || failed(offsetBytes) || failed(basePtr) || !dist)
       return failure();
     callArgs.push_back(vstsPost.getValue());
-    callArgs.push_back(vstsPost.getDestination());
+    callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, *dist));
     callArgs.push_back(getI32Constant(builder, loc, 1));
@@ -3538,7 +3512,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(punpack.getInput());
     callArgs.push_back(getI32Constant(builder, loc, *part));
   } else if (auto vselr = dyn_cast<pto::VselrOp>(op)) {
-    auto resultVecType = dyn_cast<VectorType>(resultTypes.front());
+    auto resultVecType = dyn_cast<VectorType>(loweredResultTypes.front());
     if (!resultVecType) {
       diagOS << "VPTO LLVM emission failed: unexpected vselr result type\n";
       return failure();
@@ -3551,7 +3525,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
                           resultVecType.getScalableDims());
     }
     intrinsicResultTypes[0] = intrinsicVecType;
-    callArgs.push_back(buildBridgeCast(vselr.getSrc0(), intrinsicVecType));
+    callArgs.push_back(buildBridgeCast(builder, loc, vselr.getSrc0(), intrinsicVecType));
     callArgs.push_back(vselr.getSrc1());
   } else if (isa<pto::VcmpOp, pto::VcmpsOp, pto::VselOp, pto::PnotOp,
                  pto::PselOp, pto::PandOp, pto::PorOp, pto::PxorOp,
@@ -3692,21 +3666,35 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   else {
     SmallVector<Value> finalResults;
     finalResults.reserve(op->getNumResults());
-    for (auto [idx, result] : llvm::enumerate(call.getResults().take_front(op->getNumResults())))
-      finalResults.push_back(buildBridgeCast(result, resultTypes[idx]));
-    recordPointerElementTypes(op->getResults(), finalResults);
+    for (auto [idx, result] :
+         llvm::enumerate(call.getResults().take_front(op->getNumResults()))) {
+      Type surfaceType = surfaceResultTypes[idx];
+      if (isa<LLVM::LLVMPointerType>(surfaceType)) {
+        diagOS << "VPTO LLVM emission failed: unexpected LLVM pointer surface "
+                  "result type on op ";
+        op->print(diagOS);
+        diagOS << "\n";
+        return failure();
+      }
+      if (isa<pto::PtrType>(surfaceType)) {
+        finalResults.push_back(buildBridgeCast(builder, loc, result, surfaceType));
+        continue;
+      }
+      finalResults.push_back(result);
+    }
     builder.replaceOp(op, finalResults);
   }
   return success();
 }
 
 static LogicalResult rewriteVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) {
-  auto clearTrackedPointerTypes =
-      llvm::make_scope_exit([&] { abiPointerElementTypes.clear(); });
   SmallVector<Operation *> opsToRewrite;
   module.walk([&](Operation *op) {
-    if (op->getName().getDialectNamespace() == "pto")
-      opsToRewrite.push_back(op);
+    if (op->getName().getDialectNamespace() != "pto")
+      return;
+    if (isa<pto::AddPtrOp, pto::CastPtrOp, pto::LoadScalarOp, pto::StoreScalarOp>(op))
+      return;
+    opsToRewrite.push_back(op);
   });
 
   for (Operation *op : opsToRewrite) {
@@ -3716,8 +3704,12 @@ static LogicalResult rewriteVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) 
 
   bool hasVPTO = false;
   module.walk([&](Operation *op) {
-    if (op->getName().getDialectNamespace() == "pto")
-      hasVPTO = true;
+    if (op->getName().getDialectNamespace() != "pto")
+      return;
+    if (isa<pto::AddPtrOp, pto::CastPtrOp, pto::LoadScalarOp,
+            pto::StoreScalarOp>(op))
+      return;
+    hasVPTO = true;
   });
 
   SmallVector<Operation *> poisonOps;
@@ -4041,8 +4033,6 @@ static LogicalResult attachAIVectorScopeMetadata(
         return failure();
       }
       loop = loops[index];
-
-      sinkAIVectorScopeLatchVoidCalls(loop);
 
       llvm::BasicBlock *latch = loop->getLoopLatch();
       if (!latch) {
@@ -4560,9 +4550,6 @@ buildLLVMModuleFromPreparedVPTO(ModuleOp module,
   if (failed(normalizePtoMemRefSpaces(module, diagOS)))
     return nullptr;
 
-  if (failed(normalizePtoPtrsToLLVM(module, diagOS)))
-    return nullptr;
-
   if (failed(normalizePtoAlignsToABI(module, diagOS)))
     return nullptr;
 
@@ -4570,6 +4557,10 @@ buildLLVMModuleFromPreparedVPTO(ModuleOp module,
     diagOS << "VPTO LLVM emission failed: VPTO-to-call rewriting failed\n";
     return nullptr;
   }
+
+  if (failed(normalizePtoPtrsToLLVM(module, diagOS)))
+    return nullptr;
+
   normalizeFuncSignaturesForOfficialLLVMLowering(module);
 
   PassManager pm(module.getContext());
