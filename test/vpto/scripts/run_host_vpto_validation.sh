@@ -58,6 +58,29 @@ if [[ -f "${ASCEND_HOME_PATH}/set_env.sh" ]]; then
   set -u
 fi
 
+resolve_sim_lib_dir() {
+  if [[ "${DEVICE}" != "SIM" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${SIM_LIB_DIR}" ]]; then
+    [[ -d "${SIM_LIB_DIR}" ]] ||
+      die "SIM_LIB_DIR is set but invalid: ${SIM_LIB_DIR}"
+    return 0
+  fi
+
+  local preferred="${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib"
+  if [[ -d "${preferred}" ]]; then
+    SIM_LIB_DIR="${preferred}"
+    log "SIM_LIB_DIR is unset; auto-selected: ${SIM_LIB_DIR}"
+    return 0
+  fi
+
+  die "SIM_LIB_DIR is required for DEVICE=SIM and dav_3510 default is missing: ${preferred}"
+}
+
+resolve_sim_lib_dir
+
 BISHENG_BIN="${BISHENG_BIN:-${ASCEND_HOME_PATH}/bin/bisheng}"
 BISHENG_CC1_BIN="${BISHENG_CC1_BIN:-${ASCEND_HOME_PATH}/tools/bisheng_compiler/bin/bisheng}"
 CCE_LD_BIN="${CCE_LD_BIN:-${ASCEND_HOME_PATH}/bin/cce-ld}"

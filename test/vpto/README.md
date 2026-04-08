@@ -40,15 +40,22 @@ simulator runtime directory that contains `libruntime_camodel.so` and its
 companions such as `libnpu_drv_camodel.so`. Set `SIM_LIB_DIR` explicitly to the
 matching CANN simulator `lib` directory for your target environment.
 
-Example:
+Example (recommended in current environment):
 
 ```bash
 export DEVICE=SIM
-export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3102/lib
+export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib
 ```
 
-The runner does not guarantee automatic simulator directory inference across
-different CANN installs or SoC variants.
+If `SIM_LIB_DIR` points to an incompatible simulator model directory, step 6 may
+fail early with errors such as `aclrtSetDevice(deviceId) failed: 507033`.
+Use `dav_3510/lib` for this repo's current A5 VPTO validation flow unless your
+target environment explicitly requires a different simulator package.
+
+The runner can auto-select
+`${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib` when `DEVICE=SIM`
+and `SIM_LIB_DIR` is unset, but explicit export is still recommended for
+reproducibility across hosts.
 
 ## Case Discovery
 
@@ -159,6 +166,6 @@ export WORK_SPACE=$(mktemp -d /tmp/vpto-abs-sim.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
 export CASE_NAME=tileop/abs
 export DEVICE=SIM
-export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3102/lib
+export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib
 bash test/vpto/scripts/run_host_vpto_validation.sh
 ```
