@@ -2,7 +2,7 @@
 // case: micro-op/rearrangement/vusqz-nontrivial-mask
 // family: rearrangement
 // target_ops: pto.vusqz
-// scenarios: predicate-driven-rearrangement, placement
+// scenarios: predicate-driven-rearrangement, prefix-count
 // -----------------------------------------------------------------------------
 #ifndef __VEC_SCOPE__
 #define __VEC_SCOPE__
