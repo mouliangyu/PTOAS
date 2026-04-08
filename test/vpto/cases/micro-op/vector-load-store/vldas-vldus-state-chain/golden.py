@@ -2,7 +2,7 @@
 # case: micro-op/vector-load-store/vldas-vldus-state-chain
 # family: vector-load-store
 # target_ops: pto.vldas, pto.vldus
-# scenarios: core-f32, full-mask, unaligned, stream-state, state-update
+# scenarios: core-f32, full-mask, unaligned, repeated-no-post
 # NOTE: bulk-generated coverage skeleton.
 # coding=utf-8
 
@@ -26,7 +26,7 @@ def generate(output_dir: Path, seed: int) -> None:
     flat_in = v1.reshape(-1)
     flat_out = golden_v2.reshape(-1)
     flat_out[:LANES] = flat_in[1 : 1 + LANES]
-    flat_out[LANES : 2 * LANES] = flat_in[1 + LANES : 1 + 2 * LANES]
+    flat_out[LANES : 2 * LANES] = flat_in[65 : 65 + LANES]
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")

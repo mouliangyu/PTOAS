@@ -2798,33 +2798,33 @@ Operations for storing data with stateful semantics.
 
 **Returns**: None (side-effect operation)
 
-#### `pto.vstus(vec: VRegType, buf: UBRef, offset: Index, mask: MaskType) -> None`
+#### `pto.vstus(align_in: AlignType, offset: i32, vec: VRegType, buf: UBRef) -> AlignType`
 
-**Description**: Vector store update stateless.
-
-**Parameters**:
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `vec` | `VRegType` | Vector to store |
-| `buf` | `UBRef` | Destination buffer or pointer |
-| `offset` | `Index` | Byte offset |
-| `mask` | `MaskType` | Predicate mask |
-
-**Returns**: None (side-effect operation)
-
-#### `pto.vstur(vec: VRegType, buf: UBRef, offset: Index, mask: MaskType) -> None`
-
-**Description**: Vector store update register.
+**Description**: No-post unaligned vector store with scalar offset.
 
 **Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `align_in` | `AlignType` | Incoming unaligned-store state |
+| `offset` | `i32` | Stream advance offset in elements |
 | `vec` | `VRegType` | Vector to store |
-| `buf` | `UBRef` | Destination buffer or pointer |
-| `offset` | `Index` | Byte offset |
-| `mask` | `MaskType` | Predicate mask |
+| `buf` | `UBRef` | UB destination base pointer |
 
-**Returns**: None (side-effect operation)
+**Returns**: Updated align-state token for a later flush op such as `pto.vstas`.
+
+#### `pto.vstur(align_in: AlignType, vec: VRegType, buf: UBRef, mode: str) -> AlignType`
+
+**Description**: Unaligned vector store using the SPR-AR-driven stateful form.
+
+**Parameters**:
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `align_in` | `AlignType` | Incoming unaligned-store state |
+| `vec` | `VRegType` | Vector to store |
+| `buf` | `UBRef` | UB destination base pointer |
+| `mode` | `str` | `POST_UPDATE` or `NO_POST_UPDATE` |
+
+**Returns**: Updated align-state token for a later flush op such as `pto.vstar`.
 
 ## Examples
 

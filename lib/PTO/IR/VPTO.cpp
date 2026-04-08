@@ -8,6 +8,7 @@
 
 #include "PTO/IR/PTO.h"
 
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectImplementation.h"
@@ -17,6 +18,7 @@
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -92,11 +94,350 @@ static LogicalResult verifyNotNestedInVecScope(Operation *op,
   return success();
 }
 
+static LogicalResult verifyNestedInVecScope(Operation *op,
+                                            StringRef opNameForDiag) {
+  if (op->getParentOfType<VecScopeOp>() || op->getParentOfType<StrictVecScopeOp>())
+    return success();
+  return op->emitOpError()
+         << "must be nested under pto.vecscope/pto.strict_vecscope; "
+         << opNameForDiag << " is part of the vecscope control sequence";
+}
+
 static LogicalResult verifyAlignTypeLike(Operation *op, Type type,
                                          StringRef roleDescription) {
   if (!isa<AlignType>(type))
     return op->emitOpError() << roleDescription << " must be !pto.align";
   return success();
+}
+
+static bool isStoreAlignProducer(Operation *op) {
+  return isa<InitAlignOp, PstuOp, VstusOp, VsturOp>(op);
+}
+
+static bool isStoreAlignSink(Operation *op) {
+  return isa<VstasOp, VstarOp>(op);
+}
+
+static bool isLoadAlignProducer(Operation *op) {
+  return isa<VldasOp, VldusOp>(op);
+}
+
+static bool isValueOwnedByRegion(Value value, Region *region) {
+  if (auto blockArg = dyn_cast<BlockArgument>(value))
+    return blockArg.getParentRegion() == region;
+  if (Operation *def = value.getDefiningOp())
+    return def->getParentRegion() == region;
+  return false;
+}
+
+static FailureOr<Value> resolveStoreAlignRoot(Value value, Operation *user) {
+  llvm::SmallPtrSet<void *, 8> visited;
+  Value current = value;
+
+  while (true) {
+    if (!visited.insert(current.getAsOpaquePointer()).second) {
+      return failure();
+    }
+
+    if (auto blockArg = dyn_cast<BlockArgument>(current)) {
+      auto *owner = blockArg.getOwner();
+      auto forOp = dyn_cast<scf::ForOp>(owner->getParentOp());
+      if (!forOp)
+        return failure();
+      unsigned argNumber = blockArg.getArgNumber();
+      unsigned ivCount = forOp.getNumInductionVars();
+      if (argNumber < ivCount)
+        return failure();
+      unsigned iterIdx = argNumber - ivCount;
+      if (iterIdx >= forOp.getInitArgs().size())
+        return failure();
+      current = forOp.getInitArgs()[iterIdx];
+      continue;
+    }
+
+    if (Operation *def = current.getDefiningOp()) {
+      if (isStoreAlignProducer(def))
+        return current;
+      if (auto forOp = dyn_cast<scf::ForOp>(def)) {
+        auto result = dyn_cast<OpResult>(current);
+        if (!result)
+          return failure();
+        unsigned resultIdx = result.getResultNumber();
+        if (resultIdx >= forOp.getYieldedValues().size())
+          return failure();
+        current = forOp.getYieldedValues()[resultIdx];
+        continue;
+      }
+    }
+
+    return failure();
+  }
+}
+
+static LogicalResult verifyStoreAlignLoopThreading(Value align, Operation *user,
+                                                   StringRef roleDescription) {
+  Operation *cursor = user;
+  while (auto forOp = cursor->getParentOfType<scf::ForOp>()) {
+    Region *body = &forOp.getRegion();
+    if (!isValueOwnedByRegion(align, body)) {
+      return user->emitOpError()
+             << roleDescription
+             << " must be threaded through scf.for iter_args when used inside a "
+                "loop";
+    }
+    cursor = forOp;
+  }
+  return success();
+}
+
+static LogicalResult verifyStoreAlignLinearUses(Value value, Operation *user) {
+  llvm::SmallPtrSet<void *, 16> visited;
+  Value current = value;
+
+  while (visited.insert(current.getAsOpaquePointer()).second) {
+    SmallVector<Value> nextValues;
+    SmallVector<Operation *> terminalUsers;
+
+    for (OpOperand &use : current.getUses()) {
+      Operation *owner = use.getOwner();
+      if (isStoreAlignSink(owner)) {
+        terminalUsers.push_back(owner);
+        continue;
+      }
+      if (auto stateOp = dyn_cast<PstuOp>(owner)) {
+        nextValues.push_back(stateOp.getAlignOut());
+        continue;
+      }
+      if (auto stateOp = dyn_cast<VstusOp>(owner)) {
+        nextValues.push_back(stateOp.getAlignOut());
+        continue;
+      }
+      if (auto stateOp = dyn_cast<VsturOp>(owner)) {
+        nextValues.push_back(stateOp.getAlignOut());
+        continue;
+      }
+      if (auto forOp = dyn_cast<scf::ForOp>(owner)) {
+        unsigned firstInitArg = forOp.getNumControlOperands();
+        if (use.getOperandNumber() < firstInitArg)
+          return user->emitOpError()
+                 << "found unexpected scf.for control operand use for !pto.align";
+        unsigned iterIdx = use.getOperandNumber() - firstInitArg;
+        if (iterIdx >= forOp.getRegionIterArgs().size())
+          return user->emitOpError()
+                 << "found invalid scf.for iter_args use for !pto.align";
+        nextValues.push_back(forOp.getRegionIterArgs()[iterIdx]);
+        continue;
+      }
+      if (auto yieldOp = dyn_cast<scf::YieldOp>(owner)) {
+        auto forOp = dyn_cast<scf::ForOp>(yieldOp->getParentOp());
+        if (!forOp)
+          return user->emitOpError()
+                 << "found !pto.align yielded from non-scf.for loop";
+        unsigned resultIdx = use.getOperandNumber();
+        if (resultIdx >= forOp.getNumResults())
+          return user->emitOpError()
+                 << "found invalid scf.yield result mapping for !pto.align";
+        nextValues.push_back(forOp.getResult(resultIdx));
+        continue;
+      }
+      return user->emitOpError()
+             << "found unsupported !pto.align consumer " << owner->getName();
+    }
+
+    if (nextValues.size() + terminalUsers.size() > 1) {
+      return user->emitOpError()
+             << "!pto.align value must form a single linear store-state chain";
+    }
+    if (nextValues.empty())
+      return success();
+    current = nextValues.front();
+  }
+
+  return success();
+}
+
+static LogicalResult verifyStoreAlignChain(Value align, Operation *user,
+                                           StringRef roleDescription) {
+  if (failed(verifyAlignTypeLike(user, align.getType(), roleDescription)))
+    return failure();
+
+  if (failed(verifyStoreAlignLoopThreading(align, user, roleDescription)))
+    return failure();
+
+  FailureOr<Value> root = resolveStoreAlignRoot(align, user);
+  if (failed(root)) {
+    if (Operation *def = align.getDefiningOp()) {
+      if (!isa<scf::ForOp>(def)) {
+        return user->emitOpError()
+               << roleDescription
+               << " must be produced by pto.init_align or a prior store-state op, got "
+               << def->getName();
+      }
+    }
+    return user->emitOpError()
+           << roleDescription
+           << " must be produced by pto.init_align or a prior store-state op";
+  }
+
+  Operation *def = (*root).getDefiningOp();
+  if (!isStoreAlignProducer(def)) {
+    return user->emitOpError()
+           << roleDescription
+           << " must be produced by pto.init_align or a prior store-state op, got "
+           << def->getName();
+  }
+
+  return verifyStoreAlignLinearUses(*root, user);
+}
+
+static FailureOr<Value> resolveLoadAlignRoot(Value value, Operation *user) {
+  llvm::SmallPtrSet<void *, 8> visited;
+  Value current = value;
+
+  while (true) {
+    if (!visited.insert(current.getAsOpaquePointer()).second)
+      return failure();
+
+    if (auto blockArg = dyn_cast<BlockArgument>(current)) {
+      auto *owner = blockArg.getOwner();
+      auto forOp = dyn_cast<scf::ForOp>(owner->getParentOp());
+      if (!forOp)
+        return failure();
+      unsigned argNumber = blockArg.getArgNumber();
+      unsigned ivCount = forOp.getNumInductionVars();
+      if (argNumber < ivCount)
+        return failure();
+      unsigned iterIdx = argNumber - ivCount;
+      if (iterIdx >= forOp.getInitArgs().size())
+        return failure();
+      current = forOp.getInitArgs()[iterIdx];
+      continue;
+    }
+
+    if (Operation *def = current.getDefiningOp()) {
+      if (isLoadAlignProducer(def))
+        return current;
+      if (auto forOp = dyn_cast<scf::ForOp>(def)) {
+        auto result = dyn_cast<OpResult>(current);
+        if (!result)
+          return failure();
+        unsigned resultIdx = result.getResultNumber();
+        if (resultIdx >= forOp.getYieldedValues().size())
+          return failure();
+        current = forOp.getYieldedValues()[resultIdx];
+        continue;
+      }
+    }
+
+    return failure();
+  }
+}
+
+static LogicalResult verifyLoadAlignLoopThreading(Value align, Operation *user,
+                                                  StringRef roleDescription) {
+  Operation *cursor = user;
+  while (auto forOp = cursor->getParentOfType<scf::ForOp>()) {
+    Region *body = &forOp.getRegion();
+    if (!isValueOwnedByRegion(align, body)) {
+      return user->emitOpError()
+             << roleDescription
+             << " must be threaded through scf.for iter_args when used inside a "
+                "loop";
+    }
+    cursor = forOp;
+  }
+  return success();
+}
+
+static LogicalResult verifyLoadAlignLinearUses(Value value, Operation *user) {
+  llvm::SmallPtrSet<void *, 16> visited;
+  Value current = value;
+
+  while (visited.insert(current.getAsOpaquePointer()).second) {
+    SmallVector<Value> nextValues;
+
+    for (OpOperand &use : current.getUses()) {
+      Operation *owner = use.getOwner();
+      if (auto stateOp = dyn_cast<VldusOp>(owner)) {
+        nextValues.push_back(stateOp.getUpdatedAlign());
+        continue;
+      }
+      if (auto forOp = dyn_cast<scf::ForOp>(owner)) {
+        unsigned firstInitArg = forOp.getNumControlOperands();
+        if (use.getOperandNumber() < firstInitArg) {
+          return user->emitOpError()
+                 << "found unexpected scf.for control operand use for !pto.align";
+        }
+        unsigned iterIdx = use.getOperandNumber() - firstInitArg;
+        if (iterIdx >= forOp.getRegionIterArgs().size()) {
+          return user->emitOpError()
+                 << "found invalid scf.for iter_args use for !pto.align";
+        }
+        nextValues.push_back(forOp.getRegionIterArgs()[iterIdx]);
+        continue;
+      }
+      if (auto yieldOp = dyn_cast<scf::YieldOp>(owner)) {
+        auto forOp = dyn_cast<scf::ForOp>(yieldOp->getParentOp());
+        if (!forOp) {
+          return user->emitOpError()
+                 << "found !pto.align yielded from non-scf.for loop";
+        }
+        unsigned resultIdx = use.getOperandNumber();
+        if (resultIdx >= forOp.getNumResults()) {
+          return user->emitOpError()
+                 << "found invalid scf.yield result mapping for !pto.align";
+        }
+        nextValues.push_back(forOp.getResult(resultIdx));
+        continue;
+      }
+      return user->emitOpError()
+             << "found unsupported !pto.align consumer " << owner->getName();
+    }
+
+    if (nextValues.size() > 1) {
+      return user->emitOpError()
+             << "!pto.align value must form a single linear load-state chain";
+    }
+    if (nextValues.empty())
+      return success();
+    current = nextValues.front();
+  }
+
+  return success();
+}
+
+static LogicalResult verifyLoadAlignChain(Value align, Operation *user,
+                                          StringRef roleDescription) {
+  if (failed(verifyAlignTypeLike(user, align.getType(), roleDescription)))
+    return failure();
+
+  if (failed(verifyLoadAlignLoopThreading(align, user, roleDescription)))
+    return failure();
+
+  FailureOr<Value> root = resolveLoadAlignRoot(align, user);
+  if (failed(root)) {
+    if (Operation *def = align.getDefiningOp()) {
+      if (!isa<scf::ForOp>(def)) {
+        return user->emitOpError()
+               << roleDescription
+               << " must be produced by pto.vldas or a prior load-state op, got "
+               << def->getName();
+      }
+    }
+    return user->emitOpError()
+           << roleDescription
+           << " must be produced by pto.vldas or a prior load-state op";
+  }
+
+  Operation *def = (*root).getDefiningOp();
+  if (!isLoadAlignProducer(def)) {
+    return user->emitOpError()
+           << roleDescription
+           << " must be produced by pto.vldas or a prior load-state op, got "
+           << def->getName();
+  }
+
+  return verifyLoadAlignLinearUses(*root, user);
 }
 
 static bool isSupportedPredicatePattern(StringRef pattern) {
@@ -125,6 +466,8 @@ static bool isSupportedStrideToken(StringRef stride) {
 static bool isSupportedPartToken(StringRef part) {
   return part == "LOWER" || part == "HIGHER";
 }
+
+static bool isSupportedSprToken(StringRef spr) { return spr == "AR"; }
 
 static std::optional<StringRef> normalizeRoundModeToken(StringRef token) {
   if (token == "R" || token == "ROUND_R")
@@ -1090,6 +1433,18 @@ LogicalResult VldasOp::verify() {
   return success();
 }
 
+LogicalResult InitAlignOp::verify() {
+  return verifyAlignTypeLike(*this, getResult().getType(), "result type");
+}
+
+LogicalResult SprclrOp::verify() {
+  if (!isSupportedSprToken(getSpr()))
+    return emitOpError("requires spr to be \"AR\"");
+  if (failed(verifyNestedInVecScope(*this, "pto.sprclr")))
+    return failure();
+  return success();
+}
+
 void VldusOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
@@ -1097,7 +1452,7 @@ void VldusOp::getEffects(
 }
 
 LogicalResult VldusOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getAlign().getType(), "align type")) ||
+  if (failed(verifyLoadAlignChain(getAlign(), *this, "align type")) ||
       failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")) ||
       failed(verifyAlignTypeLike(*this, getUpdatedAlign().getType(),
                                  "updated align type")))
@@ -1106,9 +1461,6 @@ LogicalResult VldusOp::verify() {
     return emitOpError("requires a pointer-like source");
   if (classifyMemoryRole(getSource().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed source");
-  if (getUpdatedSource().getType() != getSource().getType())
-    return emitOpError(
-        "requires updated source result to match source type");
   return success();
 }
 
@@ -2411,7 +2763,7 @@ void VstasOp::getEffects(
 }
 
 LogicalResult VstasOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getValue().getType(), "value type")))
+  if (failed(verifyStoreAlignChain(getValue(), *this, "value type")))
     return failure();
   if (!isBufferLike(getDestination().getType()))
     return emitOpError("requires a pointer-like destination");
@@ -2428,7 +2780,7 @@ void VstarOp::getEffects(
 }
 
 LogicalResult VstarOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getValue().getType(), "value type")))
+  if (failed(verifyStoreAlignChain(getValue(), *this, "value type")))
     return failure();
   if (!isBufferLike(getDestination().getType()))
     return emitOpError("requires a pointer-like destination");
@@ -2446,7 +2798,7 @@ void PstuOp::getEffects(
 }
 
 LogicalResult PstuOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getAlignIn().getType(), "align_in type")) ||
+  if (failed(verifyStoreAlignChain(getAlignIn(), *this, "align_in type")) ||
       failed(verifyMaskTypeLike(*this, getValue().getType(), "value type")) ||
       failed(verifyAlignTypeLike(*this, getAlignOut().getType(), "align_out type")))
     return failure();
@@ -2477,14 +2829,12 @@ void VstusOp::getEffects(
 }
 
 LogicalResult VstusOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getAlignIn().getType(), "align_in type")) ||
+  if (failed(verifyStoreAlignChain(getAlignIn(), *this, "align_in type")) ||
       failed(verifyVRegTypeLike(*this, getValue().getType(), "value type")) ||
       failed(verifyAlignTypeLike(*this, getAlignOut().getType(), "align_out type")))
     return failure();
-  if (!isBufferLike(getBase().getType()) || !isBufferLike(getBaseOut().getType()))
-    return emitOpError("requires pointer-like base and base_out");
-  if (getBase().getType() != getBaseOut().getType())
-    return emitOpError("requires base and base_out to have identical types");
+  if (!isBufferLike(getBase().getType()))
+    return emitOpError("requires a pointer-like base");
   if (classifyMemoryRole(getBase().getType()) == MemoryRole::GM)
     return emitOpError("requires a UB-backed base");
   return success();
@@ -2499,7 +2849,7 @@ void VsturOp::getEffects(
 }
 
 LogicalResult VsturOp::verify() {
-  if (failed(verifyAlignTypeLike(*this, getAlignIn().getType(), "align_in type")) ||
+  if (failed(verifyStoreAlignChain(getAlignIn(), *this, "align_in type")) ||
       failed(verifyVRegTypeLike(*this, getValue().getType(), "value type")) ||
       failed(verifyAlignTypeLike(*this, getAlignOut().getType(), "align_out type")))
     return failure();

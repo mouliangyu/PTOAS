@@ -295,7 +295,7 @@ If `abs_sim` links successfully, run it with simulator libraries in `LD_LIBRARY_
 export PTO_ISA_ROOT=/path/to/pto-isa
 source /usr/local/Ascend/cann/set_env.sh
 cd /tmp/ptoas-npu-validation-run/Abs/abs
-LD_LIBRARY_PATH="${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3102/lib:${ASCEND_HOME_PATH}/lib64:${LD_LIBRARY_PATH:-}" \
+LD_LIBRARY_PATH="${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib:${ASCEND_HOME_PATH}/lib64:${LD_LIBRARY_PATH:-}" \
   ./build/abs_sim
 ```
 

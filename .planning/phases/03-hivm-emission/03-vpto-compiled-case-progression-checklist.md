@@ -821,16 +821,16 @@
 
 - `case`: `micro-op/predicate-load-store/pstu`
   - `family`: `predicate-load-store`
-  - `checklist_status`: `sim-blocked`
+  - `checklist_status`: `sim-passed`
   - `readiness_findings`: `runtime`
-  - `current_conclusion`: `SIM 已实际发射并运行到 RV_WMOV type.B8 报 Unsupported Instr/Type，当前归因到 runtime/backend 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-progress-pstu-sim-20260406/micro-op_predicate-load-store_pstu`
+  - `current_conclusion`: `2026-04-08` 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑，SIM 已进入真实 block 执行并 compare passed`
+  - `evidence`: `/tmp/vpto-unaligned-rerun-20260408/micro-op_predicate-load-store_pstu`
 - `case`: `micro-op/predicate-load-store/pstu-state-advance-boundary`
   - `family`: `predicate-load-store`
-  - `checklist_status`: `sim-blocked`
+  - `checklist_status`: `sim-passed`
   - `readiness_findings`: `runtime`
-  - `current_conclusion`: `SIM 已实际发射并运行到 RV_WMOV type.B8 报 Unsupported Instr/Type，当前归因到 runtime/backend 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-pstu-boundary-rerun-20260407/micro-op_predicate-load-store_pstu-state-advance-boundary`
+  - `current_conclusion`: `2026-04-08` 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑，SIM 已进入真实 block 执行并 compare passed`
+  - `evidence`: `/tmp/vpto-unaligned-rerun-20260408/micro-op_predicate-load-store_pstu-state-advance-boundary`
 
 ### rearrangement
 
@@ -1388,10 +1388,10 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vstar-rerun3-20260407/micro-op_vector-load-store_vstar`
 - `case`: `micro-op/vector-load-store/vstur`
   - `family`: `vector-load-store`
-  - `checklist_status`: `sim-blocked`
+  - `checklist_status`: `sim-passed`
   - `readiness_findings`: `host, case, runtime`
-  - `current_conclusion`: `已按 matrix 目标把 case 从 aligned 形态收口为真实 unaligned `%ub_out + 1` 的最小链 `vlds -> vldas(dest+1) -> vstur(NO_POST_UPDATE) -> vstar`；同时 host 侧原本也残留错误 kernel symbol。对齐 host symbol 后，在 `/home/mouliangyu/tmp/vpto-vstur-rerun3-20260407/micro-op_vector-load-store_vstur` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后仍在 `RV_WMOV type.B8` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-vstur-rerun3-20260407/micro-op_vector-load-store_vstur`
+  - `current_conclusion`: `已按 matrix 目标把 case 收口为真实 unaligned `%ub_out + 1` 的最小链 `vlds -> vldas(dest+1) -> vstur(NO_POST_UPDATE) -> vstar`；2026-04-08 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑，SIM 进入真实 block 执行并 compare passed`
+  - `evidence`: `/tmp/vpto-unaligned-rerun-20260408/micro-op_vector-load-store_vstur`
 - `case`: `micro-op/vector-load-store/vsts-tail`
   - `family`: `vector-load-store`
   - `checklist_status`: `sim-passed`
@@ -1400,10 +1400,10 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vsts-tail-launchfix-20260407/micro-op_vector-load-store_vsts-tail`
 - `case`: `micro-op/vector-load-store/vldas-vldus-state-chain`
   - `family`: `vector-load-store`
-  - `checklist_status`: `sim-blocked`
-  - `readiness_findings`: `host, runtime`
-  - `current_conclusion`: `host 侧原本残留错误 kernel symbol；对齐后在 `/home/mouliangyu/tmp/vpto-vldas-vldus-chain-rerun2-20260407/micro-op_vector-load-store_vldas-vldus-state-chain` 的 `DEVICE=SIM` 复跑已完成真实 `block_start/block_end`，但 compare failed。进一步核对输出可见 `out[64:128] == gold[0:64]` 且 `gold[64:128] != gold[0:64]`，说明第二条 `vldus` 的确重复消费了首条 stream state，当前归因到 runtime/backend 的 `vldus` state-update 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-vldas-vldus-chain-rerun2-20260407/micro-op_vector-load-store_vldas-vldus-state-chain`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, kernel, golden, runtime`
+  - `current_conclusion`: `已按 no-post 真实语义收口：两次 `pto.vldus` 不再假设隐式 state-update，而是分别显式消费各自 `pto.vldas` 生成的 `align`；本地 `DEVICE=SIM` 复跑 compare passed`
+  - `evidence`: `/tmp/vldas-vldus-nopost-LCS5NK/micro-op_vector-load-store_vldas-vldus-state-chain`
 - `case`: `micro-op/vector-load-store/vldsx2-layout-check`
   - `family`: `vector-load-store`
   - `checklist_status`: `sim-passed`
@@ -1418,7 +1418,7 @@
   - `evidence`: `/home/mouliangyu/tmp/vpto-vstsx2-layout-rerun-20260407/micro-op_vector-load-store_vstsx2-layout-check`
 - `case`: `micro-op/vector-load-store/vstas-vstus-offset-update`
   - `family`: `vector-load-store`
-  - `checklist_status`: `sim-blocked`
-  - `readiness_findings`: `host, runtime`
-  - `current_conclusion`: `host 侧原本残留错误 kernel symbol；对齐后在 `/home/mouliangyu/tmp/vpto-vstas-vstus-rerun2-20260407/micro-op_vector-load-store_vstas-vstus-offset-update` 的 `DEVICE=SIM` 复跑已进入真实 `block_start`，随后仍稳定在 `RV_WMOV type.B8` 处报 Unsupported Instr/Type 并 core dump，当前归因到 runtime/backend 缺口`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-vstas-vstus-rerun2-20260407/micro-op_vector-load-store_vstas-vstus-offset-update`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `host, golden, runtime`
+  - `current_conclusion`: `旧 case 将 `vstas` flush 点错误写成 `%base_out + second_offset`，不满足 docs 约束。2026-04-08 已将 case 收口为合法 no-post stream：`vstus` 用非零 immediate offset 推进 state，只返回 `%align_out`；`vstas` 使用显式 base+offset 的匹配 flush point 提交 tail。使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 复跑 compare passed`
+  - `evidence`: `/tmp/vpto-unaligned-rerun-20260408/micro-op_vector-load-store_vstas-vstus-offset-update`
