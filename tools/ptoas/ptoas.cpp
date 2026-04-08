@@ -1089,7 +1089,10 @@ int main(int argc, char **argv) {
   }
 
   if (effectiveBackend == PTOBackend::VPTO) {
-    convertVPTOEmissionBoundaryToPtr(*module, &llvm::errs());
+    if (failed(convertVPTOEmissionBoundaryToPtr(*module, &llvm::errs()))) {
+      llvm::errs() << "Error: VPTO emission boundary canonicalization failed.\n";
+      return 1;
+    }
     PassManager prepPM(module->getContext());
     prepPM.enableVerifier();
     prepPM.addNestedPass<func::FuncOp>(createPTOVPTOExpandBridgeOpsPass());
@@ -1099,7 +1102,7 @@ int main(int argc, char **argv) {
       return 1;
     }
 
-    if (emitVPTO || (!vptoEmitHIVMText && !vptoEmitHIVMOfficialLLVM &&
+    if (emitVPTO || (!vptoEmitHIVMOfficialLLVM &&
                      !vptoEmitHIVMOfficialBitcode)) {
       module->print(outputFile.os());
       outputFile.os() << "\n";
@@ -1146,11 +1149,8 @@ int main(int argc, char **argv) {
         vptoEmitHIVMOfficialBitcode
             ? pto::translateVPTOModuleToLLVMBitcode(*module, outputFile.os(),
                                                     options, llvm::errs())
-            : vptoEmitHIVMOfficialLLVM
-            ? pto::translateVPTOModuleToLLVMText(*module, outputFile.os(),
-                                                 options, llvm::errs())
-            : pto::translateVPTOModuleToText(*module, outputFile.os(), options,
-                                             llvm::errs());
+            : pto::translateVPTOModuleToLLVMText(*module, outputFile.os(),
+                                                 options, llvm::errs());
     if (failed(emissionStatus)) {
       llvm::errs() << "Error: Failed to emit VPTO text.\n";
       return 1;
