@@ -1,193 +1,75 @@
 #!/usr/bin/env python3
-# case: micro-op/vector-load-store/vsts
+# case: micro-op/vector-load-store/vsts-pk-b16
 # family: vector-load-store
 # target_ops: pto.vsts
-# scenarios: core-f32, contiguous, full-mask, aligned, dist-norm
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: core-i16, full-mask, aligned, dist-pk-b16
 # coding=utf-8
 
 import os
 import sys
 import numpy as np
 
-
-REPEAT_BYTES = 256
-
-
-def _ceil_div(x, y):
-    return (x + y - 1) // y
-
-
-def _packed_pred_storage_bytes(logical_elems, src_elem_bytes):
-    logical_elems = int(logical_elems)
-    src_elem_bytes = int(src_elem_bytes)
-    if logical_elems <= 0:
-        raise ValueError(f"logical_elems must be > 0, got {logical_elems}")
-    if src_elem_bytes not in (1, 2, 4):
-        raise ValueError(f"unsupported packed predicate source size: {src_elem_bytes}")
-
-    repeat_elems = REPEAT_BYTES // src_elem_bytes
-    if src_elem_bytes == 4:
-        repeat_times = _ceil_div(logical_elems, repeat_elems) + 1
-        loop_count = repeat_times // 2
-        return loop_count * 16
-
-    repeat_times = _ceil_div(logical_elems, repeat_elems)
-    return repeat_times * (repeat_elems // 8)
+OUTPUT_BUFFER_BYTES = 4096
+# Keep this aligned with kernel.pto loop bound (offset: 0..1024 step 128 on i16).
+ACTIVE_ELEMS = 1024
+LANES = 128
+BYTES_PER_ELEM = 2
 
 
-def compare_bin(golden_path, output_path, dtype, eps):
+def build_checked_mask(total_bytes):
+    # For this case kernel:
+    # - loop offset: 0..1024 step 128 (i16 elements)
+    # - dist=PK_B16 stores 1 byte per active i16 element
+    # So each iteration writes 128 bytes at dst_byte_base = offset * 2.
+    mask = np.zeros((total_bytes,), dtype=bool)
+    for offset in range(0, ACTIVE_ELEMS, LANES):
+        dst_byte_base = offset * BYTES_PER_ELEM
+        mask[dst_byte_base : dst_byte_base + LANES] = True
+    return mask
+
+
+def compare_bin(golden_path, output_path):
     if not os.path.exists(output_path):
         print(f"[ERROR] Output missing: {output_path}")
         return False
     if not os.path.exists(golden_path):
         print(f"[ERROR] Golden missing: {golden_path}")
-        return False
-    dtype_np = np.dtype(dtype)
-    golden = np.fromfile(golden_path, dtype=dtype_np)
-    output = np.fromfile(output_path, dtype=dtype_np)
-    if golden.shape != output.shape:
-        print(f"[ERROR] Shape mismatch: {golden_path} {golden.shape} vs {output_path} {output.shape}")
-        return False
-    if not np.allclose(golden, output, atol=eps, rtol=eps, equal_nan=True):
-        if golden.size:
-            if np.issubdtype(dtype_np, np.floating):
-                g = golden.astype(np.float64, copy=False)
-                o = output.astype(np.float64, copy=False)
-            elif np.issubdtype(dtype_np, np.integer) or np.issubdtype(dtype_np, np.unsignedinteger):
-                g = golden.astype(np.int64, copy=False)
-                o = output.astype(np.int64, copy=False)
-            else:
-                g = golden.astype(np.float64, copy=False)
-                o = output.astype(np.float64, copy=False)
-            abs_diff = np.abs(g - o)
-            idx = int(np.argmax(abs_diff))
-            diff = float(abs_diff[idx])
-            print(
-                f"[ERROR] Mismatch: {golden_path} vs {output_path}, max diff={diff} at idx={idx} "
-                f"(golden={g[idx]}, out={o[idx]}, dtype={dtype_np})"
-            )
-        else:
-            print(f"[ERROR] Mismatch: {golden_path} vs {output_path}, empty buffers, dtype={dtype_np}")
-        return False
-    return True
-
-
-def compare_bin_prefix(golden_path, output_path, dtype, eps, count):
-    if not os.path.exists(output_path):
-        print(f"[ERROR] Output missing: {output_path}")
-        return False
-    if not os.path.exists(golden_path):
-        print(f"[ERROR] Golden missing: {golden_path}")
-        return False
-    try:
-        count = int(count)
-    except Exception:
-        print(f"[ERROR] Invalid prefix count: {count}")
-        return False
-    if count <= 0:
-        print(f"[ERROR] Invalid prefix count: {count}")
-        return False
-
-    dtype_np = np.dtype(dtype)
-    golden = np.fromfile(golden_path, dtype=dtype_np, count=count)
-    output = np.fromfile(output_path, dtype=dtype_np, count=count)
-
-    if golden.size != count or output.size != count:
-        print(
-            f"[ERROR] Prefix read too small: need={count} elems, "
-            f"golden={golden.size}, out={output.size}"
-        )
-        return False
-
-    if not np.allclose(golden, output, atol=eps, rtol=eps, equal_nan=True):
-        if golden.size:
-            if np.issubdtype(dtype_np, np.floating):
-                g = golden.astype(np.float64, copy=False)
-                o = output.astype(np.float64, copy=False)
-            elif np.issubdtype(dtype_np, np.integer) or np.issubdtype(dtype_np, np.unsignedinteger):
-                g = golden.astype(np.int64, copy=False)
-                o = output.astype(np.int64, copy=False)
-            else:
-                g = golden.astype(np.float64, copy=False)
-                o = output.astype(np.float64, copy=False)
-            abs_diff = np.abs(g - o)
-            idx = int(np.argmax(abs_diff))
-            diff = float(abs_diff[idx])
-            print(
-                f"[ERROR] Mismatch (prefix): {golden_path} vs {output_path}, max diff={diff} at idx={idx} "
-                f"(golden={g[idx]}, out={o[idx]}, dtype={dtype_np}, count={count})"
-            )
-        else:
-            print(f"[ERROR] Mismatch (prefix): {golden_path} vs {output_path}, empty buffers, dtype={dtype_np}")
-        return False
-    return True
-
-
-def compare_packed_pred_mask(golden_path, output_path, logical_elems, src_elem_bytes):
-    """
-    Compare outputs of pto.tcmp / pto.tcmps.
-
-    PTO-ISA stores packed predicate results as a linear PK byte stream via
-    `psts`, with the exact written prefix length determined by the typed
-    TCMP/TCMPS repeat schedule. Compare only that semantic prefix.
-    """
-    if not os.path.exists(output_path):
-        print(f"[ERROR] Output missing: {output_path}")
-        return False
-    if not os.path.exists(golden_path):
-        print(f"[ERROR] Golden missing: {golden_path}")
-        return False
-    try:
-        logical_elems = int(logical_elems)
-        src_elem_bytes = int(src_elem_bytes)
-    except Exception:
-        print(
-            "[ERROR] Invalid packed mask compare arguments: "
-            f"logical_elems={logical_elems} src_elem_bytes={src_elem_bytes}"
-        )
-        return False
-    if logical_elems <= 0 or src_elem_bytes <= 0:
-        print(
-            "[ERROR] Invalid packed mask compare arguments: "
-            f"logical_elems={logical_elems} src_elem_bytes={src_elem_bytes}"
-        )
         return False
 
     golden = np.fromfile(golden_path, dtype=np.uint8)
     output = np.fromfile(output_path, dtype=np.uint8)
-    try:
-        prefix_bytes = _packed_pred_storage_bytes(logical_elems, src_elem_bytes)
-    except ValueError as exc:
-        print(f"[ERROR] {exc}")
+    if golden.shape != output.shape:
+        print(f"[ERROR] Shape mismatch: {golden.shape} vs {output.shape}")
         return False
 
-    if golden.size < prefix_bytes or output.size < prefix_bytes:
+    if golden.size != OUTPUT_BUFFER_BYTES:
         print(
-            f"[ERROR] Packed mask buffer too small: need={prefix_bytes} bytes, "
-            f"golden={golden.size}, out={output.size}"
+            f"[ERROR] Unexpected byte size for this case: got {golden.size}, expected {OUTPUT_BUFFER_BYTES}"
         )
         return False
 
-    golden_sel = golden[:prefix_bytes]
-    output_sel = output[:prefix_bytes]
-
-    if not np.array_equal(golden_sel, output_sel):
-        diff = np.nonzero(golden_sel != output_sel)[0]
+    checked = build_checked_mask(golden.size)
+    checked_golden = golden[checked]
+    checked_output = output[checked]
+    if not np.array_equal(checked_golden, checked_output):
+        diff = np.nonzero(checked_golden != checked_output)[0]
         idx = int(diff[0]) if diff.size else 0
+        global_idx = int(np.nonzero(checked)[0][idx]) if diff.size else 0
         print(
-            f"[ERROR] Mismatch (packed mask): {golden_path} vs {output_path}, first diff at idx={idx} "
-            f"(golden={int(golden_sel[idx])}, out={int(output_sel[idx])}, "
-            f"logical_elems={logical_elems}, src_elem_bytes={src_elem_bytes}, prefix_bytes={prefix_bytes})"
+            f"[ERROR] Mismatch (checked footprint): {golden_path} vs {output_path}, "
+            f"first diff at checked_idx={idx}, global_idx={global_idx} "
+            f"(golden=0x{int(checked_golden[idx]):02x}, out=0x{int(checked_output[idx]):02x})"
         )
         return False
+    print(
+        f"[INFO] compared writable footprint only: {int(np.count_nonzero(checked))}/{golden.size} bytes"
+    )
     return True
 
 
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
-    ok = True
-    ok = compare_bin("golden_v2.bin", "v2.bin", np.float32, 0.0001) and ok
+    ok = compare_bin("golden_v2.bin", "v2.bin")
     if not ok:
         if strict:
             print("[ERROR] compare failed")
