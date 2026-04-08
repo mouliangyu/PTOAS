@@ -26,6 +26,24 @@
   - consolidated evidence:
     - `/tmp/vpto-unaligned-rerun-20260408`
     - `/tmp/vpto-vstar-rerun-20260408`
+- Group 2 status refresh:
+  - `2026-04-09` the whole historical carry/borrow group was rerun with the same SIM baseline
+  - passed cases:
+    - `micro-op/binary-vector/vaddc`
+    - `micro-op/binary-vector/vaddc-carry-boundary`
+    - `micro-op/binary-vector/vsubc`
+    - `micro-op/binary-vector/vsubc-borrow-boundary`
+    - `micro-op/vec-scalar/vaddcs`
+    - `micro-op/vec-scalar/vaddcs-carry-boundary`
+    - `micro-op/vec-scalar/vsubcs`
+    - `micro-op/vec-scalar/vsubcs-borrow-boundary`
+  - consolidated evidence:
+    - `vaddc` / `vaddcs`: `psti` 输出使用 nibble-packed predicate 布局
+    - `vsubc` / `vsubcs`: 第二输出对应 `no-borrow` predicate；当前 `vsubcs` case 中第三输入全 1 时结果对应 `lhs - rhs`
+    - rerun dirs:
+      - `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/group2-rerun-base-vaddc-20260409`
+      - `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/group2-rerun-fixed-20260409`
+      - `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/group2-rerun-sub-fixed-20260409`
 
 ## Repro
 
@@ -70,16 +88,9 @@ Replace `CASE_NAME` with any case listed below.
 - `micro-op/rearrangement/vslide`
 - `micro-op/rearrangement/vslide-tail-window`
 
-### 2. Carry/borrow result is all zero
+### 2. Carry/borrow group
 
-- `micro-op/binary-vector/vaddc`
-- `micro-op/binary-vector/vaddc-carry-boundary`
-- `micro-op/binary-vector/vsubc`
-- `micro-op/binary-vector/vsubc-borrow-boundary`
-- `micro-op/vec-scalar/vaddcs`
-- `micro-op/vec-scalar/vaddcs-carry-boundary`
-- `micro-op/vec-scalar/vsubcs`
-- `micro-op/vec-scalar/vsubcs-borrow-boundary`
+- `2026-04-09` 已整体收敛，不再保留 blocked 条目
 
 ### 3. Gather compare mismatch
 

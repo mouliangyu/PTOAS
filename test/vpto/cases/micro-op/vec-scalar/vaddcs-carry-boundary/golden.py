@@ -21,11 +21,16 @@ RHS_PATTERN = np.array(
 )
 
 
-def pack_mask_bits(bits):
+def pack_mask_nibbles(bits):
     out = np.zeros(256, dtype=np.uint8)
     for idx, bit in enumerate(bits):
-        if bit:
-            out[idx // 8] |= np.uint8(1 << (idx % 8))
+        if not bit:
+            continue
+        byte = idx // 2
+        if idx % 2 == 0:
+            out[byte] |= np.uint8(0x1)
+        else:
+            out[byte] |= np.uint8(0x10)
     return out
 
 
@@ -44,7 +49,7 @@ def generate(output_dir: Path, seed: int) -> None:
     np.zeros(LANES, dtype=np.uint32).tofile(output_dir / "v3.bin")
     np.zeros(256, dtype=np.uint8).tofile(output_dir / "v4.bin")
     result.tofile(output_dir / "golden_v3.bin")
-    pack_mask_bits(carry).tofile(output_dir / "golden_v4.bin")
+    pack_mask_nibbles(carry).tofile(output_dir / "golden_v4.bin")
 
 
 def main() -> None:

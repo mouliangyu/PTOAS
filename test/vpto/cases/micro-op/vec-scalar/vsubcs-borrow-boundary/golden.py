@@ -21,11 +21,16 @@ RHS_PATTERN = np.array(
 )
 
 
-def pack_mask_bits(bits):
+def pack_mask_nibbles(bits):
     out = np.zeros(256, dtype=np.uint8)
     for idx, bit in enumerate(bits):
-        if bit:
-            out[idx // 8] |= np.uint8(1 << (idx % 8))
+        if not bit:
+            continue
+        byte = idx // 2
+        if idx % 2 == 0:
+            out[byte] |= np.uint8(0x1)
+        else:
+            out[byte] |= np.uint8(0x10)
     return out
 
 
@@ -35,9 +40,9 @@ def generate(output_dir: Path, seed: int) -> None:
     lhs = np.tile(LHS_PATTERN, repeats)
     rhs = np.tile(RHS_PATTERN, repeats)
     lhs64 = lhs.astype(np.uint64)
-    subtrahend = rhs.astype(np.uint64) + np.uint64(1)
-    borrow = lhs64 < subtrahend
-    result = ((lhs64 - subtrahend) & np.uint64(0xFFFFFFFF)).astype(np.uint32)
+    rhs64 = rhs.astype(np.uint64)
+    no_borrow = lhs64 >= rhs64
+    result = ((lhs64 - rhs64) & np.uint64(0xFFFFFFFF)).astype(np.uint32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     lhs.tofile(output_dir / "v1.bin")
@@ -45,7 +50,7 @@ def generate(output_dir: Path, seed: int) -> None:
     np.zeros(LANES, dtype=np.uint32).tofile(output_dir / "v3.bin")
     np.zeros(256, dtype=np.uint8).tofile(output_dir / "v4.bin")
     result.tofile(output_dir / "golden_v3.bin")
-    pack_mask_bits(borrow).tofile(output_dir / "golden_v4.bin")
+    pack_mask_nibbles(no_borrow).tofile(output_dir / "golden_v4.bin")
 
 
 def main() -> None:

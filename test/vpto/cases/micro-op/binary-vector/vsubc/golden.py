@@ -14,11 +14,16 @@ LANES = 64
 SEED = 19
 
 
-def pack_mask_bits(bits):
+def pack_mask_nibbles(bits):
     out = np.zeros(256, dtype=np.uint8)
     for idx, bit in enumerate(bits):
-        if bit:
-            out[idx // 8] |= np.uint8(1 << (idx % 8))
+        if not bit:
+            continue
+        byte = idx // 2
+        if idx % 2 == 0:
+            out[byte] |= np.uint8(0x1)
+        else:
+            out[byte] |= np.uint8(0x10)
     return out
 
 
@@ -27,7 +32,7 @@ def generate(output_dir: Path, seed: int) -> None:
     v1 = rng.integers(0, 0xFFFFFFFF, size=LANES, dtype=np.uint32)
     v2 = rng.integers(0, 0xFFFFFFFF, size=LANES, dtype=np.uint32)
     diff = (v1 - v2).astype(np.uint32, copy=False)
-    borrow = v1 < v2
+    no_borrow = v1 >= v2
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.tofile(output_dir / "v1.bin")
@@ -35,7 +40,7 @@ def generate(output_dir: Path, seed: int) -> None:
     np.zeros(LANES, dtype=np.uint32).tofile(output_dir / "v3.bin")
     np.zeros(256, dtype=np.uint8).tofile(output_dir / "v4.bin")
     diff.tofile(output_dir / "golden_v3.bin")
-    pack_mask_bits(borrow).tofile(output_dir / "golden_v4.bin")
+    pack_mask_nibbles(no_borrow).tofile(output_dir / "golden_v4.bin")
 
 
 def main() -> None:
