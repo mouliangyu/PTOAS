@@ -20,6 +20,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -27,6 +28,11 @@
 
 using namespace mlir;
 using namespace mlir::pto;
+
+static llvm::cl::opt<bool> disableVPTOAlignChainVerification(
+    "vpto-disable-align-chain-verification",
+    llvm::cl::desc("Disable !pto.align linear-chain verifier checks"),
+    llvm::cl::init(false), llvm::cl::Hidden);
 
 static std::string formatVRegType(int64_t elementCount, Type elementType) {
   std::string storage;
@@ -258,6 +264,9 @@ static LogicalResult verifyStoreAlignLinearUses(Value value, Operation *user) {
 
 static LogicalResult verifyStoreAlignChain(Value align, Operation *user,
                                            StringRef roleDescription) {
+  if (disableVPTOAlignChainVerification)
+    return success();
+
   if (failed(verifyAlignTypeLike(user, align.getType(), roleDescription)))
     return failure();
 
@@ -408,6 +417,9 @@ static LogicalResult verifyLoadAlignLinearUses(Value value, Operation *user) {
 
 static LogicalResult verifyLoadAlignChain(Value align, Operation *user,
                                           StringRef roleDescription) {
+  if (disableVPTOAlignChainVerification)
+    return success();
+
   if (failed(verifyAlignTypeLike(user, align.getType(), roleDescription)))
     return failure();
 
