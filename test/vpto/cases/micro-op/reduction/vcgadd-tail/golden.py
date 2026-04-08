@@ -25,8 +25,9 @@ def generate(output_dir: Path, seed: int) -> None:
     group_elems = 8
     for offset in range(0, LOGICAL_ELEMS, LANES):
         chunk = flat_in[offset:min(offset + LANES, LOGICAL_ELEMS)]
-        for group in range(0, chunk.size, group_elems):
-            flat_out[offset + group] = np.sum(chunk[group:group + group_elems], dtype=np.float32)
+        for gi, group in enumerate(range(0, chunk.size, group_elems)):
+            # VCGADD writes one reduced value per 32B block continuously to low lanes.
+            flat_out[offset + gi] = np.sum(chunk[group:group + group_elems], dtype=np.float32)
 
 
     output_dir.mkdir(parents=True, exist_ok=True)
