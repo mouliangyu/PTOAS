@@ -21,7 +21,7 @@ module attributes {pto.target_arch = "a5"} {
 
     pto.vecscope {
       scf.for %iter = %c0 to %c1 step %c1 {
-        %align0 = ub.poison : !pto.align
+        %align0 = pto.init_align : !pto.align
         %value0, %next0 = pto.plt_b16 %c1_i32 : i32 -> !pto.mask<b16>, i32
         %align1, %base1 = pto.pstu %align0, %value0, %ub_mask : !pto.align, !pto.mask<b16>, !pto.ptr<ui16, ub> -> !pto.align, !pto.ptr<ui16, ub>
         %value1, %next1 = pto.plt_b16 %c127 : i32 -> !pto.mask<b16>, i32

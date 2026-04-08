@@ -208,6 +208,30 @@ def PTO_VldasOp : PTO_Op<"vldas", [
   }];
 }
 
+def PTO_InitAlignOp : PTO_Op<"init_align", []> {
+  let arguments = (ins);
+
+  let results = (outs PTO_AlignTypeConstraint:$result);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    attr-dict `:` type($result)
+  }];
+}
+
+def PTO_SprclrOp : PTO_Op<"sprclr", []> {
+  let arguments = (ins StrAttr:$spr);
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $spr attr-dict
+  }];
+}
+
 def PTO_VldusOp : PTO_Op<"vldus", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -218,14 +242,13 @@ def PTO_VldusOp : PTO_Op<"vldus", [
 
   let results = (outs
     PTO_VectorType:$result,
-    PTO_AlignTypeConstraint:$updated_align,
-    PTO_BufferType:$updated_source
+    PTO_AlignTypeConstraint:$updated_align
   );
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `,` $align attr-dict `:` type($source) `,` type($align) `->` type($result) `,` type($updated_align) `,` type($updated_source)
+    $source `,` $align attr-dict `:` type($source) `,` type($align) `->` type($result) `,` type($updated_align)
   }];
 }
 
@@ -1417,12 +1440,12 @@ def PTO_VstusOp : PTO_Op<"vstus", [
     PTO_VectorType:$value,
     PTO_BufferType:$base
   );
-  let results = (outs PTO_AlignTypeConstraint:$align_out, PTO_BufferType:$base_out);
+  let results = (outs PTO_AlignTypeConstraint:$align_out);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $align_in `,` $offset `,` $value `,` $base attr-dict `:` type($align_in) `,` type($offset) `,` type($value) `,` type($base) `->` type($align_out) `,` type($base_out)
+    $align_in `,` $offset `,` $value `,` $base attr-dict `:` type($align_in) `,` type($offset) `,` type($value) `,` type($base) `->` type($align_out)
   }];
 }
 

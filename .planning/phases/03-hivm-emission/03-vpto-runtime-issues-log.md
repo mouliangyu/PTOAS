@@ -262,22 +262,19 @@
   - store-layout：
   - [/home/mouliangyu/tmp/vpto-vstsx2-layout-rerun-20260407/micro-op_vector-load-store_vstsx2-layout-check](/home/mouliangyu/tmp/vpto-vstsx2-layout-rerun-20260407/micro-op_vector-load-store_vstsx2-layout-check)
 
-## 14. `pstu` 当前在 SIM 上会落到 `RV_WMOV type.B8` 的 runtime 缺口
+## 14. `pstu` 旧的 `RV_WMOV type.B8` 结论已过期
 
-- 现象：
+- 旧现象：
   - `micro-op/predicate-load-store/pstu`
   - `micro-op/predicate-load-store/pstu-state-advance-boundary`
-  - 在 `DEVICE=SIM` step 6 运行时报：
+  - 曾在旧环境/旧构造下报：
   - `Unsupported Instr/Type). instr.name=RV_WMOV, type.B8`
-- 结论：
-  - 这不是 compile-only 或 host skeleton 问题；case 已进入真实 runtime
-  - 当前证据指向 simulator/runtime backend 缺口
-- 处理：
-  - 这两条 case 记录为 `sim-blocked`
-  - 后续若再碰到同样签名，不要先改 case/oracle，优先按 runtime 缺口处理
-- 参考工作目录：
-  - `/home/mouliangyu/tmp/vpto-progress-pstu-sim-20260406/micro-op_predicate-load-store_pstu`
-  - `/home/mouliangyu/tmp/vpto-progress-pstu-sim-20260406/micro-op_predicate-load-store_pstu-state-advance-boundary`
+- 新结论：
+  - 该结论已过期，不能再作为当前分支的阻塞依据
+  - `2026-04-08` 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑，这两条 case 均已进入真实 block 执行并 `compare passed`
+- 当前参考工作目录：
+  - `/tmp/vpto-unaligned-rerun-20260408/micro-op_predicate-load-store_pstu`
+  - `/tmp/vpto-unaligned-rerun-20260408/micro-op_predicate-load-store_pstu-state-advance-boundary`
 
 ## 15. step 6 若 `Total tick` 很短且输出全 0，先核对 host launcher 是否与 LLVM IR kernel 名完全一致
 
@@ -319,32 +316,39 @@
   - 这两条 case 当前已排除 host skeleton / empty-run 误判
   - 当前证据指向 simulator/runtime backend 对 `RV_VSLIDE type.B32` 的实现缺口
 - 处理：
-  - 这两条 case 记录为 `sim-blocked`
   - 后续若再次看到同一签名，不要回头修改 case/oracle，优先按 runtime/backend 缺口处理
 - 参考工作目录：
   - `/home/mouliangyu/tmp/vpto-vslide-fix-usr3510-20260407/micro-op_rearrangement_vslide`
   - `/home/mouliangyu/tmp/vpto-vslide-tail-fix2-usr3510-20260407/micro-op_rearrangement_vslide-tail-window`
 
-## 17. `vstar` / `vstur` 当前在 SIM 上会落到 `RV_WMOV type.B8` 的 runtime 缺口
+## 17. `vstar` 的旧 `RV_WMOV type.B8` 记录仍需与 `vstur` 分开看
 
 - 现象：
   - `micro-op/vector-load-store/vstar`
-  - `micro-op/vector-load-store/vstur`
   - 在 `DEVICE=SIM` step 6 运行时报：
   - `Unsupported Instr/Type). instr.name=RV_WMOV, type.B8`
 - 结论：
   - 这不是 compile-only 或 host skeleton 问题；case 已进入真实 runtime
   - `vstar` 早期 skeleton 曾误写成 `vldas -> vstar`；按 docs 修正为最小合法链 `vlds -> vldas(dest) -> vstur -> vstar` 后，现象不变
-  - 当前证据指向 simulator/runtime backend 缺口
+  - 当前该阻塞只针对 `vstar`
 - 处理：
-  - 这两条 case 记录为 `sim-blocked`
   - `vstar` 后续构造必须依赖前置 stateful store 链，不能再直接把 `vldas` 结果喂给 `vstar`
   - 后续若再碰到同样签名，不要先改 case/oracle，优先按 runtime 缺口处理
 - 参考工作目录：
   - `/home/mouliangyu/tmp/vpto-progress-vls-batch1-sim-20260407/micro-op_vector-load-store_vstar`
-  - `/home/mouliangyu/tmp/vpto-progress-vls-rerun4-sim-20260407/micro-op_vector-load-store_vstur`
   - `/home/mouliangyu/tmp/vpto-vstar-rerun2-20260407/micro-op_vector-load-store_vstar`
-  - `/home/mouliangyu/tmp/vpto-vstur-rerun2-20260407/micro-op_vector-load-store_vstur`
+
+## 18. `vstur` 旧的 `RV_WMOV type.B8` 结论已过期
+
+- 旧现象：
+  - `micro-op/vector-load-store/vstur`
+  - 曾在旧环境/旧构造下报：
+  - `Unsupported Instr/Type). instr.name=RV_WMOV, type.B8`
+- 新结论：
+  - 该结论已过期，不能再作为当前分支的阻塞依据
+  - `2026-04-08` 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑，`micro-op/vector-load-store/vstur` 已进入真实 block 执行并 `compare passed`
+- 当前参考工作目录：
+  - `/tmp/vpto-unaligned-rerun-20260408/micro-op_vector-load-store_vstur`
 
 ## 17. `vsldb` / `vsstb` 即使补齐最小 inner-loop 后仍无 vec/cube 指令日志，按 empty-run 处理
 
@@ -361,51 +365,32 @@
   - inner-loop 结构修正未改变现象
   - 当前不能再把问题归因到 vecscope 结构不合规，应按 runtime/backend empty-run 处理
 - 处理：
-  - 保持 `sim-blocked`
   - 后续若继续排查，优先检查 SIM 端是否对 `vsldb/vsstb` lowering 路径根本未 materialize 指令流
 - 参考工作目录：
   - `/home/mouliangyu/tmp/vpto-progress-vsldb-rerun-sim-20260407/micro-op_vector-load-store_vsldb`
   - `/home/mouliangyu/tmp/vpto-progress-vsstb-rerun-sim-20260407/micro-op_vector-load-store_vsstb`
 
-## 19. `vldas-vldus-state-chain` 若 LLVM IR 中已有链式 `vldus` 但 runtime 未消费更新后的 stream state，先按 runtime/backend 缺口处理
+## 19. `vldas-vldus-state-chain` 旧的链式 state-update 结论已过期
 
-- 现象：
+- 旧现象：
   - `micro-op/vector-load-store/vldas-vldus-state-chain`
-  - `DEVICE=SIM` 可完成真实 block 执行，`Total tick: 2402`
-  - 但 compare failed，且输出呈现“首个 64-lane 正确、第二个 64-lane 重复首段”的模式
-- 已确认事实：
-  - 导出的 LLVM IR 含两次 `llvm.hivm.vldus.v64f32`
-  - runtime 指令日志中可观察到 `RV_VLDAS` 与两条 `RV_VLDUI`
-  - 两条 `RV_VLDUI` 都使用同一个 `Uld[0]` 和同一个 `Sn[65]=0x4`，第二条没有体现第一条 `vldus` 返回的更新后 stream state
-  - 最终输出为 `v1[1:65]` 重复两次，而不是按 case 目标继续前推到第二段 64 lanes
-- 结论：
-  - 在 docs 语义未改动的前提下，当前不能把问题归因到 oracle 漂移
-  - 应先按 runtime/backend 未正确 materialize `vldus` 链式 state-update 的缺口处理
-- 处理：
-  - 记录为 `sim-blocked`
-  - 后续若继续追踪，优先比对 LLVM IR 中第二次 `vldus` 的 `%base/%align` 依赖，和最终 runtime `RV_VLDUI` 是否真的消费到了更新后的 stream state
-- 参考工作目录：
-  - `/home/mouliangyu/tmp/vpto-progress-vls-rerun4-sim-20260407/micro-op_vector-load-store_vldas-vldus-state-chain`
-  - `/home/mouliangyu/tmp/vpto-vldas-vldus-state-chain-rerun-20260407/micro-op_vector-load-store_vldas-vldus-state-chain`
+  - 曾按错误的“隐式 state-update”预期解释输出
+- 新结论：
+  - `2026-04-08` 已按 no-post 真实语义收口：两次 `pto.vldus` 各自显式消费自己的 `pto.vldas`
+  - 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑后 `compare passed`
+- 当前参考工作目录：
+  - `/tmp/vpto-unaligned-rerun-20260408/micro-op_vector-load-store_vldas-vldus-state-chain`
 
-## 20. `vstas/vstus` state-update 链若补齐 inner-loop 后落到 `RV_WMOV type.B8`，按 runtime/backend 缺口处理
+## 20. `vstas-vstus-offset-update` 旧的 `RV_WMOV type.B8` 结论已过期
 
-- 现象：
+- 旧现象：
   - `micro-op/vector-load-store/vstas-vstus-offset-update`
-  - 原始 case 在 `DEVICE=SIM` 可完成真实 block 执行，但输出全 0
-  - 将目标 op 序列收进最小单次 inner-loop 后，veccore 指令流已能看到 `RV_VLOOPv2`
-  - 随后稳定报：
-  - `Unsupported Instr/Type). instr.name=RV_WMOV, type.B8`
-- 结论：
-  - 这条 case 不是 oracle/host/compare 漂移
-  - 问题已经收敛到 simulator/runtime backend 对该 state-update lowering 形态的支持缺口
-- 处理：
-  - 保持 `sim-blocked`
-  - 后续若再追这类 case，先看是否已经出现 `RV_VLOOPv2` 和真实 vector thread，再判断是不是同一 `RV_WMOV type.B8` 缺口
-- 参考工作目录：
-  - `/home/mouliangyu/tmp/vpto-progress-vls-batch2-sim-20260407/micro-op_vector-load-store_vstas-vstus-offset-update`
-  - `/home/mouliangyu/tmp/vpto-progress-vstasvstus-loopfix-20260407`
-  - `/home/mouliangyu/tmp/vpto-progress-rearrangement-fixes-sim-20260407/vzunpack-r2`
+  - 曾在旧环境/旧构造下出现输出全 0 与 `RV_WMOV type.B8`
+- 新结论：
+  - `2026-04-08` 已将 case 收口为合法的 no-post stream：`pto.vstus` 只返回 `%align_out`，`pto.vstas` 使用显式 base+offset 的匹配 flush point
+  - 使用 `/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib` 重新复跑后 `compare passed`
+- 当前参考工作目录：
+  - `/tmp/vpto-unaligned-rerun-20260408/micro-op_vector-load-store_vstas-vstus-offset-update`
 
 ## 16. `vsqz` 当前在 SIM 上会真实发指令，但 veccore 出现 ISU stall
 
@@ -422,7 +407,6 @@
   - 不是 parser/emitter 没接上，也不是 case 没真正发出目标指令
   - 当前归因到 runtime/backend 缺口
 - 处理：
-  - 记录为 `sim-blocked`
   - 后续若再遇到 `VSQZ + VSTS + ISU stall` 组合，不要先改 oracle
 - 参考工作目录：
   - `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz`

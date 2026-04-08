@@ -611,6 +611,12 @@ static std::optional<uint64_t> parseEventImmediate(llvm::StringRef event) {
   return value;
 }
 
+static std::optional<uint64_t> parseSprImmediate(llvm::StringRef spr) {
+  if (spr == "AR")
+    return 74;
+  return std::nullopt;
+}
+
 static std::optional<unsigned> getDistElementWidth(Type type) {
   if (auto intType = dyn_cast<IntegerType>(type))
     return intType.getWidth();
@@ -800,6 +806,19 @@ static Type convertVPTOType(Type type, Builder &builder) {
 
 static bool hasPtoPtrType(TypeRange types) {
   return llvm::any_of(types, [](Type type) { return isa<pto::PtrType>(type); });
+}
+
+static bool hasPtoAlignType(Type type) {
+  if (isa<pto::AlignType>(type))
+    return true;
+  if (auto functionType = dyn_cast<FunctionType>(type))
+    return llvm::any_of(functionType.getInputs(), hasPtoAlignType) ||
+           llvm::any_of(functionType.getResults(), hasPtoAlignType);
+  return false;
+}
+
+static bool hasPtoAlignType(TypeRange types) {
+  return llvm::any_of(types, [](Type type) { return hasPtoAlignType(type); });
 }
 
 static bool hasPtoMemRefMemorySpace(Type type) {
@@ -1220,6 +1239,66 @@ struct ConvertPtoPtrCarrierOp final : ConversionPattern {
   }
 };
 
+struct ConvertPtoAlignUnrealizedCastOp final
+    : OpConversionPattern<UnrealizedConversionCastOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(UnrealizedConversionCastOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (op->getNumOperands() != 1 || op->getNumResults() != 1)
+      return failure();
+    if (!hasPtoAlignType(op->getOperandTypes()) &&
+        !hasPtoAlignType(op->getResultTypes()))
+      return failure();
+
+    Type convertedResultType =
+        getTypeConverter()->convertType(op.getResult(0).getType());
+    if (!convertedResultType)
+      return failure();
+
+    Value input = adaptor.getOperands().front();
+    if (input.getType() == convertedResultType) {
+      rewriter.replaceOp(op, input);
+      return success();
+    }
+    return failure();
+  }
+};
+
+struct ConvertPtoAlignCarrierOp final : ConversionPattern {
+  ConvertPtoAlignCarrierOp(TypeConverter &typeConverter, MLIRContext *context)
+      : ConversionPattern(typeConverter, MatchAnyOpTypeTag(), 1, context) {}
+
+  LogicalResult
+  matchAndRewrite(Operation *op, ArrayRef<Value> operands,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (isa<UnrealizedConversionCastOp>(op))
+      return failure();
+    if (!hasPtoAlignType(op->getOperandTypes()) &&
+        !hasPtoAlignType(op->getResultTypes()))
+      return failure();
+    if (op->getNumRegions() != 0)
+      return rewriter.notifyMatchFailure(op,
+                                         "region ops with pto.align are handled structurally");
+
+    SmallVector<Type> convertedResultTypes;
+    if (failed(typeConverter->convertTypes(op->getResultTypes(),
+                                           convertedResultTypes)))
+      return failure();
+
+    OperationState state(op->getLoc(), op->getName().getStringRef());
+    state.addOperands(operands);
+    state.addTypes(convertedResultTypes);
+    state.addAttributes(op->getAttrs());
+    state.addSuccessors(op->getSuccessors());
+
+    Operation *newOp = rewriter.create(state);
+    rewriter.replaceOp(op, newOp->getResults());
+    return success();
+  }
+};
+
 static LogicalResult normalizePtoPtrsToLLVM(ModuleOp module, llvm::raw_ostream &diagOS) {
   MLIRContext *context = module.getContext();
 
@@ -1313,6 +1392,102 @@ static LogicalResult normalizePtoPtrsToLLVM(ModuleOp module, llvm::raw_ostream &
   return success();
 }
 
+static LogicalResult normalizePtoAlignsToABI(ModuleOp module,
+                                             llvm::raw_ostream &diagOS) {
+  MLIRContext *context = module.getContext();
+
+  TypeConverter typeConverter;
+  typeConverter.addConversion([](Type type) { return type; });
+  typeConverter.addConversion([&](pto::AlignType type) -> Type {
+    return VectorType::get({32}, IntegerType::get(context, 8));
+  });
+  auto materializeAlignCast = [](OpBuilder &builder, Type resultType,
+                                 ValueRange inputs, Location loc) -> Value {
+    if (inputs.size() != 1)
+      return {};
+    return builder
+        .create<UnrealizedConversionCastOp>(loc, TypeRange{resultType}, inputs)
+        .getResult(0);
+  };
+  typeConverter.addSourceMaterialization(materializeAlignCast);
+  typeConverter.addTargetMaterialization(materializeAlignCast);
+  typeConverter.addArgumentMaterialization(materializeAlignCast);
+
+  ConversionTarget target(*context);
+  target.addLegalOp<ModuleOp>();
+  target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+    return typeConverter.isSignatureLegal(op.getFunctionType()) &&
+           typeConverter.isLegal(&op.getBody());
+  });
+  target.addDynamicallyLegalOp<func::CallOp>(
+      [&](func::CallOp op) { return typeConverter.isLegal(op); });
+  target.addDynamicallyLegalOp<func::ReturnOp>(
+      [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
+  target.addDynamicallyLegalOp<cf::BranchOp, cf::CondBranchOp>(
+      [&](Operation *op) {
+        return isLegalForBranchOpInterfaceTypeConversionPattern(op,
+                                                                typeConverter);
+      });
+  target.addDynamicallyLegalOp<UnrealizedConversionCastOp>(
+      [&](UnrealizedConversionCastOp op) {
+        return !hasPtoAlignType(op->getOperandTypes()) &&
+               !hasPtoAlignType(op->getResultTypes());
+      });
+  target.markUnknownOpDynamicallyLegal([&](Operation *op) {
+    return typeConverter.isLegal(op->getOperandTypes()) &&
+           typeConverter.isLegal(op->getResultTypes());
+  });
+
+  RewritePatternSet patterns(context);
+  scf::populateSCFStructuralTypeConversionsAndLegality(typeConverter, patterns,
+                                                       target);
+  populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(patterns,
+                                                                 typeConverter);
+  populateCallOpTypeConversionPattern(patterns, typeConverter);
+  populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
+  populateReturnOpTypeConversionPattern(patterns, typeConverter);
+  patterns.add<ConvertPtoAlignUnrealizedCastOp, ConvertPtoAlignCarrierOp>(
+      typeConverter, context);
+
+  if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+    diagOS << "VPTO LLVM emission failed: pto.align normalization failed\n";
+    return failure();
+  }
+
+  SmallVector<UnrealizedConversionCastOp> castsToFold;
+  module.walk([&](UnrealizedConversionCastOp castOp) {
+    if (castOp->getNumOperands() != 1 || castOp->getNumResults() != 1)
+      return;
+    if (!hasPtoAlignType(castOp->getOperandTypes()) &&
+        !hasPtoAlignType(castOp->getResultTypes()))
+      return;
+    Type convertedResultType =
+        typeConverter.convertType(castOp.getResult(0).getType());
+    if (convertedResultType &&
+        convertedResultType == castOp.getOperand(0).getType())
+      castsToFold.push_back(castOp);
+  });
+  for (UnrealizedConversionCastOp castOp : castsToFold) {
+    castOp.getResult(0).replaceAllUsesWith(castOp.getOperand(0));
+    castOp.erase();
+  }
+
+  WalkResult leftover = module.walk([&](Operation *op) {
+    if (hasPtoAlignType(op->getOperandTypes()) ||
+        hasPtoAlignType(op->getResultTypes())) {
+      diagOS << "VPTO LLVM emission failed: residual pto.align type on op "
+             << op->getName().getStringRef() << "\n";
+      op->print(diagOS);
+      diagOS << "\n";
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (leftover.wasInterrupted())
+    return failure();
+  return success();
+}
+
 static Type getElementTypeFromVectorLike(Type type) {
   if (auto vecType = dyn_cast<pto::VRegType>(type))
     return vecType.getElementType();
@@ -1329,26 +1504,52 @@ static Type getElementTypeFromPointerLike(Type type) {
   return {};
 }
 
-static Type getElementTypeFromABIValue(Value value) {
-  if (!value)
+static Type getElementTypeFromABIValueImpl(
+    Value value, llvm::SmallPtrSetImpl<void *> &visited) {
+  if (!value || !visited.insert(value.getAsOpaquePointer()).second)
     return {};
   if (Type direct = getElementTypeFromPointerLike(value.getType()))
     return direct;
   auto it = abiPointerElementTypes.find(value);
   if (it != abiPointerElementTypes.end())
     return it->second;
+  if (auto blockArg = dyn_cast<BlockArgument>(value)) {
+    auto forOp = dyn_cast<scf::ForOp>(blockArg.getOwner()->getParentOp());
+    if (!forOp)
+      return {};
+    unsigned argNumber = blockArg.getArgNumber();
+    unsigned ivCount = forOp.getNumInductionVars();
+    if (argNumber < ivCount)
+      return {};
+    unsigned iterIdx = argNumber - ivCount;
+    if (iterIdx >= forOp.getInitArgs().size())
+      return {};
+    return getElementTypeFromABIValueImpl(forOp.getInitArgs()[iterIdx], visited);
+  }
   if (auto result = dyn_cast<OpResult>(value)) {
+    if (auto forOp = dyn_cast<scf::ForOp>(result.getOwner())) {
+      unsigned resultIdx = result.getResultNumber();
+      if (resultIdx >= forOp.getYieldedValues().size())
+        return {};
+      return getElementTypeFromABIValueImpl(forOp.getYieldedValues()[resultIdx],
+                                            visited);
+    }
     if (auto call = dyn_cast<func::CallOp>(result.getOwner())) {
-      if (call.getCallee() == "llvm.hivm.vstus.post" && result.getResultNumber() == 1 &&
-          !call.getArgOperands().empty())
+      if (call.getCallee() == "llvm.hivm.vstus.post" &&
+          result.getResultNumber() == 1 && !call.getArgOperands().empty())
         return getElementTypeFromVectorLike(call.getArgOperands().front().getType());
       if ((call.getCallee() == "llvm.hivm.pstu.b16" ||
            call.getCallee() == "llvm.hivm.pstu.b32") &&
           result.getResultNumber() == 1 && call.getNumOperands() >= 2)
-        return getElementTypeFromABIValue(call.getOperand(1));
+        return getElementTypeFromABIValueImpl(call.getOperand(1), visited);
     }
   }
   return {};
+}
+
+static Type getElementTypeFromABIValue(Value value) {
+  llvm::SmallPtrSet<void *, 8> visited;
+  return getElementTypeFromABIValueImpl(value, visited);
 }
 
 static void recordPointerElementTypes(ValueRange oldResults, ValueRange newResults) {
@@ -1447,12 +1648,17 @@ static FailureOr<Value> materializeAlignABIValue(Operation *anchor, Value align,
   }
 
   Operation *def = align.getDefiningOp();
-  if (!def || def->getName().getStringRef() != "ub.poison") {
+  if (!def) {
+    diagOS << "VPTO LLVM emission failed: unsupported non-ABI align producer "
+           << "<block-argument>"
+           << " for " << alignType << "\n";
+    return failure();
+  }
+
+  auto defName = def->getName().getStringRef();
+  if (defName != "pto.init_align" && defName != "ub.poison") {
     diagOS << "VPTO LLVM emission failed: unsupported non-ABI align producer ";
-    if (def)
-      diagOS << def->getName();
-    else
-      diagOS << "<block-argument>";
+    diagOS << def->getName();
     diagOS << " for " << alignType << "\n";
     return failure();
   }
@@ -1472,6 +1678,11 @@ static Value getI64Constant(OpBuilder &builder, Location loc, uint64_t value) {
 
 static Value getI32Constant(OpBuilder &builder, Location loc, uint64_t value) {
   return builder.create<arith::ConstantOp>(loc, builder.getI32IntegerAttr(value))
+      .getResult();
+}
+
+static Value getI16Constant(OpBuilder &builder, Location loc, uint64_t value) {
+  return builder.create<arith::ConstantOp>(loc, builder.getI16IntegerAttr(value))
       .getResult();
 }
 
@@ -1759,6 +1970,8 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.WAIT.FLAG.IMM");
   if (isa<pto::BarrierOp>(op))
     return std::string("llvm.hivm.BARRIER");
+  if (isa<pto::SprclrOp>(op))
+    return std::string("llvm.hivm.sprclr");
   if (isa<pto::PltB8Op>(op))
     return std::string("llvm.hivm.plt.b8.v300");
   if (isa<pto::PltB32Op>(op))
@@ -1779,6 +1992,8 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.pge.b32");
   if (isa<pto::VldasOp>(op))
     return std::string("llvm.hivm.vldas");
+  if (isa<pto::InitAlignOp>(op))
+    return std::string("llvm.hivm.init.vector.align.data");
   if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
     std::string vec = getElementTypeFragment(
         getElementTypeFromVectorLike(vldus.getResult().getType()));
@@ -1788,7 +2003,7 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return "llvm.hivm.vldus.v" + std::to_string(*lanes) + vec;
   }
   if (isa<pto::VstusOp>(op))
-    return std::string("llvm.hivm.vstus.post");
+    return std::string("llvm.hivm.vstus");
   if (isa<pto::VsturOp>(op))
     return std::string("llvm.hivm.vstur");
   if (auto vlds = dyn_cast<pto::VldsOp>(op)) {
@@ -2576,6 +2791,14 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   for (Type type : op->getResultTypes())
     resultTypes.push_back(convertVPTOType(type, builder));
   SmallVector<Type> intrinsicResultTypes(resultTypes.begin(), resultTypes.end());
+  if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
+    Type sourceType = convertVPTOType(vldus.getSource().getType(), builder);
+    if (!sourceType) {
+      diagOS << "VPTO LLVM emission failed: could not materialize vldus source type\n";
+      return failure();
+    }
+    intrinsicResultTypes.push_back(sourceType);
+  }
 
   SmallVector<Value> callArgs;
   auto buildBridgeCast = [&](Value input, Type targetType) -> Value {
@@ -2639,6 +2862,14 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     if (!pipe)
       return failure();
     callArgs.push_back(getI64Constant(builder, loc, *pipe));
+  } else if (auto sprclr = dyn_cast<pto::SprclrOp>(op)) {
+    auto spr = parseSprImmediate(sprclr.getSpr());
+    if (!spr) {
+      diagOS << "VPTO LLVM emission failed: unsupported sprclr target "
+             << sprclr.getSpr() << "\n";
+      return failure();
+    }
+    callArgs.push_back(getI16Constant(builder, loc, *spr));
   } else if (isa<pto::PltB8Op, pto::PltB32Op, pto::PltB16Op>(op)) {
     Value laneCount = castIntegerLikeTo(op, op->getOperand(0), builder.getI32Type());
     if (!laneCount)
@@ -2695,6 +2926,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     }
     callArgs.push_back(getI32Constant(builder, loc, *pattern));
     callArgs.push_back(getI32Constant(builder, loc, 0));
+  } else if (isa<pto::InitAlignOp>(op)) {
+    // llvm.hivm.init.vector.align.data() has no operands.
   } else if (auto vldas = dyn_cast<pto::VldasOp>(op)) {
     callArgs.push_back(vldas.getSource());
   } else if (auto vldus = dyn_cast<pto::VldusOp>(op)) {
@@ -3458,8 +3691,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     builder.eraseOp(op);
   else {
     SmallVector<Value> finalResults;
-    finalResults.reserve(call.getNumResults());
-    for (auto [idx, result] : llvm::enumerate(call.getResults()))
+    finalResults.reserve(op->getNumResults());
+    for (auto [idx, result] : llvm::enumerate(call.getResults().take_front(op->getNumResults())))
       finalResults.push_back(buildBridgeCast(result, resultTypes[idx]));
     recordPointerElementTypes(op->getResults(), finalResults);
     builder.replaceOp(op, finalResults);
@@ -3489,7 +3722,9 @@ static LogicalResult rewriteVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) 
 
   SmallVector<Operation *> poisonOps;
   module.walk([&](Operation *op) {
-    if (op->getName().getStringRef() == "ub.poison" && op->getNumResults() == 1 &&
+    auto name = op->getName().getStringRef();
+    if (name == "ub.poison" &&
+        op->getNumResults() == 1 &&
         isa<pto::AlignType>(op->getResult(0).getType()))
       poisonOps.push_back(op);
   });
@@ -3725,6 +3960,44 @@ static LogicalResult ensureDummyPredForAIVectorScopeLatch(llvm::Loop *loop,
   return success();
 }
 
+// Bisheng's vector-thread extraction does not reliably retain side-effecting
+// void calls that remain in the loop latch block. For stateful VPTO chains like
+// `vstur -> vstar`, leaving `vstar` in the latch causes the final flush to drop
+// out of the emitted vec thread even though the LLVM IR still contains it.
+//
+// When the latch already satisfies the single-predecessor/single-successor
+// contract we can safely sink those void calls into the unique predecessor
+// block. This keeps the observable vector side effects inside the vec thread
+// while preserving CFG shape and the scalar induction update in the latch.
+static void sinkAIVectorScopeLatchVoidCalls(llvm::Loop *loop) {
+  llvm::BasicBlock *latch = loop->getLoopLatch();
+  if (!latch)
+    return;
+
+  llvm::SmallVector<llvm::BasicBlock *, 4> preds(llvm::predecessors(latch));
+  if (preds.size() != 1)
+    return;
+
+  llvm::BasicBlock *pred = preds.front();
+  auto *predTerm = pred->getTerminator();
+  if (!predTerm || predTerm->getNumSuccessors() != 1 ||
+      predTerm->getSuccessor(0) != latch)
+    return;
+
+  llvm::SmallVector<llvm::Instruction *, 4> toMove;
+  for (llvm::Instruction &inst : *latch) {
+    if (isa<llvm::PHINode>(inst) || inst.isTerminator())
+      continue;
+    auto *call = dyn_cast<llvm::CallInst>(&inst);
+    if (!call || !call->getType()->isVoidTy())
+      continue;
+    toMove.push_back(&inst);
+  }
+
+  for (llvm::Instruction *inst : toMove)
+    inst->moveBefore(*pred, predTerm->getIterator());
+}
+
 static LogicalResult attachAIVectorScopeMetadata(
     llvm::Module &llvmModule, const llvm::StringMap<unsigned> &counts,
     llvm::raw_ostream &diagOS) {
@@ -3768,6 +4041,8 @@ static LogicalResult attachAIVectorScopeMetadata(
         return failure();
       }
       loop = loops[index];
+
+      sinkAIVectorScopeLatchVoidCalls(loop);
 
       llvm::BasicBlock *latch = loop->getLoopLatch();
       if (!latch) {
@@ -4286,6 +4561,9 @@ buildLLVMModuleFromPreparedVPTO(ModuleOp module,
     return nullptr;
 
   if (failed(normalizePtoPtrsToLLVM(module, diagOS)))
+    return nullptr;
+
+  if (failed(normalizePtoAlignsToABI(module, diagOS)))
     return nullptr;
 
   if (failed(rewriteVPTOOps(module, diagOS))) {

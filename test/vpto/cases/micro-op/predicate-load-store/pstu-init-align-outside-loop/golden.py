@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-# case: micro-op/predicate-load-store/pstu
+# case: micro-op/predicate-load-store/pstu-init-align-outside-loop
 # family: predicate-load-store
 # target_ops: pto.pstu
-# scenarios: unaligned-predicate-store, state-update, representative-logical-elements
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: unaligned-predicate-store, state-update, representative-logical-elements, init-align-outside-loop
 # coding=utf-8
 
 import argparse
@@ -40,6 +39,8 @@ def generate(output_dir: Path, seed: int) -> None:
     packed = np.zeros((OUTPUT_WORDS * np.dtype(np.uint32).itemsize,), dtype=np.uint8)
     packed[:PACKED_BYTES_PER_STORE] = first
     packed[PACKED_BYTES_PER_STORE : 2 * PACKED_BYTES_PER_STORE] = second
+    packed[2 * PACKED_BYTES_PER_STORE : 3 * PACKED_BYTES_PER_STORE] = first
+    packed[3 * PACKED_BYTES_PER_STORE : 4 * PACKED_BYTES_PER_STORE] = second
     output_init = np.zeros((OUTPUT_WORDS,), dtype=np.uint32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -51,7 +52,7 @@ def generate(output_dir: Path, seed: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op pstu validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op pstu-init-align-outside-loop validation."
     )
     parser.add_argument(
         "--output-dir",

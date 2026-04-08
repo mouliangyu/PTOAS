@@ -2,7 +2,7 @@
 # case: micro-op/vector-load-store/vstur
 # family: vector-load-store
 # target_ops: pto.vstur
-# scenarios: core-f32, full-mask, unaligned, state-update
+# scenarios: core-f32, predicate-squeezed, unaligned, state-update
 # coding=utf-8
 
 import argparse
@@ -13,7 +13,7 @@ import numpy as np
 
 ROWS = 32
 COLS = 32
-LANES = 64
+ACTIVE_LANES = 8
 SEED = 19
 
 
@@ -22,7 +22,7 @@ def generate(output_dir: Path, seed: int) -> None:
     v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
     v2 = np.zeros((ROWS, COLS), dtype=np.float32)
     golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2.reshape(-1)[1 : 1 + LANES] = v1.reshape(-1)[:LANES]
+    golden_v2.reshape(-1)[1 : 1 + ACTIVE_LANES] = v1.reshape(-1)[:ACTIVE_LANES]
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")

@@ -5,16 +5,27 @@
 - Scope: `test/vpto/cases/micro-op`
 - Blocked source:
   `/.planning/phases/03-hivm-emission/03-vpto-op-board-unit-tests-matrix.md`
-- Current blocked count: `48`
+- Current blocked count: `42`
 - Latest compile-only sweep:
   - mode: `DEVICE=SIM COMPILE_ONLY=1`
   - result: `235 total / 233 pass / 2 fail`
-  - note: the two compile failures are only one subset of the blocked set, both under the unaligned-memory/stateful-stream category
+  - note: the two compile failures were the historical `pstu` group; that group has since been fixed and validated with full `DEVICE=SIM` reruns
 - Verified full SIM run path:
   - `2026-04-08` single-case rerun passed with `DEVICE=SIM`
   - case: `micro-op/vector-load-store/vldsx2-layout-check`
   - `SIM_LIB_DIR=${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib`
   - result: script ran to step `6/6`, simulator executed, `compare.py` reported `compare passed`
+- Group 1 status refresh:
+  - `2026-04-08` the whole historical unaligned/stateful-stream group was rerun with the same SIM baseline
+  - passed cases:
+    - `micro-op/predicate-load-store/pstu`
+    - `micro-op/predicate-load-store/pstu-state-advance-boundary`
+    - `micro-op/vector-load-store/vldas-vldus-state-chain`
+    - `micro-op/vector-load-store/vstur`
+    - `micro-op/vector-load-store/vstas-vstus-offset-update`
+  - consolidated evidence:
+    - `/tmp/vpto-unaligned-rerun-20260408`
+    - `/tmp/vpto-vstar-rerun-20260408`
 
 ## Repro
 
@@ -45,26 +56,7 @@ Replace `CASE_NAME` with any case listed below.
 
 ## Blocked Case Groups
 
-### 1. Unaligned memory / stateful stream
-
-- `micro-op/predicate-load-store/pstu`
-- `micro-op/predicate-load-store/pstu-state-advance-boundary`
-- `micro-op/vector-load-store/vldas-vldus-state-chain`
-- `micro-op/vector-load-store/vstar`
-- `micro-op/vector-load-store/vstur`
-- `micro-op/vector-load-store/vstas-vstus-offset-update`
-
-Notes:
-- this group contains the only two current compile-only failures:
-  - `micro-op/predicate-load-store/pstu`
-  - `micro-op/predicate-load-store/pstu-state-advance-boundary`
-- latest compile-only failure shape:
-  - `bisheng` crashes in `HiIPU Non VF DAG->DAG Pattern Instruction Selection`
-  - current emitted intrinsics:
-    - `@llvm.hivm.pstu.b32(<256 x i1>, ptr addrspace(6), <32 x i8>)`
-    - `@llvm.hivm.pstu.b16(<256 x i1>, ptr addrspace(6), <32 x i8>)`
-
-### 2. Unsupported Instr/Type in SIM/runtime
+### 1. Unsupported Instr/Type in SIM/runtime
 
 - `micro-op/binary-vector/vsadd`
 - `micro-op/binary-vector/vssub`
@@ -78,7 +70,7 @@ Notes:
 - `micro-op/rearrangement/vslide`
 - `micro-op/rearrangement/vslide-tail-window`
 
-### 3. Carry/borrow result is all zero
+### 2. Carry/borrow result is all zero
 
 - `micro-op/binary-vector/vaddc`
 - `micro-op/binary-vector/vaddc-carry-boundary`
@@ -89,7 +81,7 @@ Notes:
 - `micro-op/vec-scalar/vsubcs`
 - `micro-op/vec-scalar/vsubcs-borrow-boundary`
 
-### 4. Gather compare mismatch
+### 3. Gather compare mismatch
 
 - `micro-op/gather-scatter/vgather2`
 - `micro-op/gather-scatter/vgather2-duplicate-index`
@@ -98,7 +90,7 @@ Notes:
 - `micro-op/gather-scatter/vgatherb`
 - `micro-op/gather-scatter/vgatherb-block-boundary`
 
-### 5. Reduction / prefix layout mismatch
+### 4. Reduction / prefix layout mismatch
 
 - `micro-op/reduction/vcgadd`
 - `micro-op/reduction/vcgadd-tail`
@@ -109,7 +101,7 @@ Notes:
 - `micro-op/reduction/vcpadd`
 - `micro-op/reduction/vcpadd-tail`
 
-### 6. Rearrangement runtime abnormal
+### 5. Rearrangement runtime abnormal
 
 - `micro-op/rearrangement/vsqz`
 - `micro-op/rearrangement/vsqz-nontrivial-mask`
@@ -117,7 +109,7 @@ Notes:
 Notes:
 - current observation is veccore `ISU stall`
 
-### 7. Doc / semantic blocker
+### 6. Doc / semantic blocker
 
 - `micro-op/compare-select/vcmp-unordered-f32`
 - `micro-op/compare-select/vcmps-unordered-f32`
@@ -127,22 +119,6 @@ Notes:
 - `micro-op/vector-load-store/vsts-mrg2chn-b16`
 - `micro-op/vector-load-store/vsts-mrg4chn-b8`
 
-### 8. Other runtime/backend mismatch
+### 7. Other runtime/backend mismatch
 
 - `micro-op/dsa-sfu/vexpdiff-f16-part`
-
-## Compile-only Failure Artifacts
-
-### `micro-op/predicate-load-store/pstu`
-
-- LLVM artifact:
-  `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/micro-op-compile-20260408-simlib/micro-op_predicate-load-store_pstu/micro-op_predicate-load-store_pstu.ll`
-- Validation log:
-  `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/micro-op-compile-20260408-simlib/micro-op_predicate-load-store_pstu/validation.log`
-
-### `micro-op/predicate-load-store/pstu-state-advance-boundary`
-
-- LLVM artifact:
-  `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/micro-op-compile-20260408-simlib/micro-op_predicate-load-store_pstu-state-advance-boundary/micro-op_predicate-load-store_pstu-state-advance-boundary.ll`
-- Validation log:
-  `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/micro-op-compile-20260408-simlib/micro-op_predicate-load-store_pstu-state-advance-boundary/validation.log`

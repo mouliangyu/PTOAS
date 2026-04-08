@@ -14,8 +14,6 @@ import numpy as np
 ELEMENTS = 1024
 VECTOR_LANES = 64
 POST_UPDATE_OFFSET_ELEMENTS = 3
-FLUSH_OFFSET_ELEMENTS = 2
-FINAL_OFFSET_ELEMENTS = POST_UPDATE_OFFSET_ELEMENTS + FLUSH_OFFSET_ELEMENTS
 SEED = 19
 
 
@@ -24,7 +22,7 @@ def generate(output_dir: Path, seed: int) -> None:
     v1 = rng.uniform(-8.0, 8.0, size=(ELEMENTS,)).astype(np.float32)
     v2 = np.zeros((ELEMENTS,), dtype=np.float32)
     golden_v2 = np.zeros((ELEMENTS,), dtype=np.float32)
-    golden_v2[FINAL_OFFSET_ELEMENTS:FINAL_OFFSET_ELEMENTS + VECTOR_LANES] = v1[:VECTOR_LANES]
+    golden_v2[:POST_UPDATE_OFFSET_ELEMENTS] = v1[:POST_UPDATE_OFFSET_ELEMENTS]
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.tofile(output_dir / "v1.bin")

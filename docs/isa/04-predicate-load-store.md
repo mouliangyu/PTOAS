@@ -102,6 +102,9 @@ dynamic-offset.
 - **outputs:**
   `%align_out` and `%base_out` are the updated unaligned-store state and are
   intended to be used by a later `pto.pstu` call.
+- **constraints and limitations:**
+  The first `%align_in` in a predicate unaligned-store stream should come from
+  `pto.init_align`.
 
 ---
 

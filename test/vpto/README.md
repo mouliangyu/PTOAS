@@ -44,7 +44,7 @@ Example (recommended in current environment):
 
 ```bash
 export DEVICE=SIM
-export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib
+export SIM_LIB_DIR=${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib
 ```
 
 If `SIM_LIB_DIR` points to an incompatible simulator model directory, step 6 may
@@ -56,6 +56,10 @@ The runner can auto-select
 `${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib` when `DEVICE=SIM`
 and `SIM_LIB_DIR` is unset, but explicit export is still recommended for
 reproducibility across hosts.
+
+On the current machine, `${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib`
+is the verified SIM smoke baseline. Using `dav_3102/lib` can fail at
+`aclrtSetDevice` before the testcase itself runs.
 
 ## Case Discovery
 
@@ -166,6 +170,6 @@ export WORK_SPACE=$(mktemp -d /tmp/vpto-abs-sim.XXXXXX)
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
 export CASE_NAME=tileop/abs
 export DEVICE=SIM
-export SIM_LIB_DIR=/usr/local/Ascend/cann-9.0.0/aarch64-linux/simulator/dav_3510/lib
+export SIM_LIB_DIR=${ASCEND_HOME_PATH}/aarch64-linux/simulator/dav_3510/lib
 bash test/vpto/scripts/run_host_vpto_validation.sh
 ```

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# case: micro-op/vector-load-store/vstar
+# case: micro-op/vector-load-store/vstur-init-align-outside-loop
 # family: vector-load-store
-# target_ops: pto.vstar
-# scenarios: core-f32, predicate-squeezed, unaligned, state-update
+# target_ops: pto.vstur
+# scenarios: core-f32, predicate-squeezed, unaligned, state-update, init-align-outside-loop
 # coding=utf-8
 
 import argparse
@@ -13,6 +13,7 @@ import numpy as np
 
 ROWS = 32
 COLS = 32
+ACTIVE_LANES = 8
 SEED = 19
 
 
@@ -21,7 +22,7 @@ def generate(output_dir: Path, seed: int) -> None:
     v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
     v2 = np.zeros((ROWS, COLS), dtype=np.float32)
     golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2.reshape(-1)[1:9] = v1.reshape(-1)[:8]
+    golden_v2.reshape(-1)[1 : 1 + ACTIVE_LANES] = v1.reshape(-1)[:ACTIVE_LANES]
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
@@ -31,7 +32,7 @@ def generate(output_dir: Path, seed: int) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vstar validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vstur-init-align-outside-loop validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

@@ -426,7 +426,11 @@ dst[i] = mask[i] ? op(src0[i], src1[i]) : 0    // ZEROING mode
 
 ```mlir
 %align = pto.vldas %ub : !pto.ptr<f32, ub> -> !pto.align
-%vec, %align_out, %base_out = pto.vldus %ub, %align : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align, !pto.ptr<f32, ub>
+%vec, %align_out = pto.vldus %ub, %align : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align
+
+%store_align = pto.init_align : !pto.align
+%next_align = pto.vstus %store_align, %offset, %vec, %ub
+    : !pto.align, i32, !pto.vreg<64xf32>, !pto.ptr<f32, ub> -> !pto.align
 ```
 
 ---

@@ -1333,9 +1333,9 @@ assessment 驱动的补充 case：
   - 目标：验证 `vsts` 在 `tail-mask` 下的写回边界
   - 覆盖：`core-f32, contiguous, tail-mask, aligned, dist-norm`
 - `micro-op/vector-load-store/vldas-vldus-state-chain`
-  - 目标：验证 stream load 连续调用时的状态推进
-  - 覆盖：`core-f32, full-mask, unaligned, stream-state, state-update`
-  - 承接：`pto.vldas` 验证连续调用下的 aligned stream state 推进；`pto.vldus` 验证连续调用下的 unaligned stream state 推进
+  - 目标：验证 `vldus` 的 no-post unaligned load 语义，以及重复调用时每次都显式配对自己的 `vldas`
+  - 覆盖：`core-f32, full-mask, unaligned, repeated-no-post`
+  - 承接：`pto.vldas` 负责为每次 unaligned load 显式生成对应的 `align`；`pto.vldus` 验证 no-post 读取本身而不是隐式 state-update
 - `micro-op/vector-load-store/vldsx2-layout-check`
   - 目标：验证 `vldsx2` 单边 deinterleave 后的 lane 布局
   - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv, lane-order`
@@ -1343,9 +1343,9 @@ assessment 驱动的补充 case：
   - 目标：验证 `vstsx2` 单边 interleave 写回后的 lane 布局
   - 覆盖：`core-f32, full-mask, paired-roundtrip, dintlv, lane-order`
 - `micro-op/vector-load-store/vstas-vstus-offset-update`
-  - 目标：验证 `vstus` 产出的 unaligned store state 继续驱动 `vstas`，并同时覆盖 immediate offset 与 state-update 的组合效果
+  - 目标：验证 `vstus` 产出的 unaligned store state 继续驱动 `vstas`，其中 `vstus` 负责非零 immediate offset 的 stream 推进，`vstas` 负责消费返回的 `%align_out` 并在匹配 flush point 提交残留 tail
   - 覆盖：`core-f32, full-mask, immediate-offset, state-update`
-  - 承接：`pto.vstus` 验证 unaligned immediate-offset + state-update，并将 `%align_out/%base_out` 继续传给 `pto.vstas`；`pto.vstas` 在同一条有效 state 链上验证 aligned immediate-offset + state-update
+  - 承接：`pto.vstus` 验证 unaligned immediate-offset + state-update，并将 `%align_out` 继续传给 `pto.vstas`；`pto.vstas` 在同一条有效 state 链上验证 terminal flush 对返回 state 的消费
 ### Gather/Scatter Cases
 
 - `micro-op/gather-scatter/vscatter`

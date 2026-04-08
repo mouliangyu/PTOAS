@@ -6,7 +6,7 @@
 // CHECK: %[[MASK_ALL:.+]] = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
 // CHECK: %[[ALIGN:.+]] = pto.vldas %[[SRC]] : !pto.ptr<f32, ub> -> !pto.align
 // CHECK: %[[V0:.+]] = pto.vlds %[[SRC]][%arg2] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-// CHECK: %[[V1:.+]], %[[NEXT_ALIGN:.+]], %[[NEXT_SRC:.+]] = pto.vldus %[[SRC]], %[[ALIGN]] : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align, !pto.ptr<f32, ub>
+// CHECK: %[[V1:.+]], %[[NEXT_ALIGN:.+]] = pto.vldus %[[SRC]], %[[ALIGN]] : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align
 // CHECK: %[[PMASK:.+]] = pto.plds %[[SRC]][%arg2] : !pto.ptr<f32, ub> -> !pto.mask<b32>
 // CHECK: pto.vsts %[[V0]], %[[DST]][%arg2], %[[MASK_ALL]] : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
 // CHECK: pto.vsts %[[V1]], %[[DST]][%arg2], %[[PMASK]] : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
@@ -20,7 +20,7 @@ module {
       %mask_all = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
       %align = pto.vldas %src : !pto.ptr<f32, ub> -> !pto.align
       %v0 = pto.vlds %src[%index] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-      %v1, %next_align, %next_src = pto.vldus %src, %align : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align, !pto.ptr<f32, ub>
+      %v1, %next_align = pto.vldus %src, %align : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align
       %pmask = pto.plds %src[%index] : !pto.ptr<f32, ub> -> !pto.mask<b32>
       pto.vsts %v0, %dst[%index], %mask_all : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
       pto.vsts %v1, %dst[%index], %pmask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
