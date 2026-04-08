@@ -3,8 +3,9 @@
 // family: compare-select
 // target_ops: pto.vcmp
 // scenarios: core-f32, full-mask, exceptional-values
-// NOTE: bulk-generated coverage skeleton. Parser/verifier/lowering failure is
-// still a valid test conclusion in the current coverage-first phase.
+// NOTE: blocked placeholder case. The current PTO surface and docs only expose
+// eq/ne/lt/le/gt/ge compare modes for pto.vcmp, so a true unordered compare
+// case cannot be expressed yet.
 // -----------------------------------------------------------------------------
 #include <pto/common/type.hpp>
 
