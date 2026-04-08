@@ -197,6 +197,7 @@ build_one() {
     -march="${AICORE_ARCH}" \
     --cce-aicore-arch="${AICORE_ARCH}" \
     --cce-aicore-only \
+    -O2 \
     -c -x ir "${llvm_ir_cpp}" \
     -o "${llvm_device_obj}"
   rc=$?
