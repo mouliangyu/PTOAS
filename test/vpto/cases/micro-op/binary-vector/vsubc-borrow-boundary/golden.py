@@ -25,12 +25,17 @@ def generate(output_dir: Path, seed: int) -> None:
     reps = LANES // pattern_lhs.size
     v1[:] = np.tile(pattern_lhs, reps)
     v2[:] = np.tile(pattern_rhs, reps)
-    borrow = v1 < v2
+    no_borrow = v1 >= v2
     result = (v1 - v2).astype(np.uint32, copy=False)
     packed = np.zeros(256, dtype=np.uint8)
-    for idx, bit in enumerate(borrow):
-        if bit:
-            packed[idx // 8] |= np.uint8(1 << (idx % 8))
+    for idx, bit in enumerate(no_borrow):
+        if not bit:
+            continue
+        byte = idx // 2
+        if idx % 2 == 0:
+            packed[byte] |= np.uint8(0x1)
+        else:
+            packed[byte] |= np.uint8(0x10)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.tofile(output_dir / "v1.bin")

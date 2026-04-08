@@ -286,20 +286,22 @@ for (int i = 0; i < N; i++) {
 
 ### `pto.vsubc`
 
-- **syntax:** `%result, %borrow = pto.vsubc %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
-- **semantics:** Subtract with borrow output.
+- **syntax:** `%result, %carry = pto.vsubc %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
+- **semantics:** Subtract with per-lane carry output.
 
 ```c
 for (int i = 0; i < N; i++) {
     dst[i] = src0[i] - src1[i];
-    borrow[i] = (src0[i] < src1[i]);
+    carry[i] = (src0[i] >= src1[i]);
 }
 ```
 
 - **inputs:** `%lhs` and `%rhs` are subtracted lane-wise and `%mask` selects
   active lanes.
-- **outputs:** `%result` is the arithmetic difference and `%borrow` marks lanes
-  that borrowed.
+- **outputs:** `%result` is the arithmetic difference and `%carry` is the
+  per-lane carry predicate. For this subtraction family, active lanes set
+  `%carry[i] = 1` when the subtraction completes without borrow, and
+  `%carry[i] = 0` when a borrow occurs.
 - **A5 types:** `i32`, `s32`, `u32`
 - **constraints and limitations:** This operation is currently restricted to
   the 32-bit integer carry/borrow-chain family.

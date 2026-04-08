@@ -435,14 +435,9 @@ This is intentionally different from a lane-vector model such as `mask<64xi1>`:
 - `!pto.mask<b32>` still denotes a 256-bit predicate register;
 - `64` is only the derived logical lane count for the `b32` view;
 - value-level patterns such as `PAT_VL32` describe which lanes are active, not a different type.
-
-For carry/borrow families such as `pto.vaddc`, `pto.vsubc`, `pto.vaddcs`, and
-`pto.vsubcs`, the predicate result should also be read at this logical-granularity
-level: `!pto.mask<b32>` means one logical predicate value per 32-bit lane. It
-does not mean the physical register is packed as a dense `64 x i1` bit-vector.
-At the hardware level, the predicate register still uses the target's native
-predicate-bit encoding for `b32` granularity, and predicate load/store ops are
-responsible for materializing that encoding to or from memory.
+- `pto.vaddc`, `pto.vsubc`, `pto.vaddcs`, and `pto.vsubcs` use `!pto.mask<G>`
+  to carry their per-lane carry results, interpreted with this same
+  granularity.
 
 **Predication Behavior (Zero-Merge):**
 

@@ -210,20 +210,22 @@ for (int i = 0; i < N; i++) {
 
 ### `pto.vsubcs`
 
-- **syntax:** `%result, %borrow = pto.vsubcs %lhs, %rhs, %borrow_in, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
-- **semantics:** Subtract with borrow-in and borrow-out.
+- **syntax:** `%result, %carry = pto.vsubcs %lhs, %rhs, %carry_in, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.mask<G>`
+- **semantics:** Subtract with carry input and output.
 
 ```c
 for (int i = 0; i < N; i++) {
-    dst[i] = src0[i] - src1[i] - borrow_in[i];
-    borrow_out[i] = (src0[i] < src1[i] + borrow_in[i]);
+    dst[i] = src0[i] - src1[i] - (1 - carry_in[i]);
+    carry_out[i] = (src0[i] >= src1[i] + (1 - carry_in[i]));
 }
 ```
 
-- **inputs:** `%lhs` and `%rhs` are the value vectors, `%borrow_in` is the
-  incoming borrow predicate, and `%mask` selects active lanes.
-- **outputs:** `%result` is the arithmetic result and `%borrow` is the
-  borrow-out predicate.
+- **inputs:** `%lhs` and `%rhs` are the value vectors, `%carry_in` is the
+  incoming carry predicate, and `%mask` selects active lanes.
+- **outputs:** `%result` is the arithmetic result and `%carry` is the
+  carry predicate after the lane-wise subtraction. For this subtraction family,
+  active lanes set `%carry[i] = 1` when the subtraction completes without
+  borrow, and `%carry[i] = 0` when a borrow occurs.
 - **A5 types:** `i32`, `s32`, `u32`
 - **constraints and limitations:** This is the scalar-extended borrow-chain
   family and is currently restricted to 32-bit integer element types.
