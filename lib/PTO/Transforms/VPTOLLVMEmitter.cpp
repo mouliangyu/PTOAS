@@ -175,6 +175,20 @@ static std::optional<uint64_t> parsePartImmediate(StringRef part) {
   return std::nullopt;
 }
 
+// VSQZ #st hint must only be set when the compacted vector feeds VSTUR.
+// Emitting #st=1 without a matching VSTUR consumer can deadlock hardware queues.
+static uint64_t determineVsqzStoreHint(pto::VsqzOp vsqz) {
+  Value result = vsqz.getResult();
+  for (Operation *user : result.getUsers()) {
+    auto vstur = dyn_cast<pto::VsturOp>(user);
+    if (!vstur)
+      continue;
+    if (vstur.getValue() == result)
+      return 1;
+  }
+  return 0;
+}
+
 enum class VcvtElemKind {
   Invalid,
   F16,
@@ -3141,7 +3155,8 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
   } else if (auto vsqz = dyn_cast<pto::VsqzOp>(op)) {
     callArgs.push_back(vsqz.getInput());
     callArgs.push_back(vsqz.getMask());
-    callArgs.push_back(getI32Constant(builder, loc, 1));
+    callArgs.push_back(
+        getI32Constant(builder, loc, determineVsqzStoreHint(vsqz)));
   } else if (auto vusqz = dyn_cast<pto::VusqzOp>(op)) {
     callArgs.push_back(vusqz.getSrc());
     callArgs.push_back(vusqz.getMask());

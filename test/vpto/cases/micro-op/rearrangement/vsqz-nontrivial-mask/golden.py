@@ -2,8 +2,7 @@
 # case: micro-op/rearrangement/vsqz-nontrivial-mask
 # family: rearrangement
 # target_ops: pto.vsqz
-# scenarios: predicate-driven-rearrangement, stable-order
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: predicate-driven-rearrangement, stable-order, nontrivial-mask
 # coding=utf-8
 
 import argparse
@@ -14,24 +13,33 @@ import numpy as np
 
 ROWS = 32
 COLS = 32
+LANES = 64
+BLOCKS = ROWS * COLS // LANES
+ACTIVE_POSITIONS = [1, 4, 5, 9, 12, 16, 21, 24, 29, 33, 36, 40, 45, 49, 54, 60]
 SEED = 19
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.abs(v1).astype(np.float32, copy=False)
+    values = rng.uniform(-8.0, 8.0, size=(BLOCKS, LANES)).astype(np.float32)
+    mask_seed = np.full((BLOCKS, LANES), -1.0, dtype=np.float32)
+    golden = np.zeros((BLOCKS, LANES), dtype=np.float32)
+
+    for block in range(BLOCKS):
+        for pos in ACTIVE_POSITIONS:
+            mask_seed[block, pos] = 1.0
+        kept = values[block, ACTIVE_POSITIONS]
+        golden[block, :kept.size] = kept
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    v1.reshape(-1).tofile(output_dir / "v1.bin")
-    v2.reshape(-1).tofile(output_dir / "v2.bin")
-    golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
+    values.reshape(-1).tofile(output_dir / "v1.bin")
+    mask_seed.reshape(-1).tofile(output_dir / "v2.bin")
+    golden.reshape(-1).tofile(output_dir / "golden_v2.bin")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vabs validation."
+        description="Generate nontrivial-mask inputs/golden for VPTO micro-op vsqz validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

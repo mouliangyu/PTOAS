@@ -2,8 +2,7 @@
 # case: micro-op/rearrangement/vsqz-nontrivial-mask
 # family: rearrangement
 # target_ops: pto.vsqz
-# scenarios: predicate-driven-rearrangement, stable-order
-# NOTE: bulk-generated coverage skeleton.
+# scenarios: predicate-driven-rearrangement, stable-order, nontrivial-mask
 # coding=utf-8
 
 import os
