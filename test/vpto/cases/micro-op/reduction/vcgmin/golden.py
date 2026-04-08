@@ -24,8 +24,9 @@ def generate(output_dir: Path, seed: int) -> None:
     group_elems = 8
     for offset in range(0, flat_in.size, LANES):
         chunk = flat_in[offset:offset + LANES]
-        for group in range(0, LANES, group_elems):
-            flat_out[offset + group] = np.min(chunk[group:group + group_elems])
+        for gi, group in enumerate(range(0, chunk.size, group_elems)):
+            # VCGMIN writes one reduced value per 32B block continuously to low lanes.
+            flat_out[offset + gi] = np.min(chunk[group:group + group_elems])
 
 
     output_dir.mkdir(parents=True, exist_ok=True)
