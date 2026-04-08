@@ -23,7 +23,12 @@ def generate(output_dir: Path, seed: int) -> None:
     flat_out = golden_v2.reshape(-1)
     for offset in range(0, flat_in.size, LANES):
         chunk = flat_in[offset:offset + LANES]
-        flat_out[offset:offset + LANES] = np.cumsum(chunk, dtype=np.float32)
+        pair_count = (chunk.size + 1) // 2
+        for i in range(pair_count):
+            a = chunk[2 * i]
+            b = chunk[2 * i + 1] if (2 * i + 1) < chunk.size else np.float32(0.0)
+            # VCPADD writes pair-reduction results to low half lanes.
+            flat_out[offset + i] = np.float32(a + b)
 
 
     output_dir.mkdir(parents=True, exist_ok=True)
