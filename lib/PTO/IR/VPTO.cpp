@@ -116,6 +116,30 @@ static LogicalResult verifyAlignTypeLike(Operation *op, Type type,
   return success();
 }
 
+static bool isSupportedVdupPosition(std::optional<StringRef> position) {
+  return !position || *position == "LOWEST" || *position == "HIGHEST";
+}
+
+static std::optional<StringRef> getVdupMaskGranularity(Type elementType) {
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return StringRef("b8");
+    case 16:
+      return StringRef("b16");
+    case 32:
+      return StringRef("b32");
+    default:
+      return std::nullopt;
+    }
+  }
+  if (elementType.isF16() || elementType.isBF16())
+    return StringRef("b16");
+  if (elementType.isF32())
+    return StringRef("b32");
+  return std::nullopt;
+}
+
 static bool isStoreAlignProducer(Operation *op) {
   return isa<InitAlignOp, PstuOp, VstusOp, VsturOp>(op);
 }
@@ -1507,12 +1531,26 @@ LogicalResult VdupOp::verify() {
   if (!resultType)
     return emitOpError("result must be !pto.vreg<...>");
 
+  std::optional<StringRef> granularity =
+      getVdupMaskGranularity(resultType.getElementType());
+  if (!granularity)
+    return emitOpError("result element type must use b8, b16, or b32 mask granularity");
+  if (failed(verifyMaskTypeWithGranularityLike(
+          getOperation(), getMask().getType(), "mask type", *granularity)))
+    return failure();
+
+  if (!isSupportedVdupPosition(getPosition()))
+    return emitOpError("position must be LOWEST or HIGHEST");
+
   Type inputType = getInput().getType();
   if (auto inputVecType = dyn_cast<VRegType>(inputType)) {
     if (inputVecType != resultType)
       return emitOpError("vector input must match result vector type");
     return success();
   }
+
+  if (getPosition())
+    return emitOpError("position is only supported for vector input");
 
   if (inputType != resultType.getElementType())
     return emitOpError("scalar input must match result element type");

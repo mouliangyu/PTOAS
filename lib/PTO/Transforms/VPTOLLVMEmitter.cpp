@@ -174,6 +174,25 @@ static std::optional<uint64_t> parsePartImmediate(StringRef part) {
   return std::nullopt;
 }
 
+static FailureOr<Value> normalizeVdupScalarOperand(OpBuilder &builder, Location loc,
+                                                   pto::VdupOp vdup) {
+  Value input = vdup.getInput();
+  Type scalarType = input.getType();
+  auto intType = dyn_cast<IntegerType>(scalarType);
+  if (!intType || intType.getWidth() != 8)
+    return input;
+
+  Type resultElemType = getElementTypeFromVectorLike(vdup.getResult().getType());
+  std::string resultElemFragment = getElementTypeFragment(resultElemType);
+  if (resultElemFragment != "s8" && resultElemFragment != "u8")
+    return input;
+
+  Type i16Type = builder.getIntegerType(16);
+  if (resultElemFragment == "u8")
+    return builder.create<arith::ExtUIOp>(loc, i16Type, input).getResult();
+  return builder.create<arith::ExtSIOp>(loc, i16Type, input).getResult();
+}
+
 // VSQZ #st hint must only be set when the compacted vector feeds VSTUR.
 // Emitting #st=1 without a matching VSTUR consumer can deadlock hardware queues.
 static uint64_t determineVsqzStoreHint(pto::VsqzOp vsqz) {
@@ -2057,8 +2076,11 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     auto lanes = getElementCountFromVectorLike(vdup.getResult().getType());
     if (vec.empty() || !lanes)
       return failure();
-    if (isa<VectorType, pto::VRegType>(inputType))
-      return "llvm.hivm.vdup.v" + std::to_string(*lanes) + vec + ".z";
+    if (isa<VectorType, pto::VRegType>(inputType)) {
+      StringRef position = vdup.getPosition().value_or("LOWEST");
+      StringRef family = position == "HIGHEST" ? "vdupm" : "vdup";
+      return "llvm.hivm." + family.str() + ".v" + std::to_string(*lanes) + vec + ".z";
+    }
     return "llvm.hivm.vdups.v" + std::to_string(*lanes) + vec + ".z";
   }
   if (auto vbr = dyn_cast<pto::VbrOp>(op)) {
@@ -2996,11 +3018,15 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
       diagOS << "VPTO LLVM emission failed: vector-input vdup requires matching result type\n";
       return failure();
     }
-    auto mask = buildPltB32Mask(builder, module, loc, /*laneCount=*/64, diagOS);
-    if (failed(mask))
-      return failure();
-    callArgs.push_back(vdup.getInput());
-    callArgs.push_back(*mask);
+    if (vectorInput) {
+      callArgs.push_back(vdup.getInput());
+    } else {
+      FailureOr<Value> normalizedScalar = normalizeVdupScalarOperand(builder, loc, vdup);
+      if (failed(normalizedScalar))
+        return failure();
+      callArgs.push_back(*normalizedScalar);
+    }
+    callArgs.push_back(vdup.getMask());
     callArgs.push_back(getI32Constant(builder, loc, 1));
   } else if (isa<pto::VaddOp, pto::VsubOp,
                  pto::VmulOp, pto::VdivOp, pto::VmaxOp, pto::VminOp,

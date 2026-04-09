@@ -25,7 +25,23 @@ def encode_b32_mask(mask: np.ndarray) -> np.ndarray:
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-1.0, 1.0, size=(LANES,)).astype(np.float32)
+    v1 = rng.uniform(-2.0, 2.0, size=(LANES,)).astype(np.float32)
+
+    v1[:12] = np.array([
+        THRESHOLD,
+        np.nextafter(THRESHOLD, np.float32(np.inf)),
+        np.nextafter(THRESHOLD, np.float32(-np.inf)),
+        0.0,
+        -0.0,
+        -1.0,
+        1.0,
+        2.0,
+        -2.0,
+        THRESHOLD + np.float32(0.25),
+        THRESHOLD - np.float32(0.25),
+        THRESHOLD,
+    ], dtype=np.float32)
+
     mask = np.greater(v1, THRESHOLD)
     mask[LOGICAL_ELEMS:] = False
 

@@ -14,8 +14,11 @@ SEED = 19
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.random((ROWS, COLS), dtype=np.float32) + np.float32(0.5)
-    v2 = rng.random((ROWS, COLS), dtype=np.float32) + np.float32(0.5)
+    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
+    v2_mag = rng.uniform(0.5, 8.0, size=(ROWS, COLS)).astype(np.float32)
+    v2_sign = np.where(rng.integers(0, 2, size=(ROWS, COLS), dtype=np.int32) == 0,
+                       np.float32(-1.0), np.float32(1.0))
+    v2 = (v2_mag * v2_sign).astype(np.float32, copy=False)
     golden_v3 = (v1 / v2).astype(np.float32, copy=False)
     v3 = np.zeros((ROWS, COLS), dtype=np.float32)
 

@@ -11,13 +11,14 @@ ROWS = 32
 COLS = 32
 SEED = 19
 LOGICAL_ELEMS = 1000
+OUT_SENTINEL = np.float32(-123.25)
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-4.0, 4.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.zeros((ROWS, COLS), dtype=np.float32)
+    v2 = np.full((ROWS, COLS), OUT_SENTINEL, dtype=np.float32)
+    golden_v2 = np.full((ROWS, COLS), OUT_SENTINEL, dtype=np.float32)
     golden_v2.reshape(-1)[:LOGICAL_ELEMS] = np.exp(
         v1.reshape(-1)[:LOGICAL_ELEMS]
     ).astype(np.float32, copy=False)

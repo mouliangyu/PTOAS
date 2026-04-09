@@ -283,6 +283,7 @@ def PTO_VbrOp : PTO_Op<"vbr", [Pure]> {
 def PTO_VdupOp : PTO_Op<"vdup", [Pure]> {
   let arguments = (ins
     AnyType:$input,
+    PTO_MaskTypeConstraint:$mask,
     OptionalAttr<StrAttr>:$position
   );
   let results = (outs PTO_VectorType:$result);
@@ -290,7 +291,7 @@ def PTO_VdupOp : PTO_Op<"vdup", [Pure]> {
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $input attr-dict `:` type($input) `->` type($result)
+    $input `,` $mask attr-dict `:` type($input) `,` type($mask) `->` type($result)
   }];
 }
 

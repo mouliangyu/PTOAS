@@ -16,6 +16,7 @@ ROWS = 32
 COLS = 32
 SEED = 19
 LOGICAL_ELEMS = 1000
+OUT_SENTINEL = np.float16(-123.25)
 
 
 def generate(output_dir: Path, seed: int) -> None:
@@ -23,8 +24,8 @@ def generate(output_dir: Path, seed: int) -> None:
     flat = rng.uniform(-8.0, 8.0, size=ROWS * COLS).astype(np.float32)
     flat[LOGICAL_ELEMS:] = 0.0
     v1 = flat.reshape(ROWS, COLS)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float16)
-    golden_flat = np.zeros(ROWS * COLS, dtype=np.float16)
+    v2 = np.full((ROWS, COLS), OUT_SENTINEL, dtype=np.float16)
+    golden_flat = np.full(ROWS * COLS, OUT_SENTINEL, dtype=np.float16)
 
     remaining = LOGICAL_ELEMS
     for offset in range(0, ROWS * COLS, 128):

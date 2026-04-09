@@ -18,6 +18,7 @@ BLOCK_FLOATS = 8
 BLOCKS_PER_ITER = 8
 ITER_ELEMS = 64
 SEED = 19
+OUT_SENTINEL = np.float32(-123.25)
 
 
 def generate(output_dir: Path, seed: int) -> None:
@@ -25,7 +26,7 @@ def generate(output_dir: Path, seed: int) -> None:
     flat = rng.uniform(-8.0, 8.0, size=(ROWS * COLS,)).astype(np.float32)
     blocks = flat.reshape(-1, BLOCK_FLOATS)
     offsets = np.zeros((ROWS * COLS,), dtype=np.int32)
-    gathered = np.zeros((ROWS * COLS,), dtype=np.float32)
+    gathered = np.full((ROWS * COLS,), OUT_SENTINEL, dtype=np.float32)
 
     for chunk in range((ROWS * COLS) // ITER_ELEMS):
         block_ids = ((np.arange(BLOCKS_PER_ITER, dtype=np.int32) + chunk * 11) * 7 + 3) % blocks.shape[0]
@@ -34,7 +35,7 @@ def generate(output_dir: Path, seed: int) -> None:
 
     v1 = flat.reshape(ROWS, COLS)
     v2 = offsets.reshape(ROWS, COLS)
-    v3 = np.zeros((ROWS, COLS), dtype=np.float32)
+    v3 = np.full((ROWS, COLS), OUT_SENTINEL, dtype=np.float32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")

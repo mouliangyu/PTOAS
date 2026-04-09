@@ -43,20 +43,20 @@ for (int i = 0; i < N; i++)
 
 ### `pto.vdup`
 
-- **syntax:** `%result = pto.vdup %input {position = "POSITION"} : T|!pto.vreg<NxT> -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vdup %input, %mask {position = "LOWEST|HIGHEST"} : T|!pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
 - **semantics:** Duplicate scalar or vector element to all lanes.
 - **inputs:**
-  `%input` supplies the scalar or source-lane value selected by `position`.
+  `%input` supplies the scalar or source-lane value selected by `position`,
+  and `%mask` controls the active lanes.
 - **outputs:**
   `%result` is the duplicated vector.
 - **constraints and limitations:**
-  `position` selects which source element or scalar position is duplicated. The
-  current PTO micro Instruction representation models that selector as an attribute rather than a
-  separate operand.
+  `position` selects which source vector element is duplicated and is only valid
+  for vector input. `position` defaults to `LOWEST`.
 
 ```c
 for (int i = 0; i < N; i++)
-    dst[i] = input_scalar_or_element;
+    dst[i] = mask[i] ? input_scalar_or_element : 0;
 ```
 
 ---

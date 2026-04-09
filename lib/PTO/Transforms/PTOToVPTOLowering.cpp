@@ -3378,8 +3378,8 @@ LogicalResult buildExpandScalarVecScope(const VPTOUnaryContract &contract,
     Value remaining = chunkLoop.getRegionIterArgs()[1];
     PredicateMaterialization predicateState = buildPredicateForLaneCount(
         rewriter, loc, contract.elementType, remaining);
-    Value computed = rewriter.create<pto::VdupOp>(
-        loc, vecType, scalar, rewriter.getStringAttr("POS_LOWEST"));
+    Value computed =
+        rewriter.create<pto::VdupOp>(loc, vecType, scalar, predicateState.mask, StringAttr());
     auto vsts = rewriter.create<pto::VstsPostOp>(loc, dstPtr.getType(), computed, dstPtr,
                                                   vectorStepValue, StringAttr(),
                                                   predicateState.mask);
@@ -3407,8 +3407,8 @@ LogicalResult buildExpandScalarVecScope(const VPTOUnaryContract &contract,
         buildMinIndexValue(rewriter, loc, remainingCols, vectorStepValue);
     Value predicate = buildPredicateMaskForLaneCount(
         rewriter, loc, contract.elementType, activeLanes);
-    Value computed = rewriter.create<pto::VdupOp>(
-        loc, vecType, scalar, rewriter.getStringAttr("POS_LOWEST"));
+    Value computed =
+        rewriter.create<pto::VdupOp>(loc, vecType, scalar, predicate, StringAttr());
     rewriter.create<pto::VstsOp>(loc, computed, dstBuffer, dstOffset,
                                   StringAttr(), predicate);
   }
@@ -3640,8 +3640,8 @@ LogicalResult buildScalarBitwiseVecScope(StringRef family,
       buildMinIndexValue(rewriter, loc, remaining, vectorWidthValue);
   Value predicate =
       buildPredicateMaskForLaneCount(rewriter, loc, contract.elementType, activeLanes);
-  Value scalarVec = rewriter.create<pto::VdupOp>(
-      loc, vecType, scalar, rewriter.getStringAttr("POS_LOWEST"));
+  Value scalarVec =
+      rewriter.create<pto::VdupOp>(loc, vecType, scalar, predicate, StringAttr());
   auto loaded = rewriter.create<pto::VldsOp>(loc, vecType, srcBuffer, offset,
                                               StringAttr());
 
@@ -3718,8 +3718,8 @@ LogicalResult buildScalarDivVecScope(const VPTOUnaryContract &contract,
   auto buildDivValue = [&](Value loaded, Value predicate) -> FailureOr<Value> {
     if (contract.elementType.isF32()) {
       if (scalarFirst) {
-        Value scalarVec = rewriter.create<pto::VdupOp>(
-            loc, vecType, scalar, rewriter.getStringAttr("POS_LOWEST"));
+        Value scalarVec =
+            rewriter.create<pto::VdupOp>(loc, vecType, scalar, predicate, StringAttr());
         return rewriter.create<pto::VdivOp>(loc, vecType, scalarVec, loaded, predicate)
             .getResult();
       }
@@ -3730,8 +3730,8 @@ LogicalResult buildScalarDivVecScope(const VPTOUnaryContract &contract,
       return rewriter.create<pto::VmulsOp>(loc, vecType, loaded, reciprocal, predicate).getResult();
     }
     if (contract.elementType.isF16()) {
-      Value scalarVec = rewriter.create<pto::VdupOp>(
-          loc, vecType, scalar, rewriter.getStringAttr("POS_LOWEST"));
+      Value scalarVec =
+          rewriter.create<pto::VdupOp>(loc, vecType, scalar, predicate, StringAttr());
       return scalarFirst
                  ? rewriter.create<pto::VdivOp>(loc, vecType, scalarVec, loaded, predicate)
                        .getResult()
@@ -3924,8 +3924,9 @@ LogicalResult buildRowExpandVecScope(const VPTOExpandContract &contract,
     Value dstBase = rewriter.create<arith::MulIOp>(loc, row, dstStrideValue);
     auto loaded =
         rewriter.create<pto::VldsOp>(loc, vecType, srcBuffer, srcOffset, StringAttr());
+    Value fullMask = buildAllPredicateMask(rewriter, loc, contract.elementType);
     Value expanded = rewriter.create<pto::VdupOp>(
-        loc, vecType, loaded.getResult(), rewriter.getStringAttr("POS_LOWEST"));
+        loc, vecType, loaded.getResult(), fullMask, rewriter.getStringAttr("LOWEST"));
     auto chunkLoop = rewriter.create<scf::ForOp>(loc, c0, repeatUpper, c1,
                                                  ValueRange{rowScalarInit});
     rewriter.setInsertionPointToStart(chunkLoop.getBody());
@@ -3948,8 +3949,9 @@ LogicalResult buildRowExpandVecScope(const VPTOExpandContract &contract,
   Value dstPtr = rowLoop.getRegionIterArgs()[1];
   auto loaded = rewriter.create<pto::VldsPostOp>(loc, vecType, srcPtr.getType(), srcPtr,
                                                   srcStrideValue, StringAttr());
+  Value fullMask = buildAllPredicateMask(rewriter, loc, contract.elementType);
   Value expanded = rewriter.create<pto::VdupOp>(
-      loc, vecType, loaded.getResult(), rewriter.getStringAttr("POS_LOWEST"));
+      loc, vecType, loaded.getResult(), fullMask, rewriter.getStringAttr("LOWEST"));
   auto chunkLoop = rewriter.create<scf::ForOp>(loc, c0, repeatUpper, c1,
                                                ValueRange{dstPtr, rowScalarInit});
   rewriter.setInsertionPointToStart(chunkLoop.getBody());
@@ -4657,7 +4659,9 @@ LogicalResult lowerTRSQRT(TRsqrtOp op, PatternRewriter &rewriter) {
   rewriter.setInsertionPointToStart(&(*vecScope).getBody().front());
   auto rowLoop = rewriter.create<scf::ForOp>(op.getLoc(), c0, validRowsValue, c1);
   rewriter.setInsertionPointToStart(rowLoop.getBody());
-  auto ones = rewriter.create<pto::VdupOp>(op.getLoc(), vecType, one, StringAttr());
+  Value fullMask = buildAllPredicateMask(rewriter, op.getLoc(), vecType.getElementType());
+  auto ones =
+      rewriter.create<pto::VdupOp>(op.getLoc(), vecType, one, fullMask, StringAttr());
   auto chunkLoop =
       rewriter.create<scf::ForOp>(op.getLoc(), c0, validColsValue, vectorStepValue);
   rewriter.setInsertionPointToStart(chunkLoop.getBody());
@@ -5314,8 +5318,9 @@ LogicalResult lowerTFillPadCommon(FillPadOpTy op, PatternRewriter &rewriter,
   if (!padValueAttr)
     return op.emitOpError("fillpad lowering requires a concrete non-null dst pad value");
   Value padScalar = rewriter.create<arith::ConstantOp>(op.getLoc(), cast<TypedAttr>(padValueAttr));
+  Value fullMask = buildAllPredicateMask(rewriter, op.getLoc(), vecType.getElementType());
   auto padVec =
-      rewriter.create<pto::VdupOp>(op.getLoc(), vecType, padScalar, StringAttr());
+      rewriter.create<pto::VdupOp>(op.getLoc(), vecType, padScalar, fullMask, StringAttr());
 
   int64_t vectorWidth = vecType.getElementCount();
   int64_t padCols = dstCols - contract.validCols;
@@ -6847,12 +6852,13 @@ LogicalResult lowerTRowExpandBinaryLike(OpTy op, PatternRewriter &rewriter,
 
   Value expandVec;
   if (expandIsColMajor) {
+    Value fullMask = buildAllPredicateMask(rewriter, op.getLoc(), elementType);
     Value expandScalar =
         rewriter.create<pto::UvldOp>(op.getLoc(), vecType, expandBuffer,
                                       expandRowOffset);
     expandVec = rewriter
-                    .create<pto::VdupOp>(op.getLoc(), vecType, expandScalar,
-                                          rewriter.getStringAttr("POS_LOWEST"))
+                    .create<pto::VdupOp>(op.getLoc(), vecType, expandScalar, fullMask,
+                                          StringAttr())
                     .getResult();
   } else {
     expandVec = rewriter

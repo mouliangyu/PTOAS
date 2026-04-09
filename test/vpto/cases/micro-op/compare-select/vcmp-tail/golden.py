@@ -24,10 +24,31 @@ def encode_b32_mask(mask: np.ndarray) -> np.ndarray:
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-3.0, 3.0, size=(LANES,)).astype(np.float32)
-    delta = rng.uniform(0.25, 1.25, size=(LANES,)).astype(np.float32)
-    choose_less = (np.arange(LANES, dtype=np.int32) % 2) == 0
-    v2 = np.where(choose_less, v1 + delta, v1 - delta).astype(np.float32)
+    v1 = rng.uniform(-6.0, 6.0, size=(LANES,)).astype(np.float32)
+    delta = rng.uniform(0.1, 2.0, size=(LANES,)).astype(np.float32)
+    mode = np.arange(LANES, dtype=np.int32) % 5
+
+    v2 = np.empty((LANES,), dtype=np.float32)
+    v2[mode == 0] = v1[mode == 0] + delta[mode == 0]
+    v2[mode == 1] = v1[mode == 1] - delta[mode == 1]
+    v2[mode == 2] = v1[mode == 2]
+    v2[mode == 3] = np.nextafter(v1[mode == 3], np.float32(np.inf))
+    v2[mode == 4] = np.nextafter(v1[mode == 4], np.float32(-np.inf))
+
+    v1[:10] = np.array([-3.0, -1.0, -0.0, 0.0, 0.25, 1.0, 2.0, 4.0, -4.0, 6.0], dtype=np.float32)
+    v2[:10] = np.array([
+        -2.0,
+        -2.0,
+        0.0,
+        np.nextafter(np.float32(0.0), np.float32(np.inf)),
+        0.25,
+        np.nextafter(np.float32(1.0), np.float32(-np.inf)),
+        3.0,
+        3.0,
+        np.nextafter(np.float32(-4.0), np.float32(np.inf)),
+        6.0,
+    ], dtype=np.float32)
+
     mask = np.less(v1, v2)
     mask[LOGICAL_ELEMS:] = False
 

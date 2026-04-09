@@ -36,13 +36,14 @@ module attributes {pto.target_arch = "a5"} {
     %c0 = arith.constant 0 : index
     %c64 = arith.constant 64 : index
     pto.vecscope {
+      %active = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
       scf.for %arg4 = %c0 to %c32 step %c1 {
         %16 = arith.muli %arg4, %c32 : index
         %17 = arith.muli %arg4, %c1 : index
         %18 = pto.addptr %7, %17 : <f32, ub> -> <f32, ub>
         %19 = pto.vldas %18 : !pto.ptr<f32, ub> -> !pto.align
         %result, %updated_align = pto.vldus %18, %19 : !pto.ptr<f32, ub>, !pto.align -> !pto.vreg<64xf32>, !pto.align
-        %20 = pto.vdup %result {position = "POS_LOWEST"} : !pto.vreg<64xf32> -> !pto.vreg<64xf32>
+        %20 = pto.vdup %result, %active {position = "LOWEST"} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
         scf.for %arg5 = %c0 to %c32 step %c64 {
           %21 = arith.subi %c32, %arg5 : index
           %22 = arith.cmpi slt, %21, %c64 : index

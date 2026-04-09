@@ -24,7 +24,9 @@ def encode_b32_mask(mask: np.ndarray) -> np.ndarray:
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-1.0, 1.0, size=(LANES,)).astype(np.float32)
+    v1 = rng.uniform(-2.0, 2.0, size=(LANES,)).astype(np.float32)
+    v1[:8] = np.array([0.5, 0.5001, 0.4999, -0.5, 1.0, -1.0, 0.0, 2.0],
+                      dtype=np.float32)
     mask = np.greater(v1, THRESHOLD)
 
     output_dir.mkdir(parents=True, exist_ok=True)

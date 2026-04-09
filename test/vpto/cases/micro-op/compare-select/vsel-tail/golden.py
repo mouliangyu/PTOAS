@@ -9,16 +9,17 @@ import numpy as np
 LANES = 64
 SEED = 19
 LOGICAL_ELEMS = 40
+OUT_SENTINEL = np.float32(-123.25)
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-3.0, 3.0, size=(LANES,)).astype(np.float32)
     v2 = rng.uniform(-3.0, 3.0, size=(LANES,)).astype(np.float32)
-    golden_v3 = np.zeros((LANES,), dtype=np.float32)
+    golden_v3 = np.full((LANES,), OUT_SENTINEL, dtype=np.float32)
     flat = np.where(v1 > v2, v1, v2).astype(np.float32, copy=False)
     golden_v3[:LOGICAL_ELEMS] = flat[:LOGICAL_ELEMS]
-    v3 = np.zeros((LANES,), dtype=np.float32)
+    v3 = np.full((LANES,), OUT_SENTINEL, dtype=np.float32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.tofile(output_dir / "v1.bin")

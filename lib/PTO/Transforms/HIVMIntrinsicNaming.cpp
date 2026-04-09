@@ -332,14 +332,20 @@ FailureOr<IntrinsicSelection> selectUnaryIntrinsic(Operation *op) {
 
   if (auto vdup = dyn_cast<pto::VdupOp>(op)) {
     const std::string vecFragment = getVectorTypeFragment(vdup.getResult().getType());
+    const bool vectorInput = isa<VectorType, pto::VRegType>(vdup.getInput().getType());
+    const StringRef position = vdup.getPosition().value_or("LOWEST");
+    const char *family =
+        vectorInput ? (position == "HIGHEST" ? "vdupm" : "vdup") : "vdups";
     llvm::SmallVector<std::string, 3> usedFields = {
-        "family=vdups", "vector=" + vecFragment, "variant=z"};
-    if (!isa<FloatType, IntegerType>(vdup.getInput().getType())) {
-      llvm::SmallVector<std::string, 2> missingFields = {"vector_input_vdup_mapping"};
+        "family=" + std::string(family), "vector=" + vecFragment,
+        "variant=z"};
+    if (!vectorInput && !isa<FloatType, IntegerType>(vdup.getInput().getType())) {
+      llvm::SmallVector<std::string, 1> missingFields = {"scalar_input_vdup_mapping"};
       return makeUnresolved(op, "vdup", "llvm.hivm.vdups", usedFields, missingFields,
                             vecFragment);
     }
-    std::string candidate = "llvm.hivm.vdups";
+    std::string candidate = "llvm.hivm.";
+    candidate += family;
     if (!vecFragment.empty())
       candidate += "." + vecFragment + ".z";
     return makeResolved(op, candidate, usedFields, vecFragment);
