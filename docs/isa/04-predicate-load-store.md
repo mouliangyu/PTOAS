@@ -25,9 +25,11 @@ forms (`plds`, `psts`) differ only in how `%offset` is supplied.
   the same, but `%offset` is supplied as an SSA `index` instead of a constant
   `index` immediate.
 - **DIST:** mandatory string token, one of `NORM`, `US`, `DS`.
-  - `NORM`: load the normal 256-byte predicate payload.
-  - `US`: load 128 bytes, then duplicate the loaded bits once.
-  - `DS`: load 512 bytes, then keep one bit out of every two bits.
+  - `NORM`: load a normal packed predicate payload of size `VL/8`.
+  - `US`: load a packed predicate payload of size `VL/16`, then duplicate each
+    loaded bit once.
+  - `DS`: load a packed predicate payload of size `2 * VL/8`, then keep one
+    bit out of every two bits.
 
 The loaded payload is a packed predicate image in UB. Consumer ops interpret
 the resulting `!pto.mask<G>` according to the mask granularity `G`.
@@ -47,9 +49,11 @@ models the explicit `base[offset]` form.
 - **offset:** must be a constant `index` immediate in PTO surface form.
 - **semantics:** Load predicate register with immediate offset.
 - **DIST:** mandatory string token, one of `NORM`, `US`, `DS`.
-  - `NORM`: load the normal 256-byte predicate payload.
-  - `US`: load 128 bytes, then duplicate the loaded bits once.
-  - `DS`: load 512 bytes, then keep one bit out of every two bits.
+  - `NORM`: load a normal packed predicate payload of size `VL/8`.
+  - `US`: load a packed predicate payload of size `VL/16`, then duplicate each
+    loaded bit once.
+  - `DS`: load a packed predicate payload of size `2 * VL/8`, then keep one
+    bit out of every two bits.
 
 Like `pto.plds`, this op reads a packed predicate payload from UB and
 materializes it as `!pto.mask<G>`.
@@ -66,8 +70,10 @@ materializes it as `!pto.mask<G>`.
   the same, but `%offset` is supplied as an SSA `index` instead of a constant
   `index` immediate.
 - **DIST:** mandatory string token, one of `NORM`, `PK`.
-  - `NORM`: store predicate payload into a normal 256-byte space.
-  - `PK`: store into a 128-byte space, keeping one bit out of every two bits.
+  - `NORM`: store the packed predicate payload into a normal destination space
+    of size `VL/8`.
+  - `PK`: store the packed predicate payload into a destination space of size
+    `VL/16`, keeping one bit out of every two bits.
 
 `pto.psts` stores the packed predicate payload represented by `!pto.mask<G>`.
 It only models the explicit `base[offset]` form.
@@ -85,8 +91,10 @@ pto.psts %mask, %ub[%c0], "NORM" : !pto.mask<G>, !pto.ptr<T, ub>, index
 - **offset:** must be a constant `index` immediate in PTO surface form.
 - **semantics:** Store predicate register with immediate offset.
 - **DIST:** mandatory string token, one of `NORM`, `PK`.
-  - `NORM`: store predicate payload into a normal 256-byte space.
-  - `PK`: store into a 128-byte space, keeping one bit out of every two bits.
+  - `NORM`: store the packed predicate payload into a normal destination space
+    of size `VL/8`.
+  - `PK`: store the packed predicate payload into a destination space of size
+    `VL/16`, keeping one bit out of every two bits.
 
 `pto.psti` and `pto.psts` store the packed predicate payload represented by
 `!pto.mask<G>`. The surface distinction is only immediate-offset versus

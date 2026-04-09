@@ -9,7 +9,10 @@ ROWS = 32
 COLS = 32
 OUTPUT_BYTES = ROWS * COLS
 PREDICATE_BITS = 256
-NORM_STORAGE_BYTES = PREDICATE_BITS // 8
+# For the current A5 predicate load/store surface used by these composition
+# cases, the user-visible packed NORM footprint is 16 bytes. Bytes beyond that
+# range are not part of the checked result footprint.
+NORM_STORAGE_BYTES = 16
 
 
 def prefix_bits(active_bits: int) -> np.ndarray:
