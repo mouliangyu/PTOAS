@@ -392,25 +392,20 @@
 - 当前参考工作目录：
   - `/tmp/vpto-unaligned-rerun-20260408/micro-op_vector-load-store_vstas-vstus-offset-update`
 
-## 16. `vsqz` 当前在 SIM 上会真实发指令，但 veccore 出现 ISU stall
+## 16. `vsqz` 的旧 `ISU stall` 结论已过期，根因是未重建旧 `ptoas` 二进制
 
-- 现象：
+- 旧现象：
   - `micro-op/rearrangement/vsqz`
   - `micro-op/rearrangement/vsqz-nontrivial-mask`
-  - 指令日志里已能看到 `RV_VSQZ` 与后续 `RV_VSTS`
-  - 但运行阶段出现 `Stalled/stuck status detected in ISU`
-- 已确认事实：
-  - 这两条 case 早期 host 侧也残留旧 `vabs_kernel_2d`；2026-04-07 修正 host symbol 后，已确认不再是空运行或错绑 kernel
-  - `micro-op/rearrangement/vsqz` 原始 `golden.py` 曾残留旧 `vabs` skeleton
-  - 按 `docs/isa/12-data-rearrangement.md` 修正为 full-mask 下输出等于输入后，`RV_VSQZ + RV_VSTS + ISU stall` 现象不变
-- 结论：
-  - 不是 parser/emitter 没接上，也不是 case 没真正发出目标指令
-  - 当前归因到 runtime/backend 缺口
-- 处理：
-  - 后续若再遇到 `VSQZ + VSTS + ISU stall` 组合，不要先改 oracle
-- 参考工作目录：
-  - `/home/mouliangyu/tmp/vpto-vsqz-rerun-20260407/micro-op_rearrangement_vsqz`
-  - `/home/mouliangyu/tmp/vpto-vsqz-nontrivial-rerun-20260407/micro-op_rearrangement_vsqz-nontrivial-mask`
+  - 历史记录曾观察到 `RV_VSQZ + RV_VSTS` 后出现 `ISU stall`
+- 新结论：
+  - `2026-04-09` 已确认当时使用的是未重建的旧 `ptoas` 二进制
+  - 旧 `.ll` 将 standalone `vsqz -> vsts` 误发为 `llvm.hivm.vsqz...(..., i32 1)`
+  - 重建 `ptoas` 后重新导出 `.ll`，当前已正确发射 `st=0`
+  - `micro-op/rearrangement/vsqz` 与 `micro-op/rearrangement/vsqz-nontrivial-mask` 在 `DEVICE=SIM` 路径均 compare passed
+- 当前参考工作目录：
+  - `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-rerun-after-rebuild/micro-op_rearrangement_vsqz`
+  - `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-nontrivial-rerun-after-rebuild/micro-op_rearrangement_vsqz-nontrivial-mask`
 
 ## 17. `vsts` 当前也会落到短 tick empty-run
 
@@ -713,6 +708,30 @@
   - [/home/mouliangyu/tmp/vpto-vshrs-rerun-20260407/micro-op_vec-scalar_vshrs](/home/mouliangyu/tmp/vpto-vshrs-rerun-20260407/micro-op_vec-scalar_vshrs)
   - [/home/mouliangyu/tmp/vpto-vshrs-boundary-rerun-20260407/micro-op_vec-scalar_vshrs-shift-boundary](/home/mouliangyu/tmp/vpto-vshrs-boundary-rerun-20260407/micro-op_vec-scalar_vshrs-shift-boundary)
   - [/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-i16-unsigned-sim/micro-op_vec-scalar_vadds-i16-unsigned](/home/mouliangyu/tmp/vpto-progress-micro-op_vec-scalar_vadds-i16-unsigned-sim/micro-op_vec-scalar_vadds-i16-unsigned)
+
+## 18. `vsqz` 若出现 `ISU stall`，先确认 `ptoas` 是否已重建；当前已证实不是 runtime 缺口
+
+- 现象：
+  - `micro-op/rearrangement/vsqz`
+  - `micro-op/rearrangement/vsqz-nontrivial-mask`
+  - 旧记录中都曾被归因为 `RV_VSQZ + RV_VSTS` 后的 veccore `ISU stall`
+- 已确认事实：
+  - 当前 repo 源码中的 `determineVsqzStoreHint()` 只在 `vsqz` 结果被 `pto.vstur` 消费时才发 `st=1`
+  - `micro-op/rearrangement/vsqz/kernel.pto` 的 post-pass VPTO IR 中，`pto.vsqz` 的直接 consumer 是 `pto.vsts`
+  - 使用旧 `build/tools/ptoas/ptoas` 导出的 `.ll` 曾错误生成 `llvm.hivm.vsqz...(..., i32 1)`
+  - 重建 `ptoas` 后重新导出 `.ll`，同一 standalone `vsqz -> vsts` 路径已正确生成 `llvm.hivm.vsqz...(..., i32 0)`
+  - 之后两条 case 在 `DEVICE=SIM` 复跑都 compare passed
+- 错误路径：
+  - 没有先重建 `ptoas`，直接拿旧 `.ll` / 旧 SIM 现象继续分析 `SQZN` 或 runtime
+  - 看到 `ISU stall` 就继续归因到 `VSQZ/SQZN` 协议本身
+- 正确路径：
+  - 若 standalone `vsqz -> vsts` case 出现 `ISU stall`，先执行 `ninja -C build ptoas`
+  - 再重新导出 `.ll`，确认 `llvm.hivm.vsqz...` 的第三个参数是否为 `i32 0`
+  - 只有在重建后二进制仍发成 `st=1` 或仍稳定挂住时，才继续分析 runtime/backend
+- 证据：
+  - `/tmp/vsqz-recheck-after-rebuild.ll`
+  - [/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-rerun-after-rebuild/micro-op_rearrangement_vsqz](/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-rerun-after-rebuild/micro-op_rearrangement_vsqz)
+  - [/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-nontrivial-rerun-after-rebuild/micro-op_rearrangement_vsqz-nontrivial-mask](/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-nontrivial-rerun-after-rebuild/micro-op_rearrangement_vsqz-nontrivial-mask)
 
 ## 17. `vaddcs` / `vsubcs` 当前 SIM 路径会完整执行 block，但结果向量与 carry/borrow 输出都保持为 0
 

@@ -850,8 +850,8 @@
   - `family`: `rearrangement`
   - `checklist_status`: `sim-passed`
   - `readiness_findings`: `runtime`
-  - `current_conclusion`: `按 VSQZ/VSTUR 契约修正 emitter 的 `#st` hint 策略后，`vsqz` case 在 `DEVICE=SIM` 路径已不再触发 `ISU stall`，并 compare passed`
-  - `evidence`: `/tmp/vpto-vsqz-runtime-check-20260408/micro-op_rearrangement_vsqz`
+  - `current_conclusion`: `该条旧记录已过期；2026-04-09` 已确认旧 `ISU stall` 根因是测试时使用了未重建的旧 `ptoas` 二进制。重建后重新导出 `.ll`，standalone `vsqz -> vsts` 已正确发射 `st=0`，并在 DEVICE=SIM 路径 compare passed`
+  - `evidence`: `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-rerun-after-rebuild/micro-op_rearrangement_vsqz`
 - `case`: `micro-op/rearrangement/vusqz`
   - `family`: `rearrangement`
   - `checklist_status`: `sim-passed`
@@ -1263,6 +1263,18 @@
   - `readiness_findings`: `kernel, golden, compare, host, runtime`
   - `current_conclusion`: `2026-04-09` 复核确认旧失败不是 `VSHLI.b16 #15` 缺口，而是 boundary case 的 host skeleton 仍错误绑定到其他 kernel symbol；修正 `main.cpp/launch.cpp/stub.cpp` 后，`ui16/full-mask` shift-left boundary case 在 DEVICE=SIM 模型路径 compare passed`
   - `evidence`: `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vshls-boundary-fixed/micro-op_vec-scalar_vshls-shift-boundary`
+- `case`: `micro-op/rearrangement/vsqz`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `2026-04-09` 复核确认旧 `ISU stall` 不是 runtime/backend 缺口，而是测试时使用了未重建的旧 `ptoas` 二进制；旧 `.ll` 将 standalone `vsqz -> vsts` 误发为 `st=1`。重建 `ptoas` 后重新导出 `.ll`，当前 `vsqz` 已正确发射 `st=0`，在 DEVICE=SIM 路径 compare passed`
+  - `evidence`: `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-rerun-after-rebuild/micro-op_rearrangement_vsqz`
+- `case`: `micro-op/rearrangement/vsqz-nontrivial-mask`
+  - `family`: `rearrangement`
+  - `checklist_status`: `sim-passed`
+  - `readiness_findings`: `kernel, golden, compare, host, runtime`
+  - `current_conclusion`: `2026-04-09` 与基础 `vsqz` 同步复核，旧 `ISU stall` 根因同样是未重建旧二进制导致的错误 `st=1` 发射；重建 `ptoas` 后复跑 nontrivial-mask case，DEVICE=SIM compare passed`
+  - `evidence`: `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vsqz-nontrivial-rerun-after-rebuild/micro-op_rearrangement_vsqz-nontrivial-mask`
 - `case`: `micro-op/vec-scalar/vshrs-shift-boundary`
   - `family`: `vec-scalar`
   - `checklist_status`: `sim-passed`
