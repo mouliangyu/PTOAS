@@ -16,8 +16,8 @@
 #define __gm__
 #endif
 
-extern "C" __global__ AICORE void vmuls_tail_kernel_2d(__gm__ float *v1,
-                                                       __gm__ float *v2) {
+extern "C" __global__ AICORE void vshls_shift_boundary_kernel(__gm__ float *v1,
+                                                              __gm__ float *v2) {
   (void)v1;
   (void)v2;
 }

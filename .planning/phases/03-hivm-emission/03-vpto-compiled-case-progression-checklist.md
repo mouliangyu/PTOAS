@@ -1261,8 +1261,8 @@
   - `family`: `vec-scalar`
   - `checklist_status`: `sim-passed`
   - `readiness_findings`: `kernel, golden, compare, host, runtime`
-  - `current_conclusion`: `已修正 host 侧错误 kernel symbol；修正后 `ui16/full-mask` shift-left boundary case 在 DEVICE=SIM 模型路径 compare passed`
-  - `evidence`: `/home/mouliangyu/tmp/vpto-vshls-rerun-20260407/micro-op_vec-scalar_vshls`
+  - `current_conclusion`: `2026-04-09` 复核确认旧失败不是 `VSHLI.b16 #15` 缺口，而是 boundary case 的 host skeleton 仍错误绑定到其他 kernel symbol；修正 `main.cpp/launch.cpp/stub.cpp` 后，`ui16/full-mask` shift-left boundary case 在 DEVICE=SIM 模型路径 compare passed`
+  - `evidence`: `/home/mouliangyu/projects/github.com/mouliangyu/PTOAS/.work/vshls-boundary-fixed/micro-op_vec-scalar_vshls-shift-boundary`
 - `case`: `micro-op/vec-scalar/vshrs-shift-boundary`
   - `family`: `vec-scalar`
   - `checklist_status`: `sim-passed`
