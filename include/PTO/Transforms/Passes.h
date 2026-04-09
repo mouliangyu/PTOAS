@@ -35,6 +35,9 @@ enum class PTOArch {
   A5,
 };
 
+// EmitC remains the pass-driven backend; the VPTO backend is emitted directly
+// from tools/ptoas at the final backend boundary.
+
 std::unique_ptr<Pass> createPTOHighDimLoweringPass();
 std::unique_ptr<Pass> createPTOVFloopGatherPass();
 std::unique_ptr<Pass> createLoweringSyncToPipePass();
@@ -64,6 +67,12 @@ std::unique_ptr<Pass> createPTORemoveRedundantBarrierPass();
 std::unique_ptr<Pass> createPTOViewToMemrefPass();
 std::unique_ptr<mlir::Pass> createPTOInsertLoadStoreForMixCVPass();
 std::unique_ptr<Pass> createInferPTOLayoutPass();
+std::unique_ptr<Pass> createPTOVPTOExpandBridgeOpsPass();
+std::unique_ptr<Pass> createPTOVPTOPtrBoundaryPass();
+std::unique_ptr<Pass> createPTOValidateVPTOIRPass();
+std::unique_ptr<Pass> createPTOValidateVPTOEmissionIRPass();
+std::unique_ptr<Pass> createLowerPTOToVPTOPass();
+std::unique_ptr<Pass> createLowerPTOToVPTOPass(StringRef loweringStrategy);
 // Declare register function
 void registerPTOPasses();
 
