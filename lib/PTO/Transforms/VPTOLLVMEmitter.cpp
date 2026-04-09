@@ -2034,22 +2034,6 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vsqrt.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto vrsqrt = dyn_cast<pto::VrsqrtOp>(op)) {
-    std::string vec = getElementTypeFragment(
-        getElementTypeFromVectorLike(vrsqrt.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(vrsqrt.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vrsqrt.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto vrec = dyn_cast<pto::VrecOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(vrec.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(vrec.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vrec.v" + std::to_string(*lanes) + vec + ".x";
-  }
   if (auto vrelu = dyn_cast<pto::VreluOp>(op)) {
     std::string vec = getElementTypeFragment(
         getElementTypeFromVectorLike(vrelu.getResult().getType()));
@@ -2065,22 +2049,6 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     if (vec.empty() || !lanes)
       return failure();
     return "llvm.hivm.vnot.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto vbcnt = dyn_cast<pto::VbcntOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(vbcnt.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(vbcnt.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vbcnt.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto vcls = dyn_cast<pto::VclsOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(vcls.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(vcls.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vcls.v" + std::to_string(*lanes) + vec + ".x";
   }
   if (auto vdup = dyn_cast<pto::VdupOp>(op)) {
     Type inputType = vdup.getInput().getType();
@@ -2115,22 +2083,6 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
       return failure();
     return "llvm.hivm.vsub.v" + std::to_string(*lanes) + vec + ".x";
   }
-  if (auto binary = dyn_cast<pto::VsaddOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
-    if (vec != "s16" || !lanes || *lanes != 128)
-      return failure();
-    return "llvm.hivm.vsadd.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto binary = dyn_cast<pto::VssubOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
-    if (vec != "s16" || !lanes || *lanes != 128)
-      return failure();
-    return "llvm.hivm.vssub.v" + std::to_string(*lanes) + vec + ".x";
-  }
   if (auto binary = dyn_cast<pto::VmulOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
@@ -2154,14 +2106,6 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     if (vec.empty() || !lanes)
       return failure();
     return "llvm.hivm.vadds.v" + std::to_string(*lanes) + vec + ".x";
-  }
-  if (auto binary = dyn_cast<pto::VsaddsOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(binary.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(binary.getResult().getType());
-    if (vec != "s16" || !lanes || *lanes != 128)
-      return failure();
-    return "llvm.hivm.vsadds.v" + std::to_string(*lanes) + vec + ".x";
   }
   if (auto binary = dyn_cast<pto::VmaxsOp>(op)) {
     std::string vec =
@@ -2442,14 +2386,6 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.vstar");
   if (isa<pto::VstasOp>(op))
     return std::string("llvm.hivm.vstas");
-  if (auto vslide = dyn_cast<pto::VslideOp>(op)) {
-    std::string vec =
-        getElementTypeFragment(getElementTypeFromVectorLike(vslide.getResult().getType()));
-    auto lanes = getElementCountFromVectorLike(vslide.getResult().getType());
-    if (vec.empty() || !lanes)
-      return failure();
-    return "llvm.hivm.vslide.v" + std::to_string(*lanes) + vec;
-  }
   if (auto vsqz = dyn_cast<pto::VsqzOp>(op)) {
     std::string vec =
         getElementTypeFragment(getElementTypeFromVectorLike(vsqz.getResult().getType()));
@@ -3025,30 +2961,6 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     }
     callArgs.push_back(input);
     callArgs.push_back(mask);
-  } else if (auto unary = dyn_cast<pto::VrsqrtOp>(op)) {
-    Value input = unary.getInput();
-    Value mask = unary.getMask();
-    Type vecType = loweredResultTypes.front();
-    Type maskType = convertVPTOType(mask.getType(), builder);
-    if (input.getType() != vecType || mask.getType() != maskType) {
-      diagOS << "VPTO LLVM emission failed: unexpected "
-             << op->getName().getStringRef() << " operand types\n";
-      return failure();
-    }
-    callArgs.push_back(input);
-    callArgs.push_back(mask);
-  } else if (auto unary = dyn_cast<pto::VrecOp>(op)) {
-    Value input = unary.getInput();
-    Value mask = unary.getMask();
-    Type vecType = loweredResultTypes.front();
-    Type maskType = convertVPTOType(mask.getType(), builder);
-    if (input.getType() != vecType || mask.getType() != maskType) {
-      diagOS << "VPTO LLVM emission failed: unexpected "
-             << op->getName().getStringRef() << " operand types\n";
-      return failure();
-    }
-    callArgs.push_back(input);
-    callArgs.push_back(mask);
   } else if (auto unary = dyn_cast<pto::VreluOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
@@ -3062,30 +2974,6 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(input);
     callArgs.push_back(mask);
   } else if (auto unary = dyn_cast<pto::VnotOp>(op)) {
-    Value input = unary.getInput();
-    Value mask = unary.getMask();
-    Type vecType = loweredResultTypes.front();
-    Type maskType = convertVPTOType(mask.getType(), builder);
-    if (input.getType() != vecType || mask.getType() != maskType) {
-      diagOS << "VPTO LLVM emission failed: unexpected "
-             << op->getName().getStringRef() << " operand types\n";
-      return failure();
-    }
-    callArgs.push_back(input);
-    callArgs.push_back(mask);
-  } else if (auto unary = dyn_cast<pto::VbcntOp>(op)) {
-    Value input = unary.getInput();
-    Value mask = unary.getMask();
-    Type vecType = loweredResultTypes.front();
-    Type maskType = convertVPTOType(mask.getType(), builder);
-    if (input.getType() != vecType || mask.getType() != maskType) {
-      diagOS << "VPTO LLVM emission failed: unexpected "
-             << op->getName().getStringRef() << " operand types\n";
-      return failure();
-    }
-    callArgs.push_back(input);
-    callArgs.push_back(mask);
-  } else if (auto unary = dyn_cast<pto::VclsOp>(op)) {
     Value input = unary.getInput();
     Value mask = unary.getMask();
     Type vecType = loweredResultTypes.front();
@@ -3114,7 +3002,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(vdup.getInput());
     callArgs.push_back(*mask);
     callArgs.push_back(getI32Constant(builder, loc, 1));
-  } else if (isa<pto::VaddOp, pto::VsubOp, pto::VsaddOp, pto::VssubOp,
+  } else if (isa<pto::VaddOp, pto::VsubOp,
                  pto::VmulOp, pto::VdivOp, pto::VmaxOp, pto::VminOp,
                  pto::VandOp, pto::VorOp, pto::VxorOp, pto::VshlOp,
                  pto::VshrOp, pto::VshlsOp, pto::VshrsOp>(op)) {
@@ -3230,7 +3118,7 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     }
     callArgs.push_back(mask);
     callArgs.push_back(getI32Constant(builder, loc, *part));
-  } else if (isa<pto::VmulsOp, pto::VaddsOp, pto::VsaddsOp,
+  } else if (isa<pto::VmulsOp, pto::VaddsOp,
                  pto::VmaxsOp, pto::VminsOp,
                  pto::VlreluOp>(op)) {
     callArgs.append(op->operand_begin(), op->operand_end());
@@ -3356,10 +3244,6 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     callArgs.push_back(*basePtr);
     callArgs.push_back(*offsetBytes);
     callArgs.push_back(getI32Constant(builder, loc, 0));
-  } else if (auto vslide = dyn_cast<pto::VslideOp>(op)) {
-    callArgs.push_back(vslide.getSrc0());
-    callArgs.push_back(vslide.getSrc1());
-    callArgs.push_back(vslide.getAmt());
   } else if (auto vsqz = dyn_cast<pto::VsqzOp>(op)) {
     callArgs.push_back(vsqz.getInput());
     callArgs.push_back(vsqz.getMask());

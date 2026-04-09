@@ -1999,21 +1999,6 @@ abs_vec = pto.vabs(vec_f32, mask32)
 |--------------|------|-------------|
 | `result` | `VRegType` | Square root values |
 
-#### `pto.vrec(vec: VRegType, mask: MaskType) -> VRegType`
-
-**Description**: Reciprocal of vector elements.
-
-**Parameters**:
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `vec` | `VRegType` | Input vector |
-| `mask` | `MaskType` | Predicate mask |
-
-**Returns**:
-| Return Value | Type | Description |
-|--------------|------|-------------|
-| `result` | `VRegType` | Reciprocal values |
-
 #### `pto.vrelu(vec: VRegType, mask: MaskType) -> VRegType`
 
 **Description**: ReLU activation (max(0, x)) of vector elements.
@@ -2073,21 +2058,6 @@ abs_vec = pto.vabs(vec_f32, mask32)
 | Return Value | Type | Description |
 |--------------|------|-------------|
 | `result` | `VRegType` | Complex maximum result |
-
-#### `pto.vbcnt(vec: VRegType, mask: MaskType) -> VRegType`
-
-**Description**: Bit count (population count) of vector elements.
-
-**Parameters**:
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `vec` | `VRegType` | Input vector |
-| `mask` | `MaskType` | Predicate mask |
-
-**Returns**:
-| Return Value | Type | Description |
-|--------------|------|-------------|
-| `result` | `VRegType` | Bit count values |
 
 ### Binary Vector Operations
 

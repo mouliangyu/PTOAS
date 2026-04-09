@@ -56,32 +56,6 @@ Operations that rearrange data within or between vector registers without memory
 
 ---
 
-## Slide / Shift
-
-### `pto.vslide`
-
-- **syntax:** `%result = pto.vslide %src0, %src1, %amt : !pto.vreg<NxT>, !pto.vreg<NxT>, i16 -> !pto.vreg<NxT>`
-- **semantics:** Concatenate two vectors and extract N-element window at offset.
-
-```c
-// Conceptually: tmp[0..2N-1] = {src1, src0}
-// dst[i] = tmp[amt + i]
-if (amt >= 0)
-    for (int i = 0; i < N; i++)
-        dst[i] = (i >= amt) ? src0[i - amt] : src1[N - amt + i];
-```
-
-**Use case:** Sliding window operations, shift register patterns.
-
-- **inputs:** `%src0` and `%src1` provide the concatenated source window and
-  `%amt` selects the extraction offset.
-- **outputs:** `%result` is the extracted destination window.
-- **constraints and limitations:** `pto.vslide` operates on the logical
-  concatenation of `%src1` and `%src0`. The source order and extraction offset
-  MUST be preserved exactly.
-
----
-
 ## Compress / Expand
 
 ### `pto.vsqz`
@@ -227,12 +201,6 @@ for (int i = 0; i < N/2; i++)
     : !pto.vreg<64xf32>, f32, !pto.mask<G> -> !pto.mask<G>
 %compacted = pto.vsqz %values, %pass_mask
     : !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
-
-// Sliding window sum
-%prev_window = pto.vslide %curr, %prev, %c1
-    : !pto.vreg<64xf32>, !pto.vreg<64xf32>, i16 -> !pto.vreg<64xf32>
-%window_sum = pto.vadd %curr, %prev_window, %all
-    : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
 
 // Type narrowing via pack
 %packed_i16 = pto.vpack %wide_i32, "LOWER"

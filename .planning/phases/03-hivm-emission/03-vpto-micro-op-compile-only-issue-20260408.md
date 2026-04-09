@@ -76,17 +76,7 @@ Replace `CASE_NAME` with any case listed below.
 
 ### 1. Unsupported Instr/Type in SIM/runtime
 
-- `micro-op/binary-vector/vsadd`
-- `micro-op/binary-vector/vssub`
-- `micro-op/vec-scalar/vsadds`
-- `micro-op/unary-vector/vrsqrt`
-- `micro-op/unary-vector/vrsqrt-zero-inf`
-- `micro-op/unary-vector/vrec`
-- `micro-op/unary-vector/vrec-zero-inf`
-- `micro-op/unary-vector/vbcnt`
-- `micro-op/unary-vector/vcls`
-- `micro-op/rearrangement/vslide`
-- `micro-op/rearrangement/vslide-tail-window`
+- `2026-04-09` 该组已按“不支持”处理，不再保留对应文档、后端支持路径和 testcase
 
 ### 2. Carry/borrow group
 

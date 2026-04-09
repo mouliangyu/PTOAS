@@ -494,8 +494,8 @@ private:
 
   static LogicalResult validateMaskGranularityContracts(Operation *op) {
     return llvm::TypeSwitch<Operation *, LogicalResult>(op)
-        .Case<VabsOp, VexpOp, VlnOp, VsqrtOp, VrecOp, VreluOp, VnotOp,
-              VcaddOp, VcmaxOp, VcminOp, VbcntOp, VclsOp>(
+        .Case<VabsOp, VexpOp, VlnOp, VsqrtOp, VreluOp, VnotOp,
+              VcaddOp, VcmaxOp, VcminOp>(
             [](auto concreteOp) {
               return validateInputMaskVectorConsumer(concreteOp);
             })

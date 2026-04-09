@@ -14,7 +14,7 @@ Operations that combine a vector with a scalar value, applying the scalar to eve
 - For 32-bit scalar forms, the scalar source MUST satisfy the backend's legal
   scalar-source constraints for this family.
 - For elementwise vec-scalar families whose scalar conceptually matches the
-  vector element type (`pto.vadds`, `pto.vsadds`, `pto.vmuls`, `pto.vmaxs`,
+  vector element type (`pto.vadds`, `pto.vmuls`, `pto.vmaxs`,
   `pto.vmins`, `pto.vlrelu`):
   - signed integer vectors accept signed integer scalars with the same width,
     and also accept signless `i<width>`
@@ -55,25 +55,6 @@ for (int i = 0; i < N; i++)
   may also use matching-signedness integer or signless `i<width>` with the same
   bit width as the vector element type, so it can be fed directly from `arith`
   constants.
-
----
-
-### `pto.vsadds`
-
-- **syntax:** `%result = pto.vsadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** si16
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = saturate(src[i] + scalar, T);
-```
-
-- **inputs:** `%input` is the source vector, `%scalar` is broadcast logically to
-  each lane, and `%mask` selects active lanes.
-- **outputs:** `%result` is the lane-wise saturated sum.
-- **constraints and limitations:** Signed integer element types only. This op
-  is the explicit saturating vector-scalar add family and is not interchangeable
-  with `pto.vadds`. `%scalar` may use `si16` or signless `i16`.
 
 ---
 

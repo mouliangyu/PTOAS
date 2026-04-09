@@ -25,8 +25,6 @@ Cycle-accurate simulator **popped→retire** latency (cycles). **fp16** values u
 | `pto.vexp` | `RV_VEXP` | **16** | **21** | — |
 | `pto.vln` | `RV_VLN` | **18** | **23** | — |
 | `pto.vsqrt` | `RV_VSQRT` | **17** | **22** | — |
-| `pto.vrsqrt` | `RV_VSQRT` / `RV_VDIV` | **17** / **17** | **22** / **22** | — |
-| `pto.vrec` | `RV_VDIV` | **17** | **22** | — |
 | `pto.vrelu` | `RV_VRELU` | **5** | **5** | — |
 | `pto.vnot` | `RV_VNOT` | — | int-only paths | — |
 | `pto.vmov` | `RV_VLD` proxy | **9** | **9** | — |
@@ -123,42 +121,6 @@ for (int i = 0; i < N; i++)
 
 ---
 
-### `pto.vrsqrt`
-
-- **syntax:** `%result = pto.vrsqrt %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** f16, f32
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = 1.0f / sqrtf(src[i]);
-```
-
-- **inputs:** `%input` is the source vector and `%mask` selects active lanes.
-- **outputs:** `%result` holds reciprocal-square-root values per active lane.
-- **constraints and limitations:** Only floating-point element types are legal.
-  Active inputs containing `+0` or `-0` follow the target's divide-style
-  exceptional behavior.
-
----
-
-### `pto.vrec`
-
-- **syntax:** `%result = pto.vrec %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** f16, f32
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = 1.0f / src[i];
-```
-
-- **inputs:** `%input` is the source vector and `%mask` selects active lanes.
-- **outputs:** `%result` holds the reciprocal per active lane.
-- **constraints and limitations:** Only floating-point element types are legal.
-  Active inputs containing `+0` or `-0` follow the target's divide-style
-  exceptional behavior.
-
----
-
 ## Activation
 
 ### `pto.vrelu`
@@ -196,40 +158,6 @@ for (int i = 0; i < N; i++)
 
 ---
 
-### `pto.vbcnt`
-
-- **syntax:** `%result = pto.vbcnt %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** all integer types
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = __builtin_popcount(src[i]);
-```
-
-- **inputs:** `%input` is the source vector and `%mask` selects active lanes.
-- **outputs:** `%result` holds the population count for each active lane.
-- **constraints and limitations:** Integer element types only. The count is
-  over the source element width, not over the full vector register.
-
----
-
-### `pto.vcls`
-
-- **syntax:** `%result = pto.vcls %input, %mask : !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** all integer types
-
-```c
-for (int i = 0; i < N; i++)
-    dst[i] = count_leading_sign_bits(src[i]);
-```
-
-- **inputs:** `%input` is the source vector and `%mask` selects active lanes.
-- **outputs:** `%result` holds the leading-sign-bit count per active lane.
-- **constraints and limitations:** Integer element types only. This operation is
-  sign-aware, so signed interpretation matters.
-
----
-
 ## Movement
 
 ## Typical Usage
@@ -238,9 +166,6 @@ for (int i = 0; i < N; i++)
 // Softmax numerator: exp(x - max)
 %sub = pto.vsub %x, %max_broadcast, %mask : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
 %exp = pto.vexp %sub, %mask : !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
-
-// Reciprocal for division
-%sum_rcp = pto.vrec %sum, %mask : !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>
 
 // ReLU activation
 %activated = pto.vrelu %linear_out, %mask : !pto.vreg<64xf32>, !pto.mask<G> -> !pto.vreg<64xf32>

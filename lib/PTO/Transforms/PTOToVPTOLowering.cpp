@@ -2961,8 +2961,6 @@ LogicalResult buildUnaryVecScope(StringRef family,
       return rewriter.create<pto::VlnOp>(loc, vecType, loaded, predicate).getResult();
     if (family == "sqrt")
       return rewriter.create<pto::VsqrtOp>(loc, vecType, loaded, predicate).getResult();
-    if (family == "recip")
-      return rewriter.create<pto::VrecOp>(loc, vecType, loaded, predicate).getResult();
     if (family == "relu")
       return rewriter.create<pto::VreluOp>(loc, vecType, loaded, predicate).getResult();
     if (family == "not")
