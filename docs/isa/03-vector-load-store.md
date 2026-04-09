@@ -352,7 +352,8 @@ for (int blk = 0; blk < VL / 32; ++blk) {
 - **constraints and limitations:**
   This is a backward-compatible family. Masked-off lanes do not participate in
   address coalescing and do not trigger address overflow exceptions; their
-  destination lanes are zero-filled.
+  destination lanes are zero-filled. On the current PTO surface, `%offsets`
+  uses 32-bit integer elements.
 - **Latency:** **27–28** cycles (same as **`pto.vgather2`**).
 
 ---

@@ -243,6 +243,9 @@ for (int i = 0; i < N; i++) {
 - **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This is a carry-chain integer add family. On
   the current A5 surface, only 32-bit integer element types are supported.
+  `%mask` and `%carry` therefore use the same typed-mask granularity as the
+  data vector family, which on the current documented A5 surface means
+  `!pto.mask<b32>`.
 
 ---
 
@@ -266,7 +269,9 @@ for (int i = 0; i < N; i++) {
   `%carry[i] = 0` when a borrow occurs.
 - **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This operation is currently restricted to
-  the 32-bit integer carry/borrow-chain family.
+  the 32-bit integer carry/borrow-chain family. `%mask` and `%carry`
+  therefore use the same typed-mask granularity as the data vector family,
+  which on the current documented A5 surface means `!pto.mask<b32>`.
 
 ---
 

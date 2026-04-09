@@ -52,7 +52,8 @@ for (int i = 0; i < N; i++)
 - **outputs:** `%result` is the generated predicate mask.
 - **constraints and limitations:** Only lanes enabled by `%seed` participate.
   Integer and floating-point comparisons follow their own element-type-specific
-  comparison rules.
+  comparison rules. `%seed` and `%result` keep the typed-mask granularity that
+  matches `%src0` / `%src1`.
 
 ---
 
@@ -79,6 +80,7 @@ for (int i = 0; i < N; i++)
 - **outputs:** `%result` is the generated predicate mask.
 - **constraints and limitations:** For 32-bit scalar forms, the scalar source
   MUST satisfy the backend's legal scalar-source constraints for this family.
+  `%seed` and `%result` keep the typed-mask granularity that matches `%src`.
 
 ---
 
@@ -105,7 +107,8 @@ for (int i = 0; i < N; i++)
   and `%mask` selects between them.
 - **outputs:** `%result` is the selected vector.
 - **constraints and limitations:** Source vectors and result MUST have matching
-  vector shapes and element types.
+  vector shapes and element types. `%mask` keeps the typed-mask granularity
+  that matches the selected vector family.
 
 ---
 

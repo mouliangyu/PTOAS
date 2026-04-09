@@ -185,7 +185,9 @@ for (int i = 0; i < N; i++) {
 - **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This is the scalar-extended carry-chain
   family. On the current A5 surface, only 32-bit integer element types are
-  supported.
+  supported. `%carry_in`, `%mask`, and `%carry` therefore all use the same
+  typed-mask granularity as the data vector family, which on the current
+  documented A5 surface means `!pto.mask<b32>`.
 
 ---
 
@@ -210,6 +212,9 @@ for (int i = 0; i < N; i++) {
 - **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This is the scalar-extended borrow-chain
   family and is currently restricted to 32-bit integer element types.
+  `%carry_in`, `%mask`, and `%carry` therefore all use the same typed-mask
+  granularity as the data vector family, which on the current documented A5
+  surface means `!pto.mask<b32>`.
 
 ---
 

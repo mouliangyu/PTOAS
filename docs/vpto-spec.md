@@ -235,6 +235,14 @@ pto.strict_vecscope(%ub, %ub_out, %lane) {
 - `pto.strict_vecscope` requires every external value used by the body to be passed through the op operand list and received as a body block argument.
 - `pto.strict_vecscope` rejects implicit capture from the surrounding scope.
 - both ops still represent one explicit VPTO vector interval.
+- regardless of whether the source form uses `pto.vecscope`,
+  `pto.strict_vecscope`, or a lowered carrier loop with
+  `llvm.loop.aivector_scope`, every op that produces or consumes `!pto.vreg`,
+  `!pto.mask<...>`, or `!pto.align` must be enclosed by exactly one vector
+  interval
+- nested vector intervals are not part of the legal VPTO surface; ordinary
+  nested `scf.for` structure is fine, but one vector interval may not contain
+  another vector interval
 
 ### Example: VecScope
 
@@ -321,6 +329,18 @@ PTO micro Instruction source programs are not restricted to `pto` operations alo
 ### Mask Types
 
 `mask<G>`: `!pto.mask<G>` Typed predicate-register view. `G` is one of `b8`, `b16`, `b32` and records the byte-granularity interpretation used by VPTO ops and verifiers.
+
+Typed masks are also the primary legality contract for predicated VPTO code:
+
+- vector ops over `f32`, `i32`, `si32`, and `ui32` consume `!pto.mask<b32>`
+- vector ops over `f16`, `bf16`, `i16`, `si16`, and `ui16` consume
+  `!pto.mask<b16>`
+- vector ops over 8-bit element families consume `!pto.mask<b8>`
+- compare families keep seed-mask and result-mask granularity aligned with the
+  compared vector family
+- carry families keep carry-in, carry-out, and execution-mask granularity
+  aligned with the data-vector family
+- mask-only ops that do not explicitly change granularity preserve the same `G`
 
 ### Address Space Conventions
 

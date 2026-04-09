@@ -37,7 +37,9 @@ Cycle-accurate simulator **popped→retire** latency (cycles). Only representati
   `%result` is the generated index vector.
 - **constraints and limitations:**
   This is an index-generation family, not a numeric conversion. `ORDER` and the
-  result element type together determine how indices are generated.
+  result element type together determine how indices are generated. `%result`
+  uses an integer element type, and the scalar `%index` type matches that
+  result element type.
 
 ---
 
@@ -61,7 +63,9 @@ for (int i = 0; i < min(N, M); i++)
 - **constraints and limitations:**
   Only documented source/destination type pairs are legal. All three
   attributes are optional at the surface level, but only the subset meaningful
-  to the selected conversion kind should be provided.
+  to the selected conversion kind should be provided. The execution mask must
+  use the typed-mask granularity that matches the source vector family on the
+  current surface; there is no `!pto.mask<b64>` form in VPTO.
 
 ---
 
@@ -147,7 +151,6 @@ as `32 -> 16` or `16 -> 32` style conversions.
 - `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<128xf16>`
 - `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
 - `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<64xf32>`
-- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<32xsi64>, !pto.mask<b64> -> !pto.vreg<64xf32>`
 
 #### Int To Int
 
@@ -167,7 +170,6 @@ as `32 -> 16` or `16 -> 32` style conversions.
 - `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<128xui16>`
 - `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<128xsi16>`
 - `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<32xsi64>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<32xsi64>, !pto.mask<b64> -> !pto.vreg<64xsi32>`
 
 ### A5 Supported Type Matrix
 
@@ -181,7 +183,7 @@ as `32 -> 16` or `16 -> 32` style conversions.
 | `si16` | Y |  |  |  | Y | Y |  | Y | Y |  |
 | `ui32` | Y |  | Y | Y |  |  |  |  |  |  |
 | `si32` | Y |  | Y | Y |  |  | Y |  | Y |  |
-| `si64` |  |  |  |  |  | Y |  |  | Y |  |
+| `si64` |  |  |  |  |  |  |  |  |  |  |
 | `f16` | Y | Y |  | Y |  | Y |  |  | Y |  |
 | `f32` |  |  |  | Y |  | Y | Y | Y |  | Y |
 | `bf16` |  |  |  |  |  | Y |  |  | Y |  |
