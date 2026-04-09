@@ -122,8 +122,8 @@ for (int i = 1; i < N; i++)
   result semantics are determined by `%mask`.
 - **outputs:** `%result[i]` equals the number of active lanes in `%mask[0:i)`,
   with `%result[0] = 0`.
-- **constraints and limitations:** `T` is currently limited to `s8`, `s16`,
-  or `s32`. This operation is a predicate-derived counting/rearrangement
+- **constraints and limitations:** `T` is currently limited to `si8`, `si16`,
+  or `si32`. This operation is a predicate-derived counting/rearrangement
   primitive rather than a value-placement primitive. The final predicate lane
   does not contribute to a later output lane because there is no `dst[N]`.
 

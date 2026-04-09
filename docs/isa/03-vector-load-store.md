@@ -329,7 +329,7 @@ for (int i = 0; i < active_lanes; i++)
 - **syntax:** `%result = pto.vgatherb %source, %offsets, %mask : !pto.ptr<T, ub>, !pto.vreg<NxI>, !pto.mask<b32> -> !pto.vreg<NxT>`
 - **semantics:** Block gather load from UB.
 - **inputs:**
-  `%source` is the UB base pointer, `%offsets` is a `u32` offset vector, and
+  `%source` is the UB base pointer, `%offsets` is a `ui32` offset vector, and
   `%mask` is a `b32` predicate over the block-index lanes.
 - **outputs:**
   `%result` is the gathered vector.

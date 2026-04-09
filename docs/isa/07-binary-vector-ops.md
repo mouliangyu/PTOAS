@@ -66,7 +66,7 @@ for (int i = 0; i < N; i++)
 ### `pto.vsadd`
 
 - **syntax:** `%result = pto.vsadd %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** s16
+- **A5 types:** si16
 
 ```c
 for (int i = 0; i < N; i++)
@@ -85,7 +85,7 @@ for (int i = 0; i < N; i++)
 ### `pto.vssub`
 
 - **syntax:** `%result = pto.vssub %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** s16
+- **A5 types:** si16
 
 ```c
 for (int i = 0; i < N; i++)
@@ -104,7 +104,7 @@ for (int i = 0; i < N; i++)
 ### `pto.vmul`
 
 - **syntax:** `%result = pto.vmul %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** i16-i32, f16, bf16, f32 (**NOT** i8/u8)
+- **A5 types:** i16-i32, f16, bf16, f32 (**NOT** i8/ui8)
 
 ```c
 for (int i = 0; i < N; i++)
@@ -114,7 +114,7 @@ for (int i = 0; i < N; i++)
 - **inputs:** `%lhs` and `%rhs` are multiplied lane-wise; `%mask` selects
   active lanes.
 - **outputs:** `%result` is the lane-wise product.
-- **constraints and limitations:** The current A5 profile excludes `i8/u8`
+- **constraints and limitations:** The current A5 profile excludes `i8/ui8`
   forms from this surface.
 
 ---
@@ -278,7 +278,7 @@ for (int i = 0; i < N; i++) {
   lanes.
 - **outputs:** `%result` is the truncated arithmetic result and `%carry` is the
   carry/overflow predicate per lane.
-- **A5 types:** `i32`, `s32`, `u32`
+- **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This is a carry-chain integer add family. On
   the current A5 surface, only 32-bit integer element types are supported.
 
@@ -302,7 +302,7 @@ for (int i = 0; i < N; i++) {
   per-lane carry predicate. For this subtraction family, active lanes set
   `%carry[i] = 1` when the subtraction completes without borrow, and
   `%carry[i] = 0` when a borrow occurs.
-- **A5 types:** `i32`, `s32`, `u32`
+- **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This operation is currently restricted to
   the 32-bit integer carry/borrow-chain family.
 

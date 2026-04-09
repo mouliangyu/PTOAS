@@ -107,7 +107,7 @@ for (int i = 0; i < N; i++)
 ### `pto.vmull`
 
 - **syntax:** `%low, %high = pto.vmull %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.vreg<NxT>`
-- **A5 types:** i32/u32 (native 32×32→64 widening multiply)
+- **A5 types:** i32/ui32 (native 32×32→64 widening multiply)
 - **semantics:** Widening multiply with high/low results.
 
 ```c

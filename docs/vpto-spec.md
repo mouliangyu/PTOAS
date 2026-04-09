@@ -110,10 +110,10 @@ Elements per VLane by data type:
 
 | Data Type | Elements/VLane | Total Elements/vreg |
 |-----------|---------------|-------------------|
-| i8/u8 | 32 | 256 |
-| i16/u16/f16/bf16 | 16 | 128 |
-| i32/u32/f32 | 8 | 64 |
-| i64/u64 | 4 | 32 |
+| i8/si8/ui8 | 32 | 256 |
+| i16/si16/ui16/f16/bf16 | 16 | 128 |
+| i32/si32/ui32/f32 | 8 | 64 |
+| i64/si64/ui64 | 4 | 32 |
 
 #### Memory and Synchronization Model
 
@@ -310,15 +310,13 @@ PTO micro Instruction source programs are not restricted to `pto` operations alo
 
 | Type | Bits | Description |
 |------|------|-------------|
-| `i8` / `s8` / `u8` | 8 | Signless/signed/unsigned 8-bit integer |
-| `i16` / `s16` / `u16` | 16 | Signless/signed/unsigned 16-bit integer |
-| `i32` / `s32` / `u32` | 32 | Signless/signed/unsigned 32-bit integer |
-| `i64` / `s64` / `u64` | 64 | Signless/signed/unsigned 64-bit integer |
+| `i8` / `si8` / `ui8` | 8 | Signless/signed/unsigned 8-bit integer |
+| `i16` / `si16` / `ui16` | 16 | Signless/signed/unsigned 16-bit integer |
+| `i32` / `si32` / `ui32` | 32 | Signless/signed/unsigned 32-bit integer |
+| `i64` / `si64` / `ui64` | 64 | Signless/signed/unsigned 64-bit integer |
 | `f16` | 16 | IEEE 754 half precision |
 | `bf16` | 16 | Brain floating point |
 | `f32` | 32 | IEEE 754 single precision |
-| `f8e4m3` | 8 | FP8 (4-bit exponent, 3-bit mantissa) |
-| `f8e5m2` | 8 | FP8 (5-bit exponent, 2-bit mantissa) |
 
 ### Mask Types
 
@@ -380,9 +378,50 @@ result = ptr + offset;  // offset counted in elements, not bytes
 
 `pto.addptr` preserves both the element type `T` and the memory-space tag `space`.
 
+#### `pto.load_scalar`
+
+- **syntax:** `%value = pto.load_scalar %ptr[%offset] : !pto.ptr<T, space> -> T`
+- **semantics:** Load one scalar element from a pointer-like operand.
+
+```c
+value = ptr[offset];
+```
+
+- **inputs:**
+  `%ptr` is a typed PTO pointer `!pto.ptr<T, space>`, and `%offset` is an
+  `index` displacement counted in elements.
+- **outputs:**
+  `%value` is the loaded scalar element.
+- **constraints and limitations:**
+  The result type MUST match the element type of `%ptr`. This op is a scalar
+  memory helper; unlike `pto.vlds`, it does not produce a `vreg` result and
+  does not participate in vector load `dist` families.
+
+#### `pto.store_scalar`
+
+- **syntax:** `pto.store_scalar %value, %ptr[%offset] : !pto.ptr<T, space>, T`
+- **semantics:** Store one scalar element to a pointer-like operand.
+
+```c
+ptr[offset] = value;
+```
+
+- **inputs:**
+  `%value` is the scalar value to store. `%ptr` is a typed PTO pointer
+  `!pto.ptr<T, space>`, and `%offset` is an `index` displacement counted in
+  elements.
+- **constraints and limitations:**
+  The stored value type MUST match the element type of `%ptr`. This op is a
+  scalar memory helper; unlike `pto.vsts`, it does not consume a mask and does
+  not target vector-store `dist` families.
+
 #### Pointer-Based Vector Access Example
 
-The following lowered-style fragment shows how typed PTO pointers flow through pointer construction, pointer arithmetic, structured control flow, and PTO memory ops:
+The following lowered-style fragment shows how typed PTO pointers flow through
+pointer construction, pointer arithmetic, structured control flow, and PTO
+memory ops. Scalar memory access is expressed on `!pto.ptr<T, space>` in
+general, but the common VPTO pattern here is UB-local scalar access alongside
+UB vector loads/stores:
 
 ```mlir
 %0 = pto.castptr %c0 : i64 -> !pto.ptr<f32, ub>
@@ -390,6 +429,8 @@ The following lowered-style fragment shows how typed PTO pointers flow through p
 pto.vecscope {
   %16 = scf.for %arg3 = %c0 to %11 step %c64 iter_args(%arg4 = %12) -> (i32) {
     %mask, %scalar_out = pto.plt_b32 %arg4 : i32 -> !pto.mask<b32>, i32
+    %s = pto.load_scalar %1[%c4] : !pto.ptr<f32, ub> -> f32
+    pto.store_scalar %s, %1[%c8] : !pto.ptr<f32, ub>, f32
     %17 = pto.vlds %1[%arg3] : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
     %18 = pto.vabs %17, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
     pto.vsts %18, %10[%arg3], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
@@ -630,10 +671,10 @@ T scalar;       // scalar operand (vec-scalar ops)
 int mask[N];    // per-lane predicate (0 or 1)
 
 // N = lane count determined by type:
-//   N = 256 for i8/u8
-//   N = 128 for i16/u16/f16/bf16
-//   N = 64  for i32/u32/f32
-//   N = 32  for i64/u64
+//   N = 256 for i8/si8/ui8
+//   N = 128 for i16/si16/ui16/f16/bf16
+//   N = 64  for i32/si32/ui32/f32
+//   N = 32  for i64/si64/ui64
 ```
 
 **Example — pto.vadd semantics:**
@@ -766,13 +807,13 @@ Group 14 covers the full scalar `arith` surface. The rows below list common PTO 
 
 | Type | Bits | vreg Lanes | Description |
 |------|------|-----------|-------------|
-| `i8` / `u8` | 8 | 256 | Signed/unsigned 8-bit integer |
-| `i16` / `u16` | 16 | 128 | Signed/unsigned 16-bit integer |
+| `i8` / `si8` / `ui8` | 8 | 256 | Signless/signed/unsigned 8-bit integer |
+| `i16` / `si16` / `ui16` | 16 | 128 | Signless/signed/unsigned 16-bit integer |
 | `f16` | 16 | 128 | IEEE 754 half precision |
 | `bf16` | 16 | 128 | Brain floating point |
-| `i32` / `u32` | 32 | 64 | Signed/unsigned 32-bit integer |
+| `i32` / `si32` / `ui32` | 32 | 64 | Signless/signed/unsigned 32-bit integer |
 | `f32` | 32 | 64 | IEEE 754 single precision |
-| `i64` / `u64` | 64 | 32 | Signed/unsigned 64-bit integer |
+| `i64` / `si64` / `ui64` | 64 | 32 | Signless/signed/unsigned 64-bit integer |
 
 ---
 

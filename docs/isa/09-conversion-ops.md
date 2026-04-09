@@ -124,14 +124,14 @@ as `32 -> 16` or `16 -> 32` style conversions.
 
 #### Float To Int
 
-- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<32xs64>`
-- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xs32>`
-- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xs16>`
-- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<64xs32>`
-- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<128xs16>`
-- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256xs8>`
-- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256xu8>`
-- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<64xs32>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<32xsi64>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xsi32>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xsi16>`
+- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<64xsi32>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<128xsi16>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256xsi8>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256xui8>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<64xsi32>`
 
 #### Float To Float
 
@@ -142,46 +142,46 @@ as `32 -> 16` or `16 -> 32` style conversions.
 
 #### Int To Float
 
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xu8>, !pto.mask<b8> -> !pto.vreg<128xf16>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xs8>, !pto.mask<b8> -> !pto.vreg<128xf16>`
-- `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<128xf16>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
-- `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<64xf32>`
-- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<32xs64>, !pto.mask<b64> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xui8>, !pto.mask<b8> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xsi8>, !pto.mask<b8> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<128xf16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {rnd} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {rnd, part} : !pto.vreg<32xsi64>, !pto.mask<b64> -> !pto.vreg<64xf32>`
 
 #### Int To Int
 
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xu8>, !pto.mask<b8> -> !pto.vreg<128xu16>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xu8>, !pto.mask<b8> -> !pto.vreg<64xu32>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xs8>, !pto.mask<b8> -> !pto.vreg<128xs16>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xs8>, !pto.mask<b8> -> !pto.vreg<64xs32>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<128xu16>, !pto.mask<b16> -> !pto.vreg<256xu8>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xu16>, !pto.mask<b16> -> !pto.vreg<64xu32>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<256xu8>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<64xu32>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xs16>, !pto.mask<b16> -> !pto.vreg<64xs32>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xu32>, !pto.mask<b32> -> !pto.vreg<256xu8>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xu32>, !pto.mask<b32> -> !pto.vreg<128xu16>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xu32>, !pto.mask<b32> -> !pto.vreg<128xs16>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<256xu8>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<128xu16>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<128xs16>`
-- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<64xs32>, !pto.mask<b32> -> !pto.vreg<32xs64>`
-- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<32xs64>, !pto.mask<b64> -> !pto.vreg<64xs32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xui8>, !pto.mask<b8> -> !pto.vreg<128xui16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xui8>, !pto.mask<b8> -> !pto.vreg<64xui32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xsi8>, !pto.mask<b8> -> !pto.vreg<128xsi16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xsi8>, !pto.mask<b8> -> !pto.vreg<64xsi32>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<128xui16>, !pto.mask<b16> -> !pto.vreg<256xui8>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xui16>, !pto.mask<b16> -> !pto.vreg<64xui32>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<256xui8>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<64xui32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xsi16>, !pto.mask<b16> -> !pto.vreg<64xsi32>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xui32>, !pto.mask<b32> -> !pto.vreg<256xui8>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xui32>, !pto.mask<b32> -> !pto.vreg<128xui16>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xui32>, !pto.mask<b32> -> !pto.vreg<128xsi16>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<256xui8>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<128xui16>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<128xsi16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<32xsi64>`
+- `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<32xsi64>, !pto.mask<b64> -> !pto.vreg<64xsi32>`
 
 ### A5 Supported Type Matrix
 
 下表只做总览，精确 attr 组合以上面的逐条形式为准。
 
-| `src \ dst` | `u8` | `s8` | `u16` | `s16` | `u32` | `s32` | `s64` | `f16` | `f32` | `bf16` |
+| `src \ dst` | `ui8` | `si8` | `ui16` | `si16` | `ui32` | `si32` | `si64` | `f16` | `f32` | `bf16` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `u8` |  |  | Y |  | Y |  |  | Y |  |  |
-| `s8` |  |  |  | Y |  | Y |  | Y |  |  |
-| `u16` | Y |  |  |  | Y |  |  |  |  |  |
-| `s16` | Y |  |  |  | Y | Y |  | Y | Y |  |
-| `u32` | Y |  | Y | Y |  |  |  |  |  |  |
-| `s32` | Y |  | Y | Y |  |  | Y |  | Y |  |
-| `s64` |  |  |  |  |  | Y |  |  | Y |  |
+| `ui8` |  |  | Y |  | Y |  |  | Y |  |  |
+| `si8` |  |  |  | Y |  | Y |  | Y |  |  |
+| `ui16` | Y |  |  |  | Y |  |  |  |  |  |
+| `si16` | Y |  |  |  | Y | Y |  | Y | Y |  |
+| `ui32` | Y |  | Y | Y |  |  |  |  |  |  |
+| `si32` | Y |  | Y | Y |  |  | Y |  | Y |  |
+| `si64` |  |  |  |  |  | Y |  |  | Y |  |
 | `f16` | Y | Y |  | Y |  | Y |  |  | Y |  |
 | `f32` |  |  |  | Y |  | Y | Y | Y |  | Y |
 | `bf16` |  |  |  |  |  | Y |  |  | Y |  |

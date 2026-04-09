@@ -40,7 +40,7 @@ Cycle-accurate simulator **popped→retire** latency (cycles). **fp16** uses **a
 ### `pto.vadds`
 
 - **syntax:** `%result = pto.vadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** `s8`, `s16`, `s32`, `u8`, `u16`, `u32`, `f16`, `bf16`, `f32`
+- **A5 types:** `si8`, `si16`, `si32`, `ui8`, `ui16`, `ui32`, `f16`, `bf16`, `f32`
 
 ```c
 for (int i = 0; i < N; i++)
@@ -61,7 +61,7 @@ for (int i = 0; i < N; i++)
 ### `pto.vsadds`
 
 - **syntax:** `%result = pto.vsadds %input, %scalar, %mask : !pto.vreg<NxT>, T, !pto.mask<G> -> !pto.vreg<NxT>`
-- **A5 types:** s16
+- **A5 types:** si16
 
 ```c
 for (int i = 0; i < N; i++)
@@ -201,7 +201,7 @@ for (int i = 0; i < N; i++) {
   incoming carry predicate, and `%mask` selects active lanes.
 - **outputs:** `%result` is the arithmetic result and `%carry` is the carry-out
   predicate.
-- **A5 types:** `i32`, `s32`, `u32`
+- **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This is the scalar-extended carry-chain
   family. On the current A5 surface, only 32-bit integer element types are
   supported.
@@ -226,7 +226,7 @@ for (int i = 0; i < N; i++) {
   carry predicate after the lane-wise subtraction. For this subtraction family,
   active lanes set `%carry[i] = 1` when the subtraction completes without
   borrow, and `%carry[i] = 0` when a borrow occurs.
-- **A5 types:** `i32`, `s32`, `u32`
+- **A5 types:** `i32`, `si32`, `ui32`
 - **constraints and limitations:** This is the scalar-extended borrow-chain
   family and is currently restricted to 32-bit integer element types.
 
