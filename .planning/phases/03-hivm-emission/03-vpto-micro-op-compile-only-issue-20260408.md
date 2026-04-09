@@ -94,12 +94,12 @@ Replace `CASE_NAME` with any case listed below.
 
 ### 3. Gather compare mismatch
 
-- `micro-op/gather-scatter/vgather2`
-- `micro-op/gather-scatter/vgather2-duplicate-index`
-- `micro-op/gather-scatter/vgather2_bc`
-- `micro-op/gather-scatter/vgather2_bc-sparse-mask`
-- `micro-op/gather-scatter/vgatherb`
-- `micro-op/gather-scatter/vgatherb-block-boundary`
+- `2026-04-09` 已整体收敛，不再保留 blocked 条目
+- 收敛结论：
+  - 不是 runtime/backend 缺口
+  - 根因是 testcase 漂移：`launch.cpp` / `main.cpp` / `stub.cpp` 仍按旧双参 skeleton 传参，实际 gather case 需要 `input + offsets + output` 三参
+  - `vgather2_bc` / `vgather2_bc-sparse-mask` / `vgatherb` / `vgatherb-block-boundary` 的 `golden.py` 仍残留 `vabs` skeleton，需要按各自 gather 语义重写
+  - 复跑后已全部 `DEVICE=SIM` compare passed
 
 ### 4. Reduction / prefix layout mismatch
 

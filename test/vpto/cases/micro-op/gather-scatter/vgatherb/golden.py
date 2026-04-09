@@ -14,24 +14,38 @@ import numpy as np
 
 ROWS = 32
 COLS = 32
+BLOCK_FLOATS = 8
+BLOCKS_PER_ITER = 8
+ITER_ELEMS = 64
 SEED = 19
 
 
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
-    v1 = rng.uniform(-8.0, 8.0, size=(ROWS, COLS)).astype(np.float32)
-    v2 = np.zeros((ROWS, COLS), dtype=np.float32)
-    golden_v2 = np.abs(v1).astype(np.float32, copy=False)
+    flat = rng.uniform(-8.0, 8.0, size=(ROWS * COLS,)).astype(np.float32)
+    blocks = flat.reshape(-1, BLOCK_FLOATS)
+    offsets = np.zeros((ROWS * COLS,), dtype=np.int32)
+    gathered = np.zeros((ROWS * COLS,), dtype=np.float32)
+
+    for chunk in range((ROWS * COLS) // ITER_ELEMS):
+        block_ids = ((np.arange(BLOCKS_PER_ITER, dtype=np.int32) + chunk * 11) * 7 + 3) % blocks.shape[0]
+        offsets[chunk * ITER_ELEMS:chunk * ITER_ELEMS + BLOCKS_PER_ITER] = block_ids * 32
+        gathered[chunk * ITER_ELEMS:(chunk + 1) * ITER_ELEMS] = blocks[block_ids].reshape(-1)
+
+    v1 = flat.reshape(ROWS, COLS)
+    v2 = offsets.reshape(ROWS, COLS)
+    v3 = np.zeros((ROWS, COLS), dtype=np.float32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.reshape(-1).tofile(output_dir / "v1.bin")
     v2.reshape(-1).tofile(output_dir / "v2.bin")
-    golden_v2.reshape(-1).tofile(output_dir / "golden_v2.bin")
+    v3.reshape(-1).tofile(output_dir / "v3.bin")
+    gathered.reshape(-1).tofile(output_dir / "golden_v3.bin")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate numpy-based inputs/golden for VPTO micro-op vabs validation."
+        description="Generate numpy-based inputs/golden for VPTO micro-op vgatherb validation."
     )
     parser.add_argument("--output-dir", type=Path, default=Path("."))
     parser.add_argument("--seed", type=int, default=SEED)

@@ -59,10 +59,10 @@ struct MrgSortExecutedNumList {
 #endif
 
 extern "C" __global__ AICORE void vgatherb_block_boundary_kernel_2d(
-    __gm__ float *v1, __gm__ float *v2);
+    __gm__ float *v1, __gm__ int *v2, __gm__ float *v3);
 
-void LaunchVgatherb_block_boundary_kernel_2d(float *v1, float *v2,
+void LaunchVgatherb_block_boundary_kernel_2d(float *v1, int *v2, float *v3,
                                              void *stream) {
   vgatherb_block_boundary_kernel_2d<<<1, nullptr, stream>>>(
-      (__gm__ float *)v1, (__gm__ float *)v2);
+      (__gm__ float *)v1, (__gm__ int *)v2, (__gm__ float *)v3);
 }
