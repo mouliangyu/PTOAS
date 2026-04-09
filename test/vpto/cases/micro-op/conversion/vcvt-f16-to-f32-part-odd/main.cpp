@@ -54,7 +54,7 @@ void LaunchVcvt_f16_to_f32_part_odd_kernel_2d(uint16_t *v1, float *v2, void *str
 int main() {
     size_t elemCount_v1 = 1024;
     size_t fileSize_v1 = elemCount_v1 * sizeof(uint16_t);
-    size_t elemCount_v2 = 1024;
+    size_t elemCount_v2 = 512;
     size_t fileSize_v2 = elemCount_v2 * sizeof(float);
     uint16_t *v1Host = nullptr;
     uint16_t *v1Device = nullptr;
