@@ -123,8 +123,9 @@ as `32 -> 16` or `16 -> 32` style conversions.
 
 ### A5 Supported Forms
 
-下列形式按 `visa.txt` 的能力逐条展开，使用 PTO surface 表达。未列出的
-源/目标类型组合，当前不应假定为 A5 支持。
+The forms below are expressed in PTO surface syntax. Source/target type
+combinations not listed here should not currently be assumed to be supported
+on A5.
 
 #### Float To Int
 
@@ -173,7 +174,8 @@ as `32 -> 16` or `16 -> 32` style conversions.
 
 ### A5 Supported Type Matrix
 
-下表只做总览，精确 attr 组合以上面的逐条形式为准。
+The table below is only a summary. For exact attribute combinations, use the
+per-form entries above as the source of truth.
 
 | `src \ dst` | `ui8` | `si8` | `ui16` | `si16` | `ui32` | `si32` | `si64` | `f16` | `f32` | `bf16` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

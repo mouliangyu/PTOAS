@@ -2,7 +2,6 @@
 
 > **Status:** DRAFT for review
 > **Base:** [vpto-spec.md](https://github.com/mouliangyu/PTOAS/blob/feature-vpto-backend/docs/vpto-spec.md) (2026-03-20)
-> **Additions from:** [a5_intrinsic_ir.md](../a5_intrinsic/a5_intrinsic_ir.md) v3.2 (2026-03-21)
 > **Updated:** 2026-03-27
 
 ---
@@ -889,87 +888,13 @@ pto.vstsx2 %x, %y, %ub_xy[%offset], "INTLV", %all_mask : !pto.vreg<64xf32>, !pto
 
 ---
 
-## Appendix A: Change Summary
-
-### Part I Changes
-
-| # | Section | What Changed | Source |
-|---|---------|-------------|--------|
-| 1 | Overview, Position, Audience, CCE | Kept verbatim | vpto-spec.md |
-| 2 | VLane concept (32B) | **ADDED** | a5_intrinsic_ir.md |
-| 3 | Register/type system | Follows vpto-spec.md | vpto-spec.md |
-| 4 | UB size (256KB) | **ADDED** | a5_intrinsic_ir.md |
-| 5 | Data flow diagram | **ADDED** | a5_intrinsic_ir.md + vpto naming |
-| 6 | Load/store pattern table | **EXPANDED** | a5_intrinsic_ir.md |
-| 7 | Sync: set_flag/wait_flag | Kept | vpto-spec.md |
-| 8 | Sync: get_buf/rls_buf | **CLARIFIED** as inter-pipe sync | vpto-spec.md |
-| 9 | Sync: mem_bar | **ADDED** for intra-VEC_SCOPE | a5_intrinsic_ir.md |
-| 10 | Predication | **ADDED** ZEROING only | a5_intrinsic_ir.md |
-| 11 | __VEC_SCOPE__ | Kept verbatim | vpto-spec.md |
-| 12 | Element types | **EXPANDED** with FP8/FP4 | a5_intrinsic_ir.md |
-| 13 | Load dist tokens | **EXPANDED** (BRC, US, DS, SPLT, UNPK) | a5_intrinsic_ir.md |
-| 14 | Store dist tokens | **EXPANDED** into PTO families (`1PT`, `PK`, `PK4`, `MRG4CHN`, `MRG2CHN`; `INTLV` split to `vstsx2`) | a5_intrinsic_ir.md |
-| 15 | mem_bar tokens | **ADDED** | a5_intrinsic_ir.md |
-
-### Part II Changes
-
-| # | What Changed | Source |
-|---|-------------|--------|
-| 1 | MLIR syntax patterns | Organized from vpto-spec.md |
-| 2 | C-style semantics convention | **NEW** — replaces math notation |
-| 3 | VLane-aware reduction example | **NEW** |
-| 4 | Template placeholders | Consolidated from vpto-spec.md |
-
-### Part 3A Changes (Sections 1–6)
-
-| # | Section | What Changed | Source |
-|---|---------|-------------|--------|
-| 1 | Sec 1: Sync | **ADDED** `pto.mem_bar` with C semantics | a5_intrinsic_ir.md |
-| 2 | Sec 2-3: Copy | Kept from vpto-spec.md | vpto-spec.md |
-| 3 | Sec 4: Loads — vgatherb, vgather2_bc | Kept from vpto-spec.md | vpto-spec.md |
-| 4 | Sec 4: Loads — BRC/US/DS/SPLT dist modes | **ADDED** with C semantics | a5_intrinsic_ir.md |
-| 5 | Sec 5: vbr | Kept from vpto-spec.md | vpto-spec.md |
-| 6 | Sec 5: vdupi | **ADDED** | a5_intrinsic_ir.md |
-| 7 | Sec 5: pand, por, pxor, ppack/punpack | **ADDED** | a5_intrinsic_ir.md |
-| 8 | Sec 5: pintlv/pdintlv-style predicate movement | **ADDED** | a5_intrinsic_ir.md |
-| 9 | Sec 6: vneg | **ADDED** | a5_intrinsic_ir.md |
-| 10 | Sec 6: vcgadd, vcgmax, vcgmin | **ADDED** per-VLane reductions | a5_intrinsic_ir.md |
-| 11 | Sec 6: vcpadd | **ADDED** prefix sum | a5_intrinsic_ir.md |
-
-### Part 3B Changes (Sections 7–10)
-
-| # | Section | What Changed | Source |
-|---|---------|-------------|--------|
-| 1 | Binary ops | No changes — full 1:1 match | Both |
-| 2 | Sec 8: `pto.vshls`, `pto.vshrs` | **UPDATED** to masked `i16` scalar syntax | a5_intrinsic_ir.md |
-| 3 | `pto.vselrv2` | **REMOVED** (not A5) | — |
-| 4 | `pto.vprelu` | **ADDED** parametric ReLU | a5_intrinsic_ir.md |
-| 5 | `pto.vintlvv2`, `pto.vdintlvv2`, `pto.pdintlv_b8`, `pto.pintlv_b16` | **REMOVED** (not A5) | — |
-| 7 | `pto.vsqz`, `pto.vusqz` | **ADDED** data movement | a5_intrinsic_ir.md |
-| 8 | Sec 10: vpack, vsunpack, vzunpack | **ADDED** pack/unpack | a5_intrinsic_ir.md |
-
-### Part 3C Changes (Sections 11–14)
-
-| # | Section | What Changed | Source |
-|---|---------|-------------|--------|
-| 1 | Sec 11: vcvt | **EXPANDED** — full A5 conversion pairs + width-changing pattern | a5_intrinsic_ir.md |
-| 2 | Sec 11: vtrc, vci, vbitsort | Kept from vpto-spec.md (`vbitsort` lacks A5 oracle mapping today) | vpto-spec.md |
-| 3 | Sec 12: vmull | C semantics + A5 type info added | Both |
-| 4 | Sec 12: vmula | Kept from vpto-spec.md | vpto-spec.md |
-| 6 | Sec 12: vaxpy | **ADDED** AXPY | a5_intrinsic_ir.md |
-| 8 | Sec 13: vsts dist modes | **EXPANDED** — `1PT`, `PK`, `PK4`, `MRG4CHN`, `MRG2CHN` for `vsts`; `INTLV` for `vstsx2` | a5_intrinsic_ir.md |
-| 9 | Sec 13-14: All store ops | C semantics added where missing | Both |
-
-## Appendix B: Discussion Points
+## Appendix: Discussion Points
 
 ### Part I
 
 1. **mem_bar as pto op:** Should `pto.mem_bar` be a formal pto dialect op, or is there an existing mechanism?
 2. **UB size parameterization:** Is 256KB always fixed, or should spec allow for architecture variants?
-3. **Dist family surface:** load/store `dist` 现按 PTO family token 建模；各
-   family 的用户可见约束已写入 ISA 文档，仍需持续与 installed PTO /
-   `visa.txt` 校验。
-4. **MERGING predication:** Intentionally omitted (SW-emulated, perf overhead). Revisit if needed later.
+3. **MERGING predication:** Intentionally omitted (SW-emulated, perf overhead). Revisit if needed later.
 
 ### Part II
 
@@ -987,9 +912,6 @@ pto.vstsx2 %x, %y, %ub_xy[%offset], "INTLV", %all_mask : !pto.vreg<64xf32>, !pto
 
 ### Part 3C
 
-2. **vmrgsort4:** Kept from vpto-spec.md but no a5_intrinsic mapping found. Confirm if A5 supports this.
-3. **Store dist family completeness:** `vsts` 目前覆盖 `NORM`, `1PT`, `PK`,
-   `PK4`, `MRG4CHN`, `MRG2CHN`；`vstsx2` 覆盖 `INTLV`。这些 family 的
-   surface 约束是否已经足够清晰，仍需结合实现继续校验。
-4. **vcvt width-changing pattern:** The even/odd + vor pattern for f32→f16 is the standard compiler lowering. Confirm this is the intended representation in the spec.
-5. **Stateful store ops (Section 14):** These are complex with SSA state threading. Are they all needed for A5, or can some be simplified?
+2. **Store dist family completeness:** `vsts` currently covers `NORM`, `1PT`, `PK`, `PK4`, `MRG4CHN`, and `MRG2CHN`, while `vstsx2` covers `INTLV`. Confirm whether the surface constraints for these families are already sufficiently clear and complete.
+3. **vcvt width-changing pattern:** The even/odd + `vor` pattern for forms such as `f32 -> f16` is the standard compiler lowering. Confirm this is the intended representation in the spec.
+4. **Stateful store ops (Section 14):** These are complex with SSA state threading. Are they all needed for A5, or can some be simplified?
