@@ -3,18 +3,25 @@ include "mlir/IR/AttrTypeBase.td"
 include "PTO/IR/PTODialect.td"
 include "PTO/IR/PTOAttrs.td"
 
-// ---- !pto.ptr<elem> ----
+// ---- !pto.ptr<elem, gm|ub> ----
 def PtrType : TypeDef<PTO_Dialect, "Ptr"> {
   let mnemonic = "ptr";
   let parameters = (ins
-    "mlir::Type":$elementType
+    "mlir::Type":$elementType,
+    "mlir::pto::AddressSpaceAttr":$memorySpace
   );
-  let assemblyFormat = "`<` $elementType `>`";
+  let hasCustomAssemblyFormat = 1;
 
   let skipDefaultBuilders = 1;
   let builders = [
     TypeBuilder<(ins "Type":$elementType), [{
-      return Base::get($_ctxt, elementType);
+      return Base::get($_ctxt, elementType,
+                       mlir::pto::AddressSpaceAttr::get($_ctxt,
+                                                        mlir::pto::AddressSpace::GM));
+    }]>,
+    TypeBuilder<(ins "Type":$elementType,
+                     "mlir::pto::AddressSpaceAttr":$memorySpace), [{
+      return Base::get($_ctxt, elementType, memorySpace);
     }]>
   ];
 }
@@ -184,3 +191,5 @@ def TileBufType : TypeDef<PTO_Dialect, "TileBuf"> {
     int32_t getPadValueI32() const;       // 0 null, 1 zero, 2 max, 3 min
   }];
 }
+
+include "PTO/IR/VPTOTypeDefs.td"

@@ -2080,7 +2080,7 @@ struct FuncToEmitC : public OpConversionPattern<func::FuncOp> {
     auto emitcFunc = rewriter.create<emitc::FuncOp>(op.getLoc(), op.getName(),
                                                     funcType);
     emitcFunc.setSpecifiersAttr(
-        rewriter.getStrArrayAttr({"__global__ AICORE"}));
+        rewriter.getStrArrayAttr({"extern \"C\"", "__global__ AICORE"}));
 
     // Inline the original body, then convert region/block argument types to
     // match the converted signature (also covers CFG blocks introduced by
@@ -3926,6 +3926,26 @@ struct PTOStoreScalarToEmitC : public OpConversionPattern<pto::StoreScalarOp> {
         ArrayAttr{}, ArrayAttr{}, ValueRange{ptr, offset, val});
 
     rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct PTOCastPtrToEmitC : public OpConversionPattern<pto::CastPtrOp> {
+  using OpConversionPattern<pto::CastPtrOp>::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(pto::CastPtrOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+    Type dstTy = getTypeConverter()->convertType(op.getResult().getType());
+    if (!dstTy)
+      return failure();
+
+    Value input = peelUnrealized(adaptor.getInput());
+    if (input.getType() == dstTy) {
+      rewriter.replaceOp(op, input);
+      return success();
+    }
+
+    rewriter.replaceOpWithNewOp<emitc::CastOp>(op, dstTy, input);
     return success();
   }
 };
@@ -7322,7 +7342,8 @@ static void populatePTOToEmitCPatterns(RewritePatternSet &patterns,
   patterns.add<SubviewToEmitCPattern>(typeConverter, ctx);
   patterns.add<PointerCastConversion>(typeConverter, ctx);
   patterns.add<PTOSetValToSETVAL, PTOGetValToGETVAL,
-               PTOLoadScalarToEmitC, PTOStoreScalarToEmitC>(typeConverter, ctx);
+               PTOLoadScalarToEmitC, PTOStoreScalarToEmitC,
+               PTOCastPtrToEmitC>(typeConverter, ctx);
   patterns.add<PTOTAndToEmitC>(typeConverter, ctx);
   patterns.add<PTOMulToEmitC>(typeConverter, ctx);
   patterns.add<PTOAndSToEmitC>(typeConverter, ctx);

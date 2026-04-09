@@ -1,4 +1,11 @@
 add_mlir_dialect_library(PTOTransforms
+  HIVMIntrinsicNaming.cpp
+  VPTOTextEmitter.cpp
+  VPTOLLVMEmitter.cpp
+  PTOVPTOExpandBridgeOps.cpp
+  PTOVPTOPtrBoundary.cpp
+  PTOToVPTO.cpp
+  PTOToVPTOLowering.cpp
   InsertLoadStoreForMixCV.cpp
   PTOInsertCVMov.cpp
   PTOConvertToDPS.cpp
@@ -26,6 +33,7 @@ add_mlir_dialect_library(PTOTransforms
   InsertSync/SyncEventIdAllocation.cpp
   InsertSync/SyncCodegen.cpp
   LoweringSyncToPipe.cpp
+  PTOValidateVPTOIR.cpp
 
   ADDITIONAL_HEADER_DIRS
   ${PROJECT_SOURCE_DIR}/include/PTO
@@ -33,6 +41,9 @@ add_mlir_dialect_library(PTOTransforms
   DEPENDS
   PTOPassesIncGen
   PTOOpsIncGen
+
+  LINK_COMPONENTS
+  Analysis
 
   LINK_LIBS PUBLIC
   PTOIR
@@ -47,7 +58,12 @@ add_mlir_dialect_library(PTOTransforms
   MLIRTransformUtils
   MLIRTransforms
   MLIRTensorDialect
+  MLIRSCFDialect
   MLIRSCFToEmitC
+  MLIRSCFToControlFlow
+  MLIRConvertToLLVMPass
+  MLIRTargetLLVMIRExport
+  MLIRToLLVMIRTranslationRegistration
 )
 
 install(TARGETS PTOTransforms
