@@ -17,8 +17,14 @@ SEED = 19
 def generate(output_dir: Path, seed: int) -> None:
     rng = np.random.default_rng(seed)
     v1 = rng.uniform(-8.0, 8.0, size=ELEMS).astype(np.float16)
-    v2 = np.zeros(ELEMS, dtype=np.float32)
-    golden_v2 = v1.astype(np.float32)
+    # Kernel writes 8 chunks (offset 0..448, step 64), each chunk converts the
+    # lower 16-bit half (PART_EVEN) from packed f16 pairs in a 128-lane load.
+    out_elems = 512
+    v2 = np.zeros(out_elems, dtype=np.float32)
+    golden_v2 = np.empty(out_elems, dtype=np.float32)
+    for block in range(0, out_elems, 64):
+        src = v1[block : block + 128 : 2].astype(np.float32, copy=False)
+        golden_v2[block : block + 64] = src
 
     output_dir.mkdir(parents=True, exist_ok=True)
     v1.tofile(output_dir / "v1.bin")
