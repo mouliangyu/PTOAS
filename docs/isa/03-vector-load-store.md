@@ -35,8 +35,8 @@ Vector loads move data from Unified Buffer (UB) to vector registers (`vreg`). Ve
 | A5 mnemonic | Mode / note | Typical issue→retire (cycles) |
 |-------------|-------------|------------------------------|
 | `RV_VLD` | `dist:NORMAL` / `NORAML` | **9** |
-| `RV_VLDI` | `dist:DINTLV_B32` (dual vreg) | **9** |
-| `RV_VST` / `RV_VSTI` | `dist:NORM_B32` | **9** |
+| `RV_VLDI` | `dist:DINTLV` (dual vreg) | **9** |
+| `RV_VST` / `RV_VSTI` | `dist:NORM` | **9** |
 | `RV_VGATHER2` | `Dtype: B32` | **27–28** |
 | `RV_VGATHERB` | indexed byte gather | **~21** |
 | `RV_VSCATTER` | `Dtype: B16` | **~17** |
@@ -44,31 +44,20 @@ Vector loads move data from Unified Buffer (UB) to vector registers (`vreg`). Ve
 
 ### `dist:` tokens (issue→retire)
 
-Most **`dist:`** tokens are **9** issue→retire cycles. **`INTLV_*`** on **`RV_VSTI`** are **12** cycles.
+Most **`dist:`** tokens are **9** issue→retire cycles. **`INTLV`** on **`RV_VSTI`** is **12** cycles.
 
 | `dist:` (as in log) | RV op | issue→retire (cycles) |
 |---------------------|-------|----------------------|
-| `DINTLV_B32` | `RV_VLDI` | **9** |
-| `DINTLV_B16` | `RV_VLDI` | **9** |
-| `DINTLV_B8` | `RV_VLDI` | **9** |
-| `BRC_B32` | `RV_VLD` | **9** |
-| `BRC_B8` | `RV_VLD` | **9** |
-| `BRC_B16` | `RV_VLD` | **9** |
+| `DINTLV` | `RV_VLDI` | **9** |
+| `BRC` | `RV_VLD` | **9** |
 | `BRC_BLK` | `RV_VLD` | **9** |
-| `INTLV_B32` | `RV_VSTI` | **12** |
-| `INTLV_B16` | `RV_VSTI` | **12** |
-| `INTLV_B8` | `RV_VSTI` | **12** |
-| `UNPK_B8` | `RV_VLD` | **9** |
-| `UNPK_B16` | `RV_VLD` | **9** |
-| `UNPK_B32` | `RV_VLD` | **9** |
-| `NORM_B32` | `RV_VSTI` | **9** |
-| `NORM_B16` | `RV_VSTI` | **9** |
-| `NORM_B8` | `RV_VSTI` | **9** |
-| `PK_B32` | `RV_VSTI` | **9** |
-| `PK_B16` | `RV_VSTI` | **9** |
+| `INTLV` | `RV_VSTI` | **12** |
+| `UNPK` | `RV_VLD` | **9** |
+| `NORM` | `RV_VSTI` | **9** |
+| `PK` | `RV_VSTI` | **9** |
 | `NORMAL` / `NORAML` | `RV_VLD` | **9** |
 
-**Note:** PTO intrinsic **`BLK`** matches the **`BRC_BLK`** `dist:` string on **`RV_VLD`** in simulator logs (block-replicate path; not a plain contiguous copy in the usual tiling use).
+**Note:** PTO intrinsic **`BRC_BLK`** matches the **`BRC_BLK`** `dist:` string on **`RV_VLD`** in simulator logs (block-replicate path; not a plain contiguous copy in the usual tiling use).
 
 **Issue (vector load/store):** `pto.vlds` (**`RV_VLD`**) is **dual-issue capable**: two independent `pto.vlds` can issue **in the same cycle**. **Alternatively**, the hardware can issue **one** `pto.vlds` **and** **one** `pto.vsts` together (**1+1**) in the same cycle. Each cycle is **either** dual **`vlds`** **or** **`vlds` + `vsts` (1+1)**—those two issue modes are mutually exclusive. Sustained throughput still depends on RAW hazards and loop structure.
 
@@ -83,24 +72,21 @@ Most **`dist:`** tokens are **9** issue→retire cycles. **`INTLV_*`** on **`RV_
 | PTO `dist` (load) | Latency |
 |-------------------|-------------------|
 | `NORM` | **9** cycles |
-| `UNPK_B8`, `UNPK_B16`, `UNPK_B32` | **9** cycles |
-| `DINTLV_B32` | **9** cycles (`RV_VLDI`) |
-| `DINTLV_B16`, `DINTLV_B8` | **9** cycles (same `RV_VLDI` + `dist:DINTLV_*` path as `DINTLV_B32`) |
-| `BRC_B32` | **9** cycles |
-| `BRC_B8`, `BRC_B16` | **9** cycles (`RV_VLD`) |
-| `BLK` | **9** cycles as **`dist:BRC_BLK`** on `RV_VLD` |
+| `UNPK` | **9** cycles |
+| `DINTLV` | **9** cycles (`RV_VLDI`) |
+| `BRC` | **9** cycles (`RV_VLD`) |
+| `BRC_BLK` | **9** cycles as **`dist:BRC_BLK`** on `RV_VLD` |
 | `BDINTLV` | **9** cycles |
-| `US_*`, `DS_*`, `SPLT*` | **9** cycles |
+| `US`, `DS`, `SPLT4CHN`, `SPLT2CHN` | **9** cycles |
 
 ### PTO `dist` summary (stores)
 
 | PTO `dist` (store) | Latency |
 |--------------------|-------------------|
-| `NORM_B8`, `NORM_B16`, `NORM_B32` | **9** cycles (`RV_VSTI`) |
-| `PK_B16`, `PK_B32` | **9** cycles |
-| `INTLV_B32` (`pto.vstx2`) | **12** cycles |
-| `INTLV_B16`, `INTLV_B8` | **12** cycles (same interleave store path as `INTLV_B32`) |
-| `MRG4CHN_B8`, `MRG2CHN_*` | **9** cycles |
+| `NORM` | **9** cycles (`RV_VSTI`) |
+| `PK` | **9** cycles |
+| `INTLV` (`pto.vstx2`) | **12** cycles |
+| `MRG4CHN`, `MRG2CHN` | **9** cycles |
 
 ### Gather, scatter, and special addressing
 
@@ -158,7 +144,6 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
 `pto.vlds` 当前只承载单结果 load family。双结果 deinterleave 形式在 PTO
 surface 上单独归到 [`pto.vldsx2`](#ptovldsx2)：`BDINTLV` 为 block
 deinterleave family，`DINTLV` 为按元素位宽变化的 deinterleave family。
-为兼容仓库中已有 lowering，`BLK` 仍作为 `BRC_BLK` 的别名被接受。
 
 **Example — Contiguous load:**
 ```mlir
