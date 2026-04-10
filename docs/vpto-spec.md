@@ -310,6 +310,63 @@ PTO micro Instruction source programs are not restricted to `pto` operations alo
 - `scf`: structured control flow used to model counted loops, conditional regions, loop-carried state, and break-like control around PTO compute and data-movement ops.
 - Shared dialect ops remain in standard MLIR form so that PTO analyses and backend passes can reason about control flow and scalar state without re-encoding them as PTO-specific instructions.
 
+### Runtime Query Operations
+
+PTO micro Instruction also provides scalar runtime-query ops for inspecting the
+current execution instance. These ops are pure, have no side effects, and may
+be used in ordinary scalar control-flow or address computation.
+
+#### `pto.get_block_idx`
+
+- **syntax:** `%block = pto.get_block_idx`
+- **result:** `i64`
+- **semantics:** Return the current block ID.
+
+```c
+block = block_idx();
+```
+
+#### `pto.get_subblock_idx`
+
+- **syntax:** `%subblock = pto.get_subblock_idx`
+- **result:** `i64`
+- **semantics:** Return the current vector subblock ID.
+
+```c
+subblock = subblock_idx();
+```
+
+#### `pto.get_block_num`
+
+- **syntax:** `%block_num = pto.get_block_num`
+- **result:** `i64`
+- **semantics:** Return the total number of launched blocks visible to the
+  current kernel instance.
+
+```c
+block_num = block_num();
+```
+
+#### `pto.get_subblock_num`
+
+- **syntax:** `%subblock_num = pto.get_subblock_num`
+- **result:** `i64`
+- **semantics:** Return the number of vector subblocks visible to the current
+  execution instance.
+
+```c
+subblock_num = subblock_num();
+```
+
+Typical usage:
+
+```mlir
+%block = pto.get_block_idx
+%subblock = pto.get_subblock_idx
+%block_num = pto.get_block_num
+%subblock_num = pto.get_subblock_num
+```
+
 ### Core Types
 
 ### Element Types

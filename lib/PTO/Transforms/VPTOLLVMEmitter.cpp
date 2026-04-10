@@ -1154,7 +1154,23 @@ struct ConvertPtoLoadScalarOp final : OpConversionPattern<pto::LoadScalarOp> {
                                              ValueRange{offset});
     }
 
-    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(op, op.getValue().getType(), elemPtr);
+    auto getNaturalAlignment = [&](Type type) -> unsigned {
+      unsigned alignBytes = 0;
+      if (auto intType = dyn_cast<IntegerType>(type)) {
+        alignBytes = llvm::divideCeil(unsigned(intType.getWidth()), 8u);
+      } else if (type.isF16() || type.isBF16()) {
+        alignBytes = 2;
+      } else if (type.isF32()) {
+        alignBytes = 4;
+      } else if (type.isF64()) {
+        alignBytes = 8;
+      }
+      return alignBytes;
+    };
+
+    rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
+        op, op.getValue().getType(), elemPtr,
+        getNaturalAlignment(op.getValue().getType()));
     return success();
   }
 };
@@ -1181,7 +1197,23 @@ struct ConvertPtoStoreScalarOp final : OpConversionPattern<pto::StoreScalarOp> {
                                              adaptor.getPtr(), ValueRange{offset});
     }
 
-    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(op, adaptor.getValue(), elemPtr);
+    auto getNaturalAlignment = [&](Type type) -> unsigned {
+      unsigned alignBytes = 0;
+      if (auto intType = dyn_cast<IntegerType>(type)) {
+        alignBytes = llvm::divideCeil(unsigned(intType.getWidth()), 8u);
+      } else if (type.isF16() || type.isBF16()) {
+        alignBytes = 2;
+      } else if (type.isF32()) {
+        alignBytes = 4;
+      } else if (type.isF64()) {
+        alignBytes = 8;
+      }
+      return alignBytes;
+    };
+
+    rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
+        op, adaptor.getValue(), elemPtr,
+        getNaturalAlignment(adaptor.getValue().getType()));
     return success();
   }
 };
@@ -1952,6 +1984,14 @@ static FailureOr<std::string> getConfirmedCallee(Operation *op) {
     return std::string("llvm.hivm.WAIT.FLAG.IMM");
   if (isa<pto::BarrierOp>(op))
     return std::string("llvm.hivm.BARRIER");
+  if (isa<pto::GetBlockIdxOp>(op))
+    return std::string("llvm.hivm.GET.BLOCK.IDX");
+  if (isa<pto::GetSubBlockIdxOp>(op))
+    return std::string("llvm.hivm.GET.SUBBLOCKID");
+  if (isa<pto::GetBlockNumOp>(op))
+    return std::string("llvm.hivm.GET.BLOCK.NUM");
+  if (isa<pto::GetSubBlockNumOp>(op))
+    return std::string("llvm.hivm.GET.SUBBLOCKDIM");
   if (isa<pto::SprclrOp>(op))
     return std::string("llvm.hivm.sprclr");
   if (isa<pto::PltB8Op>(op))
@@ -2697,6 +2737,16 @@ static LogicalResult rewriteVPTOOp(Operation *op, ModuleOp module,
     auto callee = getOrCreateExternalFunc(module, *calleeName, funcType);
     auto call =
         builder.create<func::CallOp>(loc, callee, ValueRange{vbr.getValue()});
+    builder.replaceOp(op, call.getResults());
+    return success();
+  }
+
+  if (isa<pto::GetBlockIdxOp, pto::GetSubBlockIdxOp, pto::GetBlockNumOp,
+          pto::GetSubBlockNumOp>(op)) {
+    SmallVector<Type> argTypes;
+    auto funcType = builder.getFunctionType(argTypes, op->getResultTypes());
+    auto callee = getOrCreateExternalFunc(module, *getConfirmedCallee(op), funcType);
+    auto call = builder.create<func::CallOp>(loc, callee, ValueRange{});
     builder.replaceOp(op, call.getResults());
     return success();
   }
