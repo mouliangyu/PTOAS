@@ -1,6 +1,7 @@
 add_mlir_dialect_library(PTOTransforms
   HIVMIntrinsicNaming.cpp
   VPTOLLVMEmitter.cpp
+  VPTOLLVMEmitterHelper.cpp
   PTOVPTOExpandBridgeOps.cpp
   PTOVPTOPtrBoundary.cpp
   PTOToVPTO.cpp
