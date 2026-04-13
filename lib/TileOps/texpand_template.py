@@ -9,7 +9,7 @@ import tilelang_dsl as pto
     target="a5",
     op="pto.texpands"
 )
-def template_texpands(dst: pto.Tile, scalar):
+def template_texpands(dst: pto.Tile, scalar: pto.AnyType):
     dtype = dst.element_type
     valid_rows, valid_cols = dst.valid_shape
     
