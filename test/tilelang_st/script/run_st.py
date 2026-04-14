@@ -150,7 +150,7 @@ def _copy_testcase_scripts(testcase):
             run_command(["cp", src, os.path.join(work_dir, name)])
     # Per-testcase scripts.
     testcase_src = f"testcase/{testcase}"
-    for name in ("cases.py", "gen_data.py"):
+    for name in ("cases.py", "gen_data.py", "compare.py"):
         src = os.path.join(testcase_src, name)
         if os.path.isfile(src):
             run_command(["cp", src, os.path.join(work_dir, name)])
