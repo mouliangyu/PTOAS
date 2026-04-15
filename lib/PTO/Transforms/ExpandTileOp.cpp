@@ -33,6 +33,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/IRMapping.h"
@@ -42,7 +43,9 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -77,11 +80,11 @@ namespace {
 // Three kinds of operands:
 //   Tile   — from TileBufType.  dtype + shape + memorySpace + config
 //            all participate in the specialization key (SpecKey).
-//   View   — from MemRefType (lowered PartitionTensorViewType).  Only dtype
+//   View   — from MemRefType (lowered PartitionTensorViewType). Only dtype
 //            participates in SpecKey — the template is fully dynamic so
-//            shape/strides/memorySpace don't affect code generation.  They
-//            are carried here solely for JSON serialization to the Python
-//            DSL for constraint checking.
+//            shape/strides/memorySpace don't affect code generation. They are
+//            carried here solely for JSON serialization to the Python DSL for
+//            constraint checking.
 //   Scalar — from a scalar element type.  Only dtype participates in SpecKey.
 // ============================================================================
 enum class OperandKind { Tile, View, Scalar };
@@ -92,11 +95,12 @@ struct OperandTypeInfo {
 
   // --- Tile-only (TileBufType) ---
   SmallVector<int64_t, 2> tileShape;
+  SmallVector<int64_t, 2> tileValidShape;
   std::string tileMemorySpace; // "ub" or "gm"
   int32_t blayout = 0;
   int32_t slayout = 0;
   int32_t fractal = 0;
-  int32_t pad = 0;
+  uint64_t pad = 0;
 
   // --- View-only (MemRefType) — for JSON / constraint checking only ---
   SmallVector<int64_t> viewShape;
@@ -109,6 +113,7 @@ struct OperandTypeInfo {
       return false;
     if (kind == OperandKind::Tile)
       return tileShape == rhs.tileShape &&
+             tileValidShape == rhs.tileValidShape &&
              tileMemorySpace == rhs.tileMemorySpace &&
              blayout == rhs.blayout && slayout == rhs.slayout &&
              fractal == rhs.fractal && pad == rhs.pad;
@@ -122,24 +127,28 @@ struct OperandTypeInfo {
 // ============================================================================
 struct SpecKey {
   std::string opName;
+  std::string targetArch;
   SmallVector<OperandTypeInfo, 4> operands;
 
   bool operator==(const SpecKey &rhs) const {
-    return opName == rhs.opName && operands == rhs.operands;
+    return opName == rhs.opName && targetArch == rhs.targetArch &&
+           operands == rhs.operands;
   }
 };
 
 struct SpecKeyInfo : public llvm::DenseMapInfo<SpecKey> {
-  static inline SpecKey getEmptyKey() { return {"", {}}; }
-  static inline SpecKey getTombstoneKey() { return {"__tombstone__", {}}; }
+  static inline SpecKey getEmptyKey() { return {"", "", {}}; }
+  static inline SpecKey getTombstoneKey() { return {"__tombstone__", "", {}}; }
   static unsigned getHashValue(const SpecKey &key) {
-    unsigned h = llvm::hash_value(key.opName);
+    unsigned h = llvm::hash_combine(key.opName, key.targetArch);
     for (const auto &op : key.operands) {
       h = llvm::hash_combine(h, static_cast<int>(op.kind), op.dtype);
       if (op.kind == OperandKind::Tile) {
         h = llvm::hash_combine(h, op.tileMemorySpace, op.blayout,
-                                op.slayout, op.fractal, op.pad);
+                               op.slayout, op.fractal, op.pad);
         for (int64_t d : op.tileShape)
+          h = llvm::hash_combine(h, d);
+        for (int64_t d : op.tileValidShape)
           h = llvm::hash_combine(h, d);
       }
       // View/Scalar: only kind + dtype contribute to hash.
@@ -170,6 +179,15 @@ static StringRef getTileOpName(Operation *op) {
   return op->getName().stripDialect();
 }
 
+static std::string getTargetArchString(ModuleOp mod) {
+  if (!mod)
+    return "";
+  auto targetAttr = mod->getAttrOfType<StringAttr>("pto.target_arch");
+  if (!targetAttr)
+    return "";
+  return targetAttr.getValue().str();
+}
+
 static std::string getMemorySpaceString(pto::TileBufType tbTy) {
   auto msAttr = dyn_cast_or_null<pto::AddressSpaceAttr>(tbTy.getMemorySpace());
   if (!msAttr) return "ub";
@@ -184,7 +202,117 @@ static std::string getMemorySpaceString(MemRefType mrTy) {
   return "ub";
 }
 
-static std::optional<OperandTypeInfo> buildOperandTypeInfo(Type ty) {
+static std::string getBLayoutString(int32_t blayout) {
+  if (blayout == static_cast<int32_t>(pto::BLayout::ColMajor))
+    return "col_major";
+  return "row_major";
+}
+
+static std::string getSLayoutString(int32_t slayout) {
+  if (slayout == static_cast<int32_t>(pto::SLayout::RowMajor))
+    return "row_major";
+  if (slayout == static_cast<int32_t>(pto::SLayout::ColMajor))
+    return "col_major";
+  return "none_box";
+}
+
+static bool getStaticIntFromValue(Value value, int64_t &out) {
+  if (auto cOp = value.getDefiningOp<arith::ConstantIndexOp>()) {
+    out = cOp.value();
+    return true;
+  }
+  if (auto cInt = value.getDefiningOp<arith::ConstantIntOp>()) {
+    out = cInt.value();
+    return true;
+  }
+  return false;
+}
+
+static int64_t getStaticIntOrDynamic(OpFoldResult ofr) {
+  if (auto attr = ofr.dyn_cast<Attribute>()) {
+    if (auto intAttr = dyn_cast<IntegerAttr>(attr))
+      return intAttr.getInt();
+    return ShapedType::kDynamic;
+  }
+  auto value = llvm::cast<Value>(ofr);
+  int64_t result = ShapedType::kDynamic;
+  if (getStaticIntFromValue(value, result))
+    return result;
+  return ShapedType::kDynamic;
+}
+
+static void recordStaticSizes(ArrayRef<OpFoldResult> inputs,
+                              SmallVectorImpl<int64_t> &out) {
+  out.clear();
+  out.reserve(inputs.size());
+  for (OpFoldResult ofr : inputs)
+    out.push_back(getStaticIntOrDynamic(ofr));
+}
+
+static SmallVector<int64_t> combineSubviewStrides(ArrayRef<int64_t> baseStrides,
+                                                  ArrayRef<OpFoldResult> steps) {
+  SmallVector<int64_t> result;
+  result.reserve(baseStrides.size());
+  for (auto [baseStride, step] : llvm::zip(baseStrides, steps)) {
+    int64_t stepValue = getStaticIntOrDynamic(step);
+    if (baseStride == ShapedType::kDynamic ||
+        stepValue == ShapedType::kDynamic) {
+      result.push_back(ShapedType::kDynamic);
+      continue;
+    }
+    result.push_back(baseStride * stepValue);
+  }
+  return result;
+}
+
+static void populateViewShapeAndStrides(Value value,
+                                        SmallVectorImpl<int64_t> &shape,
+                                        SmallVectorImpl<int64_t> &strides) {
+  if (!value)
+    return;
+
+  if (auto subview = value.getDefiningOp<memref::SubViewOp>()) {
+    populateViewShapeAndStrides(subview.getSource(), shape, strides);
+    SmallVector<int64_t> subviewShape;
+    recordStaticSizes(subview.getMixedSizes(), subviewShape);
+    if (!subviewShape.empty())
+      shape = subviewShape;
+    if (!strides.empty())
+      strides = combineSubviewStrides(strides, subview.getMixedStrides());
+    return;
+  }
+
+  if (auto reinterpret = value.getDefiningOp<memref::ReinterpretCastOp>()) {
+    if (shape.empty()) {
+      SmallVector<int64_t> reinterpretShape;
+      recordStaticSizes(reinterpret.getMixedSizes(), reinterpretShape);
+      if (!reinterpretShape.empty())
+        shape = reinterpretShape;
+    }
+    if (strides.empty())
+      recordStaticSizes(reinterpret.getMixedStrides(), strides);
+    return;
+  }
+
+  if (auto cast = value.getDefiningOp<memref::CastOp>()) {
+    populateViewShapeAndStrides(cast.getSource(), shape, strides);
+    return;
+  }
+
+  if (auto memrefTy = dyn_cast<MemRefType>(value.getType())) {
+    if (shape.empty())
+      shape.assign(memrefTy.getShape().begin(), memrefTy.getShape().end());
+    if (strides.empty()) {
+      int64_t offset = ShapedType::kDynamic;
+      if (succeeded(getStridesAndOffset(memrefTy, strides, offset))) {
+        // strides populated — dynamic dims remain ShapedType::kDynamic.
+      }
+    }
+  }
+}
+
+static std::optional<OperandTypeInfo> buildOperandTypeInfo(Value value) {
+  Type ty = value.getType();
   // Tile operand — from TileBufType.
   if (auto tbTy = dyn_cast<pto::TileBufType>(ty)) {
     OperandTypeInfo info;
@@ -193,6 +321,11 @@ static std::optional<OperandTypeInfo> buildOperandTypeInfo(Type ty) {
     if (info.dtype.empty())
       return std::nullopt;
     info.tileShape.assign(tbTy.getShape().begin(), tbTy.getShape().end());
+    auto validShape = tbTy.getValidShape();
+    if (validShape.empty())
+      info.tileValidShape.assign(tbTy.getShape().begin(), tbTy.getShape().end());
+    else
+      info.tileValidShape.assign(validShape.begin(), validShape.end());
     info.tileMemorySpace = getMemorySpaceString(tbTy);
     if (auto config = tbTy.getConfigAttr()) {
       info.blayout = static_cast<int32_t>(config.getBLayout().getValue());
@@ -200,7 +333,7 @@ static std::optional<OperandTypeInfo> buildOperandTypeInfo(Type ty) {
       info.fractal = config.getSFractalSize()
                          ? static_cast<int32_t>(config.getSFractalSize().getInt())
                          : 0;
-      info.pad = static_cast<int32_t>(config.getPad().getValue());
+      info.pad = static_cast<uint64_t>(config.getPad().getValue());
     }
     return info;
   }
@@ -212,11 +345,15 @@ static std::optional<OperandTypeInfo> buildOperandTypeInfo(Type ty) {
     info.dtype = getDtypeString(mrTy.getElementType());
     if (info.dtype.empty())
       return std::nullopt;
-    info.viewShape.assign(mrTy.getShape().begin(), mrTy.getShape().end());
     info.viewMemorySpace = getMemorySpaceString(mrTy);
-    int64_t offset = ShapedType::kDynamic;
-    if (succeeded(getStridesAndOffset(mrTy, info.viewStrides, offset))) {
-      // strides populated — dynamic dims remain ShapedType::kDynamic.
+    populateViewShapeAndStrides(value, info.viewShape, info.viewStrides);
+    if (info.viewShape.empty())
+      info.viewShape.assign(mrTy.getShape().begin(), mrTy.getShape().end());
+    if (info.viewStrides.empty()) {
+      int64_t offset = ShapedType::kDynamic;
+      if (succeeded(getStridesAndOffset(mrTy, info.viewStrides, offset))) {
+        // strides populated — dynamic dims remain ShapedType::kDynamic.
+      }
     }
     return info;
   }
@@ -233,9 +370,10 @@ static std::optional<OperandTypeInfo> buildOperandTypeInfo(Type ty) {
 static std::optional<SpecKey> buildSpecKey(Operation *op) {
   SpecKey key;
   key.opName = getTileOpName(op).str();
+  key.targetArch = getTargetArchString(op->getParentOfType<ModuleOp>());
 
   for (unsigned i = 0; i < op->getNumOperands(); ++i) {
-    auto info = buildOperandTypeInfo(op->getOperand(i).getType());
+    auto info = buildOperandTypeInfo(op->getOperand(i));
     if (!info)
       return std::nullopt;
     key.operands.push_back(*info);
@@ -295,7 +433,20 @@ static std::string buildOperandSpecsJson(const SpecKey &key) {
     if (op.kind == OperandKind::Tile) {
       json += "{\"kind\":\"tile\",\"dtype\":\"" + op.dtype + "\",\"shape\":";
       appendJsonIntArray(json, op.tileShape);
-      json += ",\"memory_space\":\"" + op.tileMemorySpace + "\"}";
+      json += ",\"valid_shape\":";
+      appendJsonIntArray(json, op.tileValidShape);
+      json += ",\"memory_space\":\"";
+      json += op.tileMemorySpace;
+      json += "\",\"config\":{";
+      json += "\"b_layout\":\"";
+      json += getBLayoutString(op.blayout);
+      json += "\",\"s_layout\":\"";
+      json += getSLayoutString(op.slayout);
+      json += "\",\"s_fractal_size\":";
+      json += std::to_string(op.fractal);
+      json += ",\"pad_value\":\"0x";
+      json += llvm::utohexstr(op.pad, /*LowerCase=*/false);
+      json += "\"}}";
       continue;
     }
 
@@ -345,6 +496,10 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
 
   // 2. Build operand schema JSON for mixed tile/scalar specialization.
   std::string operandSpecsJson = buildOperandSpecsJson(key);
+  if (key.targetArch.empty()) {
+    llvm::errs() << "ExpandTileOp: missing pto.target_arch module attribute\n";
+    return nullptr;
+  }
 
   // 3. Create temp file for stdout redirect.
   SmallString<128> tmpPath;
@@ -362,6 +517,7 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
   SmallVector<StringRef> args = {
       *pythonPath, "-m", "tilelang_dsl.expand_helper",
       "--template-dir", tilelangPath,
+      "--target",       key.targetArch,
       "--op",           opName,
       "--operand-specs", operandSpecsJson,
   };
@@ -461,7 +617,7 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
   llvm::StringMap<std::string> renamedSymbols;
 
   // Build a unique name from the spec-key-relevant operand fields.
-  std::string uniqueName = "__pto_tilelang_" + key.opName;
+  std::string uniqueName = "__pto_tilelang_" + key.targetArch + "_" + key.opName;
   for (const auto &op : key.operands) {
     uniqueName += op.kind == OperandKind::Tile   ? "_tile"
                  : op.kind == OperandKind::View ? "_view"
@@ -470,6 +626,12 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
     if (op.kind == OperandKind::Tile) {
       for (int64_t d : op.tileShape)
         uniqueName += "_" + std::to_string(d);
+      for (int64_t d : op.tileValidShape)
+        uniqueName += "_v" + std::to_string(d);
+      uniqueName += "_bl" + std::to_string(op.blayout);
+      uniqueName += "_sl" + std::to_string(op.slayout);
+      uniqueName += "_fr" + std::to_string(op.fractal);
+      uniqueName += "_pd" + llvm::utohexstr(op.pad, /*LowerCase=*/false);
     }
   }
 

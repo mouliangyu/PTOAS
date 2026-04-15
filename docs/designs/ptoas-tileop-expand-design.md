@@ -475,30 +475,32 @@ Step 4: 生成调用并替换原 Tile Op
 
 | 操作数类型 | IR 类型 | 参与 SpecKey 的字段 | 不参与 SpecKey 但传给 Python DSL 的字段 |
 |-----------|---------|--------------------|-----------------------------------------|
-| **Tile** | `TileBufType` | `dtype` + `shape` + `memorySpace` + `config`（blayout/slayout/fractal/pad） | — |
+| **Tile** | `TileBufType` | `dtype` + `shape` + `valid_shape` + `memorySpace` + `config`（blayout/slayout/fractal/pad） | — |
 | **View** | `MemRefType`（降级后的 `PartitionTensorViewType`） | `dtype` | `shape`、`strides`、`memorySpace`（仅用于约束检查） |
 | **Scalar** | 标量类型 | `dtype` | — |
 
-**View 操作数的特化策略**：View 对应的模板参数类型为 `!pto.partition_tensor_view<?x?x...xdtype>`，维度全部动态，shape/strides 通过 intrinsic 在运行时查询。因此不同 view shape 的 Tile op 可以共享同一份模板实例——`shape`/`strides`/`memorySpace` 不参与 SpecKey 的判等和 hash。这些字段通过 `--operand-specs` JSON 传给 Python DSL 的 `expand_helper`，注入到约束上下文中（如 `src.strides[4] == 1`），但不影响模板代码生成。
+**View 操作数的特化策略**：View 对应的模板参数类型为 `!pto.partition_tensor_view<?x?x...xdtype>`，维度全部动态，shape/strides 通过 intrinsic 在运行时查询。因此不同 view shape 的 Tile op 可以共享同一份模板实例——`shape`/`strides`/`memorySpace` 不参与 SpecKey 的判等和 hash。这些字段通过 `--operand-specs` JSON 传给 Python DSL 的 `expand_helper`，先按操作数位置构造成 `arg0_*`、`arg1_*` 一类的位置化上下文，再在 constraint evaluation 阶段按模板参数顺序映射到当前参数名（如 `src` / `dst`）后参与约束检查；它们不直接影响模板代码生成。
 
-**Tile 操作数的排除字段**：`valid_shape` 不参与 SpecKey——因为它可能是动态的，作为运行时值在 inline 后通过 `pto.tile_valid_rows`/`pto.tile_valid_cols` 提取。相同 `(op, operand_types)` 但不同 `valid_shape` 的 Tile op 可以共享同一份实例化结果。
+**Tile 操作数的特化策略**：当前实现中，`valid_shape` 参与 SpecKey，并与 `shape`、`memorySpace`、`config` 一起决定模板实例和缓存 key。也就是说，相同 `(op, operand_types)` 但不同 `valid_shape` 的 Tile op 当前会生成不同的实例化结果。约束检查和缓存命名都基于这一实现语义。
 
 #### 3.2.2 模板实例化过程
 
 Expand TileOp 通过调用 Python 子进程来实例化模板。具体流程：
 
-1. **调用 Python helper**：`python3 -m tilelang_dsl.expand_helper --op pto.<op> --operand-specs <JSON>`，其中 JSON 描述每个操作数的类型信息。
+1. **调用 Python helper**：`python3 -m tilelang_dsl.expand_helper --target <arch> --op pto.<op> --operand-specs <JSON>`，其中 JSON 描述每个操作数的类型信息。
 2. **Python 端处理**：
    - 扫描模板目录下的 `.py` 文件，查找标注了 `@pto.vkernel` 装饰器的模板函数
-   - 按 `op` 名称和 `dtype` 签名匹配模板
-   - 对 `pto.Tile` 参数使用给定的 shape 和 memory_space 进行特化
-   - 对 `pto.PartitionTensorView` 参数，将 shape/strides 注入约束上下文用于前置条件检查，但不影响模板特化（参数类型保持全动态）
+   - 先按操作数个数和参数种类（`tile` / `view` / `scalar`）做 schema 预过滤
+   - 基于 `operand_specs` 构造按位置组织的上下文属性（如 `arg0_shape`、`arg0_strides`、`arg1_config`）
+   - 调用 `pto.select_kernel(target, concrete_op, operand_types, context_attrs, registry)` 按 `target → op → dtypes → constraints → priority` 规则选择模板
+   - 对 `pto.Tile` 参数使用给定的 shape / valid_shape / memory_space / config 进行特化
+   - 对 `pto.PartitionTensorView` 参数，不做 `specialize()`，而是通过位置化上下文把 shape/strides/memorySpace 提供给前置条件检查（参数类型保持全动态）
    - 输出特化后的 MLIR 文本
 3. **C++ 端处理**：
    - 解析 MLIR 文本为 `ModuleOp`
    - 提取 `func.func`，克隆到目标 Module 末尾
-   - 重命名为 `__pto_tilelang_<op>_tile_<dtype>_<dim0>_<dim1>_view_<dtype>_...`（Tile 操作数拼 shape，View/Scalar 只拼 dtype），设为 `private` 可见性
-   - 存入 specCache
+   - 重命名为 `__pto_tilelang_<target>_<op>_tile_<dtype>_<dim0>_<dim1>_view_<dtype>_...`（Tile 操作数拼 shape/valid_shape/config，View/Scalar 只拼 dtype），设为 `private` 可见性
+   - 按 `target + op + operand schema` 存入 specCache
 
 **关键约束**：Python DSL 实例化输出的函数需要满足以下要求：
 
@@ -826,7 +828,7 @@ def template_xxx(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
 算子，这意味着 `ins` 操作数在前、`outs` 在后。例如 `pto.tadd ins(%a, %b) outs(%c)`
 的操作数顺序为 `(src0, src1, dst)`，模板参数必须为 `(src0, src1, dst)`。
 
-`expand_helper.py` 自动扫描目录下所有 `.py` 文件，按 `op` 名称和 `dtype` 签名匹配模板。
+`expand_helper.py` 自动扫描目录下所有 `.py` 文件，先按参数 schema 过滤候选，再通过 `select_kernel()` 按 `target`、`op`、`dtype`、`constraints` 和 `priority` 选择模板。模板约束读取的位置化上下文由 `argN_*` 键提供，并在 constraint evaluation 阶段按参数顺序映射到模板自己的参数名。
 
 
 ## 第四章 前置工作
@@ -1056,7 +1058,7 @@ run_st.py
 
 - `gen_data.py` 会基于 `cases.py` 中的 `CASES` 为每个 case 生成 `input*.bin` 和 `golden.bin`
 - host 可执行文件会按 `main.cpp` 中的 case table 逐个读取 `./<case_name>/input*.bin`，运行 kernel，并写回 `./<case_name>/output.bin`
-- `compare.py` 再基于同一份 `CASES` 定义逐 case 做 `numpy.allclose` 比较
+- `compare.py` 再基于同一份 `CASES` 定义逐 case 读取并裁剪需要比较的数据，最后调用公共 `result_cmp()`
 - 若传入 `-c <case_name>`，则运行和比较都只针对单个 case
 
 因此，TileLang ST 的验证对象不是“某一份中间 IR 是否长得对”，而是：
@@ -1068,10 +1070,10 @@ run_st.py
 编译子链由 `testcase/CMakeLists.txt` 中的 `pto_tilelang_vec_st()` 宏自动接管，整条执行链路则由
 `run_st.py` 统一调度。
 
-##### 新增 testcase 所需文件（七件套）
+##### 新增 testcase 所需文件（七个文件 + 一个注册修改）
 
 以新增 `pto.tsub` 为例，需在 `test/tilelang_st/npu/a5/src/st/testcase/tsub/` 下准备
-6 个文件，并修改 1 个注册文件：
+7 个文件，并修改 1 个注册文件：
 
 **1. `CMakeLists.txt`** — 通常只有一行：
 
@@ -1097,7 +1099,9 @@ CASES = [
 ]
 ```
 
-每个 case 必须包含 `name`/`dtype`/`shape`/`valid_shape`/`eps` 五个字段，`valid_shape` 为必填。
+常规 case 必须包含 `name`/`dtype`/`shape`/`valid_shape`/`eps` 五个字段，`valid_shape` 为必填。
+如果输出 shape 与输入不同（如 `trowsum`），再额外补 `dst_shape`/`dst_valid_shape`，供
+`compare.py` 和 `gen_data.py` 使用。
 
 **3. `tsub.pto`** — kernel 描述，一个文件中放多个 case 对应的函数。每个函数
 代表一种 dtype/shape 组合。以 tadd 为参考，kernel 结构为：
@@ -1206,9 +1210,27 @@ for case in CASES:
 
 注意 golden 的计算逻辑必须与 op 语义一致（tadd 是加法，tsub 是减法），且只在 `valid_shape` 区域内计算。
 
-`compare.py` 为公共脚本（位于 `testcase/compare.py`），所有 testcase 共享，无需 per-testcase 编写。
-`run_st.py` 运行时将它与 per-testcase 的 `cases.py` 一起拷贝到 build 目录，自动读取 case 列表和阈值，
-只比较 `valid_shape` 区域。exit code 2 表示失败。
+**7. `compare.py`** — 每个 testcase 自己维护比较脚本。公共层只提供
+`st_common.result_cmp(golden, output, eps)`，具体比较哪些数据由 testcase 自己决定。
+
+以 `tsub` 这种输入输出 shape 一致的 case 为例，核心逻辑通常是：
+
+```python
+from cases import CASES
+from st_common import result_cmp, style_fail, style_pass, validate_cases
+
+validate_cases(CASES)
+
+for case in CASES:
+    shape = case["shape"]
+    vr, vc = case["valid_shape"]
+    golden = np.fromfile(os.path.join(case["name"], "golden.bin"), dtype=case["dtype"]).reshape(shape)
+    output = np.fromfile(os.path.join(case["name"], "output.bin"), dtype=case["dtype"]).reshape(shape)
+    ok = result_cmp(golden[:vr, :vc], output[:vr, :vc], case["eps"])
+```
+
+如果是 `trowsum` 这类输出 shape 不同的 op，则 `compare.py` 可以自己按 `dst_shape` reshape，
+并只比较 `dst_valid_shape` 对应的有效区域。exit code 2 表示失败。
 
 精度阈值参考：
 
@@ -1219,7 +1241,7 @@ for case in CASES:
 | `bfloat16` | `1e-2` |
 | `int8/int16/int32` | `0`（精确匹配） |
 
-**7. 注册** — 修改 `testcase/CMakeLists.txt`，将新 op 加入 `ALL_TESTCASES`：
+**8. 注册** — 修改 `testcase/CMakeLists.txt`，将新 op 加入 `ALL_TESTCASES`：
 
 ```cmake
 set(ALL_TESTCASES
@@ -1240,8 +1262,9 @@ set(ALL_TESTCASES
 | 参数顺序 | `.pto` → `launch.cpp` → `main.cpp` 的 launch 调用 | `(a, b) → c` |
 | shape / valid_shape | `cases.py` ↔ `.pto` tile shape ↔ `main.cpp` rows/cols/validRows/validCols | `16×64` / `(16, 64)` |
 
-Python 侧的 case 名、dtype、shape、valid_shape、eps 已通过 `cases.py` 收敛为单一来源。
-但 C++ 侧 `main.cpp` 的 `kCases[]` 和 `.pto` 仍需手动与 `cases.py` 保持一致。
+Python 侧的 case 名、dtype、shape、valid_shape、eps（以及必要时的 `dst_shape` /
+`dst_valid_shape`）已通过 `cases.py` 收敛为单一来源。但 C++ 侧 `main.cpp` 的 `kCases[]`
+和 `.pto` 仍需手动与 `cases.py` 保持一致。
 
 任何一处不一致都可能导致：编译成功但运行时 segfault，或运行成功但比较结果错误且难以定位。
 
@@ -1273,9 +1296,9 @@ python3 test/tilelang_st/script/run_st.py -r sim -v a5 -t tsub -c f32_16x64 -w
 ```text
 build/testcase/tsub/
 ├── st_common.py     # 从 testcase/ 公共目录拷贝
-├── compare.py       # 从 testcase/ 公共目录拷贝
 ├── cases.py         # 从 testcase/tsub/ 拷贝
 ├── gen_data.py      # 从 testcase/tsub/ 拷贝
+├── compare.py       # 从 testcase/tsub/ 拷贝
 ├── f32_16x64/
 │   ├── input1.bin
 │   ├── input2.bin

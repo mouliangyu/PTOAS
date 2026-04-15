@@ -37,6 +37,7 @@ from .semantic import (
     SemanticLowLevelCopyStmt,
     SemanticMaskType,
     SemanticMetaType,
+    SemanticPadValueType,
     SemanticPipeBarrierStmt,
     SemanticPredicateStoreStmt,
     SemanticPtrType,
@@ -70,11 +71,14 @@ from .semantic import (
 )
 from .types import (
     MaskPattern,
+    PadValue,
     ScalarType,
+    TileConfig,
     bytewidth,
     get_lanes,
     integer_bitwidth,
     integer_signedness,
+    is_float_dtype,
     is_integer_dtype,
 )
 
@@ -586,7 +590,7 @@ class _AuthoringRenderer:
                 return self._render_tuple_expr_assign(stmt, env, indent=indent)
             return self._render_multi_result_assign(stmt, env, indent=indent)
         target = stmt.targets[0]
-        if isinstance(target.type, SemanticMetaType):
+        if isinstance(target.type, (SemanticMetaType, SemanticPadValueType)):
             env[target.name] = _RenderedValue(name=target.ssa_name, type=target.type)
             return []
         lines: list[str] = []
@@ -2542,12 +2546,19 @@ class _AuthoringRenderer:
         if expr.name == "vdup":
             value = self._lower_expr(expr.args[0], env, indent=indent, into=into)
             mask = self._lower_expr(expr.args[1], env, indent=indent, into=into)
-            position = self._render_string_literal(expr.args[2])
-            into.append(
-                self._indent(indent)
-                + f"{result_name} = pto.vdup {value.name}, {mask.name} {{position = {position}}} : "
-                + f"{self._render_type(value.type)}, {self._render_type(mask.type)} -> {self._render_type(expr.type)}"
-            )
+            if len(expr.args) == 3:
+                position = self._render_string_literal(expr.args[2])
+                into.append(
+                    self._indent(indent)
+                    + f"{result_name} = pto.vdup {value.name}, {mask.name} {{position = {position}}} : "
+                    + f"{self._render_type(value.type)}, {self._render_type(mask.type)} -> {self._render_type(expr.type)}"
+                )
+            else:
+                into.append(
+                    self._indent(indent)
+                    + f"{result_name} = pto.vdup {value.name}, {mask.name} : "
+                    + f"{self._render_type(value.type)}, {self._render_type(mask.type)} -> {self._render_type(expr.type)}"
+                )
             return _RenderedValue(name=result_name, type=expr.type)
 
         if expr.name == "vci":
@@ -2713,8 +2724,6 @@ class _AuthoringRenderer:
 
         if expr.name == "vcvt":
             value = self._lower_expr(expr.args[0], env, indent=indent, into=into)
-            target_dtype = self._render_dtype_symbol(expr.args[1], context="pto.vcvt to_type")
-            mask = self._lower_expr(expr.args[2], env, indent=indent, into=into)
             attr_parts: list[str] = []
             if self._has_optional_string_literal(expr.args[3]):
                 attr_parts.append(f"rnd = {self._render_string_literal(expr.args[3])}")
@@ -2725,24 +2734,42 @@ class _AuthoringRenderer:
             attr_suffix = f" {{{', '.join(attr_parts)}}}" if attr_parts else ""
             into.append(
                 self._indent(indent)
-                + f"{result_name} = pto.vcvt {value.name}, {target_dtype}, {mask.name}{attr_suffix} : "
-                + f"{self._render_type(value.type)}, {self._render_type(mask.type)} -> {self._render_type(expr.type)}"
+                + f"{result_name} = pto.vcvt {value.name}{attr_suffix} : "
+                + f"{self._render_type(value.type)} -> {self._render_type(expr.type)}"
             )
             return _RenderedValue(name=result_name, type=expr.type)
 
-        if expr.name == "vmrgsort4":
-            vec0 = self._lower_expr(expr.args[0], env, indent=indent, into=into)
-            vec1 = self._lower_expr(expr.args[1], env, indent=indent, into=into)
-            vec2 = self._lower_expr(expr.args[2], env, indent=indent, into=into)
-            vec3 = self._lower_expr(expr.args[3], env, indent=indent, into=into)
-            mask = self._lower_expr(expr.args[4], env, indent=indent, into=into)
+        if expr.name == "vbitsort":
+            destination = self._lower_expr(expr.args[0], env, indent=indent, into=into)
+            source = self._lower_expr(expr.args[1], env, indent=indent, into=into)
+            indices = self._lower_expr(expr.args[2], env, indent=indent, into=into)
+            repeat_times = self._lower_expr(expr.args[3], env, indent=indent, into=into)
             into.append(
                 self._indent(indent)
-                + f"{result_name} = pto.vmrgsort4 {vec0.name}, {vec1.name}, {vec2.name}, {vec3.name}, {mask.name} : "
-                + f"{self._render_type(vec0.type)}, {self._render_type(vec1.type)}, {self._render_type(vec2.type)}, "
-                + f"{self._render_type(vec3.type)}, {self._render_type(mask.type)} -> {self._render_type(expr.type)}"
+                + f"pto.vbitsort {destination.name}, {source.name}, {indices.name}, {repeat_times.name} : "
+                + f"{self._render_type(destination.type)}, {self._render_type(source.type)}, "
+                + f"{self._render_type(indices.type)}, {self._render_type(repeat_times.type)}"
             )
-            return _RenderedValue(name=result_name, type=expr.type)
+            return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
+
+        if expr.name == "vmrgsort4":
+            destination = self._lower_expr(expr.args[0], env, indent=indent, into=into)
+            source0 = self._lower_expr(expr.args[1], env, indent=indent, into=into)
+            source1 = self._lower_expr(expr.args[2], env, indent=indent, into=into)
+            source2 = self._lower_expr(expr.args[3], env, indent=indent, into=into)
+            source3 = self._lower_expr(expr.args[4], env, indent=indent, into=into)
+            count = self._lower_expr(expr.args[5], env, indent=indent, into=into)
+            config = self._lower_expr(expr.args[6], env, indent=indent, into=into)
+            count = self._coerce_rendered_value(count, _I64_TYPE, indent=indent, into=into)
+            config = self._coerce_rendered_value(config, _I64_TYPE, indent=indent, into=into)
+            into.append(
+                self._indent(indent)
+                + f"pto.vmrgsort4 {destination.name}, {source0.name}, {source1.name}, {source2.name}, {source3.name}, "
+                + f"{count.name}, {config.name} : {self._render_type(destination.type)}, {self._render_type(source0.type)}, "
+                + f"{self._render_type(source1.type)}, {self._render_type(source2.type)}, {self._render_type(source3.type)}, "
+                + f"{self._render_type(count.type)}, {self._render_type(config.type)}"
+            )
+            return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
 
         if expr.name in {
             "vabs",
@@ -2766,7 +2793,6 @@ class _AuthoringRenderer:
             "vsqz",
             "vexpdiff",
             "vtrc",
-            "vbitsort",
             "vcgadd",
             "vcgmax",
             "vcgmin",
@@ -3111,10 +3137,16 @@ class _AuthoringRenderer:
                 )
                 return _RenderedValue(name=cast_name, type=target_type)
             if target_type.dtype.name in {"f16", "bf16", "f32"}:
+                index_to_int_name = self._new_temp()
+                index_to_int_op = "arith.index_castui"
+                into.append(
+                    self._indent(indent)
+                    + f"{index_to_int_name} = {index_to_int_op} {value.name} : index to i64"
+                )
                 cast_name = self._new_temp()
                 into.append(
                     self._indent(indent)
-                    + f"{cast_name} = arith.uitofp {value.name} : index to {target_type.dtype.name}"
+                    + f"{cast_name} = arith.uitofp {index_to_int_name} : i64 to {target_type.dtype.name}"
                 )
                 return _RenderedValue(name=cast_name, type=target_type)
         if isinstance(value.type, SemanticScalarType) and isinstance(target_type, SemanticScalarType):
@@ -3421,15 +3453,51 @@ class _AuthoringRenderer:
         raise NotImplementedError(f"unsupported constant type {ty!r}")
 
     def _render_binary_op(self, op: str, ty: SemanticType) -> str:
-        if isinstance(ty, (SemanticIndexType, SemanticScalarType)):
+        if isinstance(ty, SemanticIndexType):
             if op == "add":
                 return "arith.addi"
             if op == "sub":
                 return "arith.subi"
             if op == "mul":
                 return "arith.muli"
+            if op == "mod":
+                if isinstance(ty, SemanticIndexType):
+                    return "arith.remui"
             if op == "floordiv":
-                return "arith.floordivsi"
+                return "arith.divui"
+        if isinstance(ty, SemanticScalarType):
+            dtype = ty.dtype
+            if is_float_dtype(dtype):
+                if op == "add":
+                    return "arith.addf"
+                if op == "sub":
+                    return "arith.subf"
+                if op == "mul":
+                    return "arith.mulf"
+            if is_integer_dtype(dtype):
+                if op == "add":
+                    return "arith.addi"
+                if op == "sub":
+                    return "arith.subi"
+                if op == "mul":
+                    return "arith.muli"
+                if op == "mod":
+                    sign = integer_signedness(dtype)
+                    return "arith.remui" if sign == "unsigned" else "arith.remsi"
+                if op == "floordiv":
+                    sign = integer_signedness(dtype)
+                    return "arith.divui" if sign == "unsigned" else "arith.floordivsi"
+                if op == "bitand":
+                    return "arith.andi"
+                if op == "bitor":
+                    return "arith.ori"
+                if op == "bitxor":
+                    return "arith.xori"
+                if op == "lshift":
+                    return "arith.shli"
+                if op == "rshift":
+                    sign = integer_signedness(dtype)
+                    return "arith.shrui" if sign == "unsigned" else "arith.shrsi"
         raise NotImplementedError(f"unsupported binary op '{op}' for type {ty!r}")
 
     def _render_type(self, ty: SemanticType) -> str:
@@ -3521,11 +3589,13 @@ class _AuthoringRenderer:
         valid_shape = ty.valid_shape or ty.shape
         v_row = valid_shape[0]
         v_col = 1 if ty.rank == 1 else valid_shape[1]
+        config = ty.config or TileConfig()
         return (
             f"!pto.tile_buf<loc={self._render_tile_buf_loc(ty.memory_space or 'ub')}, "
             f"dtype={ty.element_dtype.name}, rows={rows}, cols={cols}, "
             f"v_row={self._render_tile_buf_dim(v_row)}, v_col={self._render_tile_buf_dim(v_col)}, "
-            "blayout=row_major, slayout=none_box, fractal=512, pad=0>"
+            f"blayout={config.b_layout.value}, slayout={config.s_layout.value}, "
+            f"fractal={config.s_fractal_size}, pad={self._render_tile_buf_pad_value(config.pad_value)}>"
         )
 
     def _render_tile_buf_loc(self, memory_space: str) -> str:
@@ -3537,6 +3607,13 @@ class _AuthoringRenderer:
 
     def _render_tile_buf_dim(self, dim: int | None) -> str:
         return "?" if dim is None else str(dim)
+
+    def _render_tile_buf_pad_value(self, pad_value: PadValue) -> str:
+        if pad_value.is_custom:
+            raise NotImplementedError(
+                "custom TileConfig.pad_value MLIR type rendering requires PTO tile_buf parser support for custom pad encodings"
+            )
+        return str(pad_value.encoded)
 
     def _dtype_byte_width(self, dtype: ScalarType) -> int:
         try:

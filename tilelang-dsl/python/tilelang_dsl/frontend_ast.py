@@ -620,7 +620,13 @@ _BINARY_OP_NAMES = {
     ast.Add: "add",
     ast.Sub: "sub",
     ast.Mult: "mul",
+    ast.Mod: "mod",
     ast.FloorDiv: "floordiv",
+    ast.BitAnd: "bitand",
+    ast.BitOr: "bitor",
+    ast.BitXor: "bitxor",
+    ast.LShift: "lshift",
+    ast.RShift: "rshift",
 }
 _COMPARE_OP_NAMES = {
     ast.Eq: "eq",
@@ -1011,6 +1017,25 @@ def _build_expr(node: ast.AST, context: _FrontendBuildContext) -> FrontendExprNo
                     keywords=_build_call_keywords(
                         node,
                         namespace=node.func.value.id,
+                        name=node.func.attr,
+                        context=context,
+                    ),
+                ),
+                node,
+                context,
+            )
+        if isinstance(node.func, ast.Attribute):
+            return _attach_source_location(
+                FrontendCallExpr(
+                    namespace=None,
+                    name=node.func.attr,
+                    args=(
+                        _build_expr(node.func.value, context),
+                        *(tuple(_build_expr(arg, context) for arg in node.args)),
+                    ),
+                    keywords=_build_call_keywords(
+                        node,
+                        namespace=None,
                         name=node.func.attr,
                         context=context,
                     ),
