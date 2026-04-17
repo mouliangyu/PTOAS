@@ -18,9 +18,17 @@ for case in CASES:
 
     dtype = case["dtype"]
     shape = case["shape"]
+    vr, vc = case["valid_shape"]
 
     input_arr = np.random.randint(1, 17, size=shape).astype(dtype)
-    golden = input_arr.copy()
+    if "golden_fill" in case:
+        golden = np.full(shape, case["golden_fill"], dtype=dtype)
+        golden[:vr, :vc] = input_arr[:vr, :vc]
+    else:
+        golden = input_arr.copy()
 
     save_case_data(case["name"], {"input": input_arr, "golden": golden})
-    print(f"[INFO] gen_data: {case['name']} shape={shape} dtype={dtype.__name__}")
+    print(
+        f"[INFO] gen_data: {case['name']} shape={shape} "
+        f"valid_shape={(vr, vc)} dtype={dtype.__name__}"
+    )

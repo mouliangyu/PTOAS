@@ -196,6 +196,7 @@ class FrontendKernelNode:
     parameters: tuple[FrontendParameterNode, ...]
     tile_specializations: tuple[FrontendTileSpecializationNode, ...]
     body: tuple[FrontendStmtNode, ...]
+    context_attrs: tuple[tuple[str, Any], ...] = ()
     inline_procs: tuple[FrontendInlineProcNode, ...] = ()
 
 
@@ -816,6 +817,9 @@ _DMA_CALL_KEYWORDS: dict[str, frozenset[str]] = {
         }
     ),
     "vcvt": frozenset({"rnd", "sat", "part"}),
+    "vtrc": frozenset({"rnd"}),
+    "vlds": frozenset({"dist"}),
+    "vsts": frozenset({"dist"}),
 }
 
 
@@ -1509,6 +1513,9 @@ def build_frontend_kernel_node(descriptor: Any) -> FrontendKernelNode:
         parameters=parameters,
         tile_specializations=tile_specializations,
         body=body,
+        context_attrs=tuple(
+            sorted(descriptor.constraint_context_attrs.items(), key=lambda item: item[0])
+        ),
         inline_procs=reachable_inline_proc_nodes,
     )
 

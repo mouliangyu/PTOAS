@@ -31,4 +31,11 @@ CASES = [
         "valid_shape": (128, 128),
         "eps": 1e-6,
     },
+    {
+        "name": "nd_pad_zero_f32_16x64",
+        "dtype": np.float32,
+        "shape": (16, 64),
+        "valid_shape": (16, 63),
+        "eps": 1e-6,
+    },
 ]

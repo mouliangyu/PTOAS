@@ -129,10 +129,11 @@ struct SpecKey {
   std::string opName;
   std::string targetArch;
   SmallVector<OperandTypeInfo, 4> operands;
+  SmallVector<std::pair<std::string, std::string>, 4> contextAttrs;
 
   bool operator==(const SpecKey &rhs) const {
     return opName == rhs.opName && targetArch == rhs.targetArch &&
-           operands == rhs.operands;
+           operands == rhs.operands && contextAttrs == rhs.contextAttrs;
   }
 };
 
@@ -153,6 +154,8 @@ struct SpecKeyInfo : public llvm::DenseMapInfo<SpecKey> {
       }
       // View/Scalar: only kind + dtype contribute to hash.
     }
+    for (const auto &[attrName, attrValue] : key.contextAttrs)
+      h = llvm::hash_combine(h, attrName, attrValue);
     return h;
   }
   static bool isEqual(const SpecKey &lhs, const SpecKey &rhs) {
@@ -168,6 +171,14 @@ static std::string getDtypeString(Type elemTy) {
   if (elemTy.isF32()) return "f32";
   if (elemTy.isF16()) return "f16";
   if (elemTy.isBF16()) return "bf16";
+  if (elemTy.isUnsignedInteger(64)) return "ui64";
+  if (elemTy.isUnsignedInteger(32)) return "ui32";
+  if (elemTy.isUnsignedInteger(16)) return "ui16";
+  if (elemTy.isUnsignedInteger(8)) return "ui8";
+  if (elemTy.isSignedInteger(64)) return "si64";
+  if (elemTy.isSignedInteger(32)) return "si32";
+  if (elemTy.isSignedInteger(16)) return "si16";
+  if (elemTy.isSignedInteger(8)) return "si8";
   if (elemTy.isSignlessInteger(64)) return "i64";
   if (elemTy.isSignlessInteger(32)) return "i32";
   if (elemTy.isSignlessInteger(16)) return "i16";
@@ -214,6 +225,36 @@ static std::string getSLayoutString(int32_t slayout) {
   if (slayout == static_cast<int32_t>(pto::SLayout::ColMajor))
     return "col_major";
   return "none_box";
+}
+
+static std::optional<std::string> getTCvtRoundModeString(pto::TCvtOp op) {
+  switch (op.getRmode()) {
+  case pto::RoundMode::NONE:
+  case pto::RoundMode::RINT:
+  case pto::RoundMode::CAST_RINT:
+    return "RINT";
+  case pto::RoundMode::ROUND:
+    return "ROUND";
+  case pto::RoundMode::FLOOR:
+    return "FLOOR";
+  case pto::RoundMode::CEIL:
+    return "CEIL";
+  case pto::RoundMode::TRUNC:
+    return "TRUNC";
+  case pto::RoundMode::ODD:
+    return "ODD";
+  }
+  return std::nullopt;
+}
+
+static void appendOpContextAttrs(
+    Operation *op,
+    SmallVectorImpl<std::pair<std::string, std::string>> &attrs) {
+  if (auto tcvt = dyn_cast<pto::TCvtOp>(op)) {
+    std::optional<std::string> roundMode = getTCvtRoundModeString(tcvt);
+    if (roundMode)
+      attrs.emplace_back("round_mode", *roundMode);
+  }
 }
 
 static bool getStaticIntFromValue(Value value, int64_t &out) {
@@ -381,6 +422,7 @@ static std::optional<SpecKey> buildSpecKey(Operation *op) {
   if (key.operands.empty())
     return std::nullopt;
 
+  appendOpContextAttrs(op, key.contextAttrs);
   return key;
 }
 
@@ -476,6 +518,22 @@ static std::string buildOperandSpecsJson(const SpecKey &key) {
   return json;
 }
 
+static std::string buildContextAttrsJson(const SpecKey &key) {
+  std::string json = "{";
+  for (size_t i = 0; i < key.contextAttrs.size(); ++i) {
+    const auto &[attrName, attrValue] = key.contextAttrs[i];
+    if (i > 0)
+      json += ",";
+    json += "\"";
+    json += attrName;
+    json += "\":\"";
+    json += attrValue;
+    json += "\"";
+  }
+  json += "}";
+  return json;
+}
+
 // ============================================================================
 // Invoke Python DSL helper to generate a specialized template function.
 // ============================================================================
@@ -496,6 +554,7 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
 
   // 2. Build operand schema JSON for mixed tile/scalar specialization.
   std::string operandSpecsJson = buildOperandSpecsJson(key);
+  std::string contextAttrsJson = buildContextAttrsJson(key);
   if (key.targetArch.empty()) {
     llvm::errs() << "ExpandTileOp: missing pto.target_arch module attribute\n";
     return nullptr;
@@ -521,6 +580,10 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
       "--op",           opName,
       "--operand-specs", operandSpecsJson,
   };
+  if (!key.contextAttrs.empty()) {
+    args.push_back("--context-attrs");
+    args.push_back(contextAttrsJson);
+  }
 
   // 5. Set up environment with PYTHONPATH.
   std::optional<StringRef> redirects[] = {std::nullopt, StringRef(tmpPath),
@@ -634,6 +697,8 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
       uniqueName += "_pd" + llvm::utohexstr(op.pad, /*LowerCase=*/false);
     }
   }
+  for (const auto &[attrName, attrValue] : key.contextAttrs)
+    uniqueName += "_ctx_" + attrName + "_" + attrValue;
 
   for (auto [index, fn] : llvm::enumerate(parsedFuncs)) {
     IRMapping mapping;

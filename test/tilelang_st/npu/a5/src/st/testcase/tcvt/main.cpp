@@ -6,13 +6,9 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// Host driver for TileLang tload/tstore ST.
-// Each case performs a GM -> Tile -> GM round trip and compare.py checks that
-// output.bin matches input.bin exactly for the requested layout.
-
 #include "acl/acl.h"
 #include "test_common.h"
-#include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -20,62 +16,71 @@
 
 using namespace PtoTestCommon;
 
-void LaunchTLOAD_ND_f32_16x64(float *src, float *dst, void *stream);
-void LaunchTLOAD_DN_f32_16x64(float *src, float *dst, void *stream);
-void LaunchTLOAD_NZ_f32_128x128(float *src, float *dst, void *stream);
-void LaunchTLOAD_ND_PAD_ZERO_f32_16x64(float *src, float *dst, void *stream);
+void LaunchTCVT_f32_to_i32_rint_16x64(void *src, void *dst, void *stream);
+void LaunchTCVT_f32_to_i32_round_16x64(void *src, void *dst, void *stream);
+void LaunchTCVT_i32_to_f32_rint_16x64(void *src, void *dst, void *stream);
+void LaunchTCVT_f32_to_f16_rint_16x64(void *src, void *dst, void *stream);
+void LaunchTCVT_f16_to_f32_rint_16x64(void *src, void *dst, void *stream);
 
-using LaunchFn = void (*)(float *, float *, void *);
+using LaunchFn = void (*)(void *, void *, void *);
 
 struct TestCase {
     const char *name;
     LaunchFn    launch;
-    size_t      rows;
-    size_t      cols;
-    size_t      elemSize;
+    size_t      srcRows;
+    size_t      srcCols;
+    size_t      dstRows;
+    size_t      dstCols;
+    size_t      srcElemSize;
+    size_t      dstElemSize;
 };
 
 static const TestCase kCases[] = {
-    {"nd_f32_16x64",    LaunchTLOAD_ND_f32_16x64,    16, 64,  sizeof(float)},
-    {"dn_f32_16x64",    LaunchTLOAD_DN_f32_16x64,    16, 64,  sizeof(float)},
-    {"nz_f32_128x128",  LaunchTLOAD_NZ_f32_128x128,  128, 128, sizeof(float)},
-    {"nd_pad_zero_f32_16x64", LaunchTLOAD_ND_PAD_ZERO_f32_16x64, 16, 64, sizeof(float)},
+    {"f32_to_i32_rint_16x64", LaunchTCVT_f32_to_i32_rint_16x64, 16, 64, 16, 64, sizeof(float), sizeof(int32_t)},
+    {"f32_to_i32_round_16x64", LaunchTCVT_f32_to_i32_round_16x64, 16, 64, 16, 64, sizeof(float), sizeof(int32_t)},
+    {"i32_to_f32_rint_16x64", LaunchTCVT_i32_to_f32_rint_16x64, 16, 64, 16, 64, sizeof(int32_t), sizeof(float)},
+    {"f32_to_f16_rint_16x64", LaunchTCVT_f32_to_f16_rint_16x64, 16, 64, 16, 64, sizeof(float), sizeof(uint16_t)},
+    {"f16_to_f32_rint_16x64", LaunchTCVT_f16_to_f32_rint_16x64, 16, 64, 16, 64, sizeof(uint16_t), sizeof(float)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
-static int RunCase(const TestCase &tc, aclrtStream stream) {
+static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
+    (void)deviceId;
     int rc = 0;
-    const size_t elemCount = tc.rows * tc.cols;
-    const size_t fileSize = elemCount * tc.elemSize;
+    const size_t srcElemCount = tc.srcRows * tc.srcCols;
+    const size_t dstElemCount = tc.dstRows * tc.dstCols;
+    size_t srcFileSize = srcElemCount * tc.srcElemSize;
+    size_t dstFileSize = dstElemCount * tc.dstElemSize;
 
-    std::printf("[INFO] === case: %s (%zux%zu) ===\n", tc.name, tc.rows, tc.cols);
+    std::printf("[INFO] === case: %s (src=%zux%zu, dst=%zux%zu) ===\n",
+                tc.name, tc.srcRows, tc.srcCols, tc.dstRows, tc.dstCols);
 
     std::string caseDir = std::string("./") + tc.name;
-    size_t inputFileSize = fileSize;
 
-    float *srcHost = nullptr;
-    float *dstHost = nullptr;
-    float *srcDevice = nullptr;
-    float *dstDevice = nullptr;
+    void *srcHost = nullptr;
+    void *dstHost = nullptr;
+    void *srcDevice = nullptr;
+    void *dstDevice = nullptr;
 
-    aclrtMallocHost((void **)(&srcHost), fileSize);
-    aclrtMallocHost((void **)(&dstHost), fileSize);
-    aclrtMalloc((void **)&srcDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-    aclrtMalloc((void **)&dstDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+    aclrtMallocHost(&srcHost, srcFileSize);
+    aclrtMallocHost(&dstHost, dstFileSize);
 
-    if (!ReadFile((caseDir + "/input.bin").c_str(), inputFileSize, srcHost, fileSize)) {
+    aclrtMalloc(&srcDevice, srcFileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+    aclrtMalloc(&dstDevice, dstFileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+
+    if (!ReadFile((caseDir + "/input.bin").c_str(), srcFileSize, srcHost, srcFileSize)) {
         std::fprintf(stderr, "[ERROR] failed to read %s/input.bin\n", caseDir.c_str());
         rc = 1;
     }
 
     if (rc == 0) {
-        aclrtMemcpy(srcDevice, fileSize, srcHost, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
+        aclrtMemcpy(srcDevice, srcFileSize, srcHost, srcFileSize, ACL_MEMCPY_HOST_TO_DEVICE);
         tc.launch(srcDevice, dstDevice, stream);
         aclrtSynchronizeStream(stream);
-        aclrtMemcpy(dstHost, fileSize, dstDevice, fileSize, ACL_MEMCPY_DEVICE_TO_HOST);
+        aclrtMemcpy(dstHost, dstFileSize, dstDevice, dstFileSize, ACL_MEMCPY_DEVICE_TO_HOST);
     }
 
-    if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSize)) {
+    if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, dstFileSize)) {
         std::fprintf(stderr, "[ERROR] failed to write %s/output.bin\n", caseDir.c_str());
         rc = 1;
     }
@@ -112,7 +117,7 @@ int main(int argc, char *argv[]) {
         if (caseFilter != nullptr && std::strcmp(kCases[i].name, caseFilter) != 0) {
             continue;
         }
-        int ret = RunCase(kCases[i], stream);
+        int ret = RunCase(kCases[i], deviceId, stream);
         if (ret != 0) {
             std::fprintf(stderr, "[ERROR] case %s failed\n", kCases[i].name);
             rc = 1;

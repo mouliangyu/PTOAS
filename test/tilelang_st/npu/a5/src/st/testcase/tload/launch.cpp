@@ -15,6 +15,7 @@
 extern "C" __global__ AICORE void TLOAD_ND_f32_16x64(__gm__ float *src, __gm__ float *dst);
 extern "C" __global__ AICORE void TLOAD_DN_f32_16x64(__gm__ float *src, __gm__ float *dst);
 extern "C" __global__ AICORE void TLOAD_NZ_f32_128x128(__gm__ float *src, __gm__ float *dst);
+extern "C" __global__ AICORE void TLOAD_ND_PAD_ZERO_f32_16x64(__gm__ float *src, __gm__ float *dst);
 
 void LaunchTLOAD_ND_f32_16x64(float *src, float *dst, void *stream) {
     TLOAD_ND_f32_16x64<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
@@ -26,4 +27,8 @@ void LaunchTLOAD_DN_f32_16x64(float *src, float *dst, void *stream) {
 
 void LaunchTLOAD_NZ_f32_128x128(float *src, float *dst, void *stream) {
     TLOAD_NZ_f32_128x128<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
+}
+
+void LaunchTLOAD_ND_PAD_ZERO_f32_16x64(float *src, float *dst, void *stream) {
+    TLOAD_ND_PAD_ZERO_f32_16x64<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
 }

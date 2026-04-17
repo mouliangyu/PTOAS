@@ -289,12 +289,13 @@ _COMPARE_SELECT_OPS = {"vcmp", "vcmps", "vsel", "vselr", "vselrv2"}
 _PREDICATE_MOVEMENT_OPS = {"pnot", "psel", "ppack", "punpack"}
 _CARRY_OPS = {"vaddc", "vsubc", "vaddcs", "vsubcs"}
 _REARRANGEMENT_OPS = {"vintlv", "vdintlv", "vintlvv2", "vdintlvv2"}
+_UB_HELPER_OPS = {"vbitsort", "vmrgsort4"}
 _ADVANCED_VECTOR_ACTIVITY_OPS = (
     _COMPARE_SELECT_OPS
     | _PREDICATE_MOVEMENT_OPS
     | _CARRY_OPS
     | _REARRANGEMENT_OPS
-    | {"vcvt", "vbitsort", "vmrgsort4"}
+    | {"vcvt"}
 )
 _TENSORVIEW_RANK = 5
 
@@ -543,6 +544,7 @@ class SemanticVectorStoreStmt(SemanticStmt):
     value: SemanticExpr
     destination: SemanticExpr
     indices: tuple[SemanticExpr, ...]
+    dist: SemanticExpr | None
     mask: SemanticExpr
 
 
@@ -748,6 +750,7 @@ class SemanticKernel:
 class _SemanticAnalyzer:
     def __init__(self, node: FrontendKernelNode):
         self.node = node
+        self._context_attrs = dict(node.context_attrs)
         self._counter = 0
         self._disable_inference_depth = 0
         self._has_explicit_vecscope = self._contains_explicit_vecscope(node.body)
@@ -845,7 +848,30 @@ class _SemanticAnalyzer:
         self,
         env: dict[str, SemanticBinding],
     ) -> tuple[tuple[SemanticStmt, ...], dict[str, SemanticBinding]]:
-        return self._analyze_block(self.node.body, env, allow_outer_lookup=True)
+        return self._analyze_body_with_inferred_kernel_vecscope(
+            self.node.body,
+            env,
+            allow_outer_lookup=True,
+            has_explicit_vecscope=self._has_explicit_vecscope,
+        )
+
+    def _analyze_body_with_inferred_kernel_vecscope(
+        self,
+        statements: tuple[FrontendStmtNode, ...],
+        env: dict[str, SemanticBinding],
+        *,
+        allow_outer_lookup: bool,
+        has_explicit_vecscope: bool,
+    ) -> tuple[tuple[SemanticStmt, ...], dict[str, SemanticBinding]]:
+        # Inferred vecscope is built incrementally from left to right, splitting
+        # at hard boundaries (DMA/sync/UB-helper/control-flow) instead of
+        # wrapping the whole kernel body in one fallback region.
+        return self._analyze_block(
+            statements,
+            env,
+            allow_outer_lookup=allow_outer_lookup,
+            allow_inferred_vecscope=not has_explicit_vecscope,
+        )
 
     def _parameter_type(self, param: Any) -> SemanticType:
         if param.kind == "tensorview":
@@ -970,12 +996,12 @@ class _SemanticAnalyzer:
         semantic_statements = []
         index = 0
         while index < len(statements):
-            if self._should_infer_vecscope(
+            if self._stmt_can_participate_in_inferred_vecscope(
                 statements[index],
                 allow_inferred_vecscope=allow_inferred_vecscope,
             ):
                 end = index + 1
-                while end < len(statements) and self._should_infer_vecscope(
+                while end < len(statements) and self._stmt_can_participate_in_inferred_vecscope(
                     statements[end],
                     allow_inferred_vecscope=allow_inferred_vecscope,
                 ):
@@ -1009,6 +1035,22 @@ class _SemanticAnalyzer:
             semantic_statements.extend(emitted_stmts)
             index += 1
         return tuple(semantic_statements), current_env
+
+    def _stmt_can_participate_in_inferred_vecscope(
+        self,
+        stmt: FrontendStmtNode,
+        *,
+        allow_inferred_vecscope: bool,
+    ) -> bool:
+        if self._has_explicit_vecscope:
+            return False
+        if self._disable_inference_depth > 0:
+            return False
+        if not allow_inferred_vecscope:
+            return False
+        if self._frontend_stmt_is_vecscope_boundary(stmt):
+            return False
+        return self._frontend_stmt_can_live_in_inferred_vecscope(stmt)
 
     def _analyze_stmt_or_inline(
         self,
@@ -1124,7 +1166,12 @@ class _SemanticAnalyzer:
             return not stmt.is_constexpr
         return (
             isinstance(stmt, FrontendExprStmt)
-            and (self._is_dma_call(stmt.expr) or self._is_sync_call(stmt.expr))
+            and (
+                self._is_dma_call(stmt.expr)
+                or self._is_low_level_dma_call(stmt.expr)
+                or self._is_sync_call(stmt.expr)
+                or self._is_ub_helper_call(stmt.expr)
+            )
         )
 
     def _constexpr_if_contains_vector_activity(self, stmt: FrontendIfStmt) -> bool:
@@ -1206,10 +1253,11 @@ class _SemanticAnalyzer:
                 if self._constexpr_if_contains_vector_activity(stmt):
                     return True
                 continue
-            name = self._frontend_vector_call_name(stmt)
-            if name is None or name == "make_mask":
-                continue
-            return True
+            if self._frontend_stmt_contains_vector_activity(stmt):
+                name = self._frontend_vector_call_name(stmt)
+                if name == "make_mask":
+                    continue
+                return True
         return False
 
     def _frontend_vector_call_name(self, stmt: FrontendStmtNode) -> str | None:
@@ -1270,7 +1318,17 @@ class _SemanticAnalyzer:
                 return True
             if isinstance(stmt, SemanticStrictVecscopeStmt):
                 return True
+            if isinstance(stmt, SemanticDmaLoadStmt):
+                return True
+            if isinstance(stmt, SemanticDmaStoreStmt):
+                return True
             if isinstance(stmt, SemanticVectorStoreStmt):
+                return True
+            if isinstance(stmt, SemanticDmaConfigStmt):
+                return True
+            if isinstance(stmt, SemanticDmaUnaryConfigStmt):
+                return True
+            if isinstance(stmt, SemanticLowLevelCopyStmt):
                 return True
             if isinstance(stmt, SemanticAssignStmt) and self._expr_contains_vector_activity(stmt.value):
                 return True
@@ -1439,11 +1497,13 @@ class _SemanticAnalyzer:
         self._hidden_parameters = []
         self._inline_proc_active_stack.append(key)
         try:
-            body, _ = self._analyze_block(
+            body, _ = self._analyze_body_with_inferred_kernel_vecscope(
                 inline_proc_node.body,
                 helper_env,
                 allow_outer_lookup=False,
-                allow_inferred_vecscope=True,
+                has_explicit_vecscope=self._contains_explicit_vecscope(
+                    inline_proc_node.body
+                ),
             )
         finally:
             self._inline_proc_active_stack.pop()
@@ -1563,6 +1623,13 @@ class _SemanticAnalyzer:
                 "wait_flag_dev",
                 "wait_intra_core",
             }
+        )
+
+    def _is_ub_helper_call(self, expr: FrontendExprNode) -> bool:
+        return (
+            isinstance(expr, FrontendCallExpr)
+            and expr.namespace == "pto"
+            and expr.name in _UB_HELPER_OPS
         )
 
     def _is_low_level_dma_call(self, expr: FrontendExprNode) -> bool:
@@ -1811,12 +1878,25 @@ class _SemanticAnalyzer:
                     value=value,
                     destination=destination,
                     indices=indices,
+                    dist=None,
                     mask=mask,
                 ),
                 dict(env),
             )
 
         if expr.name == "vsts":
+            analyzed_keywords = {
+                name: self._analyze_expr(value, env, allow_outer_lookup=allow_outer_lookup)
+                for name, value in expr.keywords
+            }
+            unexpected_keywords = sorted(set(analyzed_keywords) - {"dist"})
+            if unexpected_keywords:
+                keyword_text = ", ".join(unexpected_keywords)
+                raise TypeError(
+                    "pto.vsts only accepts keyword attr `dist`; "
+                    f"got unsupported keyword(s): {keyword_text}"
+                )
+            dist = self._normalize_vsts_dist(analyzed_keywords.get("dist"), "pto.vsts dist")
             if len(expr.args) == 3:
                 value = self._analyze_expr(expr.args[0], env, allow_outer_lookup=allow_outer_lookup)
                 destination, indices = self._analyze_tile_vector_access(
@@ -1839,13 +1919,14 @@ class _SemanticAnalyzer:
             self._require_vector_pointer_expr(destination, "pto.vsts destination")
             for index in indices:
                 self._require_index_typed_expr(index)
-            self._require_mask_for_vreg(mask, value.type, "pto.vsts")
+            self._require_mask_for_vsts(mask, value.type, dist, "pto.vsts")
             self._require_matching_vector_pointer(value.type, destination.type, "pto.vsts")
             return (
                 SemanticVectorStoreStmt(
                     value=value,
                     destination=destination,
                     indices=indices,
+                    dist=dist,
                     mask=mask,
                 ),
                 dict(env),
@@ -2991,14 +3072,12 @@ class _SemanticAnalyzer:
                     )
                 base = SemanticBindingRef(binding=binding, type=binding.type)
                 return self._analyze_as_ptr_method(base)
-            if expr.namespace == "pto" and expr.name == "vlds" and len(expr.args) == 1:
-                base, indices = self._analyze_tile_vector_access(
-                    expr.args[0],
+            if expr.namespace == "pto" and expr.name == "vlds":
+                return self._analyze_vlds_frontend_call(
+                    expr,
                     env,
                     allow_outer_lookup=allow_outer_lookup,
-                    context="pto.vlds source",
                 )
-                return self._analyze_vlds((base, *indices))
             if (
                 expr.namespace == "pto"
                 and expr.name == "vldas"
@@ -3037,6 +3116,12 @@ class _SemanticAnalyzer:
                 return self._analyze_vldsx2((base, *indices, dist))
             if expr.namespace == "pto" and expr.name == "vcvt":
                 return self._analyze_vcvt_frontend_call(
+                    expr,
+                    env,
+                    allow_outer_lookup=allow_outer_lookup,
+                )
+            if expr.namespace == "pto" and expr.name == "vtrc":
+                return self._analyze_vtrc_frontend_call(
                     expr,
                     env,
                     allow_outer_lookup=allow_outer_lookup,
@@ -3704,6 +3789,8 @@ class _SemanticAnalyzer:
             return self._analyze_bytewidth(args)
         if name in {"get_lanes", "elements_per_vreg"}:
             return self._analyze_get_lanes(args, call_name=name)
+        if name == "get_op_attr":
+            return self._analyze_get_op_attr(args)
         if name == "constexpr":
             raise TypeError(
                 "pto.constexpr(...) is only supported as an if-condition wrapper in TileLang DSL v1"
@@ -3749,6 +3836,8 @@ class _SemanticAnalyzer:
             return self._analyze_rearrangement_op(name, args)
         if name == "vcvt":
             return self._analyze_vcvt(args)
+        if name == "vtrc":
+            return self._analyze_vtrc(args)
         if name == "vbitsort":
             return self._analyze_vbitsort(args)
         if name == "vmrgsort4":
@@ -3792,6 +3881,50 @@ class _SemanticAnalyzer:
                     _I32_TYPE,
                 )
             ),
+        )
+
+    def _literal_expr_from_context_value(self, value: object, context: str) -> SemanticExpr:
+        if isinstance(value, bool):
+            return SemanticLiteralExpr(value=value, type=SemanticScalarType(dtype=i1))
+        if isinstance(value, int) and not isinstance(value, bool):
+            return SemanticLiteralExpr(value=value, type=SemanticIndexType())
+        if isinstance(value, float):
+            return SemanticLiteralExpr(value=value, type=SemanticScalarType(dtype=f32))
+        if isinstance(value, str):
+            return SemanticLiteralExpr(value=value, type=SemanticMetaType(kind="string"))
+        if isinstance(value, ScalarType):
+            return SemanticSymbolExpr(
+                namespace="pto",
+                name=value.name,
+                value=value,
+                type=SemanticMetaType(kind="dtype"),
+            )
+        if isinstance(value, MemorySpace):
+            return SemanticSymbolExpr(
+                namespace="pto",
+                name=value.name,
+                value=value,
+                type=SemanticMetaType(kind="memory_space"),
+            )
+        raise TypeError(
+            f"{context} resolved to unsupported static value {value!r} in TileLang DSL v1"
+        )
+
+    def _analyze_get_op_attr(self, args: tuple[SemanticExpr, ...]) -> SemanticExpr:
+        if len(args) not in {1, 2}:
+            raise TypeError(
+                "pto.get_op_attr expects 1 or 2 positional arguments `(name, default?)` in TileLang DSL v1"
+            )
+        attr_name = self._require_string_expr(args[0], "pto.get_op_attr name")
+        if attr_name in self._context_attrs:
+            return self._literal_expr_from_context_value(
+                self._context_attrs[attr_name],
+                f"pto.get_op_attr({attr_name!r})",
+            )
+        if len(args) == 2:
+            return args[1]
+        raise TypeError(
+            f"pto.get_op_attr could not resolve attribute {attr_name!r} and no default was provided"
         )
 
     def _analyze_scalar_constructor(
@@ -3980,7 +4113,12 @@ class _SemanticAnalyzer:
             raise TypeError("pto.init_align does not accept positional arguments in TileLang DSL v1")
         return SemanticCallExpr(namespace="pto", name="init_align", args=(), type=SemanticAlignType())
 
-    def _analyze_vlds(self, args: tuple[SemanticExpr, ...]) -> SemanticExpr:
+    def _analyze_vlds(
+        self,
+        args: tuple[SemanticExpr, ...],
+        *,
+        dist: SemanticExpr | None = None,
+    ) -> SemanticExpr:
         if len(args) < 2:
             raise TypeError("pto.vlds expects at least 2 positional arguments in TileLang DSL v1")
         source, *indices = args
@@ -3991,12 +4129,51 @@ class _SemanticAnalyzer:
             source = self._require_pointer_expr(source, "pto.vlds source", memory_space="ub")
         for index in indices:
             self._require_index_typed_expr(index)
+        lowered_args: tuple[SemanticExpr, ...]
+        if dist is not None:
+            lowered_args = (source, *indices, dist)
+        else:
+            lowered_args = (source, *indices)
         return SemanticCallExpr(
             namespace="pto",
             name="vlds",
-            args=(source, *indices),
+            args=lowered_args,
             type=self._vreg_type_for_dtype(source.type.element_dtype),
         )
+
+    def _analyze_vlds_frontend_call(
+        self,
+        expr: FrontendCallExpr,
+        env: dict[str, SemanticBinding],
+        *,
+        allow_outer_lookup: bool,
+    ) -> SemanticExpr:
+        analyzed_keywords = {
+            name: self._analyze_expr(value, env, allow_outer_lookup=allow_outer_lookup)
+            for name, value in expr.keywords
+        }
+        unexpected_keywords = sorted(set(analyzed_keywords) - {"dist"})
+        if unexpected_keywords:
+            keyword_text = ", ".join(unexpected_keywords)
+            raise TypeError(
+                "pto.vlds only accepts keyword attr `dist`; "
+                f"got unsupported keyword(s): {keyword_text}"
+            )
+        dist = self._normalize_vlds_dist(analyzed_keywords.get("dist"), "pto.vlds dist")
+        if len(expr.args) == 1 and isinstance(expr.args[0], FrontendSubscriptExpr):
+            base, indices = self._analyze_tile_vector_access(
+                expr.args[0],
+                env,
+                allow_outer_lookup=allow_outer_lookup,
+                context="pto.vlds source",
+            )
+            return self._analyze_vlds((base, *indices), dist=dist)
+
+        args = tuple(
+            self._analyze_expr(arg, env, allow_outer_lookup=allow_outer_lookup)
+            for arg in expr.args
+        )
+        return self._analyze_vlds(args, dist=dist)
 
     def _analyze_vldas(self, args: tuple[SemanticExpr, ...]) -> SemanticExpr:
         if len(args) not in {1, 2, 3}:
@@ -4525,6 +4702,39 @@ class _SemanticAnalyzer:
             part_explicit="part" in analyzed_keywords,
         )
 
+    def _analyze_vtrc_frontend_call(
+        self,
+        expr: FrontendCallExpr,
+        env: dict[str, SemanticBinding],
+        *,
+        allow_outer_lookup: bool,
+    ) -> SemanticExpr:
+        if len(expr.args) != 2:
+            raise TypeError(
+                "pto.vtrc expects exactly 2 positional operands `(vec, mask)` "
+                "before optional keyword attrs in TileLang DSL v1"
+            )
+        args = tuple(
+            self._analyze_expr(arg, env, allow_outer_lookup=allow_outer_lookup)
+            for arg in expr.args
+        )
+        analyzed_keywords = {
+            name: self._analyze_expr(value, env, allow_outer_lookup=allow_outer_lookup)
+            for name, value in expr.keywords
+        }
+        allowed_keywords = {"rnd"}
+        unexpected_keywords = sorted(set(analyzed_keywords) - allowed_keywords)
+        if unexpected_keywords:
+            keyword_text = ", ".join(unexpected_keywords)
+            raise TypeError(
+                "pto.vtrc only accepts keyword attr `rnd`; "
+                f"got unsupported keyword(s): {keyword_text}"
+            )
+        return self._analyze_vtrc(
+            args,
+            rnd=self._normalize_vtrc_round_mode(analyzed_keywords.get("rnd")),
+        )
+
     def _analyze_vcvt(
         self,
         args: tuple[SemanticExpr, ...],
@@ -4565,6 +4775,31 @@ class _SemanticAnalyzer:
                 part if part is not None else self._missing_optional_meta_expr(),
             ),
             type=self._vreg_type_for_dtype(target_dtype),
+        )
+
+    def _analyze_vtrc(
+        self,
+        args: tuple[SemanticExpr, ...],
+        *,
+        rnd: SemanticExpr | None = None,
+    ) -> SemanticExpr:
+        if len(args) != 2:
+            raise TypeError("pto.vtrc expects exactly 2 positional arguments in TileLang DSL v1")
+        vector = self._require_vreg_expr(args[0], "pto.vtrc vector")
+        self._require_mask_for_vreg(args[1], vector, "pto.vtrc")
+        if vector.element_dtype not in {f16, bf16, f32}:
+            raise TypeError("pto.vtrc only supports f16/bf16/f32 vector element types in TileLang DSL v1")
+        return SemanticCallExpr(
+            namespace="pto",
+            name="vtrc",
+            args=(
+                args[0],
+                args[1],
+                rnd
+                if rnd is not None
+                else SemanticLiteralExpr(value="R", type=SemanticMetaType(kind="string")),
+            ),
+            type=vector,
         )
 
     def _analyze_vbitsort(self, args: tuple[SemanticExpr, ...]) -> SemanticExpr:
@@ -4815,6 +5050,19 @@ class _SemanticAnalyzer:
             )
         return SemanticLiteralExpr(value=round_mode, type=SemanticMetaType(kind="string"))
 
+    def _normalize_vtrc_round_mode(self, expr: SemanticExpr | None) -> SemanticExpr | None:
+        normalized = self._normalize_vcvt_round_mode(expr)
+        if normalized is None:
+            return None
+        round_mode = self._require_string_expr(normalized, "pto.vtrc rnd")
+        if round_mode == VcvtRoundMode.O.value:
+            raise TypeError(
+                "pto.vtrc rnd must be one of "
+                '`"R"`, `"A"`, `"F"`, `"C"`, `"Z"` or a matching '
+                "VcvtRoundMode enum in TileLang DSL v1"
+            )
+        return SemanticLiteralExpr(value=round_mode, type=SemanticMetaType(kind="string"))
+
     def _normalize_vcvt_sat_mode(self, expr: SemanticExpr | None) -> SemanticExpr | None:
         if expr is None:
             return None
@@ -4972,6 +5220,78 @@ class _SemanticAnalyzer:
             raise TypeError("predicate store dist must be \"NORM\" or \"PK\" in TileLang DSL v1")
         return SemanticLiteralExpr(value=dist, type=SemanticMetaType(kind="string"))
 
+    def _normalize_vlds_dist(
+        self,
+        expr: SemanticExpr | None,
+        context: str,
+    ) -> SemanticExpr | None:
+        if expr is None:
+            return None
+        dist = self._require_string_expr(expr, context)
+        normalized = dist
+        if normalized not in {
+            "NORM",
+            "BRC_B8",
+            "BRC_B16",
+            "BRC_B32",
+            "US_B8",
+            "US_B16",
+            "DS_B8",
+            "DS_B16",
+            "UNPK_B8",
+            "UNPK_B16",
+            "UNPK_B32",
+            "BRC_BLK",
+            "E2B_B16",
+            "E2B_B32",
+            "UNPK4",
+            "SPLT4CHN",
+            "SPLT2CHN_B8",
+            "SPLT2CHN_B16",
+        }:
+            raise TypeError(
+                "pto.vlds dist must be one of "
+                "\"NORM\", \"BRC_B8\", \"BRC_B16\", \"BRC_B32\", "
+                "\"US_B8\", \"US_B16\", \"DS_B8\", \"DS_B16\", "
+                "\"UNPK_B8\", \"UNPK_B16\", \"UNPK_B32\", \"BRC_BLK\", "
+                "\"E2B_B16\", \"E2B_B32\", \"UNPK4\", \"SPLT4CHN\", "
+                "\"SPLT2CHN_B8\", or \"SPLT2CHN_B16\" in TileLang DSL v1"
+            )
+        return SemanticLiteralExpr(value=normalized, type=SemanticMetaType(kind="string"))
+
+    def _normalize_vsts_dist(
+        self,
+        expr: SemanticExpr | None,
+        context: str,
+    ) -> SemanticExpr | None:
+        if expr is None:
+            return None
+        dist = self._require_string_expr(expr, context)
+        normalized = dist
+        if normalized not in {
+            "NORM_B8",
+            "NORM_B16",
+            "NORM_B32",
+            "1PT_B8",
+            "1PT_B16",
+            "1PT_B32",
+            "PK_B16",
+            "PK_B32",
+            "PK_B64",
+            "PK4_B32",
+            "MRG4CHN_B8",
+            "MRG2CHN_B8",
+            "MRG2CHN_B16",
+        }:
+            raise TypeError(
+                "pto.vsts dist must be one of "
+                "\"NORM_B8\", \"NORM_B16\", \"NORM_B32\", "
+                "\"1PT_B8\", \"1PT_B16\", \"1PT_B32\", "
+                "\"PK_B16\", \"PK_B32\", \"PK_B64\", \"PK4_B32\", "
+                "\"MRG4CHN_B8\", \"MRG2CHN_B8\", or \"MRG2CHN_B16\" in TileLang DSL v1"
+            )
+        return SemanticLiteralExpr(value=normalized, type=SemanticMetaType(kind="string"))
+
     def _require_i1_expr(self, expr: SemanticExpr, context: str) -> None:
         scalar = self._require_scalar_expr(expr, context)
         if scalar.dtype != i1:
@@ -5010,6 +5330,34 @@ class _SemanticAnalyzer:
         if mask_expr.type.granularity != expected:
             raise TypeError(
                 f"{context} requires mask granularity {expected} for vector dtype {vreg_type.element_dtype!r}"
+            )
+
+    def _require_mask_for_vsts(
+        self,
+        mask_expr: SemanticExpr,
+        vreg_type: SemanticVRegType,
+        dist_expr: SemanticExpr | None,
+        context: str,
+    ) -> None:
+        if not isinstance(mask_expr.type, SemanticMaskType):
+            raise TypeError(f"{context} requires a mask operand in TileLang DSL v1")
+        expected = self._mask_granularity_for_dtype(vreg_type.element_dtype)
+        if dist_expr is not None:
+            dist = self._require_string_expr(dist_expr, f"{context} dist")
+            if dist == "PK_B16":
+                expected = "b16"
+            elif dist == "PK_B32":
+                expected = "b32"
+            elif dist == "PK_B64":
+                expected = "b32"
+            elif dist == "MRG4CHN_B8":
+                expected = "b32"
+            elif dist in {"MRG2CHN_B8", "MRG2CHN_B16"}:
+                expected = "b16" if dist == "MRG2CHN_B8" else "b32"
+        if mask_expr.type.granularity != expected:
+            raise TypeError(
+                f"{context} requires mask granularity {expected} for store dist "
+                f"{self._require_string_expr(dist_expr, f'{context} dist') if dist_expr is not None else 'default'}"
             )
 
     def _require_matching_vector_pointer(
@@ -5124,10 +5472,15 @@ class _SemanticAnalyzer:
             raise TypeError("pto.vprelu only supports f16/f32 in TileLang DSL v1")
         if name in {"vaddreluconv", "vmulconv"} and dtype.name not in {"f16", "bf16", "f32"}:
             raise TypeError(f"pto.{name} only supports f16/bf16/f32 in TileLang DSL v1")
-        if name in {"vand", "vor", "vxor"} and not (
+        if name in {"vand", "vxor"} and not (
             is_integer_dtype(dtype) and integer_bitwidth(dtype) in {8, 16, 32}
         ):
             raise TypeError(f"pto.{name} only supports integer vector dtypes in TileLang DSL v1")
+        if name == "vor" and not (
+            (is_integer_dtype(dtype) and integer_bitwidth(dtype) in {8, 16, 32})
+            or dtype.name in {"f16", "bf16", "f32"}
+        ):
+            raise TypeError("pto.vor only supports integer vector dtypes and f16/bf16/f32 in TileLang DSL v1")
         if name in {"vshl", "vshr"} and not (
             is_integer_dtype(dtype) and integer_bitwidth(dtype) in {8, 16, 32}
         ):
