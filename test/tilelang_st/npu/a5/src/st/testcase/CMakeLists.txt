@@ -115,7 +115,13 @@ endfunction()
 set(ALL_TESTCASES
     tadd
     tcvt
+    tsel
+    tsels
+    trelu
+    tlrelu
     tload
+    tprelu
+    trandom
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
