@@ -1,8 +1,14 @@
 """TileLang DSL template for pto.tsel
 
-NOTE: This template uses pto.vlds for mask loading which requires
-dtype matching between mask and data vectors. The mask tile should
-use the same dtype as src0/src1/dst for proper vsel operation.
+NOTE: This template uses pto.plds for mask loading which directly
+loads predicate mask from UB without vcmps comparison.
+This approach matches the TSel.hpp implementation in pto-isa.
+
+Mask tile format:
+- For f32: mask uses ui8 (packed predicate, 1 byte per lane)
+- For f16/i8: mask uses ui32 (packed predicate, 32-bit aligned)
+
+REQUIRES: tilelang_dsl support for plds, pintlv_b16 operations
 """
 
 import sys
@@ -13,7 +19,11 @@ import tilelang_dsl as pto
 @pto.vkernel(
     target="a5",
     op="pto.tsel",
-    dtypes=[(pto.AnyFloat, pto.AnyFloat, pto.AnyFloat, pto.AnyFloat, pto.AnyFloat),(pto.i8, pto.i8, pto.i8, pto.i8, pto.i8)],  # 
+    dtypes=[
+        (pto.f32, pto.ui8, pto.f32, pto.f32, pto.f32, pto.f32),
+        (pto.f16, pto.ui32, pto.f16, pto.f16, pto.f16, pto.f16),
+        (pto.i8, pto.ui32, pto.i8, pto.i8, pto.i8, pto.i8),
+    ],
     advanced=True
 )
 def template_tsel(mask: pto.Tile, src0: pto.Tile, src1: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
@@ -21,21 +31,28 @@ def template_tsel(mask: pto.Tile, src0: pto.Tile, src1: pto.Tile, tmp: pto.Tile,
     valid_rows, valid_cols = dst.valid_shape
 
     lanes = pto.get_lanes(dtype)
-    if pto.constexpr(dtype == pto.f16):
-        zero_scalar = pto.f16(0.0)
-    elif pto.constexpr(dtype == pto.i8):
-        zero_scalar = pto.i8(0)
-    else:
-        zero_scalar = pto.f32(0.0)
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols
         for col in range(0, valid_cols, lanes):
             pred_mask, remained = pto.make_mask(dtype, remained)
-            mask_vec = pto.vlds(mask[row, col:])
-            select_mask = pto.vcmps(mask_vec, zero_scalar, pred_mask, "ne")
-            lhs = pto.vlds(src0[row, col:])
-            rhs = pto.vlds(src1[row, col:])
-            selected = pto.vsel(lhs, rhs, select_mask)
-            pto.vsts(selected, dst[row, col:], pred_mask)
+            if pto.constexpr(dtype == pto.f32):
+                select_mask = pto.plds(mask[row, col:].as_ptr(pto.ui8, pto.MemorySpace.UB), 0, "US")
+                select_mask0, select_mask1 = pto.pintlv_b16(select_mask, pto.pset_b16(pto.MaskPattern.ALL))
+                lhs = pto.vlds(src0[row, col:])
+                rhs = pto.vlds(src1[row, col:])
+                selected = pto.vsel(lhs, rhs, select_mask0)
+                pto.vsts(selected, dst[row, col:], pred_mask)
+            elif pto.constexpr(dtype == pto.f16):
+                select_mask = pto.plds(mask[row, col:].as_ptr(pto.ui32, pto.MemorySpace.UB), 0, "US")
+                lhs = pto.vlds(src0[row, col:])
+                rhs = pto.vlds(src1[row, col:])
+                selected = pto.vsel(lhs, rhs, select_mask)
+                pto.vsts(selected, dst[row, col:], pred_mask)
+            else:
+                select_mask = pto.plds(mask[row, col:].as_ptr(pto.ui32, pto.MemorySpace.UB), 0, "US")
+                lhs = pto.vlds(src0[row, col:])
+                rhs = pto.vlds(src1[row, col:])
+                selected = pto.vsel(lhs, rhs, select_mask)
+                pto.vsts(selected, dst[row, col:], pred_mask)
     return
