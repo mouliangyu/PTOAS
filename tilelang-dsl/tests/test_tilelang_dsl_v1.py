@@ -4248,6 +4248,25 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             r"pto\.copy_gm_to_ubuf %gm_ptr_\d+, %ub_ptr_\d+, %tmp_\d+, %tmp_\d+, %tmp_\d+, %tmp_\d+, %tmp_\d+, %true, %tmp_\d+, %tmp_\d+, %tmp_\d+",
         )
 
+    def test_set_mov_pad_val_with_pad_max_uses_mlir_safe_constant_name(self) -> None:
+        @pto.vkernel(op="set_mov_pad_val_pad_max_unique", dtypes=[(pto.f32,)], advanced=True)
+        def kernel(dst: pto.Tile):
+            pto.set_mov_pad_val(dst.pad_value.eval())
+            return None
+
+        specialized = kernel.specialize(
+            dst=pto.TileSpecialization(
+                shape=(8, 16),
+                memory_space=pto.MemorySpace.UB,
+                config=pto.TileConfig(pad_value=pto.PadValue.MAX),
+            )
+        )
+
+        text = specialized.mlir_text()
+        self.assertIn("pto.set_mov_pad_val", text)
+        self.assertRegex(text, r"%c[0-9A-Za-z_]+_f32 = arith\.constant [^ \n]+ : f32")
+        self.assertNotRegex(text, r"%c[^\s=]*[.+-][^\s=]*_f32 = arith\.constant")
+
     def test_copy_ubuf_to_gm_keyword_surface_lowers_in_advanced_mode(self) -> None:
         @pto.vkernel(op="tile_to_tensorview_dma_unique", dtypes=[(pto.f32, pto.f32)], advanced=True)
         def kernel(src: pto.Tile, dst: pto.TensorView):

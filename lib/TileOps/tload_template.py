@@ -103,8 +103,8 @@ def template_tload_nd2nd(src: pto.PartitionTensorView, dst: pto.Tile):
         pto.set_loop_size_outtoub(loop1=loop1, loop2=loop2)
 
     for i in range(0, g0, 1):
-        src_i = pto.addptr(gm_ptr, i * s0 * elem_bytes)
-        dst_i = pto.addptr(ub_ptr, i * dst_stride0 * elem_bytes)
+        src_i = pto.addptr(gm_ptr, i * s0)
+        dst_i = pto.addptr(ub_ptr, i * dst_stride0)
         if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
             pto.copy_gm_to_ubuf(
                 dst=dst_i,
@@ -181,8 +181,8 @@ def template_tload_dn2dn(src: pto.PartitionTensorView, dst: pto.Tile):
         pto.set_loop_size_outtoub(loop1=loop1, loop2=loop2)
 
     for i in range(0, g0, 1):
-        src_i = pto.addptr(gm_ptr, i * s0 * elem_bytes)
-        dst_i = pto.addptr(ub_ptr, i * dst_stride0 * elem_bytes)
+        src_i = pto.addptr(gm_ptr, i * s0)
+        dst_i = pto.addptr(ub_ptr, i * dst_stride0)
         if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
             pto.copy_gm_to_ubuf(
                 dst=dst_i,
@@ -244,8 +244,8 @@ def template_tload_nz2nz(src: pto.PartitionTensorView, dst: pto.Tile):
     # NZ2NZ 对应实现始终走 normal mode，不复用 loop1/loop2 寄存器。
     pto.set_loop_size_outtoub(loop1=1, loop2=1)
     for i in range(0, g0, 1):
-        src_i = pto.addptr(gm_ptr, i * s0 * elem_bytes)
-        dst_i = pto.addptr(ub_ptr, i * tile_stride * elem_bytes)
+        src_i = pto.addptr(gm_ptr, i * s0)
+        dst_i = pto.addptr(ub_ptr, i * tile_stride)
         if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
             pto.copy_gm_to_ubuf(
                 dst=dst_i,

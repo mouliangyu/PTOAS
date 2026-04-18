@@ -8,7 +8,7 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 
 import numpy as np
-from cases import CASES
+from cases import CASES, build_expected_output
 from st_common import validate_cases, setup_case_rng, save_case_data
 
 validate_cases(CASES)
@@ -21,11 +21,7 @@ for case in CASES:
     vr, vc = case["valid_shape"]
 
     input_arr = np.random.randint(1, 17, size=shape).astype(dtype)
-    if "golden_fill" in case:
-        golden = np.full(shape, case["golden_fill"], dtype=dtype)
-        golden[:vr, :vc] = input_arr[:vr, :vc]
-    else:
-        golden = input_arr.copy()
+    golden = build_expected_output(case, input_arr)
 
     save_case_data(case["name"], {"input": input_arr, "golden": golden})
     print(
