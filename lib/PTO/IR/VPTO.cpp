@@ -966,6 +966,11 @@ static LogicalResult verifyCopyGmToUbufOp(CopyOp op, bool expectSourceGM) {
   if (sourceElemBytes != destinationElemBytes)
     return op.emitOpError("requires source and destination element byte widths to match");
 
+  if (Value loopConfig = op.getLoopConfig()) {
+    if (!isa<DmaLoopConfigType>(loopConfig.getType()))
+      return op.emitOpError("requires loop_config to have type !pto.dma_loop_config");
+  }
+
   return success();
 }
 
@@ -1000,6 +1005,11 @@ static LogicalResult verifyCopyUbufToGmOp(CopyOp op, bool expectSourceGM) {
     return op.emitOpError("requires copy source and destination element types with known byte width");
   if (sourceElemBytes != destinationElemBytes)
     return op.emitOpError("requires source and destination element byte widths to match");
+
+  if (Value loopConfig = op.getLoopConfig()) {
+    if (!isa<DmaLoopConfigType>(loopConfig.getType()))
+      return op.emitOpError("requires loop_config to have type !pto.dma_loop_config");
+  }
 
   return success();
 }
@@ -1112,6 +1122,18 @@ MaskType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (!isSupportedGranularity(granularity))
     return emitError() << "'" << formatMaskType(granularity)
                        << "' expected granularity to be one of b8, b16, b32";
+  return success();
+}
+
+LogicalResult DmaLoopConfigOp::verify() {
+  if (static_cast<bool>(getLoop1SrcStride()) !=
+      static_cast<bool>(getLoop1DstStride()))
+    return emitOpError("requires loop1 source and destination strides to be "
+                       "specified together");
+  if (static_cast<bool>(getLoop2SrcStride()) !=
+      static_cast<bool>(getLoop2DstStride()))
+    return emitOpError("requires loop2 source and destination strides to be "
+                       "specified together");
   return success();
 }
 

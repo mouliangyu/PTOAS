@@ -4341,7 +4341,7 @@ LogicalResult lowerTLOAD(TLoadOp op, PatternRewriter &rewriter) {
     rewriter.create<pto::CopyGmToUbufOp>(
         op.getLoc(), typedSrcPtr, typedDstPtr, sidValue, plan.nBurst,
         plan.lenBurst, leftPaddingValue, rightPaddingValue, dataSelectBitValue,
-        cacheCtlValue, plan.firstStrideBytes, plan.secondStrideBytes);
+        cacheCtlValue, plan.firstStrideBytes, plan.secondStrideBytes, Value());
     return success();
   };
 
@@ -7023,7 +7023,7 @@ LogicalResult lowerTSTORE(TStoreOp op, PatternRewriter &rewriter) {
     rewriter.create<pto::CopyUbufToGmOp>(
         op.getLoc(), typedSrcPtr, typedDstPtr, sidValue, plan.nBurst,
         plan.lenBurst, reservedValue, plan.firstStrideBytes,
-        plan.secondStrideBytes);
+        plan.secondStrideBytes, Value());
     return success();
   };
 

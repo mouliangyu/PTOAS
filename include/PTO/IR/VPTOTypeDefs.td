@@ -50,4 +50,9 @@ def AlignType : TypeDef<PTO_Dialect, "Align"> {
   let summary = "A PTO low-level vector_align carrier";
 }
 
+def DmaLoopConfigType : TypeDef<PTO_Dialect, "DmaLoopConfig"> {
+  let mnemonic = "dma_loop_config";
+  let summary = "A PTO low-level DMA loop configuration carrier";
+}
+
 #endif // MLIR_DIALECT_PTO_IR_VPTOTYPEDEFS

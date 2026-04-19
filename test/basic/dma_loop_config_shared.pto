@@ -1,0 +1,30 @@
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm --mlir-print-ir-after-all %s -o /dev/null 2>&1 | FileCheck %s
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @kernel(%gm_in: !pto.ptr<f32, gm>, %gm_out: !pto.ptr<f32, gm>, %ub: !pto.ptr<f32, ub>) {
+    %c0 = arith.constant 0 : i64
+    %c1 = arith.constant 1 : i64
+    %c2 = arith.constant 2 : i64
+    %c3 = arith.constant 3 : i64
+    %c4 = arith.constant 4 : i64
+    %c5 = arith.constant 5 : i64
+    %false = arith.constant false
+
+    %cfg = pto.dma_loop_config %c1, %c2 loop1_stride(%c3, %c4) loop2_stride(%c5, %c0) : i64, i64, i64, i64, i64, i64 -> !pto.dma_loop_config
+
+    pto.copy_gm_to_ubuf %gm_in, %ub, %c0, %c1, %c2, %c0, %c0, %false, %c0, %c3, %c4, %cfg : !pto.ptr<f32, gm>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64, !pto.dma_loop_config
+    pto.copy_ubuf_to_gm %ub, %gm_out, %c0, %c1, %c2, %c0, %c3, %c4, %cfg : !pto.ptr<f32, ub>, !pto.ptr<f32, gm>, i64, i64, i64, i64, i64, i64, !pto.dma_loop_config
+    return
+  }
+}
+
+// CHECK: // -----// IR Dump After
+// CHECK: pto.set_loop2_stride_outtoub
+// CHECK: pto.set_loop1_stride_outtoub
+// CHECK: pto.set_loop_size_outtoub
+// CHECK: pto.copy_gm_to_ubuf
+// CHECK: pto.set_loop2_stride_ubtoout
+// CHECK: pto.set_loop1_stride_ubtoout
+// CHECK: pto.set_loop_size_ubtoout
+// CHECK: pto.copy_ubuf_to_gm
+// CHECK-NOT: pto.dma_loop_config

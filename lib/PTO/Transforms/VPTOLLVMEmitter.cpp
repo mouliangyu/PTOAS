@@ -17,6 +17,7 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/Passes.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
@@ -757,7 +758,7 @@ static FailureOr<Value> packLoopSize(Operation *anchor, Value loop2, Value loop1
 
 static FailureOr<Value>
 packCopyGmToUbConfig0(Operation *anchor, ValueRange operands) {
-  if (operands.size() != 11)
+  if (operands.size() < 11)
     return failure();
 
   OpBuilder builder(anchor);
@@ -799,14 +800,14 @@ packCopyGmToUbConfig0(Operation *anchor, ValueRange operands) {
 
 static FailureOr<Value>
 packCopyGmToUbConfig1(Operation *anchor, ValueRange operands) {
-  if (operands.size() != 11)
+  if (operands.size() < 11)
     return failure();
   return packLoopPair(anchor, operands[9], operands[10]);
 }
 
 static FailureOr<Value>
 packCopyUbToGmConfig0(Operation *anchor, ValueRange operands) {
-  if (operands.size() != 8)
+  if (operands.size() < 8)
     return failure();
 
   OpBuilder builder(anchor);
@@ -841,7 +842,7 @@ packCopyUbToGmConfig0(Operation *anchor, ValueRange operands) {
 
 static FailureOr<Value>
 packCopyUbToGmConfig1(Operation *anchor, ValueRange operands) {
-  if (operands.size() != 8)
+  if (operands.size() < 8)
     return failure();
   return packLoopPair(anchor, operands[6], operands[7]);
 }
@@ -1630,6 +1631,18 @@ StringRef buildUnaryConfigCallee<pto::SetMovPadValOp>(MLIRContext *context) {
   return StringAttr::get(context, "llvm.hivm.SET.MOV.PAD.VAL").getValue();
 }
 
+static LogicalResult emitSetLoopCall(Operation *anchor, StringRef calleeName,
+                                     Value packed,
+                                     ConversionPatternRewriter &rewriter,
+                                     LoweringState &state) {
+  auto funcType =
+      rewriter.getFunctionType(TypeRange{rewriter.getI64Type()}, TypeRange{});
+  rewriter.create<func::CallOp>(anchor->getLoc(), calleeName, TypeRange{},
+                                ValueRange{packed});
+  state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
+  return success();
+}
+
 static FailureOr<Value> encodeMovPadValue(Location loc, Value value,
                                           ConversionPatternRewriter &rewriter) {
   Type type = value.getType();
@@ -2081,6 +2094,71 @@ private:
   LoweringState &state;
 };
 
+template <typename LoopOp>
+static LogicalResult emitPackedSetLoop(Operation *anchor, Value first,
+                                       Value second,
+                                       ConversionPatternRewriter &rewriter,
+                                       LoweringState &state) {
+  FailureOr<Value> packed = failure();
+  if constexpr (std::is_same_v<LoopOp, pto::SetLoopSizeOutToUbOp> ||
+                std::is_same_v<LoopOp, pto::SetLoopSizeUbToOutOp>) {
+    packed = packLoopSize(anchor, first, second);
+  } else {
+    packed = packLoopPair(anchor, first, second);
+  }
+  if (failed(packed))
+    return failure();
+  return emitSetLoopCall(anchor, buildSetLoopCallee<LoopOp>(anchor->getContext()),
+                         *packed, rewriter, state);
+}
+
+static FailureOr<pto::DmaLoopConfigOp> getDmaLoopConfig(Value loopConfig) {
+  if (!loopConfig)
+    return failure();
+  auto configOp = loopConfig.getDefiningOp<pto::DmaLoopConfigOp>();
+  if (!configOp)
+    return failure();
+  return configOp;
+}
+
+static LogicalResult emitCopyGmToUbLoopConfig(
+    pto::CopyGmToUbufOp op, pto::DmaLoopConfigOp configOp,
+    ConversionPatternRewriter &rewriter, LoweringState &state) {
+  if (configOp.getLoop2SrcStride()) {
+    if (failed(emitPackedSetLoop<pto::SetLoop2StrideOutToUbOp>(
+            op, configOp.getLoop2SrcStride(), configOp.getLoop2DstStride(),
+            rewriter, state)))
+      return failure();
+  }
+  if (configOp.getLoop1SrcStride()) {
+    if (failed(emitPackedSetLoop<pto::SetLoop1StrideOutToUbOp>(
+            op, configOp.getLoop1SrcStride(), configOp.getLoop1DstStride(),
+            rewriter, state)))
+      return failure();
+  }
+  return emitPackedSetLoop<pto::SetLoopSizeOutToUbOp>(
+      op, configOp.getLoop2Count(), configOp.getLoop1Count(), rewriter, state);
+}
+
+static LogicalResult emitCopyUbToGmLoopConfig(
+    pto::CopyUbufToGmOp op, pto::DmaLoopConfigOp configOp,
+    ConversionPatternRewriter &rewriter, LoweringState &state) {
+  if (configOp.getLoop2SrcStride()) {
+    if (failed(emitPackedSetLoop<pto::SetLoop2StrideUbToOutOp>(
+            op, configOp.getLoop2SrcStride(), configOp.getLoop2DstStride(),
+            rewriter, state)))
+      return failure();
+  }
+  if (configOp.getLoop1SrcStride()) {
+    if (failed(emitPackedSetLoop<pto::SetLoop1StrideUbToOutOp>(
+            op, configOp.getLoop1SrcStride(), configOp.getLoop1DstStride(),
+            rewriter, state)))
+      return failure();
+  }
+  return emitPackedSetLoop<pto::SetLoopSizeUbToOutOp>(
+      op, configOp.getLoop2Count(), configOp.getLoop1Count(), rewriter, state);
+}
+
 template <typename CopyOp>
 class LowerCopyOpPattern final : public OpConversionPattern<CopyOp> {
 public:
@@ -2105,6 +2183,23 @@ public:
         dyn_cast<LLVM::LLVMPointerType>(adaptor.getOperands()[1].getType());
     if (!llvmSourceType || !llvmDestType)
       return rewriter.notifyMatchFailure(op, "expected LLVM pointer copy operands");
+
+    FailureOr<pto::DmaLoopConfigOp> configOp = failure();
+    if (Value loopConfig = op.getLoopConfig()) {
+      configOp = getDmaLoopConfig(loopConfig);
+      if (failed(configOp))
+        return rewriter.notifyMatchFailure(
+            op, "loop_config must be defined by pto.dma_loop_config");
+      LogicalResult emitted = failure();
+      if constexpr (std::is_same_v<CopyOp, pto::CopyGmToUbufOp>) {
+        emitted = emitCopyGmToUbLoopConfig(op, *configOp, rewriter, state);
+      } else {
+        emitted = emitCopyUbToGmLoopConfig(op, *configOp, rewriter, state);
+      }
+      if (failed(emitted))
+        return rewriter.notifyMatchFailure(op,
+                                           "failed to materialize loop config");
+    }
 
     FailureOr<Value> config0 = failure();
     FailureOr<Value> config1 = failure();
@@ -5001,6 +5096,7 @@ static LogicalResult runPipeline(ModuleOp module, llvm::raw_ostream &diagOS,
 
   PassManager pm(clonedModule.getContext());
   pm.enableVerifier();
+  pm.addPass(createCanonicalizerPass());
   pm.addPass(createConvertSCFToCFPass());
   pm.addPass(createArithToLLVMConversionPass());
   pm.addPass(createConvertIndexToLLVMPass());

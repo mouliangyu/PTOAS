@@ -159,6 +159,33 @@ def PTO_SetLoop2StrideUbToOutOp : PTO_BinaryI64ConfigOp<"set_loop2_stride_ubtoou
 def PTO_SetLoop1StrideUbToOutOp : PTO_BinaryI64ConfigOp<"set_loop1_stride_ubtoout">;
 def PTO_SetLoopSizeUbToOutOp : PTO_BinaryI64ConfigOp<"set_loop_size_ubtoout">;
 
+def PTO_DmaLoopConfigOp : PTO_Op<"dma_loop_config", [
+    AttrSizedOperandSegments,
+    Pure
+  ]> {
+  let arguments = (ins
+    I64:$loop1_count,
+    I64:$loop2_count,
+    Optional<I64>:$loop1_src_stride,
+    Optional<I64>:$loop1_dst_stride,
+    Optional<I64>:$loop2_src_stride,
+    Optional<I64>:$loop2_dst_stride
+  );
+
+  let results = (outs DmaLoopConfigType:$result);
+
+  let hasVerifier = 1;
+  let assemblyFormat = [{
+    $loop1_count `,` $loop2_count
+    (`loop1_stride` `(` $loop1_src_stride^ `,` $loop1_dst_stride `)`)?
+    (`loop2_stride` `(` $loop2_src_stride^ `,` $loop2_dst_stride `)`)?
+    attr-dict `:` type($loop1_count) `,` type($loop2_count)
+    (`,` type($loop1_src_stride)^ `,` type($loop1_dst_stride))?
+    (`,` type($loop2_src_stride)^ `,` type($loop2_dst_stride))?
+    `->` type($result)
+  }];
+}
+
 def PTO_CopyGmToUbufOp : PTO_Op<"copy_gm_to_ubuf", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -173,19 +200,21 @@ def PTO_CopyGmToUbufOp : PTO_Op<"copy_gm_to_ubuf", [
     I1:$data_select_bit,
     I64:$l2_cache_ctl,
     I64:$gm_stride,
-    I64:$ub_stride
+    I64:$ub_stride,
+    Optional<DmaLoopConfigType>:$loop_config
   );
 
   let results = (outs);
 
   let hasVerifier = 1;
-
   let assemblyFormat = [{
     $source `,` $destination `,` $sid `,` $n_burst `,` $len_burst `,`
     $left_padding_count `,` $right_padding_count `,` $data_select_bit `,` $l2_cache_ctl `,` $gm_stride `,` $ub_stride
+    (`,` $loop_config^)?
     attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,` type($n_burst) `,`
     type($len_burst) `,` type($left_padding_count) `,`
     type($right_padding_count) `,` type($data_select_bit) `,` type($l2_cache_ctl) `,` type($gm_stride) `,` type($ub_stride)
+    (`,` type($loop_config)^)?
   }];
 }
 
@@ -1106,19 +1135,21 @@ def PTO_CopyUbufToGmOp : PTO_Op<"copy_ubuf_to_gm", [
     I64:$len_burst,
     I64:$reserved,
     I64:$burst_dst_stride,
-    I64:$burst_src_stride
+    I64:$burst_src_stride,
+    Optional<DmaLoopConfigType>:$loop_config
   );
 
   let results = (outs);
 
   let hasVerifier = 1;
-
   let assemblyFormat = [{
     $source `,` $destination `,` $sid `,` $n_burst `,` $len_burst `,`
     $reserved `,` $burst_dst_stride `,` $burst_src_stride
+    (`,` $loop_config^)?
     attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,` type($n_burst) `,`
     type($len_burst) `,` type($reserved) `,`
     type($burst_dst_stride) `,` type($burst_src_stride)
+    (`,` type($loop_config)^)?
   }];
 }
 
