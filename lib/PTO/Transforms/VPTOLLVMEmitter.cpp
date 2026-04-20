@@ -832,6 +832,23 @@ packCopyGmToUbConfig1(Operation *anchor, ValueRange operands) {
   return packLoopPair(anchor, operands[9], operands[10]);
 }
 
+static FailureOr<Value> packCopyGmToUbConfig0(Operation *anchor, Value sid,
+                                              Value nBurst, Value lenBurst,
+                                              Value leftPadding,
+                                              Value rightPadding,
+                                              Value dataSelect,
+                                              Value cacheCtl) {
+  SmallVector<Value, 11> operands(11);
+  operands[2] = sid;
+  operands[3] = nBurst;
+  operands[4] = lenBurst;
+  operands[5] = leftPadding;
+  operands[6] = rightPadding;
+  operands[7] = dataSelect;
+  operands[8] = cacheCtl;
+  return packCopyGmToUbConfig0(anchor, operands);
+}
+
 static FailureOr<Value>
 packCopyUbToGmConfig0(Operation *anchor, ValueRange operands) {
   if (operands.size() != 8)
@@ -872,6 +889,17 @@ packCopyUbToGmConfig1(Operation *anchor, ValueRange operands) {
   if (operands.size() != 8)
     return failure();
   return packLoopPair(anchor, operands[6], operands[7]);
+}
+
+static FailureOr<Value> packCopyUbToGmConfig0(Operation *anchor, Value sid,
+                                              Value nBurst, Value lenBurst,
+                                              Value reserved) {
+  SmallVector<Value, 8> operands(8);
+  operands[2] = sid;
+  operands[3] = nBurst;
+  operands[4] = lenBurst;
+  operands[5] = reserved;
+  return packCopyUbToGmConfig0(anchor, operands);
 }
 
 static FailureOr<Value> packVbitsortConfig(Operation *anchor, Value repeatTimes) {
@@ -1237,8 +1265,11 @@ static StringRef getReductionUnaryStem() {
 }
 
 static FailureOr<StringRef> buildCopyGmToUbCallee(MLIRContext *context,
-                                                  pto::CopyGmToUbufOp op) {
-  Type elementType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+                                                  Type sourceType) {
+  auto ptrType = dyn_cast<pto::PtrType>(sourceType);
+  if (!ptrType)
+    return failure();
+  Type elementType = ptrType.getElementType();
   std::string elem = getCopyElementFragment(elementType);
   if (elem.empty())
     return failure();
@@ -2150,7 +2181,7 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     FailureOr<StringRef> calleeName = failure();
     if constexpr (std::is_same_v<CopyOp, pto::CopyGmToUbufOp>)
-      calleeName = buildCopyGmToUbCallee(op.getContext(), op);
+      calleeName = buildCopyGmToUbCallee(op.getContext(), op.getSource().getType());
     else
       calleeName = buildCopyUbToGmCallee(op.getContext());
     if (failed(calleeName))
@@ -2192,6 +2223,7 @@ public:
 private:
   LoweringState &state;
 };
+
 
 template <typename VecScalarOp>
 class LowerVecScalarMaskedOpPattern final
