@@ -5,18 +5,24 @@
 
 DMA transfers move data between Global Memory (GM) and Unified Buffer (UB). The MTE engines operate asynchronously from the Vector core, requiring explicit sync (see [Pipeline Sync](01-pipeline-sync.md)).
 
-The MTE2/MTE3 DMA engine executes a **multi-level nested loop** transfer. Before issuing the copy instruction, stride and loop-size registers must be configured.
+The MTE2/MTE3 DMA engine can execute a **multi-level nested loop** transfer. The loop shape is described by a `!pto.dma_loop_config` value and passed to the DMA copy op that consumes it.
 
 ---
 
-## Loop Stride Configuration (GM→UB)
+## DMA Loop Configuration
 
-These ops configure the MTE2 DMA engine's hardware loops for GM→UB transfers. They must be set **before** calling `pto.copy_gm_to_ubuf`.
+### `pto.dma_loop_config`
 
-### `pto.set_loop_size_outtoub`
+- **syntax:**
+```mlir
+%cfg = pto.dma_loop_config %loop1_count, %loop2_count
+    loop1_stride(%loop1_src_stride, %loop1_dst_stride)
+    loop2_stride(%loop2_src_stride, %loop2_dst_stride)
+    : i64, i64, i64, i64, i64, i64 -> !pto.dma_loop_config
+```
+- **semantics:** Build a DMA loop configuration value for GM→UB or UB→GM transfers.
 
-- **syntax:** `pto.set_loop_size_outtoub %loop1_count, %loop2_count : i64, i64`
-- **semantics:** Configure HW loop iteration counts for GM→UB DMA.
+The `loop1_stride(...)` and `loop2_stride(...)` groups are optional. Omit the loop configuration operand on a copy op when the transfer does not use multi-level looping.
 
 **Parameter Table:**
 
@@ -24,86 +30,12 @@ These ops configure the MTE2 DMA engine's hardware loops for GM→UB transfers. 
 |-----------|-------|-------------|
 | `%loop1_count` | 21 bits | Inner HW loop iteration count |
 | `%loop2_count` | 21 bits | Outer HW loop iteration count |
+| `%loop1_src_stride` | direction-dependent | Source pointer advance per loop1 iteration (bytes) |
+| `%loop1_dst_stride` | direction-dependent | Destination pointer advance per loop1 iteration (bytes) |
+| `%loop2_src_stride` | direction-dependent | Source pointer advance per loop2 iteration (bytes) |
+| `%loop2_dst_stride` | direction-dependent | Destination pointer advance per loop2 iteration (bytes) |
 
-When not using multi-level looping, set both to 1.
-
----
-
-### `pto.set_loop2_stride_outtoub`
-
-- **syntax:** `pto.set_loop2_stride_outtoub %src_stride, %dst_stride : i64, i64`
-- **semantics:** Configure outer loop (loop2) pointer advance for GM→UB DMA.
-
-**Parameter Table:**
-
-| Parameter | Width | Description |
-|-----------|-------|-------------|
-| `%src_stride` | 40 bits | GM source pointer advance per loop2 iteration (bytes) |
-| `%dst_stride` | 21 bits | UB destination pointer advance per loop2 iteration (bytes) |
-
-After each loop2 iteration, the DMA engine advances the GM read pointer by `%src_stride` and UB write pointer by `%dst_stride`.
-
----
-
-### `pto.set_loop1_stride_outtoub`
-
-- **syntax:** `pto.set_loop1_stride_outtoub %src_stride, %dst_stride : i64, i64`
-- **semantics:** Configure inner loop (loop1) pointer advance for GM→UB DMA.
-
-**Parameter Table:**
-
-| Parameter | Width | Description |
-|-----------|-------|-------------|
-| `%src_stride` | 40 bits | GM source pointer advance per loop1 iteration (bytes) |
-| `%dst_stride` | 21 bits | UB destination pointer advance per loop1 iteration (bytes) |
-
----
-
-## Loop Stride Configuration (UB→GM)
-
-These ops configure the MTE3 DMA engine's hardware loops for UB→GM transfers. They must be set **before** calling `pto.copy_ubuf_to_gm`.
-
-Note: UB stride fields are 21 bits (sufficient for 256KB UB address space), GM stride fields are 40 bits (full GM address range).
-
-### `pto.set_loop_size_ubtoout`
-
-- **syntax:** `pto.set_loop_size_ubtoout %loop1_count, %loop2_count : i64, i64`
-- **semantics:** Configure HW loop iteration counts for UB→GM DMA.
-
-**Parameter Table:**
-
-| Parameter | Width | Description |
-|-----------|-------|-------------|
-| `%loop1_count` | 21 bits | Inner HW loop iteration count |
-| `%loop2_count` | 21 bits | Outer HW loop iteration count |
-
----
-
-### `pto.set_loop2_stride_ubtoout`
-
-- **syntax:** `pto.set_loop2_stride_ubtoout %src_stride, %dst_stride : i64, i64`
-- **semantics:** Configure outer loop (loop2) pointer advance for UB→GM DMA.
-
-**Parameter Table:**
-
-| Parameter | Width | Description |
-|-----------|-------|-------------|
-| `%src_stride` | 21 bits | UB source pointer advance per loop2 iteration (bytes) |
-| `%dst_stride` | 40 bits | GM destination pointer advance per loop2 iteration (bytes) |
-
----
-
-### `pto.set_loop1_stride_ubtoout`
-
-- **syntax:** `pto.set_loop1_stride_ubtoout %src_stride, %dst_stride : i64, i64`
-- **semantics:** Configure inner loop (loop1) pointer advance for UB→GM DMA.
-
-**Parameter Table:**
-
-| Parameter | Width | Description |
-|-----------|-------|-------------|
-| `%src_stride` | 21 bits | UB source pointer advance per loop1 iteration (bytes) |
-| `%dst_stride` | 40 bits | GM destination pointer advance per loop1 iteration (bytes) |
+For GM→UB, source stride fields refer to GM and destination stride fields refer to UB. For UB→GM, source stride fields refer to UB and destination stride fields refer to GM. UB stride fields are 21 bits; GM stride fields are 40 bits.
 
 ---
 
@@ -146,8 +78,9 @@ pto.set_mov_pad_val %pad : i16
 pto.copy_gm_to_ubuf %gm_src, %ub_dst,
     %sid, %n_burst, %len_burst, %left_padding, %right_padding,
     %data_select_bit, %l2_cache_ctl, %src_stride, %dst_stride
+    [, %loop_config]
     : !pto.ptr<T, gm>, !pto.ptr<T, ub>, i64, i64, i64,
-      i64, i64, i1, i64, i64, i64
+      i64, i64, i1, i64, i64, i64 [, !pto.dma_loop_config]
 ```
 - **semantics:** DMA transfer from Global Memory (`!pto.ptr<T, gm>`) to Unified Buffer (`!pto.ptr<T, ub>`).
 
@@ -166,6 +99,7 @@ pto.copy_gm_to_ubuf %gm_src, %ub_dst,
 | `%l2_cache_ctl` | L2 cache allocate control (TBD — controls whether DMA allocates in L2 cache) |
 | `%src_stride` | GM source stride: start-to-start distance between consecutive burst rows (bytes) |
 | `%dst_stride` | UB destination stride: start-to-start distance between consecutive burst rows (bytes, 32B-aligned) |
+| `%loop_config` | Optional multi-level loop configuration |
 
 ---
 
@@ -175,7 +109,9 @@ pto.copy_gm_to_ubuf %gm_src, %ub_dst,
 ```mlir
 pto.copy_ubuf_to_gm %ub_src, %gm_dst,
     %sid, %n_burst, %len_burst, %reserved, %dst_stride, %src_stride
+    [, %loop_config]
     : !pto.ptr<T, ub>, !pto.ptr<T, gm>, i64, i64, i64, i64, i64, i64
+      [, !pto.dma_loop_config]
 ```
 - **semantics:** DMA transfer from Unified Buffer (`!pto.ptr<T, ub>`) to Global Memory (`!pto.ptr<T, gm>`). MTE3 reads only `len_burst` bytes from each UB row (de-padding).
 
@@ -191,6 +127,7 @@ pto.copy_ubuf_to_gm %ub_src, %gm_dst,
 | `%reserved` | Reserved field (set to 0) |
 | `%dst_stride` | GM destination stride: start-to-start distance between consecutive burst rows (bytes) |
 | `%src_stride` | UB source stride: start-to-start distance between consecutive burst rows (bytes, 32B-aligned) |
+| `%loop_config` | Optional multi-level loop configuration |
 
 ---
 
@@ -375,8 +312,6 @@ UB layout (32 × 32 f32, 32B-aligned, contiguous):
 
 ```mlir
 // Simple 2D load — no multi-level loops needed
-pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
-
 pto.copy_gm_to_ubuf %arg0, %ub_in,
     %c0_i64,       // sid = 0
     %c32_i64,      // n_burst = 32 (32 rows)
@@ -425,10 +360,6 @@ UB layout (64 × 128 f16, 32B-aligned, contiguous):
 
 ```mlir
 // Simple 2D load — no multi-level loops needed
-pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
-pto.set_loop1_stride_outtoub %c0_i64, %c0_i64 : i64, i64
-pto.set_loop2_stride_outtoub %c0_i64, %c0_i64 : i64, i64
-
 pto.copy_gm_to_ubuf %gm_ptr, %ub_ptr,
     %c0_i64,       // sid = 0
     %c64_i64,      // n_burst = 64 (64 rows)
@@ -477,9 +408,6 @@ UB (128 cols wide, 32B-aligned, padded):
 ```mlir
 %pad = arith.constant 0 : i16
 pto.set_mov_pad_val %pad : i16
-pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
-pto.set_loop1_stride_outtoub %c0_i64, %c0_i64 : i64, i64
-pto.set_loop2_stride_outtoub %c0_i64, %c0_i64 : i64, i64
 
 pto.copy_gm_to_ubuf %gm_ptr, %ub_ptr,
     %c0_i64,       // sid = 0
@@ -524,9 +452,7 @@ GM (dest, 32 × 32 f32):
 ```
 
 ```mlir
-// Configure MTE3 strides
-pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-
+// Simple 2D store — no multi-level loops needed
 pto.copy_ubuf_to_gm %ub_out, %arg1,
     %c0_i64,       // sid = 0
     %c32_i64,      // n_burst = 32
@@ -570,11 +496,7 @@ GM (dest, into 1024 × 512 matrix):
 ```
 
 ```mlir
-// Configure MTE3 strides
-pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-pto.set_loop1_stride_ubtoout %c0_i64, %c0_i64 : i64, i64
-pto.set_loop2_stride_ubtoout %c0_i64, %c0_i64 : i64, i64
-
+// Simple 2D store — no multi-level loops needed
 pto.copy_ubuf_to_gm %ub_ptr, %gm_ptr,
     %c0_i64,       // sid = 0
     %c64_i64,      // n_burst = 64
@@ -603,12 +525,10 @@ GM [4, 8, 128] f16 (contiguous):        UB (4 tiles laid out sequentially):
 ```
 
 ```mlir
-// loop1_count = 4 batches, loop2_count = 1 (not used)
-pto.set_loop_size_outtoub %c4_i64, %c1_i64 : i64, i64
-
-// loop1 stride: advance by one batch (2048 bytes) in both GM and UB
-pto.set_loop1_stride_outtoub %c2048_i64, %c2048_i64 : i64, i64
-pto.set_loop2_stride_outtoub %c0_i64, %c0_i64 : i64, i64
+%cfg = pto.dma_loop_config %c4_i64, %c1_i64
+    loop1_stride(%c2048_i64, %c2048_i64)
+    loop2_stride(%c0_i64, %c0_i64)
+    : i64, i64, i64, i64, i64, i64 -> !pto.dma_loop_config
 
 pto.copy_gm_to_ubuf %gm_ptr, %ub_ptr,
     %c0_i64,       // sid = 0
@@ -619,9 +539,10 @@ pto.copy_gm_to_ubuf %gm_ptr, %ub_ptr,
     %false,        // data_select_bit = false
     %c0_i64,       // l2_cache_ctl = 0
     %c256_i64,     // src_stride = 256 (contiguous rows)
-    %c256_i64      // dst_stride = 256 (contiguous rows)
+    %c256_i64,     // dst_stride = 256 (contiguous rows)
+    %cfg
     : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64,
-      i64, i64, i1, i64, i64, i64
+      i64, i64, i1, i64, i64, i64, !pto.dma_loop_config
 ```
 
 Execution trace:
