@@ -141,6 +141,10 @@ set(ALL_TESTCASES
     trecip
     trsqrt
     tsqrt
+    texpands
+    tfillpad
+    tfillpad_inplace
+    tfillpad_expand
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
