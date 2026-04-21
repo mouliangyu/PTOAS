@@ -136,6 +136,7 @@ set(ALL_TESTCASES
     tabs
     texp
     tlog
+    tneg
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
