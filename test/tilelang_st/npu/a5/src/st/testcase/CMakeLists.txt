@@ -139,6 +139,7 @@ set(ALL_TESTCASES
     tneg
     tnot
     trecip
+    trsqrt
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
