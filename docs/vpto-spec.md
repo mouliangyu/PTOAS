@@ -895,6 +895,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | 13 | [DSA/SFU Ops](isa/13-dsa-sfu-ops.md) | Specialized ops, index generation, and sorting helpers | 9 | `pto.vlrelu`, `pto.vprelu`, `pto.vexpdiff`, `pto.vaxpy`, `pto.vmull`, `pto.vmula`, `pto.vci`, `pto.vbitsort`, `pto.vmrgsort4` |
 | 14 | [Arith (Shared MLIR Dialect)](isa/14-shared-arith.md) | Full scalar `arith` surface used around PTO ops; the companion page lists categories and representative examples | all scalar ops | `arith.constant`, `arith.addi`, `arith.addf`, `arith.cmpi`, `arith.cmpf`, `arith.select`, `arith.index_cast`, `arith.extsi`, `arith.trunci`, `arith.andi`, `arith.shli`, etc. |
 | 15 | [SCF (Shared MLIR Dialect)](isa/15-shared-scf.md) | Structured loops, branches, and loop-carried state around PTO regions | 5 | `scf.for`, `scf.if`, `scf.while`, `scf.condition`, `scf.yield` |
+| 16 | [Cube Matrix Multiply (MAT)](isa/16-cube-matmul.md) | GM↔L1 cube staging, L0A/L0B loads, L0C matmul, GM writeback | 5 | `pto.copy_gm_to_cbuf_align_v2`, `pto.load_cbuf_to_ca`, `pto.load_cbuf_to_cb`, `pto.vmatmul`, `pto.copy_matrix_cc_to_gm` |
 
 ---
 
@@ -907,6 +908,9 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | GM→UB DMA | 2 | `pto.copy_gm_to_ubuf` |
 | UB→GM DMA | 2 | `pto.copy_ubuf_to_gm` |
 | UB→UB Copy | 2 | `pto.copy_ubuf_to_ubuf` |
+| GM→L1 (cube staging) | 16 | `pto.copy_gm_to_cbuf_align_v2` |
+| L1→L0A / L1→L0B | 16 | `pto.load_cbuf_to_ca`, `pto.load_cbuf_to_cb` |
+| L0C→GM (cube writeback) | 16 | `pto.copy_matrix_cc_to_gm` |
 | Contiguous Load | 3 | `pto.vlds` with `NORM` dist |
 | Broadcast Load | 3 | `pto.vlds` with `BRC` family dist |
 | Gather | 3 | `pto.vgather2`, `pto.vgatherb` |
@@ -921,6 +925,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | Scalar Operations | 8 | `pto.vadds`, `pto.vmuls`, etc. |
 | Transcendental | 6 | `pto.vexp`, `pto.vln`, `pto.vsqrt`, etc. |
 | Reduction | 10 | `pto.vcadd`, `pto.vcmax`, `pto.vcmin` |
+| Cube matmul (L0A×L0B→L0C) | 16 | `pto.vmatmul` |
 | Comparison | 11 | `pto.vcmp`, `pto.vcmps` |
 | Selection | 11 | `pto.vsel`, `pto.vselr` |
 

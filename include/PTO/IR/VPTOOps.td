@@ -246,6 +246,69 @@ def PTO_CopyUbufToUbufOp : PTO_Op<"copy_ubuf_to_ubuf"> {
   }];
 }
 
+def PTO_CopyGmToCbufAlignV2Op : PTO_Op<"copy_gm_to_cbuf_align_v2"> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$n_burst,
+    I64:$len_burst,
+    I64:$src_stride,
+    I64:$dst_stride
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $n_burst `,` $len_burst `,` $src_stride `,` $dst_stride
+    attr-dict `:` type($source) `,` type($destination) `,` type($n_burst) `,` type($len_burst) `,` type($src_stride) `,` type($dst_stride)
+  }];
+}
+
+def PTO_LoadCbufToCaOp : PTO_Op<"load_cbuf_to_ca"> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$m,
+    I64:$k
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $m `,` $k attr-dict `:` type($source) `,` type($destination) `,` type($m) `,` type($k)
+  }];
+}
+
+def PTO_LoadCbufToCbOp : PTO_Op<"load_cbuf_to_cb"> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$k,
+    I64:$n
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $k `,` $n attr-dict `:` type($source) `,` type($destination) `,` type($k) `,` type($n)
+  }];
+}
+
+def PTO_CopyMatrixCcToGmOp : PTO_Op<"copy_matrix_cc_to_gm"> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$m,
+    I64:$n
+  );
+
+  let results = (outs);
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $m `,` $n attr-dict `:` type($source) `,` type($destination) `,` type($m) `,` type($n)
+  }];
+}
+
 def PTO_VldsOp : PTO_Op<"vlds", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -692,6 +755,27 @@ def PTO_VnegOp : PTO_UnaryVecOp<"vneg">;
 def PTO_VreluOp : PTO_UnaryVecOp<"vrelu">;
 def PTO_VnotOp : PTO_UnaryVecOp<"vnot">;
 def PTO_VcaddOp : PTO_UnaryVecOp<"vcadd">;
+
+def PTO_VmatmulOp : PTO_Op<"vmatmul", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$lhs,
+    PTO_BufferType:$rhs,
+    PTO_BufferType:$dst,
+    I64:$m,
+    I64:$n,
+    I64:$k
+  );
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs `,` $dst `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($m) `,` type($n) `,` type($k)
+  }];
+}
+
 def PTO_VcmaxOp : PTO_UnaryVecOp<"vcmax">;
 def PTO_VcminOp : PTO_UnaryVecOp<"vcmin">;
 def PTO_VcgaddOp : PTO_UnaryVecOp<"vcgadd">;

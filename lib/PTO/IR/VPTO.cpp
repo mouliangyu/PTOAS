@@ -1134,6 +1134,29 @@ LogicalResult SetMovPadValOp::verify() {
          << "expects i8/i16/i32 or f16/bf16/f32 scalar operand, but got "
          << valueType;
 }
+void VmatmulOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getLhsMutable());
+  effects.emplace_back(MemoryEffects::Read::get(), &getRhsMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDstMutable());
+}
+
+LogicalResult VmatmulOp::verify() {
+  auto lhsType = dyn_cast<pto::PtrType>(getLhs().getType());
+  auto rhsType = dyn_cast<pto::PtrType>(getRhs().getType());
+  auto dstType = dyn_cast<pto::PtrType>(getDst().getType());
+  if (!lhsType || !rhsType || !dstType)
+    return emitOpError("requires typed !pto.ptr lhs/rhs/dst operands");
+
+  if (classifyMemoryRole(getLhs().getType()) != MemoryRole::UB ||
+      classifyMemoryRole(getRhs().getType()) != MemoryRole::UB ||
+      classifyMemoryRole(getDst().getType()) != MemoryRole::UB) {
+    return emitOpError("requires UB-backed lhs/rhs/dst pointers");
+  }
+
+  return success();
+}
 
 LogicalResult VbrOp::verify() {
   if (failed(verifyVRegTypeLike(*this, getResult().getType(), "result")))

@@ -1,0 +1,20 @@
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto %s -o - | FileCheck %s --check-prefix=IR
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o - | FileCheck %s --check-prefix=LLVM
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @kernel(%lhs: !pto.ptr<f8E4M3FN, ub>,
+                    %rhs: !pto.ptr<f8E4M3FN, ub>,
+                    %dst: !pto.ptr<f32, ub>) {
+    %c16 = arith.constant 16 : i64
+    pto.vecscope {
+      pto.vmatmul %lhs, %rhs, %dst, %c16, %c16, %c16 : !pto.ptr<f8E4M3FN, ub>, !pto.ptr<f8E4M3FN, ub>, !pto.ptr<f32, ub>, i64, i64, i64
+    }
+    return
+  }
+}
+
+// IR: pto.vmatmul
+
+// LLVM: declare void @llvm.hivm.mad_mx
+// LLVM: call void @llvm.hivm.mad_mx
+// LLVM-NOT: pto.vmatmul

@@ -19,6 +19,7 @@ DEFAULT_VERSION_NOTES = {
     "0.1": "Doc Init",
     "0.2": "Update micro Instruction latency and throughput",
     "0.3": "Refresh VPTO ISA specification",
+    "0.4": "Add cube MAT ISA (`vmatmul` and GM/L1/L0 movement ops); inline `docs/isa/16-cube-matmul.md`",
 }
 
 KEEP_SECTIONS = [

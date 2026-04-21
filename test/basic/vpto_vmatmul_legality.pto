@@ -1,0 +1,13 @@
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto %s -o - 2>&1 | FileCheck %s
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @kernel(%lhs: !pto.ptr<f16, ub>,
+                    %rhs: !pto.ptr<f16, ub>,
+                    %dst: !pto.ptr<f32, ub>) {
+    %c16 = arith.constant 16 : i64
+    pto.vmatmul %lhs, %rhs, %dst, %c16, %c16, %c16 : !pto.ptr<f16, ub>, !pto.ptr<f16, ub>, !pto.ptr<f32, ub>, i64, i64, i64
+    return
+  }
+}
+
+// CHECK: 'pto.vmatmul' op requires enclosing scf.for
