@@ -120,6 +120,43 @@ CASES = [
         "dst_vshape": (1, 16384),   # actual valid output: src_cols * stride_coef = 8192 * 2
         "eps": 1e-6,
     },
+    # f32 cases - non-32-aligned (requires tmp buffer for padding)
+    # Case 4 from C++: VALID_C=13, requires padding to 32-element block
+    {
+        "name": "f32_2x13",
+        "dtype": np.float32,
+        "src_shape": (2, 16),          # ALIGN_C = ceil(13*4, 32) / 4 = 16
+        "idx_shape": (2, 16),
+        "dst_shape": (2, 64),          # 4 * ALIGN_C = 64
+        "valid_shape": (2, 13),        # non-32-aligned
+        "idx_vshape": (2, 13),
+        "dst_vshape": (2, 26),         # VALID_C * stride_coef = 13 * 2
+        "eps": 1e-6,
+    },
+    # Case 5 from C++: VALID_C=4164, large non-aligned shape
+    {
+        "name": "f32_1x4164",
+        "dtype": np.float32,
+        "src_shape": (1, 8192),        # ALIGN_C = 8192 (from C++ hardcoded)
+        "idx_shape": (1, 8192),
+        "dst_shape": (1, 32768),       # 4 * ALIGN_C = 32768
+        "valid_shape": (1, 4164),      # non-32-aligned
+        "idx_vshape": (1, 4164),
+        "dst_vshape": (1, 8328),       # VALID_C * stride_coef = 4164 * 2
+        "eps": 1e-6,
+    },
+    # Case 6 from C++: VALID_C=2084, multi-row non-aligned shape
+    {
+        "name": "f32_2x2084",
+        "dtype": np.float32,
+        "src_shape": (2, 3072),        # ALIGN_C = 3072 (from C++ hardcoded)
+        "idx_shape": (2, 3072),
+        "dst_shape": (2, 12288),       # 4 * ALIGN_C = 12288
+        "valid_shape": (2, 2084),      # non-32-aligned
+        "idx_vshape": (2, 2084),
+        "dst_vshape": (2, 4168),       # VALID_C * stride_coef = 2084 * 2
+        "eps": 1e-6,
+    },
     # f16 cases - basic shapes
     {
         "name": "f16_1x32",

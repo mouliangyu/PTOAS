@@ -54,11 +54,11 @@ def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile)
 
     # NaN value for padding (negative NaN) - use dtype-specific type
     if pto.constexpr(dtype == pto.f16):
-        min_val = pto.f16(0x7C00)
+        min_val = pto.f16(0xFC00) # Using -inf as a safe minimum for f16
     elif pto.constexpr(dtype == pto.bf16):
-        min_val = pto.bf16(0x7FC0)
+        min_val = pto.bf16(0xFF80)
     else:
-        min_val = pto.f32(0x7FC00000)
+        min_val = pto.f32(0xFF800000) # Using -inf as a safe minimum for f32
 
     # Optimization: if valid_cols % 32 == 0, use Format1 directly (no tmp needed)
     # Matching C++ TSORT32_IMPL line 208-210
@@ -92,15 +92,15 @@ def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile)
 
         if src_shape_bytes_per_row <= MAX_UB_TMP:
             # Copy entire row to tmp, pad, then sort
-            len_burst = (src_shape_bytes_per_row + BLOCK_SIZE - 1) // BLOCK_SIZE
+            # Use vlds/vsts loop instead of copy_ubuf_to_ubuf (lacks LLVM lowering)
 
             for i in range(0, valid_rows, 1):
-                # Copy src row to tmp
-                pto.copy_ubuf_to_ubuf(
-                    pto.addptr(src_ptr, i * src_stride),
-                    tmp_ptr,
-                    0, 1, len_burst, 0, 0
-                )
+                # Copy src row to tmp using vlds/vsts loop
+                remained = valid_cols
+                for col in range(0, valid_cols, BLOCK_SIZE):
+                    load_mask, remained = pto.make_mask(dtype, remained)
+                    vec = pto.vlds(src[i, col:])
+                    pto.vsts(vec, tmp[0, col:], load_mask)
 
                 # Pad the last unaligned 32 elements with NaN
                 tmp_last_offset = ((valid_cols + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) - BLOCK_SIZE
@@ -153,15 +153,16 @@ def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile)
                             )
 
                         # Copy tail src to tmp, pad, then sort
+                        # Use vlds/vsts loop instead of copy_ubuf_to_ubuf (lacks LLVM lowering)
                         tail_src_offset = (j * REPEAT_MAX + (src_tail_repeat_num - 1)) * BLOCK_SIZE
                         tail_dst_offset = (j * REPEAT_MAX + (src_tail_repeat_num - 1)) * BLOCK_SIZE * type_coef
-                        len_burst = (src_tail_per_row * elem_bytes + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-                        pto.copy_ubuf_to_ubuf(
-                            pto.addptr(src_ptr, i * src_stride + tail_src_offset),
-                            tmp_ptr,
-                            0, 1, len_burst, 0, 0
-                        )
+                        # Copy tail data to tmp using vlds/vsts loop
+                        remained = src_tail_per_row
+                        for col in range(0, src_tail_per_row, BLOCK_SIZE):
+                            load_mask, remained = pto.make_mask(dtype, remained)
+                            vec = pto.vlds(src[i, tail_src_offset + col:])
+                            pto.vsts(vec, tmp[0, col:], load_mask)
 
                         # Pad the last 32 elements in tmp
                         tmp_last_offset = ((src_tail_per_row + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) - BLOCK_SIZE

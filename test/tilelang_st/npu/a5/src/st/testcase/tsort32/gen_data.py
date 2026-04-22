@@ -75,39 +75,49 @@ for case in CASES:
             block_end = min(block_start + BLOCK_SIZE, src_vc)
             block_size = block_end - block_start
 
+            block_data = input_data[row, block_start:block_end].copy()
+            block_idx = idx_data[0 if idx_vr == 1 else row, block_start:block_end].astype(np.int32)
+
+            # For partial blocks, pad with NaN (negative NaN = max value) to make 32 elements
             if block_size < BLOCK_SIZE:
-                # Partial block: still sort but only output valid elements
-                block_data = input_data[row, block_start:block_end].copy()
-                block_idx = idx_data[0 if idx_vr == 1 else row, block_start:block_end].astype(np.int32)
+                # Use the same padding value as in tsort32_template.py
+                # f16: 0x7C00 (+inf), bf16: 0x7FC0, f32: 0x7FC00000 (negative NaN)
+                if dtype == np.float16:
+                    pad_val = np.float16(0xFC00)  # +inf for f16
+                elif hasattr(np, 'bfloat16') and dtype == np.bfloat16:
+                    pad_val = np.bfloat16(0xFF80)
+                else:
+                    pad_val = np.float32(0xFF800000)  # negative NaN for f32
 
-                # Sort by value in descending order (largest to smallest)
-                sorted_indices = np.argsort(-block_data)
-                sorted_values = block_data[sorted_indices]
-                sorted_original_idx = block_idx[sorted_indices]
+                # Pad block to 32 elements with +inf (will be sorted to end)
+                padded_data = np.full(BLOCK_SIZE, pad_val, dtype=dtype)
+                padded_data[:block_size] = block_data
 
-                # Output interleaved (value, index) pairs with stride_coef
-                # Format for f32: [value0, idx0, value1, idx1, ...] (stride_coef=2)
-                # Format for f16: [value0, pad, idx0_lo, idx0_hi, value1, pad, idx1_lo, idx1_hi, ...] (stride_coef=4)
-                # Index is stored as int32 bit pattern interpreted as dtype
+                # Pad indices to 32 elements (indices for padding elements don't matter)
+                padded_idx = np.zeros(BLOCK_SIZE, dtype=np.int32)
+                padded_idx[:block_size] = block_idx
+
+                # Sort the padded 32-element block in descending order
+                # +inf values will be at the end after sorting
+                sorted_indices = np.argsort(-padded_data)
+                sorted_values = padded_data[sorted_indices]
+                sorted_original_idx = padded_idx[sorted_indices]
+
+                # Output interleaved (value, index) pairs for the full 32-element block
+                # but only the first block_size elements are valid (padding elements at the end)
                 dst_offset = block_start * stride_coef
-                for i in range(block_size):
+                for i in range(BLOCK_SIZE):
                     golden[row, dst_offset + i * stride_coef] = sorted_values[i]
                     # Store index as int32 bit pattern
                     idx_u32 = np.array(sorted_original_idx[i], dtype=np.uint32)
                     if dtype == np.float16:
-                        # For f16, index (uint32) is stored as two f16 values at positions offset+1 and offset+2
-                        # Interpret uint32 as two uint16 and bitcast to f16
-                        idx_bytes = idx_u32.tobytes()  # 4 bytes: [low16, high16]
+                        idx_bytes = idx_u32.tobytes()
                         golden[row, dst_offset + i * stride_coef + 1] = np.frombuffer(idx_bytes[:2], dtype=np.float16)[0]
                         golden[row, dst_offset + i * stride_coef + 2] = np.frombuffer(idx_bytes[2:], dtype=np.float16)[0]
                     else:
-                        # For f32, index stored at offset+1 as float32 bit pattern
                         golden[row, dst_offset + i * stride_coef + 1] = idx_u32.view(np.float32)
             else:
                 # Full 32-element block
-                block_data = input_data[row, block_start:block_end].copy()
-                block_idx = idx_data[0 if idx_vr == 1 else row, block_start:block_end].astype(np.int32)
-
                 # Sort by value in descending order (largest to smallest)
                 sorted_indices = np.argsort(-block_data)
                 sorted_values = block_data[sorted_indices]
@@ -120,12 +130,10 @@ for case in CASES:
                     # Store index as int32 bit pattern
                     idx_u32 = np.array(sorted_original_idx[i], dtype=np.uint32)
                     if dtype == np.float16:
-                        # For f16, index (uint32) is stored as two f16 values at positions offset+1 and offset+2
-                        idx_bytes = idx_u32.tobytes()  # 4 bytes: [low16, high16]
+                        idx_bytes = idx_u32.tobytes()
                         golden[row, dst_offset + i * stride_coef + 1] = np.frombuffer(idx_bytes[:2], dtype=np.float16)[0]
                         golden[row, dst_offset + i * stride_coef + 2] = np.frombuffer(idx_bytes[2:], dtype=np.float16)[0]
                     else:
-                        # For f32, index stored at offset+1 as float32 bit pattern
                         golden[row, dst_offset + i * stride_coef + 1] = idx_u32.view(np.float32)
 
     save_case_data(case["name"], {"input": input_data, "idx": idx_data.astype(np.uint32), "golden": golden})

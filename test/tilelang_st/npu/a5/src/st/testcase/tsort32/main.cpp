@@ -31,6 +31,9 @@ void LaunchTSORT32_f32_16x64_shared_idx(float *src, uint32_t *idx, float *dst, v
 void LaunchTSORT32_f32_1x8192(float *src, uint32_t *idx, float *dst, void *stream);
 void LaunchTSORT32_f16_1x32(uint16_t *src, uint32_t *idx, uint16_t *dst, void *stream);
 void LaunchTSORT32_f16_4x64(uint16_t *src, uint32_t *idx, uint16_t *dst, void *stream);
+void LaunchTSORT32_f32_2x13(float *src, uint32_t *idx, float *dst, void *stream);
+void LaunchTSORT32_f32_1x4164(float *src, uint32_t *idx, float *dst, void *stream);
+void LaunchTSORT32_f32_2x2084(float *src, uint32_t *idx, float *dst, void *stream);
 
 using LaunchFn = void (*)(void *, uint32_t *, void *, void *);
 
@@ -56,6 +59,9 @@ static const TestCase kCases[] = {
     {"f32_1x8192",             reinterpret_cast<LaunchFn>(LaunchTSORT32_f32_1x8192),             1,  8192,  1,  8192,  1,  32768,  sizeof(float)},
     {"f16_1x32",               reinterpret_cast<LaunchFn>(LaunchTSORT32_f16_1x32),               1,  32,    1,  32,    1,  128,    sizeof(uint16_t)},
     {"f16_4x64",               reinterpret_cast<LaunchFn>(LaunchTSORT32_f16_4x64),               4,  64,    4,  64,    4,  256,    sizeof(uint16_t)},
+    {"f32_2x13",               reinterpret_cast<LaunchFn>(LaunchTSORT32_f32_2x13),               2,  16,    2,  16,    2,  64,     sizeof(float)},
+    {"f32_1x4164",             reinterpret_cast<LaunchFn>(LaunchTSORT32_f32_1x4164),             1,  8192,  1,  8192,  1,  32768,  sizeof(float)},
+    {"f32_2x2084",             reinterpret_cast<LaunchFn>(LaunchTSORT32_f32_2x2084),             2,  3072,  2,  3072,  2,  12288,  sizeof(float)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

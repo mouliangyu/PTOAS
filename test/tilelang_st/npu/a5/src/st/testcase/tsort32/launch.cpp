@@ -74,3 +74,24 @@ extern "C" __global__ AICORE void TSORT32_f16_4x64(__gm__ uint16_t *src, __gm__ 
 void LaunchTSORT32_f16_4x64(uint16_t *src, uint32_t *idx, uint16_t *dst, void *stream) {
     TSORT32_f16_4x64<<<1, nullptr, stream>>>((__gm__ uint16_t *)src, (__gm__ uint32_t *)idx, (__gm__ uint16_t *)dst);
 }
+
+// Case: f32 2x13 (non-32-aligned, requires tmp buffer for padding)
+extern "C" __global__ AICORE void TSORT32_f32_2x13(__gm__ float *src, __gm__ uint32_t *idx, __gm__ float *dst);
+
+void LaunchTSORT32_f32_2x13(float *src, uint32_t *idx, float *dst, void *stream) {
+    TSORT32_f32_2x13<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ uint32_t *)idx, (__gm__ float *)dst);
+}
+
+// Case: f32 1x4164 (non-32-aligned large shape)
+extern "C" __global__ AICORE void TSORT32_f32_1x4164(__gm__ float *src, __gm__ uint32_t *idx, __gm__ float *dst);
+
+void LaunchTSORT32_f32_1x4164(float *src, uint32_t *idx, float *dst, void *stream) {
+    TSORT32_f32_1x4164<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ uint32_t *)idx, (__gm__ float *)dst);
+}
+
+// Case: f32 2x2084 (non-32-aligned multi-row shape)
+extern "C" __global__ AICORE void TSORT32_f32_2x2084(__gm__ float *src, __gm__ uint32_t *idx, __gm__ float *dst);
+
+void LaunchTSORT32_f32_2x2084(float *src, uint32_t *idx, float *dst, void *stream) {
+    TSORT32_f32_2x2084<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ uint32_t *)idx, (__gm__ float *)dst);
+}
