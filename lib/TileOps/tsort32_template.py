@@ -2,132 +2,31 @@
 
 import tilelang_dsl as pto
 
-# Constants matching C++ implementation
 BLOCK_SIZE = 32
-REPEAT_MAX = 255
 FLOAT_DST_STRIDE_COEF = 2
 HALF_DST_STRIDE_COEF = 4
-MAX_UB_TMP = 32 * 255
-
-
-def _tsort32_aligned_constraint(src: pto.Tile, idx: pto.Tile, dst: pto.Tile) -> bool:
-    """Constraint for aligned tsort32 (valid_col divisible by 32, no tmp needed)."""
-    _, valid_col = src.valid_shape
-    # Access .value directly since _ConstraintValue doesn't support % operator
-    if valid_col.value is None:
-        return True  # Dynamic value, defer to runtime
-    return valid_col.value % BLOCK_SIZE == 0
+MAX_UB_TMP = 32 * 255  # 8160 bytes
+REPEAT_MAX = 255
 
 
 @pto.vkernel(
     target="a5",
     advanced=True,
-    op="pto.tsort32",
-    constraints=[_tsort32_aligned_constraint],
-)
-def template_tsort32_aligned(src: pto.Tile, idx: pto.Tile, dst: pto.Tile):
-    """
-    TSort32: Sort fixed-size 32-element blocks (aligned case, no tmp buffer).
-
-    Args:
-        src: Source tile with values to sort
-        idx: Index tile (pre-filled with original indices)
-        dst: Destination tile for sorted output (interleaved value-index pairs)
-
-    Semantics: Direct vbitsort on each row when validCol % 32 == 0.
-    """
-    dtype = dst.element_type
-    valid_row, _ = dst.valid_shape
-    _, valid_col = src.valid_shape
-
-    # Compute repeat times per row
-    repeat_times_per_row = valid_col // BLOCK_SIZE
-
-    # Get pointers
-    dst_ptr = dst.as_ptr()
-    src_ptr = src.as_ptr()
-    idx_ptr = idx.as_ptr()
-
-    # Stride coefficients based on dtype
-    type_coef = HALF_DST_STRIDE_COEF
-    if pto.constexpr(dtype == pto.f32):
-        type_coef = FLOAT_DST_STRIDE_COEF
-
-    # Row stride handling for idx
-    idx_row_stride = idx.shape[1]
-    idx_valid_shape0, _ = idx.valid_shape
-    if idx_valid_shape0 == 1:
-        idx_row_stride = 0
-
-    # Simple case: repeat_times_per_row <= REPEAT_MAX
-    if pto.constexpr(repeat_times_per_row <= REPEAT_MAX):
-        for row in range(0, valid_row, 1):
-            row_dst_offset = row * dst.shape[1]
-            row_src_offset = row * src.shape[1]
-            row_idx_offset = 0
-            if idx_row_stride > 0:
-                row_idx_offset = row * idx_row_stride
-
-            dst_row_ptr = pto.addptr(dst_ptr, row_dst_offset)
-            src_row_ptr = pto.addptr(src_ptr, row_src_offset)
-            idx_row_ptr = pto.addptr(idx_ptr, row_idx_offset)
-
-            pto.vbitsort(dst_row_ptr, src_row_ptr, idx_row_ptr, repeat_times_per_row)
-    else:
-        # Handle large repeat times: split into multiple vbitsort calls
-        loop_num = (repeat_times_per_row + REPEAT_MAX - 1) // REPEAT_MAX
-        tail_repeat_num = repeat_times_per_row % REPEAT_MAX
-
-        for row in range(0, valid_row, 1):
-            row_dst_offset = row * dst.shape[1]
-            row_src_offset = row * src.shape[1]
-            row_idx_offset = 0
-            if idx_row_stride > 0:
-                row_idx_offset = row * idx_row_stride
-
-            for j in range(0, loop_num, 1):
-                repeat_num = tail_repeat_num
-                if j < loop_num - 1:
-                    repeat_num = REPEAT_MAX
-                if repeat_num == 0:
-                    repeat_num = REPEAT_MAX
-
-                block_offset = j * REPEAT_MAX * BLOCK_SIZE
-
-                dst_block_ptr = pto.addptr(dst_ptr, row_dst_offset + block_offset * type_coef)
-                src_block_ptr = pto.addptr(src_ptr, row_src_offset + block_offset)
-                idx_block_ptr = pto.addptr(idx_ptr, row_idx_offset + block_offset)
-
-                pto.vbitsort(dst_block_ptr, src_block_ptr, idx_block_ptr, repeat_num)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    advanced=True,
-    op="pto.tsort32",
+    op="pto.tsort32"
 )
 def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     """
-    TSort32: Sort fixed-size 32-element blocks.
-    
-    Args:
-        src: Source tile with values to sort
-        idx: Index tile (pre-filled with original indices)
-        tmp: Temporary tile for non-aligned cases (padding with NaN)
-        dst: Destination tile for sorted output (interleaved value-index pairs)
-    
+    TSort32 Format2: Bitonic sort with tmp buffer for padding.
+
     Semantics (matching pto-isa TSort32.hpp):
-        - When validCol % 32 == 0: Direct vbitsort on each row
-        - When validCol % 32 != 0: Copy data to tmp, pad tail with NaN, then sort
+    - Sorts src values into dst, generating indices in idx
+    - Uses tmp buffer when src.valid_cols % 32 != 0 (padding needed)
+    - When src.valid_cols % 32 == 0, directly uses Format1 logic (no tmp needed)
+    - Pads unaligned tail with NaN to ensure correct sorting
     """
     dtype = dst.element_type
-    valid_row, _ = dst.valid_shape
-    _, valid_col = src.valid_shape
-
-    # Compute repeat times per row
-    repeat_times_per_row = (valid_col + BLOCK_SIZE - 1) // BLOCK_SIZE
+    valid_rows = dst.valid_shape[0]
+    valid_cols = src.valid_shape[1]
 
     # Get pointers
     dst_ptr = dst.as_ptr()
@@ -135,56 +34,150 @@ def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile)
     idx_ptr = idx.as_ptr()
     tmp_ptr = tmp.as_ptr()
 
-    # Stride coefficients based on dtype
+    # Calculate strides (in elements)
+    elem_bytes = pto.bytewidth(dtype)
+    dst_stride = ((dst.shape[1] * elem_bytes + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) // elem_bytes
+    src_stride = ((src.shape[1] * elem_bytes + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) // elem_bytes
+    idx_stride = ((idx.shape[1] * 4 + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) // 4
+    if idx.valid_shape[0] == 1:
+        idx_stride = 0
+
+    # Type coefficient for destination stride
     type_coef = HALF_DST_STRIDE_COEF
     if pto.constexpr(dtype == pto.f32):
         type_coef = FLOAT_DST_STRIDE_COEF
 
-    # Row stride handling for idx
-    idx_row_stride = idx.shape[1]
-    idx_valid_shape0, _ = idx.valid_shape
-    if idx_valid_shape0 == 1:
-        idx_row_stride = 0
+    # Calculate repeat parameters
+    repeat_num_per_row = (valid_cols + BLOCK_SIZE - 1) // BLOCK_SIZE
+    src_tail_per_row = valid_cols % BLOCK_SIZE  # remaining elements in last block
+    src_tail_repeat_num = ((valid_cols + BLOCK_SIZE - 1) // BLOCK_SIZE) % REPEAT_MAX
 
-    # Simple case: validCol is multiple of 32 and no need for large repeat handling
-    if repeat_times_per_row <= REPEAT_MAX:
-        for row in range(0, valid_row, 1):
-            row_dst_offset = row * dst.shape[1]
-            row_src_offset = row * src.shape[1]
-            row_idx_offset = 0
-            if idx_row_stride > 0:
-                row_idx_offset = row * idx_row_stride
-
-            dst_row_ptr = pto.addptr(dst_ptr, row_dst_offset)
-            src_row_ptr = pto.addptr(src_ptr, row_src_offset)
-            idx_row_ptr = pto.addptr(idx_ptr, row_idx_offset)
-
-            pto.vbitsort(dst_row_ptr, src_row_ptr, idx_row_ptr, repeat_times_per_row)
+    # NaN value for padding (negative NaN) - use dtype-specific type
+    if pto.constexpr(dtype == pto.f16):
+        min_val = pto.f16(0x7C00)
+    elif pto.constexpr(dtype == pto.bf16):
+        min_val = pto.bf16(0x7FC0)
     else:
-        # Handle large repeat times: split into multiple vbitsort calls
-        loop_num = (repeat_times_per_row + REPEAT_MAX - 1) // REPEAT_MAX
-        tail_repeat_num = repeat_times_per_row % REPEAT_MAX
+        min_val = pto.f32(0x7FC00000)
 
-        for row in range(0, valid_row, 1):
-            row_dst_offset = row * dst.shape[1]
-            row_src_offset = row * src.shape[1]
-            row_idx_offset = 0
-            if idx_row_stride > 0:
-                row_idx_offset = row * idx_row_stride
-
-            for j in range(0, loop_num, 1):
-                repeat_num = tail_repeat_num
-                if j < loop_num - 1:
+    # Optimization: if valid_cols % 32 == 0, use Format1 directly (no tmp needed)
+    # Matching C++ TSORT32_IMPL line 208-210
+    if valid_cols % BLOCK_SIZE == 0:
+        if repeat_num_per_row <= REPEAT_MAX:
+            for i in range(0, valid_rows, 1):
+                pto.vbitsort(
+                    pto.addptr(dst_ptr, i * dst_stride),
+                    pto.addptr(src_ptr, i * src_stride),
+                    pto.addptr(idx_ptr, i * idx_stride),
+                    repeat_num_per_row
+                )
+        else:
+            loop_num = (repeat_num_per_row + REPEAT_MAX - 1) // REPEAT_MAX
+            tail_repeat_num = repeat_num_per_row % REPEAT_MAX
+            for i in range(0, valid_rows, 1):
+                for j in range(0, loop_num, 1):
                     repeat_num = REPEAT_MAX
-                if repeat_num == 0:
-                    repeat_num = REPEAT_MAX
+                    if j == loop_num - 1:
+                        repeat_num = tail_repeat_num
+                        
+                    pto.vbitsort(
+                        pto.addptr(dst_ptr, i * dst_stride + j * REPEAT_MAX * BLOCK_SIZE * type_coef),
+                        pto.addptr(src_ptr, i * src_stride + j * REPEAT_MAX * BLOCK_SIZE),
+                        pto.addptr(idx_ptr, i * idx_stride + j * REPEAT_MAX * BLOCK_SIZE),
+                        repeat_num
+                    )
+    else:
+        # Check if entire row fits in tmp buffer
+        src_shape_bytes_per_row = valid_cols * elem_bytes
 
-                block_offset = j * REPEAT_MAX * BLOCK_SIZE
+        if src_shape_bytes_per_row <= MAX_UB_TMP:
+            # Copy entire row to tmp, pad, then sort
+            len_burst = (src_shape_bytes_per_row + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-                dst_block_ptr = pto.addptr(dst_ptr, row_dst_offset + block_offset * type_coef)
-                src_block_ptr = pto.addptr(src_ptr, row_src_offset + block_offset)
-                idx_block_ptr = pto.addptr(idx_ptr, row_idx_offset + block_offset)
+            for i in range(0, valid_rows, 1):
+                # Copy src row to tmp
+                pto.copy_ubuf_to_ubuf(
+                    pto.addptr(src_ptr, i * src_stride),
+                    tmp_ptr,
+                    0, 1, len_burst, 0, 0
+                )
 
-                pto.vbitsort(dst_block_ptr, src_block_ptr, idx_block_ptr, repeat_num)
+                # Pad the last unaligned 32 elements with NaN
+                tmp_last_offset = ((valid_cols + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) - BLOCK_SIZE
+
+                # Load last block, pad tail with NaN
+                vec = pto.vlds(tmp[0, tmp_last_offset:])
+                # Create mask for elements to pad (elements >= src_tail_per_row in this block)
+                # Elements 0 to src_tail_per_row-1 are valid, src_tail_per_row to 31 need padding
+                # make_mask with BLOCK_SIZE - src_tail_per_row remaining gives mask for padding region
+                pad_mask, _ = pto.make_mask(dtype, BLOCK_SIZE - src_tail_per_row)
+                vec = pto.vdup(min_val, pad_mask)
+                pto.vsts(vec, tmp[0, tmp_last_offset:], pad_mask)
+
+                # Sort from tmp to dst
+                pto.vbitsort(
+                    pto.addptr(dst_ptr, i * dst_stride),
+                    tmp_ptr,
+                    pto.addptr(idx_ptr, i * idx_stride),
+                    repeat_num_per_row
+                )
+        else:
+            # Large buffer case: process each chunk separately (LargeTmpBufferImpl)
+            loop_num = (repeat_num_per_row + REPEAT_MAX - 1) // REPEAT_MAX
+
+            for i in range(0, valid_rows, 1):
+                for j in range(0, loop_num, 1):
+                    if j < loop_num - 1:
+                        # Normal block: sort directly from src
+                        pto.vbitsort(
+                            pto.addptr(dst_ptr, i * dst_stride + j * REPEAT_MAX * BLOCK_SIZE * type_coef),
+                            pto.addptr(src_ptr, i * src_stride + j * REPEAT_MAX * BLOCK_SIZE),
+                            pto.addptr(idx_ptr, i * idx_stride + j * REPEAT_MAX * BLOCK_SIZE),
+                            REPEAT_MAX
+                        )
+                    else:
+                        # Last block: need padding via tmp
+                        # Matching C++ LargeTmpBufferImpl lines 75-107
+                        # Sort complete 32-blocks before tail (srcTailRepeatNum - 1 blocks)
+                        # Note: when src_tail_repeat_num == 1, repeat=0 is valid (no pre-sort)
+                        if src_tail_repeat_num > 0:
+                            sort_repeat_num = 0
+                            if src_tail_repeat_num > 1:
+                                sort_repeat_num = src_tail_repeat_num - 1
+                                
+                            pto.vbitsort(
+                                pto.addptr(dst_ptr, i * dst_stride + j * REPEAT_MAX * BLOCK_SIZE * type_coef),
+                                pto.addptr(src_ptr, i * src_stride + j * REPEAT_MAX * BLOCK_SIZE),
+                                pto.addptr(idx_ptr, i * idx_stride + j * REPEAT_MAX * BLOCK_SIZE),
+                                sort_repeat_num
+                            )
+
+                        # Copy tail src to tmp, pad, then sort
+                        tail_src_offset = (j * REPEAT_MAX + (src_tail_repeat_num - 1)) * BLOCK_SIZE
+                        tail_dst_offset = (j * REPEAT_MAX + (src_tail_repeat_num - 1)) * BLOCK_SIZE * type_coef
+                        len_burst = (src_tail_per_row * elem_bytes + BLOCK_SIZE - 1) // BLOCK_SIZE
+
+                        pto.copy_ubuf_to_ubuf(
+                            pto.addptr(src_ptr, i * src_stride + tail_src_offset),
+                            tmp_ptr,
+                            0, 1, len_burst, 0, 0
+                        )
+
+                        # Pad the last 32 elements in tmp
+                        tmp_last_offset = ((src_tail_per_row + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) - BLOCK_SIZE
+
+                        # Load last block, pad tail with NaN
+                        vec = pto.vlds(tmp[0, tmp_last_offset:])
+                        pad_mask, _ = pto.make_mask(dtype, BLOCK_SIZE - src_tail_per_row)
+                        vec = pto.vdup(min_val, pad_mask)
+                        pto.vsts(vec, tmp[0, tmp_last_offset:], pad_mask)
+
+                        # Sort from tmp to dst tail
+                        pto.vbitsort(
+                            pto.addptr(dst_ptr, i * dst_stride + tail_dst_offset),
+                            tmp_ptr,
+                            pto.addptr(idx_ptr, i * idx_stride + tail_src_offset),
+                            1
+                        )
 
     return
