@@ -92,15 +92,15 @@ def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile)
 
         if src_shape_bytes_per_row <= MAX_UB_TMP:
             # Copy entire row to tmp, pad, then sort
-            # Use vlds/vsts loop instead of copy_ubuf_to_ubuf (lacks LLVM lowering)
+            len_burst = (src_shape_bytes_per_row + BLOCK_SIZE - 1) // BLOCK_SIZE
 
             for i in range(0, valid_rows, 1):
-                # Copy src row to tmp using vlds/vsts loop
-                remained = valid_cols
-                for col in range(0, valid_cols, BLOCK_SIZE):
-                    load_mask, remained = pto.make_mask(dtype, remained)
-                    vec = pto.vlds(src[i, col:])
-                    pto.vsts(vec, tmp[0, col:], load_mask)
+                # Copy src row to tmp
+                pto.copy_ubuf_to_ubuf(
+                    pto.addptr(src_ptr, i * src_stride),
+                    tmp_ptr,
+                    0, 1, len_burst, 0, 0
+                )
 
                 # Pad the last unaligned 32 elements with NaN
                 tmp_last_offset = ((valid_cols + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) - BLOCK_SIZE
@@ -153,16 +153,15 @@ def template_tsort32(src: pto.Tile, idx: pto.Tile, tmp: pto.Tile, dst: pto.Tile)
                             )
 
                         # Copy tail src to tmp, pad, then sort
-                        # Use vlds/vsts loop instead of copy_ubuf_to_ubuf (lacks LLVM lowering)
                         tail_src_offset = (j * REPEAT_MAX + (src_tail_repeat_num - 1)) * BLOCK_SIZE
                         tail_dst_offset = (j * REPEAT_MAX + (src_tail_repeat_num - 1)) * BLOCK_SIZE * type_coef
+                        len_burst = (src_tail_per_row * elem_bytes + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-                        # Copy tail data to tmp using vlds/vsts loop
-                        remained = src_tail_per_row
-                        for col in range(0, src_tail_per_row, BLOCK_SIZE):
-                            load_mask, remained = pto.make_mask(dtype, remained)
-                            vec = pto.vlds(src[i, tail_src_offset + col:])
-                            pto.vsts(vec, tmp[0, col:], load_mask)
+                        pto.copy_ubuf_to_ubuf(
+                            pto.addptr(src_ptr, i * src_stride + tail_src_offset),
+                            tmp_ptr,
+                            0, 1, len_burst, 0, 0
+                        )
 
                         # Pad the last 32 elements in tmp
                         tmp_last_offset = ((src_tail_per_row + BLOCK_SIZE - 1) // BLOCK_SIZE * BLOCK_SIZE) - BLOCK_SIZE
