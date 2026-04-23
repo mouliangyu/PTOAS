@@ -22,22 +22,22 @@
 using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
-void LaunchTSEL_f32_2x128(float *mask, float *src0, float *src1, float *dst, void *stream);
-void LaunchTSEL_f32_2x32(float *mask, float *src0, float *src1, float *dst, void *stream);
-void LaunchTSEL_f32_2x160(float *mask, float *src0, float *src1, float *dst, void *stream);
-void LaunchTSEL_f32_2x512(float *mask, float *src0, float *src1, float *dst, void *stream);
-void LaunchTSEL_f16_2x128(uint16_t *mask, uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
-void LaunchTSEL_f16_2x32(uint16_t *mask, uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
-void LaunchTSEL_f16_2x160(uint16_t *mask, uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
-void LaunchTSEL_i8_2x128(int8_t *mask, int8_t *src0, int8_t *src1, int8_t *dst, void *stream);
-void LaunchTSEL_i8_2x32(int8_t *mask, int8_t *src0, int8_t *src1, int8_t *dst, void *stream);
-void LaunchTSEL_i8_2x160(int8_t *mask, int8_t *src0, int8_t *src1, int8_t *dst, void *stream);
+void LaunchTSEL_f32_2x128(uint8_t *mask, float *src0, float *src1, float *dst, void *stream);
+void LaunchTSEL_f32_2x32(uint8_t *mask, float *src0, float *src1, float *dst, void *stream);
+void LaunchTSEL_f32_2x160(uint8_t *mask, float *src0, float *src1, float *dst, void *stream);
+void LaunchTSEL_f32_2x512(uint8_t *mask, float *src0, float *src1, float *dst, void *stream);
+void LaunchTSEL_f16_2x128(uint8_t *mask, uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
+void LaunchTSEL_f16_2x32(uint8_t *mask, uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
+void LaunchTSEL_f16_2x160(uint8_t *mask, uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
+void LaunchTSEL_i8_2x128(uint8_t *mask, int8_t *src0, int8_t *src1, int8_t *dst, void *stream);
+void LaunchTSEL_i8_2x32(uint8_t *mask, int8_t *src0, int8_t *src1, int8_t *dst, void *stream);
+void LaunchTSEL_i8_2x160(uint8_t *mask, int8_t *src0, int8_t *src1, int8_t *dst, void *stream);
 
 enum DataType { DT_F32, DT_F16, DT_I8 };
 
-using LaunchFnF32 = void (*)(float *, float *, float *, float *, void *);
-using LaunchFnF16 = void (*)(uint16_t *, uint16_t *, uint16_t *, uint16_t *, void *);
-using LaunchFnI8 = void (*)(int8_t *, int8_t *, int8_t *, int8_t *, void *);
+using LaunchFnF32 = void (*)(uint8_t *, float *, float *, float *, void *);
+using LaunchFnF16 = void (*)(uint8_t *, uint16_t *, uint16_t *, uint16_t *, void *);
+using LaunchFnI8 = void (*)(uint8_t *, int8_t *, int8_t *, int8_t *, void *);
 
 struct TestCase {
     const char *name;
@@ -69,7 +69,9 @@ static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
     int rc = 0;
     const size_t elemCount = tc.rows * tc.cols;
-    size_t fileSize  = elemCount * tc.elemSize;
+    const size_t fileSizeConst = elemCount * tc.elemSize;
+    const size_t maskCols = (tc.validCols + 7) / 8;
+    const size_t maskFileSizeConst = tc.validRows * maskCols * sizeof(uint8_t);
 
     std::printf("[INFO] === case: %s (shape=%zux%zu, valid=%zux%zu) ===\n",
                 tc.name, tc.rows, tc.cols, tc.validRows, tc.validCols);
@@ -77,44 +79,49 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
     std::string caseDir = std::string("./") + tc.name;
 
     if (tc.dtype == DT_F32) {
-        float *maskHost = nullptr, *src0Host = nullptr, *src1Host = nullptr, *dstHost = nullptr;
-        float *maskDevice = nullptr, *src0Device = nullptr, *src1Device = nullptr, *dstDevice = nullptr;
+        uint8_t *maskHost = nullptr;
+        float *src0Host = nullptr, *src1Host = nullptr, *dstHost = nullptr;
+        uint8_t *maskDevice = nullptr;
+        float *src0Device = nullptr, *src1Device = nullptr, *dstDevice = nullptr;
 
-        aclrtMallocHost((void **)(&maskHost), fileSize);
-        aclrtMallocHost((void **)(&src0Host), fileSize);
-        aclrtMallocHost((void **)(&src1Host), fileSize);
-        aclrtMallocHost((void **)(&dstHost), fileSize);
+        aclrtMallocHost((void **)(&maskHost), maskFileSizeConst);
+        aclrtMallocHost((void **)(&src0Host), fileSizeConst);
+        aclrtMallocHost((void **)(&src1Host), fileSizeConst);
+        aclrtMallocHost((void **)(&dstHost), fileSizeConst);
 
-        aclrtMalloc((void **)&maskDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&src0Device, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&src1Device, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&dstDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&maskDevice, maskFileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&src0Device, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&src1Device, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&dstDevice, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
 
-        if (!ReadFile((caseDir + "/input1.bin").c_str(), fileSize, src0Host, fileSize)) {
+        size_t fileSize = fileSizeConst;
+        if (!ReadFile((caseDir + "/input1.bin").c_str(), fileSize, src0Host, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input1.bin\n", caseDir.c_str());
             rc = 1;
         }
-        if (rc == 0 && !ReadFile((caseDir + "/input2.bin").c_str(), fileSize, src1Host, fileSize)) {
+        fileSize = fileSizeConst;
+        if (rc == 0 && !ReadFile((caseDir + "/input2.bin").c_str(), fileSize, src1Host, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input2.bin\n", caseDir.c_str());
             rc = 1;
         }
-        if (rc == 0 && !ReadFile((caseDir + "/input3.bin").c_str(), fileSize, maskHost, fileSize)) {
+        size_t maskFileSize = maskFileSizeConst;
+        if (rc == 0 && !ReadFile((caseDir + "/input3.bin").c_str(), maskFileSize, maskHost, maskFileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input3.bin\n", caseDir.c_str());
             rc = 1;
         }
 
         if (rc == 0) {
-            aclrtMemcpy(maskDevice, fileSize, maskHost, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
-            aclrtMemcpy(src0Device, fileSize, src0Host, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
-            aclrtMemcpy(src1Device, fileSize, src1Host, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(maskDevice, maskFileSizeConst, maskHost, maskFileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(src0Device, fileSizeConst, src0Host, fileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(src1Device, fileSizeConst, src1Host, fileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
 
             tc.launchF32(maskDevice, src0Device, src1Device, dstDevice, stream);
 
             aclrtSynchronizeStream(stream);
-            aclrtMemcpy(dstHost, fileSize, dstDevice, fileSize, ACL_MEMCPY_DEVICE_TO_HOST);
+            aclrtMemcpy(dstHost, fileSizeConst, dstDevice, fileSizeConst, ACL_MEMCPY_DEVICE_TO_HOST);
         }
 
-        if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSize)) {
+        if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to write %s/output.bin\n", caseDir.c_str());
             rc = 1;
         }
@@ -136,44 +143,49 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
         if (dstHost != nullptr)
             aclrtFreeHost(dstHost);
     } else if (tc.dtype == DT_F16) {
-        uint16_t *maskHost = nullptr, *src0Host = nullptr, *src1Host = nullptr, *dstHost = nullptr;
-        uint16_t *maskDevice = nullptr, *src0Device = nullptr, *src1Device = nullptr, *dstDevice = nullptr;
+        uint8_t *maskHost = nullptr;
+        uint16_t *src0Host = nullptr, *src1Host = nullptr, *dstHost = nullptr;
+        uint8_t *maskDevice = nullptr;
+        uint16_t *src0Device = nullptr, *src1Device = nullptr, *dstDevice = nullptr;
 
-        aclrtMallocHost((void **)(&maskHost), fileSize);
-        aclrtMallocHost((void **)(&src0Host), fileSize);
-        aclrtMallocHost((void **)(&src1Host), fileSize);
-        aclrtMallocHost((void **)(&dstHost), fileSize);
+        aclrtMallocHost((void **)(&maskHost), maskFileSizeConst);
+        aclrtMallocHost((void **)(&src0Host), fileSizeConst);
+        aclrtMallocHost((void **)(&src1Host), fileSizeConst);
+        aclrtMallocHost((void **)(&dstHost), fileSizeConst);
 
-        aclrtMalloc((void **)&maskDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&src0Device, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&src1Device, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&dstDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&maskDevice, maskFileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&src0Device, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&src1Device, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&dstDevice, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
 
-        if (!ReadFile((caseDir + "/input1.bin").c_str(), fileSize, src0Host, fileSize)) {
+        size_t fileSize = fileSizeConst;
+        if (!ReadFile((caseDir + "/input1.bin").c_str(), fileSize, src0Host, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input1.bin\n", caseDir.c_str());
             rc = 1;
         }
-        if (rc == 0 && !ReadFile((caseDir + "/input2.bin").c_str(), fileSize, src1Host, fileSize)) {
+        fileSize = fileSizeConst;
+        if (rc == 0 && !ReadFile((caseDir + "/input2.bin").c_str(), fileSize, src1Host, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input2.bin\n", caseDir.c_str());
             rc = 1;
         }
-        if (rc == 0 && !ReadFile((caseDir + "/input3.bin").c_str(), fileSize, maskHost, fileSize)) {
+        size_t maskFileSize = maskFileSizeConst;
+        if (rc == 0 && !ReadFile((caseDir + "/input3.bin").c_str(), maskFileSize, maskHost, maskFileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input3.bin\n", caseDir.c_str());
             rc = 1;
         }
 
         if (rc == 0) {
-            aclrtMemcpy(maskDevice, fileSize, maskHost, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
-            aclrtMemcpy(src0Device, fileSize, src0Host, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
-            aclrtMemcpy(src1Device, fileSize, src1Host, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(maskDevice, maskFileSizeConst, maskHost, maskFileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(src0Device, fileSizeConst, src0Host, fileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(src1Device, fileSizeConst, src1Host, fileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
 
             tc.launchF16(maskDevice, src0Device, src1Device, dstDevice, stream);
 
             aclrtSynchronizeStream(stream);
-            aclrtMemcpy(dstHost, fileSize, dstDevice, fileSize, ACL_MEMCPY_DEVICE_TO_HOST);
+            aclrtMemcpy(dstHost, fileSizeConst, dstDevice, fileSizeConst, ACL_MEMCPY_DEVICE_TO_HOST);
         }
 
-        if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSize)) {
+        if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to write %s/output.bin\n", caseDir.c_str());
             rc = 1;
         }
@@ -195,44 +207,49 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
         if (dstHost != nullptr)
             aclrtFreeHost(dstHost);
     } else {
-        int8_t *maskHost = nullptr, *src0Host = nullptr, *src1Host = nullptr, *dstHost = nullptr;
-        int8_t *maskDevice = nullptr, *src0Device = nullptr, *src1Device = nullptr, *dstDevice = nullptr;
+        uint8_t *maskHost = nullptr;
+        int8_t *src0Host = nullptr, *src1Host = nullptr, *dstHost = nullptr;
+        uint8_t *maskDevice = nullptr;
+        int8_t *src0Device = nullptr, *src1Device = nullptr, *dstDevice = nullptr;
 
-        aclrtMallocHost((void **)(&maskHost), fileSize);
-        aclrtMallocHost((void **)(&src0Host), fileSize);
-        aclrtMallocHost((void **)(&src1Host), fileSize);
-        aclrtMallocHost((void **)(&dstHost), fileSize);
+        aclrtMallocHost((void **)(&maskHost), maskFileSizeConst);
+        aclrtMallocHost((void **)(&src0Host), fileSizeConst);
+        aclrtMallocHost((void **)(&src1Host), fileSizeConst);
+        aclrtMallocHost((void **)(&dstHost), fileSizeConst);
 
-        aclrtMalloc((void **)&maskDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&src0Device, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&src1Device, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
-        aclrtMalloc((void **)&dstDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&maskDevice, maskFileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&src0Device, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&src1Device, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
+        aclrtMalloc((void **)&dstDevice, fileSizeConst, ACL_MEM_MALLOC_HUGE_FIRST);
 
-        if (!ReadFile((caseDir + "/input1.bin").c_str(), fileSize, src0Host, fileSize)) {
+        size_t fileSize = fileSizeConst;
+        if (!ReadFile((caseDir + "/input1.bin").c_str(), fileSize, src0Host, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input1.bin\n", caseDir.c_str());
             rc = 1;
         }
-        if (rc == 0 && !ReadFile((caseDir + "/input2.bin").c_str(), fileSize, src1Host, fileSize)) {
+        fileSize = fileSizeConst;
+        if (rc == 0 && !ReadFile((caseDir + "/input2.bin").c_str(), fileSize, src1Host, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input2.bin\n", caseDir.c_str());
             rc = 1;
         }
-        if (rc == 0 && !ReadFile((caseDir + "/input3.bin").c_str(), fileSize, maskHost, fileSize)) {
+        size_t maskFileSize = maskFileSizeConst;
+        if (rc == 0 && !ReadFile((caseDir + "/input3.bin").c_str(), maskFileSize, maskHost, maskFileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to read %s/input3.bin\n", caseDir.c_str());
             rc = 1;
         }
 
         if (rc == 0) {
-            aclrtMemcpy(maskDevice, fileSize, maskHost, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
-            aclrtMemcpy(src0Device, fileSize, src0Host, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
-            aclrtMemcpy(src1Device, fileSize, src1Host, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(maskDevice, maskFileSizeConst, maskHost, maskFileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(src0Device, fileSizeConst, src0Host, fileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
+            aclrtMemcpy(src1Device, fileSizeConst, src1Host, fileSizeConst, ACL_MEMCPY_HOST_TO_DEVICE);
 
             tc.launchI8(maskDevice, src0Device, src1Device, dstDevice, stream);
 
             aclrtSynchronizeStream(stream);
-            aclrtMemcpy(dstHost, fileSize, dstDevice, fileSize, ACL_MEMCPY_DEVICE_TO_HOST);
+            aclrtMemcpy(dstHost, fileSizeConst, dstDevice, fileSizeConst, ACL_MEMCPY_DEVICE_TO_HOST);
         }
 
-        if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSize)) {
+        if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), dstHost, fileSizeConst)) {
             std::fprintf(stderr, "[ERROR] failed to write %s/output.bin\n", caseDir.c_str());
             rc = 1;
         }

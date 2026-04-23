@@ -21,17 +21,24 @@ for case in CASES:
     dtype = case["dtype"]
     shape = case["shape"]
     valid_shape = case["valid_shape"]
+    vr, vc = valid_shape
+    mask_cols = (vc + 7) // 8
 
     src0 = np.random.randint(1, 10, size=shape).astype(dtype)
     src1 = np.random.randint(1, 10, size=shape).astype(dtype)
-    mask = np.random.randint(0, 2, size=shape).astype(dtype)
+    mask = np.random.randint(0, 256, size=(vr, mask_cols), dtype=np.uint8)
 
     golden = np.zeros(shape, dtype=dtype)
-    vr, vc = valid_shape
-    mask_valid = mask[:vr, :vc]
     src0_valid = src0[:vr, :vc]
     src1_valid = src1[:vr, :vc]
-    golden[:vr, :vc] = np.where(mask_valid != 0, src0_valid, src1_valid)
+    for row in range(vr):
+        for packed_col in range(mask_cols):
+            byte = int(mask[row, packed_col])
+            for bit in range(8):
+                col = packed_col * 8 + bit
+                if col >= vc:
+                    break
+                golden[row, col] = src0_valid[row, col] if ((byte >> bit) & 1) else src1_valid[row, col]
 
     save_case_data(case["name"], {"input1": src0, "input2": src1, "input3": mask, "golden": golden})
     print(f"[INFO] gen_data: {case['name']} shape={shape} valid_shape={valid_shape} dtype={dtype.__name__}")
