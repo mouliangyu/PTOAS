@@ -278,6 +278,37 @@ static FailureOr<Value> normalizeVdupScalarOperand(OpBuilder &builder, Location 
   return builder.create<arith::ExtSIOp>(loc, i16Type, input).getResult();
 }
 
+static Value normalizeByteScalarOperandForHivmCall(OpBuilder &builder, Location loc,
+                                                   Value input,
+                                                   Type semanticElementType) {
+  auto intType = dyn_cast<IntegerType>(input.getType());
+  if (!intType || intType.getWidth() != 8)
+    return input;
+
+  Type i16Type = builder.getIntegerType(16);
+  auto semanticIntType = dyn_cast<IntegerType>(semanticElementType);
+  if (semanticIntType && semanticIntType.isUnsigned())
+    return builder.create<arith::ExtUIOp>(loc, i16Type, input).getResult();
+  return builder.create<arith::ExtSIOp>(loc, i16Type, input).getResult();
+}
+
+static bool isCompatibleScalarForSemanticType(Type semanticType,
+                                              Type scalarType) {
+  if (semanticType == scalarType)
+    return true;
+
+  auto semanticInt = dyn_cast<IntegerType>(semanticType);
+  auto scalarInt = dyn_cast<IntegerType>(scalarType);
+  if (!semanticInt || !scalarInt || semanticInt.getWidth() != scalarInt.getWidth())
+    return false;
+
+  if (semanticInt.isSigned())
+    return scalarInt.isSigned() || scalarInt.isSignless();
+  if (semanticInt.isUnsigned())
+    return scalarInt.isUnsigned() || scalarInt.isSignless();
+  return scalarInt.isSignless();
+}
+
 static std::string getCopyElementFragment(Type elementType) {
   if (!elementType)
     return {};
@@ -938,6 +969,41 @@ static FailureOr<Value> packCopyUbToGmConfig0(Operation *anchor, Value sid,
   return packCopyUbToGmConfig0(anchor, operands);
 }
 
+static FailureOr<Value>
+packCopyUbToUbConfig(Operation *anchor, ValueRange operands) {
+  if (operands.size() != 7)
+    return failure();
+
+  OpBuilder builder(anchor);
+  builder.setInsertionPoint(anchor);
+  Location loc = anchor->getLoc();
+
+  auto getI64Operand = [&](unsigned idx) -> Value {
+    return castIntegerLikeTo(anchor, operands[idx], builder.getI64Type());
+  };
+
+  Value nBurst = getI64Operand(3);
+  Value lenBurst = getI64Operand(4);
+  Value srcStride = getI64Operand(5);
+  Value dstStride = getI64Operand(6);
+  if (!nBurst || !lenBurst || !srcStride || !dstStride)
+    return failure();
+
+  auto shl = [&](Value value, uint64_t amount) -> Value {
+    return builder.create<arith::ShLIOp>(loc, value,
+                                         getI64Constant(builder, loc, amount));
+  };
+  auto bitOr = [&](Value lhs, Value rhs) -> Value {
+    return builder.create<arith::OrIOp>(loc, lhs, rhs);
+  };
+
+  Value config = nBurst;
+  config = bitOr(config, shl(lenBurst, 16));
+  config = bitOr(config, shl(srcStride, 32));
+  config = bitOr(config, shl(dstStride, 48));
+  return config;
+}
+
 static FailureOr<Value> packVbitsortConfig(Operation *anchor, Value repeatTimes) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
@@ -1143,8 +1209,9 @@ static FailureOr<StringRef> buildVdupCallee(MLIRContext *context, pto::VdupOp op
       .getValue();
 }
 
-static FailureOr<StringRef> buildVbrCallee(MLIRContext *context, Type scalarType) {
-  std::string scalar = getVbrScalarFragment(scalarType);
+static FailureOr<StringRef> buildVbrCallee(MLIRContext *context,
+                                          Type semanticElementType) {
+  std::string scalar = getVbrScalarFragment(semanticElementType);
   if (scalar.empty())
     return failure();
   return StringAttr::get(context, "llvm.hivm.vbr." + scalar + ".v300").getValue();
@@ -1317,6 +1384,10 @@ static FailureOr<StringRef> buildCopyGmToUbCallee(MLIRContext *context,
 static StringRef buildCopyUbToGmCallee(MLIRContext *context) {
   return StringAttr::get(context, "llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2.DV")
       .getValue();
+}
+
+static StringRef buildCopyUbToUbCallee(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.MOV.UB.TO.UB.v310").getValue();
 }
 
 static StringRef buildPstiCallee(MLIRContext *context) {
@@ -2260,6 +2331,48 @@ private:
   LoweringState &state;
 };
 
+class LowerCopyUbufToUbufOpPattern final
+    : public OpConversionPattern<pto::CopyUbufToUbufOp> {
+public:
+  explicit LowerCopyUbufToUbufOpPattern(TypeConverter &typeConverter,
+                                        MLIRContext *context,
+                                        LoweringState &state)
+      : OpConversionPattern<pto::CopyUbufToUbufOp>(typeConverter, context),
+        state(state) {}
+
+  LogicalResult
+  matchAndRewrite(pto::CopyUbufToUbufOp op,
+                  pto::CopyUbufToUbufOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto llvmSourceType =
+        dyn_cast<LLVM::LLVMPointerType>(adaptor.getOperands()[0].getType());
+    auto llvmDestType =
+        dyn_cast<LLVM::LLVMPointerType>(adaptor.getOperands()[1].getType());
+    if (!llvmSourceType || !llvmDestType)
+      return rewriter.notifyMatchFailure(op, "expected LLVM pointer copy operands");
+
+    FailureOr<Value> config = packCopyUbToUbConfig(op, adaptor.getOperands());
+    if (failed(config))
+      return rewriter.notifyMatchFailure(op, "failed to materialize copy config");
+
+    StringRef calleeName = buildCopyUbToUbCallee(op.getContext());
+    SmallVector<Value> args{adaptor.getOperands()[1], adaptor.getOperands()[0],
+                            *config};
+    auto funcType = rewriter.getFunctionType(
+        TypeRange{llvmDestType, llvmSourceType, rewriter.getI64Type()},
+        TypeRange{});
+    auto call = rewriter.create<func::CallOp>(op.getLoc(), calleeName,
+                                              TypeRange{}, args);
+    state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
+    rewriter.eraseOp(op);
+    (void)call;
+    return success();
+  }
+
+private:
+  LoweringState &state;
+};
+
 
 template <typename VecScalarOp>
 class LowerVecScalarMaskedOpPattern final
@@ -2482,7 +2595,10 @@ public:
       callArgs.push_back(input);
     } else {
       Type scalarType = getElementTypeFromVectorLike(op.getResult().getType());
-      if (!scalarType || op.getInput().getType() != scalarType) {
+      if (!scalarType ||
+          (op.getInput().getType() != scalarType &&
+           !isCompatibleScalarForSemanticType(scalarType,
+                                              op.getInput().getType()))) {
         return rewriter.notifyMatchFailure(op,
                                            "unexpected scalar-input vdup type");
       }
@@ -2519,7 +2635,8 @@ public:
   matchAndRewrite(pto::VbrOp op, pto::VbrOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     FailureOr<StringRef> calleeName =
-        buildVbrCallee(op.getContext(), op.getValue().getType());
+        buildVbrCallee(op.getContext(),
+                       cast<pto::VRegType>(op.getResult().getType()).getElementType());
     if (failed(calleeName))
       return rewriter.notifyMatchFailure(op, "unsupported vbr VPTO signature");
 
@@ -2528,9 +2645,15 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to convert vbr result type");
 
     Value scalar = adaptor.getValue();
-    if (!scalar || scalar.getType() != op.getValue().getType())
+    Type expectedScalarType =
+        this->getTypeConverter()->convertType(op.getValue().getType());
+    if (!scalar || !expectedScalarType || scalar.getType() != expectedScalarType)
       return rewriter.notifyMatchFailure(op,
                                          "unexpected converted vbr operand type");
+
+    scalar = normalizeByteScalarOperandForHivmCall(
+        rewriter, op.getLoc(), scalar,
+        cast<pto::VRegType>(op.getResult().getType()).getElementType());
 
     auto funcType = rewriter.getFunctionType(TypeRange{scalar.getType()},
                                              TypeRange{resultType});
@@ -2952,6 +3075,9 @@ public:
         return rewriter.notifyMatchFailure(
             op, "unexpected converted scalar-compare operand types");
       }
+      callArgs[1] = normalizeByteScalarOperandForHivmCall(
+          rewriter, op.getLoc(), callArgs[1],
+          cast<pto::VRegType>(op.getSrc().getType()).getElementType());
     } else {
       if (callArgs.size() != 3 || !callArgs[0] || !callArgs[1] || !callArgs[2] ||
           callArgs[0].getType() != callArgs[1].getType() ||
@@ -4298,6 +4424,30 @@ public:
   }
 };
 
+class LowerPbitcastOpPattern final
+    : public OpConversionPattern<pto::PbitcastOp> {
+public:
+  explicit LowerPbitcastOpPattern(TypeConverter &typeConverter,
+                                  MLIRContext *context, LoweringState &state)
+      : OpConversionPattern<pto::PbitcastOp>(typeConverter, context) {}
+
+  LogicalResult
+  matchAndRewrite(pto::PbitcastOp op, pto::PbitcastOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type resultType =
+        this->getTypeConverter()->convertType(op.getResult().getType());
+    if (!resultType)
+      return rewriter.notifyMatchFailure(op,
+                                         "failed to convert pbitcast result type");
+    if (adaptor.getInput().getType() != resultType) {
+      return rewriter.notifyMatchFailure(
+          op, "pbitcast expects identical lowered input/result types");
+    }
+    rewriter.replaceOp(op, adaptor.getInput());
+    return success();
+  }
+};
+
 class LowerVtrcOpPattern final : public OpConversionPattern<pto::VtrcOp> {
 public:
   explicit LowerVtrcOpPattern(TypeConverter &typeConverter, MLIRContext *context,
@@ -5053,14 +5203,15 @@ static void populateVPTOOpLoweringPatterns(VPTOTypeConverter &typeConverter,
                LowerVpreluOpPattern, LowerVaxpyOpPattern,
                LowerVciOpPattern, LowerVexpdifOpPattern,
                LowerVbitsortOpPattern, LowerVtrcOpPattern, LowerVcvtOpPattern,
-               LowerVbitcastOpPattern,
+               LowerVbitcastOpPattern, LowerPbitcastOpPattern,
                LowerPredicateLoadOpPattern<pto::PldiOp>,
                LowerPredicateLoadOpPattern<pto::PldsOp>,
                LowerPredicateStoreOpPattern<pto::PstiOp>,
                LowerPredicateStoreOpPattern<pto::PstsOp>,
                LowerPstuOpPattern, LowerVstusOpPattern, LowerVsturOpPattern,
                LowerCopyOpPattern<pto::CopyGmToUbufOp>,
-               LowerCopyOpPattern<pto::CopyUbufToGmOp>>(
+               LowerCopyOpPattern<pto::CopyUbufToGmOp>,
+               LowerCopyUbufToUbufOpPattern>(
       typeConverter, patterns.getContext(), state);
 }
 
@@ -5104,7 +5255,8 @@ static void configureVPTOOpLoweringTarget(ConversionTarget &target,
                       pto::VcaddOp, pto::VcmaxOp, pto::VcminOp,
                       pto::VcgaddOp, pto::VcgmaxOp, pto::VcgminOp, pto::VcpaddOp,
                       pto::VdupOp, pto::VbrOp,
-                      pto::PpackOp, pto::PunpackOp, pto::VselOp, pto::VselrOp,
+                      pto::PpackOp, pto::PunpackOp, pto::PbitcastOp,
+                      pto::VselOp, pto::VselrOp,
                       pto::PnotOp, pto::PselOp, pto::PandOp, pto::PorOp, pto::PxorOp,
                       pto::PdintlvB8Op, pto::PdintlvB16Op, pto::PdintlvB32Op,
                       pto::PintlvB8Op, pto::PintlvB16Op, pto::PintlvB32Op,
@@ -5114,7 +5266,8 @@ static void configureVPTOOpLoweringTarget(ConversionTarget &target,
                       pto::VbitsortOp, pto::VtrcOp, pto::VcvtOp,
                       pto::VbitcastOp,
                       pto::VcmpOp, pto::VcmpsOp,
-                      pto::CopyGmToUbufOp, pto::CopyUbufToGmOp>();
+                      pto::CopyGmToUbufOp, pto::CopyUbufToGmOp,
+                      pto::CopyUbufToUbufOp>();
   target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
 }
 

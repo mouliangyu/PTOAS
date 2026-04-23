@@ -29,14 +29,14 @@ Cycle-accurate simulator **popped→retire** latency (cycles). Only representati
 
 ## `pto.vci`
 
-- **syntax:** `%result = pto.vci %index {order = "ORDER"} : integer -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vci %index {order = "ASC|DESC"} : integer -> !pto.vreg<NxT>`
 - **semantics:** Generate a lane-index vector from a scalar seed/index value.
 - **inputs:**
   `%index` is the scalar seed or base index.
 - **outputs:**
   `%result` is the generated index vector.
 - **constraints and limitations:**
-  This is an index-generation family, not a numeric conversion. `ORDER` and the
+  This is an index-generation family, not a numeric conversion. `order` and the
   result element type together determine how indices are generated. `%result`
   uses an integer element type, and the scalar `%index` type matches that
   result element type.
@@ -317,4 +317,29 @@ for (int i = 0; i < N; i++)
 %signed = pto.vlds %ub[%lane] : !pto.ptr<si32, ub> -> !pto.vreg<64xsi32>
 %unsigned = pto.vbitcast %signed : !pto.vreg<64xsi32> -> !pto.vreg<64xui32>
 // Bits are identical; interpretation changes from signed to unsigned
+```
+
+## `pto.pbitcast`
+
+- **syntax:** `%result = pto.pbitcast %input : !pto.mask<G0> -> !pto.mask<G1>`
+- **semantics:** Bitwise reinterpretation of a predicate register without
+  changing the underlying predicate-register image. This op makes mask-family
+  reinterpretation explicit in VPTO IR when a producer and consumer expect
+  different `!pto.mask<...>` views of the same hardware predicate state.
+
+- **inputs:**
+  `%input` is the source predicate register value.
+- **outputs:**
+  `%result` is the reinterpreted predicate register value.
+- **constraints and limitations:**
+  1. Both source and result must be `!pto.mask<...>` types.
+  2. `pto.pbitcast` does not materialize or normalize predicate contents; it
+     only changes which mask granularity the surrounding VPTO IR uses to
+     interpret the same predicate bits.
+
+**Example: Reinterpret a b16 predicate as b32 before a consumer**
+```mlir
+%m16 = pto.pintlv_b16 %lhs, %rhs : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>
+%m32 = pto.pbitcast %m16#0 : !pto.mask<b16> -> !pto.mask<b32>
+%result = pto.vsel %a, %b, %m32 : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 ```

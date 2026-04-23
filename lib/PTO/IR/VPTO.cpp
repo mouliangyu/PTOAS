@@ -87,6 +87,12 @@ static LogicalResult verifyMaskTypeWithGranularityLike(Operation *op, Type type,
   return success();
 }
 
+static bool isMaskGranularityAdjacentWidening(StringRef inputGranularity,
+                                              StringRef resultGranularity) {
+  return (inputGranularity == "b8" && resultGranularity == "b16") ||
+         (inputGranularity == "b16" && resultGranularity == "b32");
+}
+
 static LogicalResult verifyEnclosingLoopLike(Operation *op,
                                              StringRef opNameForDiag) {
   if (!op->getParentOfType<LoopLikeOpInterface>()) {
@@ -1534,6 +1540,23 @@ LogicalResult SetMovPadValOp::verify() {
          << valueType;
 }
 
+static bool isCompatibleScalarForSemanticType(Type semanticType,
+                                              Type scalarType) {
+  if (semanticType == scalarType)
+    return true;
+
+  auto semanticInt = dyn_cast<IntegerType>(semanticType);
+  auto scalarInt = dyn_cast<IntegerType>(scalarType);
+  if (!semanticInt || !scalarInt || semanticInt.getWidth() != scalarInt.getWidth())
+    return false;
+
+  if (semanticInt.isSigned())
+    return scalarInt.isSigned() || scalarInt.isSignless();
+  if (semanticInt.isUnsigned())
+    return scalarInt.isUnsigned() || scalarInt.isSignless();
+  return scalarInt.isSignless();
+}
+
 LogicalResult VbrOp::verify() {
   if (failed(verifyVRegTypeLike(*this, getResult().getType(), "result")))
     return failure();
@@ -1542,7 +1565,8 @@ LogicalResult VbrOp::verify() {
   Type elementType = getValue().getType();
   if (isa<ShapedType, VectorType>(elementType))
     return emitOpError("value must be a scalar matching the result element type");
-  if (elementType != resultVecType.getElementType())
+  Type resultElementType = resultVecType.getElementType();
+  if (!isCompatibleScalarForSemanticType(resultElementType, elementType))
     return emitOpError("value type must match result element type");
   return success();
 }
@@ -1653,6 +1677,22 @@ LogicalResult Vgather2Op::verify() {
 }
 
 LogicalResult CopyUbufToUbufOp::verify() {
+  if (!isBufferLike(getSource().getType()) || !isBufferLike(getDestination().getType()))
+    return emitOpError("requires pointer-like source and destination");
+  if (classifyMemoryRole(getSource().getType()) != MemoryRole::UB ||
+      classifyMemoryRole(getDestination().getType()) != MemoryRole::UB)
+    return emitOpError("requires UB-backed source and destination");
+  return success();
+}
+
+void DmaCopyOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+LogicalResult DmaCopyOp::verify() {
   if (!isBufferLike(getSource().getType()) || !isBufferLike(getDestination().getType()))
     return emitOpError("requires pointer-like source and destination");
   if (classifyMemoryRole(getSource().getType()) != MemoryRole::UB ||
@@ -1932,7 +1972,8 @@ LogicalResult VdupOp::verify() {
   if (getPosition())
     return emitOpError("position is only supported for vector input");
 
-  if (inputType != resultType.getElementType())
+  Type resultElementType = resultType.getElementType();
+  if (!isCompatibleScalarForSemanticType(resultElementType, inputType))
     return emitOpError("scalar input must match result element type");
 
   return success();
@@ -2114,6 +2155,22 @@ LogicalResult PunpackOp::verify() {
     return failure();
   if (getPart() != "LOWER")
     return emitOpError("currently supports only LOWER part");
+  auto inputMaskType = cast<MaskType>(getInput().getType());
+  auto resultMaskType = cast<MaskType>(getResult().getType());
+  StringRef inputGranularity = inputMaskType.getGranularity();
+  StringRef resultGranularity = resultMaskType.getGranularity();
+  if (inputGranularity != resultGranularity &&
+      !isMaskGranularityAdjacentWidening(inputGranularity, resultGranularity)) {
+    return emitOpError(
+        "requires result mask granularity to match the input or widen by one step");
+  }
+  return success();
+}
+
+LogicalResult PbitcastOp::verify() {
+  if (failed(verifyMaskTypeLike(*this, getInput().getType(), "input type")) ||
+      failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
   return success();
 }
 
@@ -2333,7 +2390,20 @@ LogicalResult VexpOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VlnOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VsqrtOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VnegOp::verify() { return verifyUnaryVecOp(*this); }
-LogicalResult VreluOp::verify() { return verifyUnaryVecOp(*this); }
+LogicalResult VreluOp::verify() {
+  if (failed(verifyUnaryVecOp(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  Type elemType = inputType.getElementType();
+  if (auto intType = dyn_cast<IntegerType>(elemType)) {
+    if (intType.getWidth() != 32 || intType.isUnsigned())
+      return emitOpError("requires si32/i32/f16/f32 vector element type");
+    return success();
+  }
+  if (!elemType.isF16() && !elemType.isF32())
+    return emitOpError("requires si32/i32/f16/f32 vector element type");
+  return success();
+}
 LogicalResult VnotOp::verify() { return verifyUnaryVecOp(*this); }
 
 template <typename BinaryOp>
@@ -2582,7 +2652,9 @@ LogicalResult VcmpsOp::verify() {
       failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
     return failure();
   auto srcType = cast<VRegType>(getSrc().getType());
-  if (getScalar().getType() != srcType.getElementType())
+  Type srcElementType = srcType.getElementType();
+  Type scalarType = getScalar().getType();
+  if (!isCompatibleScalarForSemanticType(srcElementType, scalarType))
     return emitOpError("requires scalar type to match source element type");
   if (!isSupportedCmpMode(getCmpMode()))
     return emitOpError("requires cmp_mode to be one of eq/ne/lt/le/gt/ge");

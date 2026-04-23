@@ -43,6 +43,15 @@ y: pto.i32 = 1024      # Type annotation
 z = pto.ui16(7)        # Explicit unsigned 16-bit constant
 ```
 
+Static dtype bindings can also be called like constructors. This is useful when
+the dtype comes from compile-time metadata such as `element_type`:
+
+```python
+idx_dtype = tile.element_type
+zero_idx = idx_dtype(0)
+v_col = idx_dtype(col)
+```
+
 Integer sign semantics are part of the DSL type surface. `pto.si16`,
 `pto.ui16`, and `pto.i16` are distinct scalar dtypes and lower to `si16`,
 `ui16`, and `i16` respectively in VPTO IR.
@@ -207,6 +216,19 @@ Masks are typed by their bit granularity:
 mask_ty = pto.mask_b32
 mask: pto.mask_b32 = pto.make_mask(pto.f32, PAT.ALL)
 ```
+
+Typed masks also support explicit type reinterpretation via `pto.pbitcast`:
+
+```python
+mask_b8 = pto.plds(mask_ptr, offset, pto.PredicateDist.US)
+mask_b16 = pto.pbitcast(mask_b8, pto.mask_b16)
+mask_b32 = pto.pbitcast(mask_b16, pto.mask_b32)
+```
+
+`pto.pbitcast(...)` is the predicate analogue of `pto.vbitcast(...)`:
+- it changes the static mask granularity seen by later DSL/VPTO consumers
+- it preserves the underlying predicate bit image
+- it does not perform pack/unpack or interleave/deinterleave by itself
 
 Mask operations must match the vector element family:
 - `f32`, `i32`, `si32`, and `ui32` vectors use `mask_b32`
