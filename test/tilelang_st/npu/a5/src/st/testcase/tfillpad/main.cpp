@@ -26,7 +26,7 @@ void LaunchTFILLPAD_f32_128x128_pad_128x127(float *src, float *dst, void *stream
 void LaunchTFILLPAD_f32_128x160_pad_128x127(float *src, float *dst, void *stream);
 void LaunchTFILLPAD_f32_128x160_pad_128x127_v2(float *src, float *dst, void *stream);
 void LaunchTFILLPAD_f32_260x16_pad_260x7(float *src, float *dst, void *stream);
-void LaunchTFILLPAD_s16_260x32_pad_260x7_v2(int16_t *src, int16_t *dst, void *stream);
+void LaunchTFILLPAD_u16_260x32_pad_260x7(uint16_t *src, uint16_t *dst, void *stream);
 void LaunchTFILLPAD_s8_260x64_pad_260x7(int8_t *src, int8_t *dst, void *stream);
 void LaunchTFILLPAD_s16_260x32_pad_260x7(int16_t *src, int16_t *dst, void *stream);
 void LaunchTFILLPAD_s32_260x32_pad_260x7(int32_t *src, int32_t *dst, void *stream);
@@ -78,12 +78,11 @@ static const TestCase kCases[] = {
      [](void *src, void *dst, void *stream) { wrapLaunch<float>(src, dst, stream, LaunchTFILLPAD_f32_260x16_pad_260x7); },
      260, 16, 260, 16, 260, 7, sizeof(float)},  // CHANGED: validCols=16, srcCols=7
 
-    // Case 6: int16, src=260x7, dst=260x32, LoadPad=Min, FillPad=Max (v2)
+    // Case 6: uint16, src=260x7, dst=260x32, LoadPad=Min, FillPad=Max
     // Output: 260x32 (full dst tile)
-    // Changed from uint16 to int16 to match ExpandTileOp dtype support
-    {"s16_260x32_pad_260x7_v2", DataType::S16,
-     [](void *src, void *dst, void *stream) { wrapLaunch<int16_t>(src, dst, stream, LaunchTFILLPAD_s16_260x32_pad_260x7_v2); },
-     260, 32, 260, 32, 260, 7, sizeof(int16_t)},
+    {"u16_260x32_pad_260x7", DataType::U16,
+     [](void *src, void *dst, void *stream) { wrapLaunch<uint16_t>(src, dst, stream, LaunchTFILLPAD_u16_260x32_pad_260x7); },
+     260, 32, 260, 32, 260, 7, sizeof(uint16_t)},
 
     // Case 7: int8, src=260x7, dst=260x64, LoadPad=Min, FillPad=Max
     // Output: 260x64 (full dst tile)

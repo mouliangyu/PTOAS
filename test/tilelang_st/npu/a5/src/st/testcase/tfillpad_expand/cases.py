@@ -45,17 +45,17 @@ PADVAL_ZERO = "Zero"     # zero fill
 PADVAL_NEG1 = "Neg1"     # -1.0f for float, -1 for integers (Custom)
 
 CASES = [
-    # ========== Case 1: int16, src=259x7, dst=260x32, expand, LoadPad=Min, FillPad=Max ==========
+    # ========== Case 1: uint16, src=259x7, dst=260x32, expand, LoadPad=Min, FillPad=Max ==========
 
     {
-        "name": "s16_260x32_src_259x7",
-        "dtype": np.int16,
+        "name": "u16_260x32_src_259x7",
+        "dtype": np.uint16,
         "shape": (259, 7),               # src physical (C++ shape3=259, shape4=7)
         "valid_shape": (259, 7),         # src valid region (actual data)
         "dst_shape": (260, 32),          # dst physical
         "dst_valid_shape": (260, 32),    # dst valid (output size)
-        "load_padval": PADVAL_MIN,       # TLOAD: fill cols 7-31 with MIN (int16 MIN=-32768)
-        "fill_padval": PADVAL_MAX,       # TFILLPAD_EXPAND: fill expansion region with MAX (int16 MAX=32767)
+        "load_padval": PADVAL_MIN,       # TLOAD: fill cols 7-31 with MIN (uint16 MIN=0)
+        "fill_padval": PADVAL_MAX,       # TFILLPAD_EXPAND: fill expansion region with MAX (uint16 MAX=65535)
         "eps": 0,
     },
 

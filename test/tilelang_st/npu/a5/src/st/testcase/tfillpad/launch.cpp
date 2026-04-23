@@ -44,12 +44,12 @@ void LaunchTFILLPAD_f32_260x16_pad_260x7(float *src, float *dst, void *stream) {
     TFILLPAD_f32_260x16_pad_260x7<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
 }
 
-// ========== Case 6: int16, 260x32, valid=260x7 (v2) ==========
+// ========== Case 6: uint16, 260x32, valid=260x7 ==========
 
-extern "C" __global__ AICORE void TFILLPAD_s16_260x32_pad_260x7_v2(__gm__ int16_t *src, __gm__ int16_t *dst);
+extern "C" __global__ AICORE void TFILLPAD_u16_260x32_pad_260x7(__gm__ uint16_t *src, __gm__ uint16_t *dst);
 
-void LaunchTFILLPAD_s16_260x32_pad_260x7_v2(int16_t *src, int16_t *dst, void *stream) {
-    TFILLPAD_s16_260x32_pad_260x7_v2<<<1, nullptr, stream>>>((__gm__ int16_t *)src, (__gm__ int16_t *)dst);
+void LaunchTFILLPAD_u16_260x32_pad_260x7(uint16_t *src, uint16_t *dst, void *stream) {
+    TFILLPAD_u16_260x32_pad_260x7<<<1, nullptr, stream>>>((__gm__ uint16_t *)src, (__gm__ uint16_t *)dst);
 }
 
 // ========== Case 7: int8, 260x64, valid=260x7 ==========

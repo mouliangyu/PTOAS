@@ -22,10 +22,10 @@
 using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
-void LaunchTFILLPAD_EXPAND_s16_260x32_src_259x7(int16_t *src, int16_t *dst, void *stream);
+void LaunchTFILLPAD_EXPAND_u16_260x32_src_259x7(uint16_t *src, uint16_t *dst, void *stream);
 void LaunchTFILLPAD_EXPAND_s8_260x64_src_259x7(int8_t *src, int8_t *dst, void *stream);
 
-enum class DataType { S16, S8 };
+enum class DataType { U16, S8 };
 
 struct TestCase {
     const char *name;
@@ -49,11 +49,10 @@ void wrapLaunch(void *src, void *dst, void *stream, void (*fn)(T *, T *, void *)
 }
 
 static const TestCase kCases[] = {
-    // ========== int16 case (C++ case 8) ==========
-    // Changed from uint16 to int16 to match ExpandTileOp dtype support
-    {"s16_260x32_src_259x7", DataType::S16,
-     [](void *src, void *dst, void *stream) { wrapLaunch<int16_t>(src, dst, stream, LaunchTFILLPAD_EXPAND_s16_260x32_src_259x7); },
-     260, 32, 259, 7, 260, 32, 260, 32, sizeof(int16_t)},
+    // ========== uint16 case (C++ case 8) ==========
+    {"u16_260x32_src_259x7", DataType::U16,
+     [](void *src, void *dst, void *stream) { wrapLaunch<uint16_t>(src, dst, stream, LaunchTFILLPAD_EXPAND_u16_260x32_src_259x7); },
+     260, 32, 259, 7, 260, 32, 260, 32, sizeof(uint16_t)},
 
     // ========== int8 case (C++ case 9) ==========
     {"s8_260x64_src_259x7", DataType::S8,

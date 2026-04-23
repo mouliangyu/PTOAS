@@ -12,13 +12,12 @@
 #define AICORE [aicore]
 #endif
 
-// ========== int16 kernel (C++ case 8) ==========
-// Changed from uint16 to int16 to match ExpandTileOp dtype support
+// ========== uint16 kernel (C++ case 8) ==========
 
-extern "C" __global__ AICORE void TFILLPAD_EXPAND_s16_260x32_src_259x7(__gm__ int16_t *src, __gm__ int16_t *dst);
+extern "C" __global__ AICORE void TFILLPAD_EXPAND_u16_260x32_src_259x7(__gm__ uint16_t *src, __gm__ uint16_t *dst);
 
-void LaunchTFILLPAD_EXPAND_s16_260x32_src_259x7(int16_t *src, int16_t *dst, void *stream) {
-    TFILLPAD_EXPAND_s16_260x32_src_259x7<<<1, nullptr, stream>>>((__gm__ int16_t *)src, (__gm__ int16_t *)dst);
+void LaunchTFILLPAD_EXPAND_u16_260x32_src_259x7(uint16_t *src, uint16_t *dst, void *stream) {
+    TFILLPAD_EXPAND_u16_260x32_src_259x7<<<1, nullptr, stream>>>((__gm__ uint16_t *)src, (__gm__ uint16_t *)dst);
 }
 
 // ========== int8 kernel (C++ case 9) ==========

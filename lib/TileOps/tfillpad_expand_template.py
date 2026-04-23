@@ -1,4 +1,12 @@
-"""TileLang DSL templates for pto.tfillpad_expand
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+"""TileLang DSL template for pto.tfillpad_expand
 
 Expand mode semantics:
   - TFILLPAD_EXPAND: src rows may be less than dst rows
@@ -12,32 +20,49 @@ Strategy:
   - Phase 3: Copy tail valid lanes (cols aligned_col to src_valid_cols-1)
   - Phase 4: Fill row expansion
 
-Templates organization:
-  - One @pto.vkernel per dtype, explicitly bound via dtypes=[(dtype, dtype)]
-  - ExpandTileOp selects matching template based on dtype signature
-  - Each template is self-contained for easy review and maintenance
-
-Address alignment:
-  - vlds/vsts require 32-byte aligned addresses
+Address alignment and unaligned handling:
+  - vlds/vsts require 32-byte aligned base addresses
+  - Phase 1: col=0 is always aligned (tile base address is aligned), each iteration
+    accesses col + lanes which maintains alignment
+  - Phase 2/3/4: handle non-aligned lengths using make_mask() to control active lanes
+  - make_mask approach: simpler than vldus/vstus for isolated tail operations, no need
+    for alignment state management (vldas/vldus/vsta sequence)
+  - vldus/vstus is suitable for continuous unaligned streams; for single tail ops,
+    mask-controlled vlds/vsts is more direct and efficient
 """
 
 import tilelang_dsl as pto
 
 _NEG1_F32 = -1.0
 
+# All supported dtype pairs for tfillpad_expand
+_DTYPE_SIGNATURES = [
+    (pto.f32, pto.f32),
+    (pto.i16, pto.i16),
+    (pto.si16, pto.si16),
+    (pto.ui16, pto.ui16),
+    (pto.i32, pto.i32),
+    (pto.si32, pto.si32),
+    (pto.ui32, pto.ui32),
+    (pto.i8, pto.i8),
+    (pto.si8, pto.si8),
+    (pto.ui8, pto.ui8),
+]
 
-# ============================================================================
-# f32 template
-# ============================================================================
 
 @pto.vkernel(
     target="a5",
     op="pto.tfillpad_expand",
-    dtypes=[(pto.f32, pto.f32)],
+    dtypes=_DTYPE_SIGNATURES,
 )
-def template_tfillpad_expand_f32(src: pto.Tile, dst: pto.Tile):
-    """f32 tfillpad_expand template."""
-    dtype = pto.f32
+def template_tfillpad_expand(src: pto.Tile, dst: pto.Tile):
+    """Unified tfillpad_expand template for all dtypes.
+
+    Main logic is identical across dtypes; only PadValue handling differs:
+      - f32: ZERO + expansion uses -1.0 (special encoding), otherwise eval() or 0.0
+      - integer families: eval() or dtype-specific zero constant
+    """
+    dtype = dst.element_type
     src_rows, _ = src.shape
     src_valid_rows, src_valid_cols = src.valid_shape
     dst_rows, _ = dst.shape
@@ -48,13 +73,59 @@ def template_tfillpad_expand_f32(src: pto.Tile, dst: pto.Tile):
     has_tail = src_valid_cols > aligned_col
     has_valid_expansion = (src_valid_cols < dst_valid_cols) or (src_valid_rows < dst_valid_rows)
 
-    # PadValue handling for f32
-    if pto.constexpr(dst.pad_value == pto.PadValue.ZERO and has_valid_expansion):
-        fill_scalar = pto.f32(_NEG1_F32)
-    elif pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.f32(0.0)
+    # PadValue handling - dtype-specific
+    if pto.constexpr(dtype == pto.f32):
+        if pto.constexpr(dst.pad_value == pto.PadValue.ZERO and has_valid_expansion):
+            fill_scalar = pto.f32(_NEG1_F32)
+        elif pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.f32(0.0)
+    elif pto.constexpr(dtype == pto.ui16):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.ui16(0)
+    elif pto.constexpr(dtype == pto.si16):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.si16(0)
+    elif pto.constexpr(dtype == pto.i16):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.i16(0)
+    elif pto.constexpr(dtype == pto.ui32):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.ui32(0)
+    elif pto.constexpr(dtype == pto.si32):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.si32(0)
+    elif pto.constexpr(dtype == pto.i32):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.i32(0)
+    elif pto.constexpr(dtype == pto.ui8):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.ui8(0)
+    elif pto.constexpr(dtype == pto.si8):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.si8(0)
+    elif pto.constexpr(dtype == pto.i8):
+        if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
+            fill_scalar = dst.pad_value.eval()
+        else:
+            fill_scalar = pto.i8(0)
 
     # Phase 1: Copy aligned valid blocks
     for row in range(0, src_valid_rows, 1):
@@ -82,513 +153,6 @@ def template_tfillpad_expand_f32(src: pto.Tile, dst: pto.Tile):
             pto.vsts(data, dst[row, aligned_col:], mask_copy)
 
     # Phase 4: Fill row expansion
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-# ============================================================================
-# i16 family templates
-# ============================================================================
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.i16, pto.i16)],
-)
-def template_tfillpad_expand_i16(src: pto.Tile, dst: pto.Tile):
-    """i16 (signless 16-bit) tfillpad_expand template."""
-    dtype = pto.i16
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.i16(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.si16, pto.si16)],
-)
-def template_tfillpad_expand_si16(src: pto.Tile, dst: pto.Tile):
-    """si16 (signed 16-bit) tfillpad_expand template."""
-    dtype = pto.si16
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.si16(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.ui16, pto.ui16)],
-)
-def template_tfillpad_expand_ui16(src: pto.Tile, dst: pto.Tile):
-    """ui16 (unsigned 16-bit) tfillpad_expand template."""
-    dtype = pto.ui16
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.ui16(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-# ============================================================================
-# i32 family templates
-# ============================================================================
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.i32, pto.i32)],
-)
-def template_tfillpad_expand_i32(src: pto.Tile, dst: pto.Tile):
-    """i32 (signless 32-bit) tfillpad_expand template."""
-    dtype = pto.i32
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.i32(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.si32, pto.si32)],
-)
-def template_tfillpad_expand_si32(src: pto.Tile, dst: pto.Tile):
-    """si32 (signed 32-bit) tfillpad_expand template."""
-    dtype = pto.si32
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.si32(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.ui32, pto.ui32)],
-)
-def template_tfillpad_expand_ui32(src: pto.Tile, dst: pto.Tile):
-    """ui32 (unsigned 32-bit) tfillpad_expand template."""
-    dtype = pto.ui32
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.ui32(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-# ============================================================================
-# i8 family templates
-# ============================================================================
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.i8, pto.i8)],
-)
-def template_tfillpad_expand_i8(src: pto.Tile, dst: pto.Tile):
-    """i8 (signless 8-bit) tfillpad_expand template."""
-    dtype = pto.i8
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.i8(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.si8, pto.si8)],
-)
-def template_tfillpad_expand_si8(src: pto.Tile, dst: pto.Tile):
-    """si8 (signed 8-bit) tfillpad_expand template."""
-    dtype = pto.si8
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.si8(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
-    if pto.constexpr(src_rows < dst_rows):
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    return
-
-
-@pto.vkernel(
-    target="a5",
-    op="pto.tfillpad_expand",
-    dtypes=[(pto.ui8, pto.ui8)],
-)
-def template_tfillpad_expand_ui8(src: pto.Tile, dst: pto.Tile):
-    """ui8 (unsigned 8-bit) tfillpad_expand template."""
-    dtype = pto.ui8
-    src_rows, _ = src.shape
-    src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, _ = dst.shape
-    dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    lanes = pto.get_lanes(dtype)
-    aligned_col = (src_valid_cols // lanes) * lanes
-    has_tail = src_valid_cols > aligned_col
-
-    if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
-        fill_scalar = dst.pad_value.eval()
-    else:
-        fill_scalar = pto.ui8(0)
-
-    for row in range(0, src_valid_rows, 1):
-        remained = aligned_col
-        for col in range(0, aligned_col, lanes):
-            mask, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, col:])
-            pto.vsts(data, dst[row, col:], mask)
-
-    if pto.constexpr(aligned_col < dst_valid_cols):
-        for row in range(0, dst_valid_rows, 1):
-            remained = dst_valid_cols - aligned_col
-            for col in range(aligned_col, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
-    if pto.constexpr(has_tail):
-        for row in range(0, src_valid_rows, 1):
-            remained = src_valid_cols - aligned_col
-            mask_copy, remained = pto.make_mask(dtype, remained)
-            data = pto.vlds(src[row, aligned_col:])
-            pto.vsts(data, dst[row, aligned_col:], mask_copy)
-
     if pto.constexpr(src_rows < dst_rows):
         for row in range(src_rows, dst_rows, 1):
             remained = dst_valid_cols
