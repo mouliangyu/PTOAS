@@ -255,6 +255,18 @@ static void appendOpContextAttrs(
     if (roundMode)
       attrs.emplace_back("round_mode", *roundMode);
   }
+  if (auto tcmp = dyn_cast<pto::TCmpOp>(op)) {
+    if (auto cmpModeAttr = tcmp.getCmpModeAttr()) {
+      attrs.emplace_back("cmp_mode",
+                         stringifyCmpMode(cmpModeAttr.getValue()).str());
+    }
+  }
+  if (auto tcmps = dyn_cast<pto::TCmpSOp>(op)) {
+    if (auto cmpModeAttr = tcmps.getCmpModeAttr()) {
+      attrs.emplace_back("cmp_mode",
+                         stringifyCmpMode(cmpModeAttr.getValue()).str());
+    }
+  }
 }
 
 static bool getStaticIntFromValue(Value value, int64_t &out) {
@@ -806,8 +818,7 @@ void ExpandTileOpPass::runOnOperation() {
 
   if (tilelangPath.empty()) {
     mod.emitError(
-        "ExpandTileOp requires a non-empty tilelang-path when "
-        "--enable-tile-op-expand is set");
+        "ExpandTileOp requires a non-empty tilelang-path on the VPTO backend");
     signalPassFailure();
     return;
   }

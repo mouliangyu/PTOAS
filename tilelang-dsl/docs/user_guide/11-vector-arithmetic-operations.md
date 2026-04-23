@@ -117,18 +117,24 @@ abs_vec = pto.vabs(vec_f32, mask32)
 
 #### `pto.vcadd(vec: VRegType, mask: MaskType) -> VRegType`
 
-**Description**: Complex addition of vector elements (treating pairs as complex numbers).
+**Description**: Reduction add of vector elements.
 
 **Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `vec` | `VRegType` | Input vector (interpreted as complex pairs) |
+| `vec` | `VRegType` | Input vector |
 | `mask` | `MaskType` | Predicate mask |
 
 **Returns**:
 | Return Value | Type | Description |
 |--------------|------|-------------|
-| `result` | `VRegType` | Complex addition result |
+| `result` | `VRegType` | Reduction result vector |
+
+**Type Rules**:
+- For floating-point inputs and `i32/ui32`, the result vector type matches the input vector type.
+- For `i8/ui8` inputs, `pto.vcadd` returns a widened `i16/ui16` vector.
+- For `i16/ui16` inputs, `pto.vcadd` returns a widened `i32/ui32` vector.
+- The result mask granularity follows the result vector element type.
 
 #### `pto.vcmax(vec: VRegType, mask: MaskType) -> VRegType`
 
@@ -337,23 +343,27 @@ neg_vec = pto.vneg(vec_f32, mask32)
 **Constraints**:
 - Operates on integer vector types only
 
-#### `pto.vexpdiff(vec: VRegType, mask: MaskType) -> VRegType`
+#### `pto.vexpdif(vec: VRegType, max_vec: VRegType, part: pto.VcvtPartMode) -> VRegType`
 
-**Description**: Exponential difference of vector elements.
+**Description**: Fused exponential difference `exp(vec - max_vec)` for numerically stable softmax lowering.
 
 **Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `vec` | `VRegType` | Input vector |
-| `mask` | `MaskType` | Predicate mask |
+| `max_vec` | `VRegType` | Per-lane max vector subtracted before exponentiation |
+| `part` | `pto.VcvtPartMode` | Output part selector enum. Use `pto.VcvtPartMode.EVEN` or `pto.VcvtPartMode.ODD`. |
 
 **Returns**:
 | Return Value | Type | Description |
 |--------------|------|-------------|
-| `result` | `VRegType` | Exponential difference values |
+| `result` | `VRegType` | Exponential difference values; result element type is `f32` |
 
 **Constraints**:
-- For floating-point vector types only
+- Supports `f16` and `f32` input vectors only
+- `vec` and `max_vec` must use the same vector type
+- `part` should use `pto.VcvtPartMode.EVEN` or `pto.VcvtPartMode.ODD`
+- Canonical strings `"EVEN"` / `"ODD"` are still accepted for compatibility
 
 ### Binary Vector Operations
 
@@ -1348,7 +1358,7 @@ family.
 **Attribute Enums**:
 - `pto.VcvtRoundMode`: `R`, `A`, `F`, `C`, `Z`, `O`
 - `pto.VcvtSatMode`: `SAT`, `NOSAT`
-- `pto.VcvtPartMode`: `EVEN`, `ODD`
+- `pto.VcvtPartMode`: `EVEN`, `ODD`, `P0`, `P1`, `P2`, `P3`
 
 **Parameters**:
 | Parameter | Type | Description |
@@ -1358,7 +1368,7 @@ family.
 | `mask` | `MaskType` | Predicate mask selecting active source lanes. Its granularity must match the source vector family, not the destination family |
 | `rnd` | `pto.VcvtRoundMode` \| `None` | Optional rounding-mode attribute lowered to VPTO `rnd` |
 | `sat` | `pto.VcvtSatMode` \| `None` | Optional saturation attribute lowered to VPTO `sat` |
-| `part` | `pto.VcvtPartMode` \| `None` | Optional even/odd packing selector lowered to VPTO `part` |
+| `part` | `pto.VcvtPartMode` \| `None` | Optional width-changing lane-placement selector lowered to VPTO `part` |
 
 **Returns**:
 | Return Value | Type | Description |
@@ -1378,10 +1388,31 @@ family.
   `i8`/`si8`/`ui8` use `mask_b8`.
 - The enum form is preferred. For compatibility, canonical strings such as
   `"R"`, `"SAT"`, and `"EVEN"` are also accepted.
+- VPTO `part` supports two families: `Part` (`EVEN`/`ODD`) for ordinary
+  width-changing conversions (e.g. `32 -> 16`, `16 -> 32`), and `Part_T`
+  (`P0`–`P3`) for 4-way packed placement (e.g. `32 -> 8`, fp8/fp4 flows).
+
+  | Mode | VPTO spelling | Family | Description | TileLang DSL v1 status |
+  |------|---------------|--------|-------------|------------------------|
+  | `EVEN` | `PART_EVEN` | `Part` | Output to even-indexed lanes | Exposed as `pto.VcvtPartMode.EVEN` |
+  | `ODD` | `PART_ODD` | `Part` | Output to odd-indexed lanes | Exposed as `pto.VcvtPartMode.ODD` |
+  | `P0` | `PART_P0` | `Part_T` | Output to sub-part 0 in 4-way packed placement | Exposed as `pto.VcvtPartMode.P0` |
+  | `P1` | `PART_P1` | `Part_T` | Output to sub-part 1 in 4-way packed placement | Exposed as `pto.VcvtPartMode.P1` |
+  | `P2` | `PART_P2` | `Part_T` | Output to sub-part 2 in 4-way packed placement | Exposed as `pto.VcvtPartMode.P2` |
+  | `P3` | `PART_P3` | `Part_T` | Output to sub-part 3 in 4-way packed placement | Exposed as `pto.VcvtPartMode.P3` |
 - Only backend-supported source/destination type pairs are legal. For the full
   A5 `vcvt` type matrix, width-changing packing rules, and attribute-sensitive
   forms, refer to
   [`../vpto_spec/vpto-spec-current.md`](../vpto_spec/vpto-spec-current.md).
+- Attribute requirements are type-pair specific. The DSL enforces the same
+  per-form contract as VPTO, so some pairs require attributes while others
+  reject them.
+- Examples:
+  `f32 -> si32` requires `rnd` and `sat`;
+  `f16 -> si32` requires `rnd` and `part`, and rejects `sat`;
+  `bf16 -> f16` requires `rnd` and `sat`;
+  `f16 -> f32` requires `part`;
+  `si32 -> f32` requires `rnd`.
 - VPTO does not define a `mask_b64` form. Conversions that produce `si64`
   results still use the typed mask granularity of the source vector family.
 - Width-changing conversions continue to follow VPTO packing semantics even on
@@ -1396,6 +1427,22 @@ vec_f32 = pto.vcvt(vec_f16, pto.f32, mask16)
 
 mask32 = pto.make_mask(pto.f32, PAT.ALL)
 vec_i32 = pto.vcvt(vec_f32, pto.si32, mask32)
+
+vec_i32_wide = pto.vcvt(
+    vec_f16,
+    pto.si32,
+    mask16,
+    rnd=pto.VcvtRoundMode.R,
+    part=pto.VcvtPartMode.EVEN,
+)
+
+vec_f16_from_bf16 = pto.vcvt(
+    vec_bf16,
+    pto.f16,
+    mask16,
+    rnd=pto.VcvtRoundMode.R,
+    sat=pto.VcvtSatMode.SAT,
+)
 
 vec_f16_narrow = pto.vcvt(
     vec_f32,
@@ -1452,7 +1499,7 @@ None. The op writes UB memory directly.
 - `dest` and `src0` through `src3` must be UB-backed pointers
 - Inputs must already be sorted according to the order encoded by `config`
 
-**Order Mode Enum**: The `OrderMode` enum provides type-safe order selection for `pto.vci` operations. Currently only `ASC` (ascending order) is supported, with more order options planned for future releases.
+**Order Mode Enum**: The `OrderMode` enum provides type-safe order selection for `pto.vci` operations. `ASC` and `DESC` are supported.
 
 #### `pto.vci(index: ScalarType, order: OrderMode = OrderMode.ASC) -> VRegType`
 
@@ -1462,7 +1509,7 @@ None. The op writes UB memory directly.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `index` | `ScalarType` | Scalar seed or base index value |
-| `order` | `OrderMode` | Order mode enum (default: `OrderMode.ASC` for ascending order) |
+| `order` | `OrderMode` | Order mode enum (default: `OrderMode.ASC`; supported values: `ASC`, `DESC`) |
 
 **Returns**:
 | Return Value | Type | Description |
@@ -1472,12 +1519,15 @@ None. The op writes UB memory directly.
 **Constraints**:
 - This is an index-generation family, not a numeric conversion
 - The `order` parameter and result element type together determine how indices are generated
-- Currently only ascending order (`OrderMode.ASC`) is supported
+- Supported order modes are ascending (`OrderMode.ASC`) and descending (`OrderMode.DESC`)
 
 **Example**:
 ```python
 # Generate ascending indices starting from 0
 indices = pto.vci(pto.i32(0), OrderMode.ASC)
+
+# Generate descending indices starting from the seed value
+indices_desc = pto.vci(pto.i32(63), OrderMode.DESC)
 
 # Keyword form for the optional order argument is also supported
 indices_kw = pto.vci(pto.i32(0), order=OrderMode.ASC)

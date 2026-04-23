@@ -7,9 +7,9 @@ Operations for pipeline synchronization and buffer management.
 The following enum types provide type-safe parameter specification for synchronization operations:
 
 - **`BarrierType`**: Memory barrier types for `pto.mem_bar`
-  - `VV_ALL`: All prior vector ops complete before subsequent
-  - `VST_VLD`: All prior vector stores visible before subsequent loads  
-  - `VLD_VST`: All prior vector loads complete before subsequent stores
+  - `VV_ALL`, `VST_VLD`, `VLD_VST`, `VST_VST`: vector→vector barriers
+  - `VS_ALL`, `VST_LD`, `VLD_ST`, `VST_ST`: vector→scalar barriers
+  - `SV_ALL`, `ST_VLD`, `LD_VST`, `ST_VST`: scalar→vector barriers
 
 - **`Pipe`**: Hardware pipeline identifiers
   - `MTE2`: Memory Transfer Engine 2 pipeline
@@ -127,7 +127,7 @@ pto.rls_buf(Pipe.MTE2, 0, 0)
 **Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `barrier_type` | `BarrierType` | Barrier type: `BarrierType.VV_ALL` (all prior vector ops complete before subsequent), `BarrierType.VST_VLD` (all prior vector stores visible before subsequent loads), `BarrierType.VLD_VST` (all prior vector loads complete before subsequent stores) |
+| `barrier_type` | `BarrierType` | Barrier type controlling prior/subsequent instruction ordering. Supported values are `BarrierType.VV_ALL`, `BarrierType.VST_VLD`, `BarrierType.VLD_VST`, `BarrierType.VST_VST`, `BarrierType.VS_ALL`, `BarrierType.VST_LD`, `BarrierType.VLD_ST`, `BarrierType.VST_ST`, `BarrierType.SV_ALL`, `BarrierType.ST_VLD`, `BarrierType.LD_VST`, and `BarrierType.ST_VST`. |
 
 **Returns**: None (side-effect operation)
 
@@ -335,7 +335,7 @@ pto.set_mov_pad_val(pad_value: ScalarType) -> None
 **Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `pad_value` | `ScalarType` | Scalar value used for padding. Supported types: `pto.i8`, `pto.i16`, `pto.i32`, `pto.f16`, `pto.bf16`, `pto.f32`. The value's bit pattern is encoded into the hardware pad register. For standard pad values, use `PadValue.eval()` to obtain the appropriate scalar: `0` or `0.0` for `PadValue.ZERO`, dtype-aware maximum for `PadValue.MAX`, dtype-aware minimum for `PadValue.MIN`. |
+| `pad_value` | `ScalarType` | Scalar value used for padding. Supported types: any 8/16/32-bit integer scalar (`pto.i8`, `pto.si8`, `pto.ui8`, `pto.i16`, `pto.si16`, `pto.ui16`, `pto.i32`, `pto.si32`, `pto.ui32`) plus `pto.f16`, `pto.bf16`, and `pto.f32`. The value's bit pattern is encoded into the hardware pad register. Integer inputs are automatically normalized to the corresponding signless hardware operand width during lowering, so no manual cast is required before calling `pto.set_mov_pad_val`. For standard pad values, use `PadValue.eval(...)` to obtain the appropriate scalar: `0` or `0.0` for `PadValue.ZERO`, dtype-aware maximum for `PadValue.MAX`, dtype-aware minimum for `PadValue.MIN`. |
 
 **Returns**: None (side-effect operation)
 
@@ -380,6 +380,14 @@ if pto.constexpr(pad_desc != pto.PadValue.NULL):
         enable_ub_pad=True,
     )
 ```
+
+Using a standalone `PadValue` with an explicit dtype:
+```python
+pad_scalar = pto.PadValue.MAX.eval(pto.f32)
+pto.set_mov_pad_val(pad_scalar)
+```
+
+For integer tile dtypes such as `pto.ui16` or `pto.si32`, `pad_desc.eval()` can be passed directly to `pto.set_mov_pad_val`. TileLang DSL v1 will automatically insert the required same-width bitcast to the signless hardware operand type during lowering.
 
 **Important**: You are responsible for ensuring the pad register is properly configured before any `pto.copy_gm_to_ubuf` operation with `enable_ub_pad=True`. The pad register configuration persists until changed by another `pto.set_mov_pad_val` call.
 

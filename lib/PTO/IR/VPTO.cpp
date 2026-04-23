@@ -1,3 +1,11 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
 //===- VPTO.cpp - VPTO dialect -------------------------------------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -552,6 +560,24 @@ static std::optional<StringRef> normalizeEvenOddPartToken(StringRef token) {
   return std::nullopt;
 }
 
+static std::optional<StringRef> normalizePacked4PartToken(StringRef token) {
+  if (token == "P0" || token == "PART_P0")
+    return StringRef("P0");
+  if (token == "P1" || token == "PART_P1")
+    return StringRef("P1");
+  if (token == "P2" || token == "PART_P2")
+    return StringRef("P2");
+  if (token == "P3" || token == "PART_P3")
+    return StringRef("P3");
+  return std::nullopt;
+}
+
+static std::optional<StringRef> normalizeVcvtPartToken(StringRef token) {
+  if (auto normalized = normalizeEvenOddPartToken(token))
+    return normalized;
+  return normalizePacked4PartToken(token);
+}
+
 namespace {
 
 enum class VcvtElemKind {
@@ -572,6 +598,11 @@ struct VcvtContract {
   bool requiresRnd;
   bool requiresSat;
   bool requiresPart;
+};
+
+enum class VcvtPartFamily {
+  EvenOdd,
+  Packed4,
 };
 
 static VcvtElemKind classifyVcvtElemType(Type type) {
@@ -620,6 +651,27 @@ static std::optional<unsigned> getVcvtElemBitWidth(VcvtElemKind kind) {
   return std::nullopt;
 }
 
+static std::optional<VcvtPartFamily> classifyVcvtPartFamily(unsigned srcBits,
+                                                            unsigned dstBits) {
+  unsigned largerBits = std::max(srcBits, dstBits);
+  unsigned smallerBits = std::min(srcBits, dstBits);
+  if (largerBits == smallerBits * 2)
+    return VcvtPartFamily::EvenOdd;
+  if (largerBits == smallerBits * 4)
+    return VcvtPartFamily::Packed4;
+  return std::nullopt;
+}
+
+static bool isValidVcvtPartForFamily(StringRef part, VcvtPartFamily family) {
+  switch (family) {
+  case VcvtPartFamily::EvenOdd:
+    return part == "EVEN" || part == "ODD";
+  case VcvtPartFamily::Packed4:
+    return part == "P0" || part == "P1" || part == "P2" || part == "P3";
+  }
+  return false;
+}
+
 static std::optional<VcvtContract> lookupVcvtContract(VcvtElemKind src,
                                                       VcvtElemKind dst) {
   switch (src) {
@@ -640,8 +692,10 @@ static std::optional<VcvtContract> lookupVcvtContract(VcvtElemKind src,
   case VcvtElemKind::F16:
     switch (dst) {
     case VcvtElemKind::F32:
-    case VcvtElemKind::S32:
       return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
+                          /*requiresPart=*/true};
+    case VcvtElemKind::S32:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/false,
                           /*requiresPart=*/true};
     case VcvtElemKind::S16:
       return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
@@ -655,6 +709,9 @@ static std::optional<VcvtContract> lookupVcvtContract(VcvtElemKind src,
     }
   case VcvtElemKind::BF16:
     switch (dst) {
+    case VcvtElemKind::F16:
+      return VcvtContract{/*requiresRnd=*/true, /*requiresSat=*/true,
+                          /*requiresPart=*/false};
     case VcvtElemKind::F32:
       return VcvtContract{/*requiresRnd=*/false, /*requiresSat=*/false,
                           /*requiresPart=*/true};
@@ -934,6 +991,137 @@ static int64_t getPtrElementByteSize(Type type) {
   return 0;
 }
 
+static bool hasAll(Value first, Value second, Value third) {
+  return static_cast<bool>(first) && static_cast<bool>(second) &&
+         static_cast<bool>(third);
+}
+
+static bool hasAny(Value first, Value second, Value third) {
+  return static_cast<bool>(first) || static_cast<bool>(second) ||
+         static_cast<bool>(third);
+}
+
+static ParseResult parseRequiredOperandWithComma(
+    OpAsmParser &parser, OpAsmParser::UnresolvedOperand &operand) {
+  if (parser.parseOperand(operand))
+    return failure();
+  return parser.parseComma();
+}
+
+static ParseResult parseDmaTripleGroup(
+    OpAsmParser &parser, StringRef keyword,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands) {
+  if (parser.parseKeyword(keyword) || parser.parseLParen())
+    return failure();
+  for (int i = 0; i < 3; ++i) {
+    OpAsmParser::UnresolvedOperand operand;
+    if (parser.parseOperand(operand))
+      return failure();
+    operands.push_back(operand);
+    if (i != 2 && parser.parseComma())
+      return failure();
+  }
+  return parser.parseRParen();
+}
+
+static ParseResult parseOptionalDmaTripleGroup(
+    OpAsmParser &parser, StringRef keyword,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands) {
+  if (failed(parser.parseOptionalKeyword(keyword)))
+    return success();
+  if (parser.parseLParen())
+    return failure();
+  for (int i = 0; i < 3; ++i) {
+    OpAsmParser::UnresolvedOperand operand;
+    if (parser.parseOperand(operand))
+      return failure();
+    operands.push_back(operand);
+    if (i != 2 && parser.parseComma())
+      return failure();
+  }
+  return parser.parseRParen();
+}
+
+static ParseResult parseOptionalDmaPadGroup(
+    OpAsmParser &parser,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands) {
+  if (failed(parser.parseOptionalKeyword("pad")))
+    return success();
+  if (parser.parseLParen())
+    return failure();
+  OpAsmParser::UnresolvedOperand value;
+  if (parser.parseOperand(value))
+    return failure();
+  operands.push_back(value);
+  if (succeeded(parser.parseOptionalComma())) {
+    OpAsmParser::UnresolvedOperand left;
+    OpAsmParser::UnresolvedOperand right;
+    if (parser.parseOperand(left) || parser.parseComma() ||
+        parser.parseOperand(right))
+      return failure();
+    operands.push_back(left);
+    operands.push_back(right);
+  }
+  return parser.parseRParen();
+}
+
+static ParseResult parseDmaTripleTypes(OpAsmParser &parser,
+                                       SmallVectorImpl<Type> &types) {
+  for (int i = 0; i < 3; ++i) {
+    Type type;
+    if (parser.parseType(type))
+      return failure();
+    types.push_back(type);
+    if (i != 2 && parser.parseComma())
+      return failure();
+  }
+  return success();
+}
+
+static ParseResult parseDmaPadTypes(OpAsmParser &parser,
+                                    SmallVectorImpl<Type> &types) {
+  Type valueType;
+  if (parser.parseType(valueType))
+    return failure();
+  types.push_back(valueType);
+  if (succeeded(parser.parseOptionalComma())) {
+    Type leftType;
+    Type rightType;
+    if (parser.parseType(leftType) || parser.parseComma() ||
+        parser.parseType(rightType))
+      return failure();
+    types.push_back(leftType);
+    types.push_back(rightType);
+  }
+  return success();
+}
+
+static void printDmaTripleGroup(OpAsmPrinter &printer, StringRef keyword,
+                                Value first, Value second, Value third) {
+  printer << " " << keyword << "(" << first << ", " << second << ", " << third
+          << ")";
+}
+
+static void printDmaTripleTypes(OpAsmPrinter &printer, StringRef keyword,
+                                Type first, Type second, Type third) {
+  printer << ", " << keyword << " " << first << ", " << second << ", " << third;
+}
+
+static void printDmaPadGroup(OpAsmPrinter &printer, Value value, Value left,
+                             Value right) {
+  printer << " pad(" << value;
+  if (left || right)
+    printer << ", " << left << ", " << right;
+  printer << ")";
+}
+
+static void printDmaPadTypes(OpAsmPrinter &printer, Type valueType,
+                             Type leftType, Type rightType) {
+  printer << ", pad " << valueType;
+  if (leftType || rightType)
+    printer << ", " << leftType << ", " << rightType;
+}
+
 template <typename CopyOp>
 static LogicalResult verifyCopyGmToUbufOp(CopyOp op, bool expectSourceGM) {
   auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
@@ -966,6 +1154,38 @@ static LogicalResult verifyCopyGmToUbufOp(CopyOp op, bool expectSourceGM) {
   if (sourceElemBytes != destinationElemBytes)
     return op.emitOpError("requires source and destination element byte widths to match");
 
+  return success();
+}
+
+template <typename DmaOp>
+static LogicalResult verifyOptionalDmaLoopGroup(DmaOp op, Value count,
+                                                Value srcStride,
+                                                Value dstStride,
+                                                StringRef name) {
+  if (hasAny(count, srcStride, dstStride) && !hasAll(count, srcStride, dstStride))
+    return op.emitOpError() << "requires " << name
+                            << " group to provide count, src stride, and dst stride together";
+  return success();
+}
+
+static LogicalResult verifyDmaLoadStoreLoopGroups(Operation *op, Value loop1Count,
+                                                  Value loop1SrcStride,
+                                                  Value loop1DstStride,
+                                                  Value loop2Count,
+                                                  Value loop2SrcStride,
+                                                  Value loop2DstStride) {
+  auto emitError = [&]() { return op->emitOpError(); };
+  if (hasAny(loop1Count, loop1SrcStride, loop1DstStride) &&
+      !hasAll(loop1Count, loop1SrcStride, loop1DstStride))
+    return emitError()
+           << "requires loop1 group to provide count, src stride, and dst stride together";
+  if (hasAny(loop2Count, loop2SrcStride, loop2DstStride) &&
+      !hasAll(loop2Count, loop2SrcStride, loop2DstStride))
+    return emitError()
+           << "requires loop2 group to provide count, src stride, and dst stride together";
+  if (hasAll(loop2Count, loop2SrcStride, loop2DstStride) &&
+      !hasAll(loop1Count, loop1SrcStride, loop1DstStride))
+    return emitError() << "requires loop1 when loop2 is present";
   return success();
 }
 
@@ -1126,6 +1346,185 @@ LogicalResult CopyGmToUbufOp::verify() {
   return verifyCopyGmToUbufOp(*this, true);
 }
 
+void DmaLoadOp::build(OpBuilder &builder, OperationState &state, Value source,
+                      Value destination, Value sid, Value l2CacheCtl,
+                      Value lenBurst, pto::DmaLoopConfig nburst,
+                      std::optional<pto::DmaLoopConfig> loop1,
+                      std::optional<pto::DmaLoopConfig> loop2,
+                      std::optional<pto::DmaPadConfig> pad) {
+  state.addOperands({source, destination, sid, l2CacheCtl, lenBurst,
+                     nburst.count, nburst.srcStride, nburst.dstStride});
+  if (loop1)
+    state.addOperands({loop1->count, loop1->srcStride, loop1->dstStride});
+  if (loop2)
+    state.addOperands({loop2->count, loop2->srcStride, loop2->dstStride});
+  bool hasPadCounts = pad && pad->leftCount && pad->rightCount;
+  assert((!pad || static_cast<bool>(pad->leftCount) ==
+                       static_cast<bool>(pad->rightCount)) &&
+         "dma_load pad config must provide both left and right counts, or omit both");
+  if (pad) {
+    state.addOperands(pad->value);
+    if (hasPadCounts)
+      state.addOperands({pad->leftCount, pad->rightCount});
+  }
+
+  state.addAttribute(
+      getOperandSegmentSizeAttr(),
+      builder.getDenseI32ArrayAttr(
+          {1, 1, 1, 1, 1, 1, 1, 1,
+           loop1 ? 1 : 0, loop1 ? 1 : 0, loop1 ? 1 : 0,
+           loop2 ? 1 : 0, loop2 ? 1 : 0, loop2 ? 1 : 0,
+           pad ? 1 : 0, hasPadCounts ? 1 : 0, hasPadCounts ? 1 : 0}));
+}
+
+ParseResult DmaLoadOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand source, destination, sid, l2CacheCtl, lenBurst;
+  SmallVector<OpAsmParser::UnresolvedOperand> nburstOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loop1Operands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loop2Operands;
+  SmallVector<OpAsmParser::UnresolvedOperand> padOperands;
+  if (parseRequiredOperandWithComma(parser, source) ||
+      parseRequiredOperandWithComma(parser, destination) ||
+      parseRequiredOperandWithComma(parser, sid) ||
+      parseRequiredOperandWithComma(parser, l2CacheCtl) ||
+      parser.parseOperand(lenBurst) ||
+      parseDmaTripleGroup(parser, "nburst", nburstOperands) ||
+      parseOptionalDmaTripleGroup(parser, "loop1", loop1Operands) ||
+      parseOptionalDmaTripleGroup(parser, "loop2", loop2Operands) ||
+      parseOptionalDmaPadGroup(parser, padOperands))
+    return failure();
+
+  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon())
+    return failure();
+
+  Type sourceType, destinationType, sidType, l2CacheCtlType, lenBurstType;
+  SmallVector<Type> nburstTypes, loop1Types, loop2Types, padTypes;
+  if (parser.parseType(sourceType) || parser.parseComma() ||
+      parser.parseType(destinationType) || parser.parseComma() ||
+      parser.parseType(sidType) || parser.parseComma() ||
+      parser.parseType(l2CacheCtlType) || parser.parseComma() ||
+      parser.parseType(lenBurstType) || parser.parseComma() ||
+      parseDmaTripleTypes(parser, nburstTypes))
+    return failure();
+  while (succeeded(parser.parseOptionalComma())) {
+    StringRef keyword;
+    if (parser.parseKeyword(&keyword))
+      return failure();
+    if (keyword == "loop1") {
+      if (!loop1Types.empty() || parseDmaTripleTypes(parser, loop1Types))
+        return failure();
+      continue;
+    }
+    if (keyword == "loop2") {
+      if (!loop2Types.empty() || parseDmaTripleTypes(parser, loop2Types))
+        return failure();
+      continue;
+    }
+    if (keyword == "pad") {
+      if (!padTypes.empty() || parseDmaPadTypes(parser, padTypes))
+        return failure();
+      continue;
+    }
+    return parser.emitError(parser.getCurrentLocation(),
+                            "expected one of 'loop1', 'loop2', or 'pad'");
+  }
+
+  auto &segments =
+      result.getOrAddProperties<DmaLoadOp::Properties>().operandSegmentSizes;
+  llvm::copy(ArrayRef<int32_t>{1, 1, 1, 1, 1, 1, 1, 1,
+                               static_cast<int32_t>(loop1Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop1Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop1Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop2Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop2Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop2Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(padOperands.size() ? 1 : 0),
+                               static_cast<int32_t>(padOperands.size() == 3 ? 1 : 0),
+                               static_cast<int32_t>(padOperands.size() == 3 ? 1 : 0)},
+             segments.begin());
+
+  if (parser.resolveOperand(source, sourceType, result.operands) ||
+      parser.resolveOperand(destination, destinationType, result.operands) ||
+      parser.resolveOperand(sid, sidType, result.operands) ||
+      parser.resolveOperand(l2CacheCtl, l2CacheCtlType, result.operands) ||
+      parser.resolveOperand(lenBurst, lenBurstType, result.operands) ||
+      parser.resolveOperands(nburstOperands, nburstTypes, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(loop1Operands, loop1Types, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(loop2Operands, loop2Types, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(padOperands, padTypes, parser.getCurrentLocation(),
+                             result.operands))
+    return failure();
+  return success();
+}
+
+void DmaLoadOp::print(OpAsmPrinter &printer) {
+  printer << " " << getSource() << ", " << getDestination() << ", " << getSid()
+          << ", " << getL2CacheCtl() << ", " << getLenBurst();
+  printDmaTripleGroup(printer, "nburst", getNBurst(), getNburstSrcStride(),
+                      getNburstDstStride());
+  if (hasAll(getLoop1Count(), getLoop1SrcStride(), getLoop1DstStride()))
+    printDmaTripleGroup(printer, "loop1", getLoop1Count(), getLoop1SrcStride(),
+                        getLoop1DstStride());
+  if (hasAll(getLoop2Count(), getLoop2SrcStride(), getLoop2DstStride()))
+    printDmaTripleGroup(printer, "loop2", getLoop2Count(), getLoop2SrcStride(),
+                        getLoop2DstStride());
+  if (getPadValue())
+    printDmaPadGroup(printer, getPadValue(), getLeftPaddingCount(),
+                     getRightPaddingCount());
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : " << getSource().getType() << ", " << getDestination().getType()
+          << ", " << getSid().getType() << ", " << getL2CacheCtl().getType()
+          << ", " << getLenBurst().getType() << ", " << getNBurst().getType()
+          << ", " << getNburstSrcStride().getType() << ", "
+          << getNburstDstStride().getType();
+  if (hasAll(getLoop1Count(), getLoop1SrcStride(), getLoop1DstStride()))
+    printDmaTripleTypes(printer, "loop1", getLoop1Count().getType(),
+                        getLoop1SrcStride().getType(),
+                        getLoop1DstStride().getType());
+  if (hasAll(getLoop2Count(), getLoop2SrcStride(), getLoop2DstStride()))
+    printDmaTripleTypes(printer, "loop2", getLoop2Count().getType(),
+                        getLoop2SrcStride().getType(),
+                        getLoop2DstStride().getType());
+  if (getPadValue())
+    printDmaPadTypes(printer, getPadValue().getType(),
+                     getLeftPaddingCount() ? getLeftPaddingCount().getType() : Type{},
+                     getRightPaddingCount() ? getRightPaddingCount().getType() : Type{});
+}
+
+void DmaLoadOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+LogicalResult DmaLoadOp::verify() {
+  if (failed(verifyCopyGmToUbufOp(*this, true)))
+    return failure();
+  if (failed(verifyDmaLoadStoreLoopGroups(
+          getOperation(), getLoop1Count(), getLoop1SrcStride(),
+          getLoop1DstStride(), getLoop2Count(), getLoop2SrcStride(),
+          getLoop2DstStride())))
+    return failure();
+  if (!getPadValue() && (getLeftPaddingCount() || getRightPaddingCount()))
+    return emitOpError() << "requires pad group to provide a pad value";
+  if (getPadValue() && static_cast<bool>(getLeftPaddingCount()) !=
+                         static_cast<bool>(getRightPaddingCount()))
+    return emitOpError()
+           << "requires pad group to provide both left and right counts, or omit both";
+  if (Value padValue = getPadValue()) {
+    Type valueType = padValue.getType();
+    if (!isSupportedMovPadScalarType(valueType))
+      return emitOpError()
+             << "expects pad value to be i8/i16/i32 or f16/bf16/f32 scalar, but got "
+             << valueType;
+  }
+  return success();
+}
+
 LogicalResult SetMovPadValOp::verify() {
   Type valueType = getValue().getType();
   if (isSupportedMovPadScalarType(valueType))
@@ -1148,13 +1547,51 @@ LogicalResult VbrOp::verify() {
   return success();
 }
 
-LogicalResult VcaddOp::verify() {
-  if (failed(verifyVRegTypeLike(*this, getInput().getType(), "input")) ||
-      failed(verifyVRegTypeLike(*this, getResult().getType(), "result")))
+template <typename ReductionOp>
+static LogicalResult verifyWideningReductionVecOp(ReductionOp op,
+                                                  StringRef opName) {
+  if (failed(verifyVRegTypeLike(op, op.getInput().getType(), "input")) ||
+      failed(verifyVRegTypeLike(op, op.getResult().getType(), "result")))
     return failure();
-  if (getInput().getType() != getResult().getType())
-    return emitOpError("input and result must have the same vector type");
-  return success();
+
+  auto inputType = dyn_cast<VRegType>(op.getInput().getType());
+  auto resultType = dyn_cast<VRegType>(op.getResult().getType());
+  if (!inputType || !resultType)
+    return failure();
+
+  Type inputElemType = inputType.getElementType();
+  Type expectedResultElemType = inputElemType;
+  int64_t expectedResultLanes = inputType.getElementCount();
+  if (auto inputInt = dyn_cast<IntegerType>(inputElemType)) {
+    if (inputInt.getWidth() < 8 || inputInt.getWidth() > 32)
+      return op.emitOpError(
+          "requires 8-bit, 16-bit, or 32-bit integer vector element type");
+    if (inputInt.getWidth() == 8) {
+      expectedResultElemType =
+          IntegerType::get(op.getContext(), 16, inputInt.getSignedness());
+      expectedResultLanes = inputType.getElementCount() / 2;
+    }
+    if (inputInt.getWidth() == 16) {
+      expectedResultElemType =
+          IntegerType::get(op.getContext(), 32, inputInt.getSignedness());
+      expectedResultLanes = inputType.getElementCount() / 2;
+    }
+  } else if (!inputElemType.isF16() && !inputElemType.isF32()) {
+    return op.emitOpError("requires i16/i32/f16/f32 vector element type");
+  }
+
+  if (resultType.getElementCount() == expectedResultLanes &&
+      resultType.getElementType() == expectedResultElemType)
+    return success();
+
+  return op.emitOpError() << opName << " expects result type !pto.vreg<"
+                          << expectedResultLanes << "x"
+                          << expectedResultElemType
+                          << " for input element type " << inputElemType;
+}
+
+LogicalResult VcaddOp::verify() {
+  return verifyWideningReductionVecOp(*this, "vcadd");
 }
 
 LogicalResult VcmaxOp::verify() {
@@ -1216,6 +1653,22 @@ LogicalResult Vgather2Op::verify() {
 }
 
 LogicalResult CopyUbufToUbufOp::verify() {
+  if (!isBufferLike(getSource().getType()) || !isBufferLike(getDestination().getType()))
+    return emitOpError("requires pointer-like source and destination");
+  if (classifyMemoryRole(getSource().getType()) != MemoryRole::UB ||
+      classifyMemoryRole(getDestination().getType()) != MemoryRole::UB)
+    return emitOpError("requires UB-backed source and destination");
+  return success();
+}
+
+void DmaCopyOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+LogicalResult DmaCopyOp::verify() {
   if (!isBufferLike(getSource().getType()) || !isBufferLike(getDestination().getType()))
     return emitOpError("requires pointer-like source and destination");
   if (classifyMemoryRole(getSource().getType()) != MemoryRole::UB ||
@@ -1677,6 +2130,13 @@ LogicalResult PunpackOp::verify() {
     return failure();
   if (getPart() != "LOWER")
     return emitOpError("currently supports only LOWER part");
+  return success();
+}
+
+LogicalResult PbitcastOp::verify() {
+  if (failed(verifyMaskTypeLike(*this, getInput().getType(), "input type")) ||
+      failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
+    return failure();
   return success();
 }
 
@@ -2259,8 +2719,7 @@ ParseResult VcvtOp::parse(OpAsmParser &parser, OperationState &result) {
                                       normalizeRoundModeToken)) ||
       failed(normalizeNamedStringAttr("rnd", "rnd", normalizeRoundModeToken)) ||
       failed(normalizeNamedStringAttr("sat", "sat", normalizeSaturationToken)) ||
-      failed(
-          normalizeNamedStringAttr("part", "part", normalizeEvenOddPartToken)))
+      failed(normalizeNamedStringAttr("part", "part", normalizeVcvtPartToken)))
     return failure();
 
   result.addAttributes(attrs);
@@ -2320,8 +2779,20 @@ LogicalResult VcvtOp::verify() {
 
   if (getPartAttr()) {
     StringRef part = *getPart();
-    if (!normalizeEvenOddPartToken(part))
-      return emitOpError("part must be EVEN or ODD");
+    auto normalizedPart = normalizeVcvtPartToken(part);
+    if (!normalizedPart)
+      return emitOpError("part must be one of EVEN/ODD/P0/P1/P2/P3");
+    auto partFamily = classifyVcvtPartFamily(*inputElemBits, *resultElemBits);
+    if (!partFamily)
+      return emitOpError("part attr is not supported for this vcvt width relation");
+    if (!isValidVcvtPartForFamily(*normalizedPart, *partFamily)) {
+      switch (*partFamily) {
+      case VcvtPartFamily::EvenOdd:
+        return emitOpError("part must be EVEN or ODD for 8/16 and 16/32 vcvt forms");
+      case VcvtPartFamily::Packed4:
+        return emitOpError("part must be P0, P1, P2, or P3 for 8/32 vcvt forms");
+      }
+    }
   }
   if (static_cast<bool>(getPartAttr()) != contract->requiresPart) {
     return contract->requiresPart ? emitOpError("requires part attr for this vcvt type pair")
@@ -2493,7 +2964,7 @@ static LogicalResult verifyFloatBinaryVecNoMaskOp(BinaryVecNoMaskOp op) {
 }
 
 LogicalResult VpreluOp::verify() { return verifyFloatBinaryVecNoMaskOp(*this); }
-LogicalResult VexpdiffOp::verify() {
+LogicalResult VexpdifOp::verify() {
   if (failed(verifyVRegTypeLike(*this, getInput().getType(), "input type")) ||
       failed(verifyVRegTypeLike(*this, getMax().getType(), "max type")) ||
       failed(verifyVRegTypeLike(*this, getResult().getType(), "result type")))
@@ -2916,4 +3387,138 @@ void CopyUbufToGmOp::getEffects(
 
 LogicalResult CopyUbufToGmOp::verify() {
   return verifyCopyUbufToGmOp(*this, false);
+}
+
+void DmaStoreOp::build(OpBuilder &builder, OperationState &state, Value source,
+                       Value destination, Value sid, Value reserved,
+                       Value lenBurst, pto::DmaLoopConfig nburst,
+                       std::optional<pto::DmaLoopConfig> loop1,
+                       std::optional<pto::DmaLoopConfig> loop2) {
+  state.addOperands({source, destination, sid, reserved, lenBurst, nburst.count,
+                     nburst.srcStride, nburst.dstStride});
+  if (loop1)
+    state.addOperands({loop1->count, loop1->srcStride, loop1->dstStride});
+  if (loop2)
+    state.addOperands({loop2->count, loop2->srcStride, loop2->dstStride});
+
+  state.addAttribute(
+      getOperandSegmentSizeAttr(),
+      builder.getDenseI32ArrayAttr(
+          {1, 1, 1, 1, 1, 1, 1, 1,
+           loop1 ? 1 : 0, loop1 ? 1 : 0, loop1 ? 1 : 0,
+           loop2 ? 1 : 0, loop2 ? 1 : 0, loop2 ? 1 : 0}));
+}
+
+ParseResult DmaStoreOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand source, destination, sid, reserved, lenBurst;
+  SmallVector<OpAsmParser::UnresolvedOperand> nburstOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loop1Operands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loop2Operands;
+  if (parseRequiredOperandWithComma(parser, source) ||
+      parseRequiredOperandWithComma(parser, destination) ||
+      parseRequiredOperandWithComma(parser, sid) ||
+      parseRequiredOperandWithComma(parser, reserved) ||
+      parser.parseOperand(lenBurst) ||
+      parseDmaTripleGroup(parser, "nburst", nburstOperands) ||
+      parseOptionalDmaTripleGroup(parser, "loop1", loop1Operands) ||
+      parseOptionalDmaTripleGroup(parser, "loop2", loop2Operands))
+    return failure();
+
+  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon())
+    return failure();
+
+  Type sourceType, destinationType, sidType, reservedType, lenBurstType;
+  SmallVector<Type> nburstTypes, loop1Types, loop2Types;
+  if (parser.parseType(sourceType) || parser.parseComma() ||
+      parser.parseType(destinationType) || parser.parseComma() ||
+      parser.parseType(sidType) || parser.parseComma() ||
+      parser.parseType(reservedType) || parser.parseComma() ||
+      parser.parseType(lenBurstType) || parser.parseComma() ||
+      parseDmaTripleTypes(parser, nburstTypes))
+    return failure();
+  while (succeeded(parser.parseOptionalComma())) {
+    StringRef keyword;
+    if (parser.parseKeyword(&keyword))
+      return failure();
+    if (keyword == "loop1") {
+      if (!loop1Types.empty() || parseDmaTripleTypes(parser, loop1Types))
+        return failure();
+      continue;
+    }
+    if (keyword == "loop2") {
+      if (!loop2Types.empty() || parseDmaTripleTypes(parser, loop2Types))
+        return failure();
+      continue;
+    }
+    return parser.emitError(parser.getCurrentLocation(),
+                            "expected one of 'loop1' or 'loop2'");
+  }
+
+  auto &segments =
+      result.getOrAddProperties<DmaStoreOp::Properties>().operandSegmentSizes;
+  llvm::copy(ArrayRef<int32_t>{1, 1, 1, 1, 1, 1, 1, 1,
+                               static_cast<int32_t>(loop1Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop1Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop1Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop2Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop2Operands.size() ? 1 : 0),
+                               static_cast<int32_t>(loop2Operands.size() ? 1 : 0)},
+             segments.begin());
+
+  if (parser.resolveOperand(source, sourceType, result.operands) ||
+      parser.resolveOperand(destination, destinationType, result.operands) ||
+      parser.resolveOperand(sid, sidType, result.operands) ||
+      parser.resolveOperand(reserved, reservedType, result.operands) ||
+      parser.resolveOperand(lenBurst, lenBurstType, result.operands) ||
+      parser.resolveOperands(nburstOperands, nburstTypes, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(loop1Operands, loop1Types, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(loop2Operands, loop2Types, parser.getCurrentLocation(),
+                             result.operands))
+    return failure();
+  return success();
+}
+
+void DmaStoreOp::print(OpAsmPrinter &printer) {
+  printer << " " << getSource() << ", " << getDestination() << ", " << getSid()
+          << ", " << getReserved() << ", " << getLenBurst();
+  printDmaTripleGroup(printer, "nburst", getNBurst(), getNburstSrcStride(),
+                      getNburstDstStride());
+  if (hasAll(getLoop1Count(), getLoop1SrcStride(), getLoop1DstStride()))
+    printDmaTripleGroup(printer, "loop1", getLoop1Count(), getLoop1SrcStride(),
+                        getLoop1DstStride());
+  if (hasAll(getLoop2Count(), getLoop2SrcStride(), getLoop2DstStride()))
+    printDmaTripleGroup(printer, "loop2", getLoop2Count(), getLoop2SrcStride(),
+                        getLoop2DstStride());
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : " << getSource().getType() << ", " << getDestination().getType()
+          << ", " << getSid().getType() << ", " << getReserved().getType()
+          << ", " << getLenBurst().getType() << ", " << getNBurst().getType()
+          << ", " << getNburstSrcStride().getType() << ", "
+          << getNburstDstStride().getType();
+  if (hasAll(getLoop1Count(), getLoop1SrcStride(), getLoop1DstStride()))
+    printDmaTripleTypes(printer, "loop1", getLoop1Count().getType(),
+                        getLoop1SrcStride().getType(),
+                        getLoop1DstStride().getType());
+  if (hasAll(getLoop2Count(), getLoop2SrcStride(), getLoop2DstStride()))
+    printDmaTripleTypes(printer, "loop2", getLoop2Count().getType(),
+                        getLoop2SrcStride().getType(),
+                        getLoop2DstStride().getType());
+}
+
+void DmaStoreOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+LogicalResult DmaStoreOp::verify() {
+  if (failed(verifyCopyUbufToGmOp(*this, false)))
+    return failure();
+  return verifyDmaLoadStoreLoopGroups(
+      getOperation(), getLoop1Count(), getLoop1SrcStride(),
+      getLoop1DstStride(), getLoop2Count(), getLoop2SrcStride(),
+      getLoop2DstStride());
 }

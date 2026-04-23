@@ -29,14 +29,14 @@ Cycle-accurate simulator **popped→retire** latency (cycles). Only representati
 
 ## `pto.vci`
 
-- **syntax:** `%result = pto.vci %index {order = "ORDER"} : integer -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vci %index {order = "ASC|DESC"} : integer -> !pto.vreg<NxT>`
 - **semantics:** Generate a lane-index vector from a scalar seed/index value.
 - **inputs:**
   `%index` is the scalar seed or base index.
 - **outputs:**
   `%result` is the generated index vector.
 - **constraints and limitations:**
-  This is an index-generation family, not a numeric conversion. `ORDER` and the
+  This is an index-generation family, not a numeric conversion. `order` and the
   result element type together determine how indices are generated. `%result`
   uses an integer element type, and the scalar `%index` type matches that
   result element type.
@@ -94,13 +94,26 @@ for (int i = 0; i < min(N, M); i++)
 ### Part Modes
 
 Use `part` when a width-changing conversion writes only one half of each wider
-destination lane group. This is typically used in even/odd placement forms such
-as `32 -> 16` or `16 -> 32` style conversions.
+destination lane group.
+
+- `Part` (`PART_EVEN`, `PART_ODD`)
+  - Used by ordinary width-changing conversions.
+  - Typical cases include `32 -> 16`, `16 -> 32`, and other even/odd packing
+    or unpacking forms.
+- `Part_T` (`PART_P0`, `PART_P1`, `PART_P2`, `PART_P3`)
+  - Used by lower-level packed placement forms.
+  - Typical cases include `32 -> 8`, packed fp8/fp4 conversion paths, and
+    other flows where the result is written into one of four sub-parts before a
+    later merge or compact step.
 
 | Mode | Description |
 |------|-------------|
 | `EVEN` | Output to even-indexed lanes |
 | `ODD` | Output to odd-indexed lanes |
+| `P0` | Output to sub-part 0 in 4-way packed placement forms |
+| `P1` | Output to sub-part 1 in 4-way packed placement forms |
+| `P2` | Output to sub-part 2 in 4-way packed placement forms |
+| `P3` | Output to sub-part 3 in 4-way packed placement forms |
 
 ---
 
@@ -136,6 +149,7 @@ as `32 -> 16` or `16 -> 32` style conversions.
 
 - `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xf16>`
 - `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<128xbf16>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<128xf16>`
 - `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
 - `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<64xf32>`
 
@@ -182,7 +196,7 @@ per-form entries above as the source of truth.
 | `si64` |  |  |  |  |  |  |  |  |  |  |
 | `f16` | Y | Y |  | Y |  | Y |  |  | Y |  |
 | `f32` |  |  |  | Y |  | Y | Y | Y |  | Y |
-| `bf16` |  |  |  |  |  | Y |  |  | Y |  |
+| `bf16` |  |  |  |  |  | Y |  | Y | Y |  |
 
 ---
 
@@ -303,4 +317,29 @@ for (int i = 0; i < N; i++)
 %signed = pto.vlds %ub[%lane] : !pto.ptr<si32, ub> -> !pto.vreg<64xsi32>
 %unsigned = pto.vbitcast %signed : !pto.vreg<64xsi32> -> !pto.vreg<64xui32>
 // Bits are identical; interpretation changes from signed to unsigned
+```
+
+## `pto.pbitcast`
+
+- **syntax:** `%result = pto.pbitcast %input : !pto.mask<G0> -> !pto.mask<G1>`
+- **semantics:** Bitwise reinterpretation of a predicate register without
+  changing the underlying predicate-register image. This op makes mask-family
+  reinterpretation explicit in VPTO IR when a producer and consumer expect
+  different `!pto.mask<...>` views of the same hardware predicate state.
+
+- **inputs:**
+  `%input` is the source predicate register value.
+- **outputs:**
+  `%result` is the reinterpreted predicate register value.
+- **constraints and limitations:**
+  1. Both source and result must be `!pto.mask<...>` types.
+  2. `pto.pbitcast` does not materialize or normalize predicate contents; it
+     only changes which mask granularity the surrounding VPTO IR uses to
+     interpret the same predicate bits.
+
+**Example: Reinterpret a b16 predicate as b32 before a consumer**
+```mlir
+%m16 = pto.pintlv_b16 %lhs, %rhs : !pto.mask<b16>, !pto.mask<b16> -> !pto.mask<b16>, !pto.mask<b16>
+%m32 = pto.pbitcast %m16#0 : !pto.mask<b16> -> !pto.mask<b32>
+%result = pto.vsel %a, %b, %m32 : !pto.vreg<64xf32>, !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
 ```

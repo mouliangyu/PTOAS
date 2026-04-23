@@ -1,3 +1,11 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
 //===- HIVMIntrinsicNaming.cpp - HIVM intrinsic selection -----------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -570,8 +578,7 @@ FailureOr<IntrinsicSelection> selectStoreIntrinsic(Operation *op) {
 
   if (isa<pto::CopyUbufToUbufOp>(op)) {
     usedFields = {"family=copy_ubuf_to_ubuf"};
-    return makeUnresolved(op, "copy_ubuf_to_ubuf", "copy_ubuf_to_ubuf",
-                          usedFields, missingFields, "");
+    return makeResolved(op, "llvm.hivm.MOV.UB.TO.UB.v310", usedFields, "");
   }
 
   return failure();

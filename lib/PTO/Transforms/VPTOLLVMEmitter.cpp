@@ -1,3 +1,11 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
 #include "PTO/Transforms/VPTOLLVMEmitter.h"
 
 #include "PTO/IR/PTO.h"
@@ -40,9 +48,31 @@ static std::string getElementTypeFragment(Type type);
 static Type getElementTypeFromVectorLike(Type type);
 static std::optional<int64_t> getElementCountFromVectorLike(Type type);
 
+static Type normalizeIntegerTypeForLLVMLowering(Type type, Builder &builder) {
+  if (auto intType = dyn_cast<IntegerType>(type)) {
+    if (!intType.isSignless())
+      return builder.getIntegerType(intType.getWidth());
+    return type;
+  }
+
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    Type normalizedElement =
+        normalizeIntegerTypeForLLVMLowering(vecType.getElementType(), builder);
+    if (normalizedElement == vecType.getElementType())
+      return type;
+    return VectorType::get(vecType.getShape(), normalizedElement,
+                           vecType.getScalableDims());
+  }
+
+  return type;
+}
+
 static Type convertVPTOType(Type type, Builder &builder) {
-  if (auto vecType = dyn_cast<pto::VRegType>(type))
-    return VectorType::get({vecType.getElementCount()}, vecType.getElementType());
+  if (auto vecType = dyn_cast<pto::VRegType>(type)) {
+    Type elementType =
+        normalizeIntegerTypeForLLVMLowering(vecType.getElementType(), builder);
+    return VectorType::get({vecType.getElementCount()}, elementType);
+  }
   if (isa<pto::MaskType>(type))
     return VectorType::get({256}, builder.getI1Type());
   if (isa<pto::AlignType>(type))
@@ -52,7 +82,7 @@ static Type convertVPTOType(Type type, Builder &builder) {
         builder.getContext(),
         static_cast<unsigned>(ptrType.getMemorySpace().getAddressSpace()));
   }
-  return type;
+  return normalizeIntegerTypeForLLVMLowering(type, builder);
 }
 
 static bool hasVPTOConvertibleType(Type type) {
@@ -117,6 +147,7 @@ struct VcvtContract {
   bool requiresSat;
   bool requiresPart;
   unsigned maskBitWidth;
+  bool satBeforeRnd = false;
 };
 
 static Value getI64Constant(OpBuilder &builder, Location loc, uint64_t value) {
@@ -136,6 +167,22 @@ static FailureOr<StringRef> buildLaneTypedCallee(MLIRContext *context,
   std::string vec =
       getElementTypeFragment(getElementTypeFromVectorLike(resultType));
   auto lanes = getElementCountFromVectorLike(resultType);
+  if (vec.empty() || !lanes)
+    return failure();
+
+  return StringAttr::get(context, "llvm.hivm." + stem.str() + ".v" +
+                                      std::to_string(*lanes) + vec +
+                                      suffix.str())
+      .getValue();
+}
+
+static FailureOr<StringRef> buildLaneTypedCalleeFromInput(MLIRContext *context,
+                                                          Type inputType,
+                                                          StringRef stem,
+                                                          StringRef suffix) {
+  std::string vec =
+      getElementTypeFragment(getElementTypeFromVectorLike(inputType));
+  auto lanes = getElementCountFromVectorLike(inputType);
   if (vec.empty() || !lanes)
     return failure();
 
@@ -329,6 +376,20 @@ static std::optional<uint64_t> parsePartImmediate(StringRef part) {
   return std::nullopt;
 }
 
+static std::optional<uint64_t> parseVcvtPartImmediate(StringRef part) {
+  if (part == "EVEN" || part == "PART_EVEN" || part == "P0" ||
+      part == "PART_P0")
+    return 0;
+  if (part == "ODD" || part == "PART_ODD" || part == "P1" ||
+      part == "PART_P1")
+    return 1;
+  if (part == "P2" || part == "PART_P2")
+    return 2;
+  if (part == "P3" || part == "PART_P3")
+    return 3;
+  return std::nullopt;
+}
+
 static std::optional<uint64_t> parsePredicateStoreDistImmediate(StringRef dist) {
   if (dist == "NORM")
     return 0;
@@ -471,6 +532,9 @@ static std::optional<VcvtContract> lookupVcvtContract(VcvtElemKind src,
     }
   case VcvtElemKind::BF16:
     switch (dst) {
+    case VcvtElemKind::F16:
+      return VcvtContract{"llvm.hivm.vcvtff.bf162f16.x", true, true, false, 16,
+                          true};
     case VcvtElemKind::F32:
       return VcvtContract{"llvm.hivm.vcvtff.bf162f32.x", false, false, true, 16};
     case VcvtElemKind::S32:
@@ -804,6 +868,23 @@ packCopyGmToUbConfig1(Operation *anchor, ValueRange operands) {
   return packLoopPair(anchor, operands[9], operands[10]);
 }
 
+static FailureOr<Value> packCopyGmToUbConfig0(Operation *anchor, Value sid,
+                                              Value nBurst, Value lenBurst,
+                                              Value leftPadding,
+                                              Value rightPadding,
+                                              Value dataSelect,
+                                              Value cacheCtl) {
+  SmallVector<Value, 11> operands(11);
+  operands[2] = sid;
+  operands[3] = nBurst;
+  operands[4] = lenBurst;
+  operands[5] = leftPadding;
+  operands[6] = rightPadding;
+  operands[7] = dataSelect;
+  operands[8] = cacheCtl;
+  return packCopyGmToUbConfig0(anchor, operands);
+}
+
 static FailureOr<Value>
 packCopyUbToGmConfig0(Operation *anchor, ValueRange operands) {
   if (operands.size() != 8)
@@ -844,6 +925,52 @@ packCopyUbToGmConfig1(Operation *anchor, ValueRange operands) {
   if (operands.size() != 8)
     return failure();
   return packLoopPair(anchor, operands[6], operands[7]);
+}
+
+static FailureOr<Value> packCopyUbToGmConfig0(Operation *anchor, Value sid,
+                                              Value nBurst, Value lenBurst,
+                                              Value reserved) {
+  SmallVector<Value, 8> operands(8);
+  operands[2] = sid;
+  operands[3] = nBurst;
+  operands[4] = lenBurst;
+  operands[5] = reserved;
+  return packCopyUbToGmConfig0(anchor, operands);
+}
+
+static FailureOr<Value>
+packCopyUbToUbConfig(Operation *anchor, ValueRange operands) {
+  if (operands.size() != 7)
+    return failure();
+
+  OpBuilder builder(anchor);
+  builder.setInsertionPoint(anchor);
+  Location loc = anchor->getLoc();
+
+  auto getI64Operand = [&](unsigned idx) -> Value {
+    return castIntegerLikeTo(anchor, operands[idx], builder.getI64Type());
+  };
+
+  Value nBurst = getI64Operand(3);
+  Value lenBurst = getI64Operand(4);
+  Value srcStride = getI64Operand(5);
+  Value dstStride = getI64Operand(6);
+  if (!nBurst || !lenBurst || !srcStride || !dstStride)
+    return failure();
+
+  auto shl = [&](Value value, uint64_t amount) -> Value {
+    return builder.create<arith::ShLIOp>(loc, value,
+                                         getI64Constant(builder, loc, amount));
+  };
+  auto bitOr = [&](Value lhs, Value rhs) -> Value {
+    return builder.create<arith::OrIOp>(loc, lhs, rhs);
+  };
+
+  Value config = nBurst;
+  config = bitOr(config, shl(lenBurst, 16));
+  config = bitOr(config, shl(srcStride, 32));
+  config = bitOr(config, shl(dstStride, 48));
+  return config;
 }
 
 static FailureOr<Value> packVbitsortConfig(Operation *anchor, Value repeatTimes) {
@@ -1209,8 +1336,11 @@ static StringRef getReductionUnaryStem() {
 }
 
 static FailureOr<StringRef> buildCopyGmToUbCallee(MLIRContext *context,
-                                                  pto::CopyGmToUbufOp op) {
-  Type elementType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+                                                  Type sourceType) {
+  auto ptrType = dyn_cast<pto::PtrType>(sourceType);
+  if (!ptrType)
+    return failure();
+  Type elementType = ptrType.getElementType();
   std::string elem = getCopyElementFragment(elementType);
   if (elem.empty())
     return failure();
@@ -1222,6 +1352,10 @@ static FailureOr<StringRef> buildCopyGmToUbCallee(MLIRContext *context,
 static StringRef buildCopyUbToGmCallee(MLIRContext *context) {
   return StringAttr::get(context, "llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2.DV")
       .getValue();
+}
+
+static StringRef buildCopyUbToUbCallee(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.MOV.UB.TO.UB.v310").getValue();
 }
 
 static StringRef buildPstiCallee(MLIRContext *context) {
@@ -1574,9 +1708,9 @@ static FailureOr<StringRef> buildVtrcCallee(MLIRContext *context, Type resultTyp
   return StringAttr::get(context, "llvm.hivm.vtrc." + vec + ".x").getValue();
 }
 
-static FailureOr<StringRef> buildVexpdiffCallee(MLIRContext *context,
-                                                Type inputType,
-                                                Type resultType) {
+static FailureOr<StringRef> buildVexpdifCallee(MLIRContext *context,
+                                               Type inputType,
+                                               Type resultType) {
   std::string srcVec =
       getElementTypeFragment(getElementTypeFromVectorLike(inputType));
   auto srcLanes = getElementCountFromVectorLike(inputType);
@@ -2122,7 +2256,7 @@ public:
                   ConversionPatternRewriter &rewriter) const override {
     FailureOr<StringRef> calleeName = failure();
     if constexpr (std::is_same_v<CopyOp, pto::CopyGmToUbufOp>)
-      calleeName = buildCopyGmToUbCallee(op.getContext(), op);
+      calleeName = buildCopyGmToUbCallee(op.getContext(), op.getSource().getType());
     else
       calleeName = buildCopyUbToGmCallee(op.getContext());
     if (failed(calleeName))
@@ -2164,6 +2298,49 @@ public:
 private:
   LoweringState &state;
 };
+
+class LowerCopyUbufToUbufOpPattern final
+    : public OpConversionPattern<pto::CopyUbufToUbufOp> {
+public:
+  explicit LowerCopyUbufToUbufOpPattern(TypeConverter &typeConverter,
+                                        MLIRContext *context,
+                                        LoweringState &state)
+      : OpConversionPattern<pto::CopyUbufToUbufOp>(typeConverter, context),
+        state(state) {}
+
+  LogicalResult
+  matchAndRewrite(pto::CopyUbufToUbufOp op,
+                  pto::CopyUbufToUbufOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    auto llvmSourceType =
+        dyn_cast<LLVM::LLVMPointerType>(adaptor.getOperands()[0].getType());
+    auto llvmDestType =
+        dyn_cast<LLVM::LLVMPointerType>(adaptor.getOperands()[1].getType());
+    if (!llvmSourceType || !llvmDestType)
+      return rewriter.notifyMatchFailure(op, "expected LLVM pointer copy operands");
+
+    FailureOr<Value> config = packCopyUbToUbConfig(op, adaptor.getOperands());
+    if (failed(config))
+      return rewriter.notifyMatchFailure(op, "failed to materialize copy config");
+
+    StringRef calleeName = buildCopyUbToUbCallee(op.getContext());
+    SmallVector<Value> args{adaptor.getOperands()[1], adaptor.getOperands()[0],
+                            *config};
+    auto funcType = rewriter.getFunctionType(
+        TypeRange{llvmDestType, llvmSourceType, rewriter.getI64Type()},
+        TypeRange{});
+    auto call = rewriter.create<func::CallOp>(op.getLoc(), calleeName,
+                                              TypeRange{}, args);
+    state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
+    rewriter.eraseOp(op);
+    (void)call;
+    return success();
+  }
+
+private:
+  LoweringState &state;
+};
+
 
 template <typename VecScalarOp>
 class LowerVecScalarMaskedOpPattern final
@@ -2247,6 +2424,55 @@ public:
         mask.getType() != maskType) {
       return rewriter.notifyMatchFailure(
           op, "unexpected converted reduction operand types");
+    }
+
+    auto call = rewriter.create<func::CallOp>(op.getLoc(), *calleeName,
+                                              TypeRange{resultType},
+                                              ValueRange{input, mask});
+    state.plannedDecls.push_back(
+        PlannedDecl{calleeName->str(), call.getCalleeType()});
+    rewriter.replaceOp(op, call.getResults());
+    return success();
+  }
+
+private:
+  LoweringState &state;
+};
+
+template <typename ReductionOp>
+class LowerWideningReductionUnaryOpPattern final
+    : public OpConversionPattern<ReductionOp> {
+public:
+  explicit LowerWideningReductionUnaryOpPattern(TypeConverter &typeConverter,
+                                                MLIRContext *context,
+                                                LoweringState &state)
+      : OpConversionPattern<ReductionOp>(typeConverter, context), state(state) {}
+
+  LogicalResult
+  matchAndRewrite(ReductionOp op, typename ReductionOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    FailureOr<StringRef> calleeName = buildLaneTypedCalleeFromInput(
+        op.getContext(), op.getInput().getType(),
+        getReductionUnaryStem<ReductionOp>(), ".x");
+    if (failed(calleeName))
+      return rewriter.notifyMatchFailure(op,
+                                         "unsupported widening reduction VPTO signature");
+
+    Type inputType =
+        this->getTypeConverter()->convertType(op.getInput().getType());
+    Type resultType =
+        this->getTypeConverter()->convertType(op.getResult().getType());
+    Type maskType = this->getTypeConverter()->convertType(op.getMask().getType());
+    if (!inputType || !resultType || !maskType)
+      return rewriter.notifyMatchFailure(op,
+                                         "failed to convert widening reduction types");
+
+    Value input = adaptor.getInput();
+    Value mask = adaptor.getMask();
+    if (!input || !mask || input.getType() != inputType ||
+        mask.getType() != maskType) {
+      return rewriter.notifyMatchFailure(
+          op, "unexpected converted widening reduction operand types");
     }
 
     auto call = rewriter.create<func::CallOp>(op.getLoc(), *calleeName,
@@ -2383,7 +2609,9 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to convert vbr result type");
 
     Value scalar = adaptor.getValue();
-    if (!scalar || scalar.getType() != op.getValue().getType())
+    Type expectedScalarType =
+        this->getTypeConverter()->convertType(op.getValue().getType());
+    if (!scalar || !expectedScalarType || scalar.getType() != expectedScalarType)
       return rewriter.notifyMatchFailure(op,
                                          "unexpected converted vbr operand type");
 
@@ -3945,38 +4173,38 @@ private:
   LoweringState &state;
 };
 
-class LowerVexpdiffOpPattern final
-    : public OpConversionPattern<pto::VexpdiffOp> {
+class LowerVexpdifOpPattern final
+    : public OpConversionPattern<pto::VexpdifOp> {
 public:
-  explicit LowerVexpdiffOpPattern(TypeConverter &typeConverter,
-                                  MLIRContext *context, LoweringState &state)
-      : OpConversionPattern<pto::VexpdiffOp>(typeConverter, context),
+  explicit LowerVexpdifOpPattern(TypeConverter &typeConverter,
+                                 MLIRContext *context, LoweringState &state)
+      : OpConversionPattern<pto::VexpdifOp>(typeConverter, context),
         state(state) {}
 
   LogicalResult
-  matchAndRewrite(pto::VexpdiffOp op, pto::VexpdiffOp::Adaptor adaptor,
+  matchAndRewrite(pto::VexpdifOp op, pto::VexpdifOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     auto laneCount = getElementCountFromVectorLike(op.getInput().getType());
     Type elemType = getElementTypeFromVectorLike(op.getInput().getType());
     auto part = parsePartImmediate(op.getPart());
     if (!laneCount || !elemType || !part)
-      return rewriter.notifyMatchFailure(op, "unsupported vexpdiff signature");
+      return rewriter.notifyMatchFailure(op, "unsupported vexpdif signature");
 
     FailureOr<Value> mask = materializeDynamicPltMask(
         rewriter, state, op.getLoc(), getI32Constant(rewriter, op.getLoc(), *laneCount),
         elemType);
     if (failed(mask))
-      return rewriter.notifyMatchFailure(op, "failed to materialize vexpdiff mask");
+      return rewriter.notifyMatchFailure(op, "failed to materialize vexpdif mask");
 
     Type resultType = this->getTypeConverter()->convertType(op.getResult().getType());
     if (!resultType)
-      return rewriter.notifyMatchFailure(op, "failed to convert vexpdiff result type");
+      return rewriter.notifyMatchFailure(op, "failed to convert vexpdif result type");
 
     FailureOr<StringRef> calleeName =
-        buildVexpdiffCallee(op.getContext(), op.getInput().getType(),
-                            op.getResult().getType());
+        buildVexpdifCallee(op.getContext(), op.getInput().getType(),
+                           op.getResult().getType());
     if (failed(calleeName))
-      return rewriter.notifyMatchFailure(op, "unsupported vexpdiff callee");
+      return rewriter.notifyMatchFailure(op, "unsupported vexpdif callee");
 
     Value partValue = getI32Constant(rewriter, op.getLoc(), *part);
     auto funcType = rewriter.getFunctionType(
@@ -4075,7 +4303,7 @@ public:
     callArgs.push_back(*mask);
     argTypes.push_back((*mask).getType());
 
-    if ((*contract).requiresRnd) {
+    auto appendRndArg = [&]() -> LogicalResult {
       auto roundMode =
           op.getRndAttr() ? parseRoundModeImmediate(*op.getRnd()) : std::nullopt;
       if (!roundMode)
@@ -4083,9 +4311,10 @@ public:
       Value roundValue = getI32Constant(rewriter, op.getLoc(), *roundMode);
       callArgs.push_back(roundValue);
       argTypes.push_back(roundValue.getType());
-    }
+      return success();
+    };
 
-    if ((*contract).requiresSat) {
+    auto appendSatArg = [&]() -> LogicalResult {
       auto saturation =
           op.getSatAttr() ? parseSaturationImmediate(*op.getSat()) : std::nullopt;
       if (!saturation)
@@ -4093,10 +4322,24 @@ public:
       Value satValue = getI32Constant(rewriter, op.getLoc(), *saturation);
       callArgs.push_back(satValue);
       argTypes.push_back(satValue.getType());
+      return success();
+    };
+
+    if ((*contract).satBeforeRnd) {
+      if ((*contract).requiresSat && failed(appendSatArg()))
+        return failure();
+      if ((*contract).requiresRnd && failed(appendRndArg()))
+        return failure();
+    } else {
+      if ((*contract).requiresRnd && failed(appendRndArg()))
+        return failure();
+      if ((*contract).requiresSat && failed(appendSatArg()))
+        return failure();
     }
 
     if ((*contract).requiresPart) {
-      auto part = op.getPartAttr() ? parsePartImmediate(*op.getPart()) : std::nullopt;
+      auto part =
+          op.getPartAttr() ? parseVcvtPartImmediate(*op.getPart()) : std::nullopt;
       if (!part)
         return rewriter.notifyMatchFailure(op, "vcvt requires valid part attr");
       Value partValue = getI32Constant(rewriter, op.getLoc(), *part);
@@ -4134,6 +4377,30 @@ public:
                                          "failed to convert vbitcast result type");
     rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType,
                                                  adaptor.getInput());
+    return success();
+  }
+};
+
+class LowerPbitcastOpPattern final
+    : public OpConversionPattern<pto::PbitcastOp> {
+public:
+  explicit LowerPbitcastOpPattern(TypeConverter &typeConverter,
+                                  MLIRContext *context, LoweringState &state)
+      : OpConversionPattern<pto::PbitcastOp>(typeConverter, context) {}
+
+  LogicalResult
+  matchAndRewrite(pto::PbitcastOp op, pto::PbitcastOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    Type resultType =
+        this->getTypeConverter()->convertType(op.getResult().getType());
+    if (!resultType)
+      return rewriter.notifyMatchFailure(op,
+                                         "failed to convert pbitcast result type");
+    if (adaptor.getInput().getType() != resultType) {
+      return rewriter.notifyMatchFailure(
+          op, "pbitcast expects identical lowered input/result types");
+    }
+    rewriter.replaceOp(op, adaptor.getInput());
     return success();
   }
 };
@@ -4823,7 +5090,7 @@ static void populateVPTOOpLoweringPatterns(VPTOTypeConverter &typeConverter,
                LowerVecScalarMaskedOpPattern<pto::VlreluOp>,
                LowerVecScalarMaskedOpPattern<pto::VshlsOp>,
                LowerVecScalarMaskedOpPattern<pto::VshrsOp>,
-               LowerReductionUnaryOpPattern<pto::VcaddOp>,
+               LowerWideningReductionUnaryOpPattern<pto::VcaddOp>,
                LowerReductionUnaryOpPattern<pto::VcmaxOp>,
                LowerReductionUnaryOpPattern<pto::VcminOp>,
                LowerReductionUnaryOpPattern<pto::VcgaddOp>,
@@ -4891,16 +5158,17 @@ static void populateVPTOOpLoweringPatterns(VPTOTypeConverter &typeConverter,
                LowerVgather2OpPattern, LowerVgather2BcOpPattern,
                LowerVgatherbOpPattern, LowerVscatterOpPattern,
                LowerVpreluOpPattern, LowerVaxpyOpPattern,
-               LowerVciOpPattern, LowerVexpdiffOpPattern,
+               LowerVciOpPattern, LowerVexpdifOpPattern,
                LowerVbitsortOpPattern, LowerVtrcOpPattern, LowerVcvtOpPattern,
-               LowerVbitcastOpPattern,
+               LowerVbitcastOpPattern, LowerPbitcastOpPattern,
                LowerPredicateLoadOpPattern<pto::PldiOp>,
                LowerPredicateLoadOpPattern<pto::PldsOp>,
                LowerPredicateStoreOpPattern<pto::PstiOp>,
                LowerPredicateStoreOpPattern<pto::PstsOp>,
                LowerPstuOpPattern, LowerVstusOpPattern, LowerVsturOpPattern,
                LowerCopyOpPattern<pto::CopyGmToUbufOp>,
-               LowerCopyOpPattern<pto::CopyUbufToGmOp>>(
+               LowerCopyOpPattern<pto::CopyUbufToGmOp>,
+               LowerCopyUbufToUbufOpPattern>(
       typeConverter, patterns.getContext(), state);
 }
 
@@ -4944,17 +5212,19 @@ static void configureVPTOOpLoweringTarget(ConversionTarget &target,
                       pto::VcaddOp, pto::VcmaxOp, pto::VcminOp,
                       pto::VcgaddOp, pto::VcgmaxOp, pto::VcgminOp, pto::VcpaddOp,
                       pto::VdupOp, pto::VbrOp,
-                      pto::PpackOp, pto::PunpackOp, pto::VselOp, pto::VselrOp,
+                      pto::PpackOp, pto::PunpackOp, pto::PbitcastOp,
+                      pto::VselOp, pto::VselrOp,
                       pto::PnotOp, pto::PselOp, pto::PandOp, pto::PorOp, pto::PxorOp,
                       pto::PdintlvB8Op, pto::PdintlvB16Op, pto::PdintlvB32Op,
                       pto::PintlvB8Op, pto::PintlvB16Op, pto::PintlvB32Op,
                       pto::VsunpackOp, pto::VzunpackOp, pto::VpackOp,
                       pto::VintlvOp, pto::VdintlvOp, pto::VpreluOp,
-                      pto::VaxpyOp, pto::VciOp, pto::VexpdiffOp,
+                      pto::VaxpyOp, pto::VciOp, pto::VexpdifOp,
                       pto::VbitsortOp, pto::VtrcOp, pto::VcvtOp,
                       pto::VbitcastOp,
                       pto::VcmpOp, pto::VcmpsOp,
-                      pto::CopyGmToUbufOp, pto::CopyUbufToGmOp>();
+                      pto::CopyGmToUbufOp, pto::CopyUbufToGmOp,
+                      pto::CopyUbufToUbufOp>();
   target.markUnknownOpDynamicallyLegal([](Operation *) { return true; });
 }
 

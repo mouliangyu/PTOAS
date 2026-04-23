@@ -1,3 +1,11 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
 //===- PTOToVPTOLowering.cpp - PTO to VPTO lowering helpers --------------===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -35,6 +43,28 @@ namespace pto {
 namespace {
 
 constexpr StringLiteral kLoweredLoopScopeAttrName = "llvm.loop.aivector_scope";
+
+static Type getVcaddResultElementType(MLIRContext *context, Type inputElementType) {
+  if (auto intType = dyn_cast<IntegerType>(inputElementType)) {
+    if (intType.getWidth() == 8)
+      return IntegerType::get(context, 16, intType.getSignedness());
+    if (intType.getWidth() == 16)
+      return IntegerType::get(context, 32, intType.getSignedness());
+  }
+  return inputElementType;
+}
+
+static pto::VRegType getVcaddResultVRegType(MLIRContext *context,
+                                            pto::VRegType inputType) {
+  int64_t resultLanes = inputType.getElementCount();
+  if (auto intType = dyn_cast<IntegerType>(inputType.getElementType())) {
+    if (intType.getWidth() == 8 || intType.getWidth() == 16)
+      resultLanes /= 2;
+  }
+  return pto::VRegType::get(
+      context, resultLanes,
+      getVcaddResultElementType(context, inputType.getElementType()));
+}
 
 struct ResolvedTensorView {
   Value root;
@@ -1747,6 +1777,7 @@ enum class VPTOCvtLoweringKind {
   Vtrc,
   F32ToBF16,
   F16ToF32,
+  BF16ToF16,
   BF16ToF32,
 };
 
@@ -1758,6 +1789,8 @@ static FailureOr<VPTOCvtLoweringKind> classifyA5CvtLowering(Type srcElemType,
     return VPTOCvtLoweringKind::F32ToBF16;
   if (srcElemType.isF16() && dstElemType.isF32())
     return VPTOCvtLoweringKind::F16ToF32;
+  if (srcElemType.isBF16() && dstElemType.isF16())
+    return VPTOCvtLoweringKind::BF16ToF16;
   if (srcElemType.isBF16() && dstElemType.isF32())
     return VPTOCvtLoweringKind::BF16ToF32;
   return failure();
@@ -2414,7 +2447,9 @@ LogicalResult buildRowReduceVecScope(StringRef family,
 
       Value reduced;
       if (family == "rowsum")
-        reduced = rewriter.create<pto::VcaddOp>(loc, vecType, srcVec, srcPredicate);
+        reduced = rewriter.create<pto::VcaddOp>(
+            loc, getVcaddResultVRegType(rewriter.getContext(), vecType), srcVec,
+            srcPredicate);
       else if (family == "rowmax")
         reduced = rewriter.create<pto::VcmaxOp>(loc, vecType, srcVec, srcPredicate);
       else if (family == "rowmin")
@@ -2423,9 +2458,11 @@ LogicalResult buildRowReduceVecScope(StringRef family,
         return emitError(loc) << "unsupported VPTO row-reduce family: " << family;
 
       Value fullMask = buildAllPredicateMask(rewriter, loc, contract.elementType);
-      if (family == "rowsum")
+      if (family == "rowsum") {
+        if (reduced.getType() != vecType)
+          reduced = rewriter.create<pto::VcvtOp>(loc, vecType, reduced);
         acc = rewriter.create<pto::VaddOp>(loc, vecType, acc, reduced, fullMask);
-      else if (family == "rowmax")
+      } else if (family == "rowmax")
         acc = rewriter.create<pto::VmaxOp>(loc, vecType, acc, reduced, fullMask);
       else
         acc = rewriter.create<pto::VminOp>(loc, vecType, acc, reduced, fullMask);
@@ -2463,7 +2500,9 @@ LogicalResult buildRowReduceVecScope(StringRef family,
 
     Value reduced;
     if (family == "rowsum")
-      reduced = rewriter.create<pto::VcaddOp>(loc, vecType, srcVec, srcPredicate);
+      reduced = rewriter.create<pto::VcaddOp>(
+          loc, getVcaddResultVRegType(rewriter.getContext(), vecType), srcVec,
+          srcPredicate);
     else if (family == "rowmax")
       reduced = rewriter.create<pto::VcmaxOp>(loc, vecType, srcVec, srcPredicate);
     else if (family == "rowmin")
@@ -2472,9 +2511,11 @@ LogicalResult buildRowReduceVecScope(StringRef family,
       return emitError(loc) << "unsupported VPTO row-reduce family: " << family;
 
     Value fullMask = buildAllPredicateMask(rewriter, loc, contract.elementType);
-    if (family == "rowsum")
+    if (family == "rowsum") {
+      if (reduced.getType() != vecType)
+        reduced = rewriter.create<pto::VcvtOp>(loc, vecType, reduced);
       acc = rewriter.create<pto::VaddOp>(loc, vecType, acc, reduced, fullMask);
-    else if (family == "rowmax")
+    } else if (family == "rowmax")
       acc = rewriter.create<pto::VmaxOp>(loc, vecType, acc, reduced, fullMask);
     else
       acc = rewriter.create<pto::VminOp>(loc, vecType, acc, reduced, fullMask);
@@ -4756,7 +4797,7 @@ LogicalResult lowerTCVT(TCvtOp op, PatternRewriter &rewriter) {
       classifyA5CvtLowering(contract.elementType, dstElementType);
   if (failed(loweringKind))
     return op.emitOpError(
-        "current tcvt lowering supports only f32->f32, f32->bf16, f16->f32, and bf16->f32");
+        "current tcvt lowering supports only f32->f32, f32->bf16, f16->f32, bf16->f16, and bf16->f32");
 
   FailureOr<StringAttr> roundMode = stringifyA5RoundMode(op, rewriter);
   if (failed(roundMode))
@@ -4856,6 +4897,17 @@ LogicalResult lowerTCVT(TCvtOp op, PatternRewriter &rewriter) {
     Value converted = rewriter.create<pto::VcvtOp>(
         op.getLoc(), dstVecType, loaded.getResult(), StringAttr(),
         StringAttr(), rewriter.getStringAttr("PART_EVEN"));
+    rewriter.create<pto::VstsOp>(
+        op.getLoc(), converted, dstBuffer, offset, StringAttr(),
+        buildAllPredicateMask(rewriter, op.getLoc(), dstElementType));
+    break;
+  }
+  case VPTOCvtLoweringKind::BF16ToF16: {
+    auto loaded =
+        rewriter.create<pto::VldsOp>(op.getLoc(), srcVecType, srcBuffer, offset, StringAttr());
+    Value converted = rewriter.create<pto::VcvtOp>(
+        op.getLoc(), dstVecType, loaded.getResult(), *roundMode,
+        rewriter.getStringAttr("RS_ENABLE"), StringAttr());
     rewriter.create<pto::VstsOp>(
         op.getLoc(), converted, dstBuffer, offset, StringAttr(),
         buildAllPredicateMask(rewriter, op.getLoc(), dstElementType));
@@ -5252,7 +5304,7 @@ LogicalResult lowerTTRANS(TTransOp op, PatternRewriter &rewriter) {
       rewriter.create<arith::IndexCastOp>(op.getLoc(), indexElemType, chunkBase);
   auto indices =
       rewriter.create<pto::VciOp>(op.getLoc(), indexVecType, chunkBaseI32,
-                                   rewriter.getStringAttr("ASC"));
+                                   rewriter.getStringAttr("INC_ORDER"));
   Value fullMask = buildAllPredicateMask(rewriter, op.getLoc(), indexElemType);
   auto scaled = rewriter.create<pto::VmulsOp>(op.getLoc(), indexVecType,
                                                indices.getResult(), srcStrideI32, fullMask);

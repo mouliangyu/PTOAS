@@ -178,6 +178,15 @@ class BarrierType(str, Enum):
     VV_ALL = "VV_ALL"
     VST_VLD = "VST_VLD"
     VLD_VST = "VLD_VST"
+    VST_VST = "VST_VST"
+    VS_ALL = "VS_ALL"
+    VST_LD = "VST_LD"
+    VLD_ST = "VLD_ST"
+    VST_ST = "VST_ST"
+    SV_ALL = "SV_ALL"
+    ST_VLD = "ST_VLD"
+    LD_VST = "LD_VST"
+    ST_VST = "ST_VST"
 
 
 class MaskPattern(str, Enum):
@@ -287,7 +296,7 @@ class PadValue:
     def value(self) -> int:
         raise AttributeError(
             "PadValue.value is not available; use PadValue.encoded for host-side payload access "
-            "or pad.eval() for Tile-bound scalar materialization"
+            "or pad.eval(...) for scalar materialization"
         )
 
     @property
@@ -312,9 +321,9 @@ class PadValue:
     def as_float32(self) -> float:
         return _float32_from_bits(self.float32_bits)
 
-    def materialize_scalar(self, dtype: ScalarType) -> int | float | None:
+    def eval(self, dtype: ScalarType) -> int | float | None:
         if not isinstance(dtype, ScalarType):
-            raise TypeError("PadValue.materialize_scalar expects a TileLang scalar dtype")
+            raise TypeError("PadValue.eval expects a TileLang scalar dtype")
         if self == PadValue.NULL:
             return None
         if self == PadValue.ZERO:
@@ -428,11 +437,8 @@ class PositionMode(str, Enum):
 
 
 class OrderMode(str, Enum):
-    # The serialized value is emitted into the MLIR `order` attribute of
-    # `pto.vci` and must match the canonical spelling documented by the VPTO
-    # spec (see `docs/vpto_spec/vpto-spec-current.md`). Hand-written VPTO IR
-    # and `VPTOLLVMEmitter::parseOrderImmediate` also use this short form.
     ASC = "ASC"
+    DESC = "DESC"
 
 
 class VcvtRoundMode(str, Enum):
@@ -452,6 +458,10 @@ class VcvtSatMode(str, Enum):
 class VcvtPartMode(str, Enum):
     EVEN = "EVEN"
     ODD = "ODD"
+    P0 = "P0"
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
 
 
 class PostUpdateMode(str, Enum):
@@ -674,6 +684,12 @@ def constexpr(value: bool) -> bool:
     return value
 
 
+def get_op_attr(name: str, default: Any = None) -> Any:
+    if not isinstance(name, str) or not name:
+        raise TypeError("get_op_attr expects a non-empty string attribute name")
+    return default
+
+
 __all__ = [
     "ScalarType",
     "WildcardType",
@@ -733,6 +749,7 @@ __all__ = [
     "mask_b16",
     "mask_b32",
     "constexpr",
+    "get_op_attr",
     "bytewidth",
     "get_lanes",
     "elements_per_vreg",

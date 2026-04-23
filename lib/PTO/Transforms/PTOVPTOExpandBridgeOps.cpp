@@ -1,9 +1,18 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
 #include "PTO/IR/PTO.h"
 #include "PTO/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -63,6 +72,18 @@ static Value offsetBufferPointer(Value basePtr, Type elementType,
                                         offsetIndex);
 }
 
+static bool isKnownOne(Value value) {
+  APInt intValue;
+  return value && matchPattern(value, m_ConstantInt(&intValue)) &&
+         intValue.isOne();
+}
+
+static bool shouldRestoreDmaLoopSize(Value loop1Count, Value loop2Count) {
+  if (!loop1Count)
+    return false;
+  return !isKnownOne(loop1Count) || !isKnownOne(loop2Count);
+}
+
 struct ExpandUvldPattern : public OpRewritePattern<pto::UvldOp> {
   using OpRewritePattern<pto::UvldOp>::OpRewritePattern;
 
@@ -83,9 +104,96 @@ struct ExpandUvldPattern : public OpRewritePattern<pto::UvldOp> {
     Value align =
         rewriter.create<pto::VldasOp>(op.getLoc(), alignType, loadPtr);
     auto load = rewriter.create<pto::VldusOp>(
-        op.getLoc(), TypeRange{vecType, alignType, loadPtr.getType()},
+        op.getLoc(), TypeRange{vecType, alignType},
         ValueRange{loadPtr, align});
     rewriter.replaceOp(op, load.getResult());
+    return success();
+  }
+};
+
+struct ExpandDmaLoadPattern : public OpRewritePattern<pto::DmaLoadOp> {
+  using OpRewritePattern<pto::DmaLoadOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::DmaLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
+    Value loop2Size = op.getLoop2Count();
+    if (!loop2Size)
+      loop2Size = one;
+    if (Value loop2Count = op.getLoop2Count())
+      rewriter.create<pto::SetLoop2StrideOutToUbOp>(
+          loc, op.getLoop2SrcStride(), op.getLoop2DstStride());
+
+    if (Value loop1Count = op.getLoop1Count()) {
+      rewriter.create<pto::SetLoop1StrideOutToUbOp>(
+          loc, op.getLoop1SrcStride(), op.getLoop1DstStride());
+      rewriter.create<pto::SetLoopSizeOutToUbOp>(loc, loop2Size, loop1Count);
+    }
+
+    Value leftPadding = op.getLeftPaddingCount();
+    if (!leftPadding)
+      leftPadding = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
+    Value rightPadding = op.getRightPaddingCount();
+    if (!rightPadding)
+      rightPadding = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
+    Value dataSelect = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getI1Type(),
+        rewriter.getBoolAttr(static_cast<bool>(op.getPadValue())));
+
+    if (Value padValue = op.getPadValue())
+      rewriter.create<pto::SetMovPadValOp>(loc, padValue);
+
+    rewriter.create<pto::CopyGmToUbufOp>(
+        loc, op.getSource(), op.getDestination(), op.getSid(), op.getNBurst(),
+        op.getLenBurst(), leftPadding, rightPadding, dataSelect,
+        op.getL2CacheCtl(), op.getNburstSrcStride(), op.getNburstDstStride());
+    if (shouldRestoreDmaLoopSize(op.getLoop1Count(), loop2Size))
+      rewriter.create<pto::SetLoopSizeOutToUbOp>(loc, one, one);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ExpandDmaStorePattern : public OpRewritePattern<pto::DmaStoreOp> {
+  using OpRewritePattern<pto::DmaStoreOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::DmaStoreOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
+    Value loop2Size = op.getLoop2Count();
+    if (!loop2Size)
+      loop2Size = one;
+    if (Value loop2Count = op.getLoop2Count())
+      rewriter.create<pto::SetLoop2StrideUbToOutOp>(
+          loc, op.getLoop2SrcStride(), op.getLoop2DstStride());
+
+    if (Value loop1Count = op.getLoop1Count()) {
+      rewriter.create<pto::SetLoop1StrideUbToOutOp>(
+          loc, op.getLoop1SrcStride(), op.getLoop1DstStride());
+      rewriter.create<pto::SetLoopSizeUbToOutOp>(loc, loop2Size, loop1Count);
+    }
+
+    rewriter.create<pto::CopyUbufToGmOp>(
+        loc, op.getSource(), op.getDestination(), op.getSid(), op.getNBurst(),
+        op.getLenBurst(), op.getReserved(), op.getNburstDstStride(),
+        op.getNburstSrcStride());
+    if (shouldRestoreDmaLoopSize(op.getLoop1Count(), loop2Size))
+      rewriter.create<pto::SetLoopSizeUbToOutOp>(loc, one, one);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ExpandDmaCopyPattern : public OpRewritePattern<pto::DmaCopyOp> {
+  using OpRewritePattern<pto::DmaCopyOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::DmaCopyOp op,
+                                PatternRewriter &rewriter) const override {
+    rewriter.replaceOpWithNewOp<pto::CopyUbufToUbufOp>(
+        op, op.getSource(), op.getDestination(), op.getSid(), op.getNBurst(),
+        op.getLenBurst(), op.getSrcStride(), op.getDstStride());
     return success();
   }
 };
@@ -101,7 +209,8 @@ struct PTOVPTOExpandBridgeOpsPass
       return;
 
     RewritePatternSet patterns(&getContext());
-    patterns.add<ExpandUvldPattern>(&getContext());
+    patterns.add<ExpandUvldPattern, ExpandDmaLoadPattern, ExpandDmaStorePattern,
+                 ExpandDmaCopyPattern>(&getContext());
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();
   }

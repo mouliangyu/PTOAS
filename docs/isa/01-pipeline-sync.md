@@ -54,16 +54,16 @@ pipe_barrier(pipe);
 
 **Pipe identifiers:** `PIPE_MTE2`, `PIPE_V`, `PIPE_MTE3`
 
-**Example:** Two back-to-back `copy_ubuf_to_gm` calls writing to the same GM address. Without a barrier, MTE3 may reorder them and the final GM value is non-deterministic:
+**Example:** Two back-to-back `dma_store` calls writing to the same GM address. Without a barrier, MTE3 may reorder them and the final GM value is non-deterministic:
 
 ```mlir
 // Both stores target the same GM address — order matters!
-pto.copy_ubuf_to_gm %ub_partial_0, %gm_result, ...
+pto.dma_store %ub_partial_0, %gm_result, ...
 // Without pipe_barrier, MTE3 could execute the second copy before the first
 // completes, producing a non-deterministic result at %gm_result.
 pto.pipe_barrier "PIPE_MTE3"
 // After barrier: first copy is guaranteed complete. Second copy overwrites deterministically.
-pto.copy_ubuf_to_gm %ub_partial_1, %gm_result, ...
+pto.dma_store %ub_partial_1, %gm_result, ...
 ```
 
 ---
@@ -116,21 +116,30 @@ The `mode` parameter controls how `get_buf` and `rls_buf` interact with pipeline
 ### `pto.mem_bar`
 
 - **syntax:** `pto.mem_bar "BARRIER_TYPE"`
-- **semantics:** Intra-vector-pipe memory fence within `__VEC_SCOPE__`. Required when UB addresses alias between vector load/store operations.
+- **semantics:** Shared-memory (UB address space) memory fence within `__VEC_SCOPE__`. Required when UB addresses alias between memory operations. The barrier type selects which classes of prior instructions must complete before which classes of subsequent instructions may proceed.
 
 ```c
 mem_bar(barrier_type);
 ```
 
-**Barrier types:**
+**Barrier types** are organized into three families by the scope of prior vs. subsequent instructions:
 
-| Type | Semantics |
-|------|-----------|
-| `VV_ALL` | All prior vector ops complete before subsequent |
-| `VST_VLD` | All prior vector stores visible before subsequent loads |
-| `VLD_VST` | All prior vector loads complete before subsequent stores |
+| Family | Barrier type | Prior instructions | Subsequent instructions |
+|--------|-------------|-------------------|------------------------|
+| **VV** (vector→vector) | `VV_ALL` | All vector load/store | All vector load/store |
+| | `VST_VLD` | All vector store | All vector load |
+| | `VLD_VST` | All vector load | All vector store |
+| | `VST_VST` | All vector store | All vector store |
+| **VS** (vector→scalar) | `VS_ALL` | All vector load/store | All scalar load/store |
+| | `VST_LD` | All vector store | All scalar load |
+| | `VLD_ST` | All vector load | All scalar store |
+| | `VST_ST` | All vector store | All scalar store |
+| **SV** (scalar→vector) | `SV_ALL` | All scalar load/store | All vector load/store |
+| | `ST_VLD` | All scalar store | All vector load |
+| | `LD_VST` | All scalar load | All vector store |
+| | `ST_VST` | All scalar store | All vector store |
 
-**Example:** Ensure stores are visible before loads to same UB region:
+**Example:** Ensure vector stores are visible before subsequent vector loads to the same UB region:
 ```mlir
 pto.vsts %v0, %ub[%c0] : !pto.vreg<64xf32>, !pto.ptr<f32, ub>
 pto.mem_bar "VST_VLD"
@@ -160,7 +169,7 @@ For non-1:1 producer-consumer ratios (e.g., 1 MTE2 load : N Vector compute slice
 ```mlir
 // set_flag/wait_flag: 1 MTE2 load, 8 Vector computes on slices
 // MTE2 loads large tile once
-pto.copy_gm_to_ubuf %gm_ptr, %ub_tile, ...
+pto.dma_load %gm_ptr, %ub_tile, ...
 pto.set_flag["PIPE_MTE2", "PIPE_V", "EVT_TILE_READY"]  // ◀ MUST be outside loop
 
 // Vector consumes in 8 slices — but wait_flag can only fire ONCE
@@ -177,7 +186,7 @@ With `get_buf`/`rls_buf`, acquire/release can be **inside the loop** — no peel
 // get_buf/rls_buf: same 1:8 pattern, acquire/release inside loop works fine
 // MTE2 loads large tile
 pto.get_buf "PIPE_MTE2", %bufid_tile, %c0 : i64, i64
-pto.copy_gm_to_ubuf %gm_ptr, %ub_tile, ...
+pto.dma_load %gm_ptr, %ub_tile, ...
 pto.rls_buf "PIPE_MTE2", %bufid_tile, %c0 : i64, i64
 
 // Vector acquires/releases per slice — all 8 iterations work correctly
@@ -252,7 +261,7 @@ Each cross-pipeline data dependency requires an explicit signal/wait pair. The p
 
 ```mlir
 // ─── Stage 1: MTE2 loads data from GM into UB ───
-pto.copy_gm_to_ubuf %gm_ptr, %ub_ptr, ...
+pto.dma_load %gm_ptr, %ub_ptr, ...
 
 // MTE2 signals: "UB data is ready for Vector pipe"
 pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
@@ -275,7 +284,7 @@ pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
 // MTE3 waits until Vector's signal arrives
 pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
 
-pto.copy_ubuf_to_gm %ub_out, %gm_out, ...
+pto.dma_store %ub_out, %gm_out, ...
 ```
 
 **Key property:** Every cross-pipeline edge is an explicit `(set_flag, wait_flag)` pair. Simple for straight-line code, but gets verbose in loops (see Example 3).
@@ -290,7 +299,7 @@ Instead of naming events, each pipeline declares when it **acquires** (`get_buf`
 // ─── Stage 1: MTE2 loads data into UB ───
 // MTE2 acquires ub_ptr — blocks if Vector hasn't released it from a prior iteration
 pto.get_buf "PIPE_MTE2", %bufid_ub_ptr, %c0 : i64, i64   // mode=0 (default)
-pto.copy_gm_to_ubuf %gm_ptr, %ub_ptr, ...
+pto.dma_load %gm_ptr, %ub_ptr, ...
 // MTE2 done writing ub_ptr — release it so Vector can consume
 pto.rls_buf "PIPE_MTE2", %bufid_ub_ptr, %c0 : i64, i64
 
@@ -315,7 +324,7 @@ pto.rls_buf "PIPE_V", %bufid_ub_out, %c0 : i64, i64
 // ─── Stage 3: MTE3 stores result to GM ───
 // MTE3 acquires ub_out — blocks until Vector releases it (RAW: V write → MTE3 read)
 pto.get_buf "PIPE_MTE3", %bufid_ub_out, %c0 : i64, i64
-pto.copy_ubuf_to_gm %ub_out, %gm_out, ...
+pto.dma_store %ub_out, %gm_out, ...
 // MTE3 done reading ub_out — release so Vector can reuse it in next iteration
 pto.rls_buf "PIPE_MTE3", %bufid_ub_out, %c0 : i64, i64
 ```
@@ -368,7 +377,7 @@ scf.for %i = %c0 to %N step %c1 {
   // ── MTE2: load tile[i] into buf_in[i%2] ──
   // WAR: wait until Vector has released buf_in[i%2] from iteration i-2
   pto.wait_flag["PIPE_V", "PIPE_MTE2", "EVT_IN_REV_{pp}"]
-  pto.copy_gm_to_ubuf %gm_ptr[%i], %ub_in[%pp], ...
+  pto.dma_load %gm_ptr[%i], %ub_in[%pp], ...
   // RAW: signal Vector that buf_in[i%2] data is ready
   pto.set_flag["PIPE_MTE2", "PIPE_V", "EVT_IN_FWD_{pp}"]
 
@@ -391,7 +400,7 @@ scf.for %i = %c0 to %N step %c1 {
   // ── MTE3: store result from buf_out[i%2] to GM ──
   // RAW: wait for Vector to finish writing buf_out[i%2]
   pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVT_OUT_FWD_{pp}"]
-  pto.copy_ubuf_to_gm %ub_out[%pp], %gm_out[%i], ...
+  pto.dma_store %ub_out[%pp], %gm_out[%i], ...
   // WAR: tell Vector "done reading buf_out[i%2]"
   pto.set_flag["PIPE_MTE3", "PIPE_V", "EVT_OUT_REV_{pp}"]
 }
@@ -422,7 +431,7 @@ scf.for %i = %c0 to %N step %c1 {
   // Acquires buf[i%2] — on first iteration, buffer is free so proceeds immediately.
   // On later iterations, blocks until Vector releases buf[i%2] (WAR: automatic).
   pto.get_buf "PIPE_MTE2", %bufid_buf[%pp], %c0 : i64, i64   // mode=0
-  pto.copy_gm_to_ubuf %gm_ptr[%i], %ub_buf[%pp], ...
+  pto.dma_load %gm_ptr[%i], %ub_buf[%pp], ...
   pto.rls_buf "PIPE_MTE2", %bufid_buf[%pp], %c0 : i64, i64
 
   // ── Vector: compute on buf[i%2] ──
@@ -442,7 +451,7 @@ scf.for %i = %c0 to %N step %c1 {
   // ── MTE3: store result ──
   // Acquires out[i%2] — blocks until Vector releases it (RAW: automatic)
   pto.get_buf "PIPE_MTE3", %bufid_out[%pp], %c0 : i64, i64
-  pto.copy_ubuf_to_gm %ub_out[%pp], %gm_out[%i], ...
+  pto.dma_store %ub_out[%pp], %gm_out[%i], ...
   pto.rls_buf "PIPE_MTE3", %bufid_out[%pp], %c0 : i64, i64
 }
 // No post-loop drain needed — last rls_buf completes the pipeline.

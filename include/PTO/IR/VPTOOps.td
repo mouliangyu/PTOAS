@@ -1,3 +1,11 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
 //===- VPTOOps.td - PTO low-level operations ----------------*- tablegen -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
@@ -224,6 +232,51 @@ def PTO_CopyGmToUbufOp : PTO_Op<"copy_gm_to_ubuf", [
   }];
 }
 
+def PTO_DmaLoadOp : PTO_Op<"dma_load", [
+    AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$sid,
+    I64:$l2_cache_ctl,
+    I64:$len_burst,
+    I64:$n_burst,
+    I64:$nburst_src_stride,
+    I64:$nburst_dst_stride,
+    Optional<I64>:$loop1_count,
+    Optional<I64>:$loop1_src_stride,
+    Optional<I64>:$loop1_dst_stride,
+    Optional<I64>:$loop2_count,
+    Optional<I64>:$loop2_src_stride,
+    Optional<I64>:$loop2_dst_stride,
+    Optional<AnyTypeOf<[AnyInteger, AnyFloat], "integer/float scalar">>:$pad_value,
+    Optional<I64>:$left_padding_count,
+    Optional<I64>:$right_padding_count
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$sid,
+      "::mlir::Value":$l2CacheCtl,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop2,
+      "::std::optional<::mlir::pto::DmaPadConfig>":$pad
+    )>
+  ];
+
+}
+
 def PTO_CopyUbufToUbufOp : PTO_Op<"copy_ubuf_to_ubuf"> {
   let arguments = (ins
     PTO_BufferType:$source,
@@ -243,6 +296,32 @@ def PTO_CopyUbufToUbufOp : PTO_Op<"copy_ubuf_to_ubuf"> {
     $source `,` $destination `,` $sid `,` $n_burst `,` $len_burst `,` $src_stride `,` $dst_stride
     attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,` type($n_burst) `,`
     type($len_burst) `,` type($src_stride) `,` type($dst_stride)
+  }];
+}
+
+def PTO_DmaCopyOp : PTO_Op<"dma_copy", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$sid,
+    I64:$n_burst,
+    I64:$len_burst,
+    I64:$src_stride,
+    I64:$dst_stride
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $sid `,` $len_burst
+    `nburst` `(` $n_burst `,` $src_stride `,` $dst_stride `)`
+    attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,`
+    type($n_burst) `,` type($len_burst) `,` type($src_stride) `,`
+    type($dst_stride)
   }];
 }
 
@@ -530,6 +609,8 @@ def PTO_PunpackOp : PTO_MaskUnaryOp<"punpack"> {
     $input `,` $part attr-dict `:` type($input) `->` type($result)
   }];
 }
+
+def PTO_PbitcastOp : PTO_MaskUnaryOp<"pbitcast">;
 
 def PTO_PnotOp : PTO_Op<"pnot", [Pure]> {
   let arguments = (ins
@@ -1170,6 +1251,47 @@ def PTO_CopyUbufToGmOp : PTO_Op<"copy_ubuf_to_gm", [
   }];
 }
 
+def PTO_DmaStoreOp : PTO_Op<"dma_store", [
+    AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$sid,
+    I64:$reserved,
+    I64:$len_burst,
+    I64:$n_burst,
+    I64:$nburst_src_stride,
+    I64:$nburst_dst_stride,
+    Optional<I64>:$loop1_count,
+    Optional<I64>:$loop1_src_stride,
+    Optional<I64>:$loop1_dst_stride,
+    Optional<I64>:$loop2_count,
+    Optional<I64>:$loop2_src_stride,
+    Optional<I64>:$loop2_dst_stride
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$sid,
+      "::mlir::Value":$reserved,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop2
+    )>
+  ];
+
+}
+
 // NOTE: Unvalidated new x2 / pair / align-store-family abstractions. Added to
 // reflect CCE builtin families but not yet end-to-end validated.
 def PTO_VselrOp : PTO_Op<"vselr", [Pure]> {
@@ -1362,7 +1484,7 @@ class PTO_UnmaskedBinaryVecOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
 }
 
 def PTO_VpreluOp : PTO_UnmaskedBinaryVecOp<"vprelu">;
-def PTO_VexpdiffOp : PTO_Op<"vexpdiff", [Pure]> {
+def PTO_VexpdifOp : PTO_Op<"vexpdif", [Pure]> {
   let arguments = (ins
     PTO_VectorType:$input,
     PTO_VectorType:$max,

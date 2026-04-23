@@ -57,9 +57,9 @@ for (int i = 0; i < N; i++)
 
 ---
 
-### `pto.vexpdiff`
+### `pto.vexpdif`
 
-- **syntax:** `%result = pto.vexpdiff %input, %max, "EVEN|ODD" : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<Mxf32>`
+- **syntax:** `%result = pto.vexpdif %input, %max, "EVEN|ODD" : !pto.vreg<NxT>, !pto.vreg<NxT> -> !pto.vreg<Mxf32>`
 - **A5 types:** input `f16` or `f32`, output `f32`
 - **semantics:** Fused exp(x - max) for numerically stable softmax.
 
@@ -149,7 +149,7 @@ for (int i = 0; i < N; i++)
 
 ### `pto.vci`
 
-- **syntax:** `%result = pto.vci %index {order = "ORDER"} : integer -> !pto.vreg<NxT>`
+- **syntax:** `%result = pto.vci %index {order = "ASC|DESC"} : integer -> !pto.vreg<NxT>`
 - **semantics:** Generate lane index vector.
 
 ```c
@@ -208,7 +208,7 @@ for (int i = 0; i < N; i++)
 
 - `pto.vmull %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>, !pto.vreg<NxT>`
 - `pto.vmula %acc, %lhs, %rhs, %mask : !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.vreg<NxT>, !pto.mask<G> -> !pto.vreg<NxT>`
-- `pto.vci %index {order = "ORDER"} : integer -> !pto.vreg<NxT>`
+- `pto.vci %index {order = "ASC|DESC"} : integer -> !pto.vreg<NxT>`
 - `pto.vbitsort %dest, %src, %indices, %repeat_times : !pto.ptr<...>, !pto.ptr<...>, !pto.ptr<...>, index`
 - `pto.vmrgsort4 %dest, %src0, %src1, %src2, %src3, %count, %config : !pto.ptr<...>, !pto.ptr<...>, !pto.ptr<...>, !pto.ptr<...>, !pto.ptr<...>, i64, i64`
 
@@ -219,7 +219,7 @@ for (int i = 0; i < N; i++)
 ```mlir
 // Softmax with fused expdiff
 %max_broadcast = pto.vlds %ub_max[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
-%exp_stable = pto.vexpdiff %logits, %max_broadcast : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
+%exp_stable = pto.vexpdif %logits, %max_broadcast : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
 // Leaky ReLU activation
 %activated = pto.vlrelu %linear_out, %alpha_scalar, %mask : !pto.vreg<64xf32>, f32, !pto.mask<G> -> !pto.vreg<64xf32>

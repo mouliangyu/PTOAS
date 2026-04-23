@@ -65,6 +65,7 @@ from .semantic import (
     SemanticType,
     SemanticTupleExpr,
     SemanticTupleType,
+    SemanticVScatterStmt,
     SemanticVRegType,
     SemanticVectorPairStoreStmt,
     SemanticVectorStoreStmt,
@@ -89,6 +90,17 @@ from .types import (
 _I1_TYPE = SemanticScalarType(dtype=ScalarType("i1"))
 _I32_TYPE = SemanticScalarType(dtype=ScalarType("i32"))
 _I64_TYPE = SemanticScalarType(dtype=ScalarType("i64"))
+
+
+def _signless_mov_pad_scalar_type(dtype: ScalarType) -> SemanticScalarType | None:
+    bitwidth = integer_bitwidth(dtype)
+    if bitwidth == 8:
+        return SemanticScalarType(dtype=ScalarType("i8"))
+    if bitwidth == 16:
+        return SemanticScalarType(dtype=ScalarType("i16"))
+    if bitwidth == 32:
+        return SemanticScalarType(dtype=ScalarType("i32"))
+    return None
 
 
 def _format_symbol_name(symbol_name: str) -> str:
@@ -302,6 +314,12 @@ class _AuthoringRenderer:
                 self._collect_used_tile_buffers_from_expr(index, used)
             self._collect_used_tile_buffers_from_expr(stmt.mask, used)
             return
+        if isinstance(stmt, SemanticVScatterStmt):
+            self._collect_used_tile_buffers_from_expr(stmt.value, used)
+            self._record_tile_buffer_use(stmt.destination, used)
+            self._collect_used_tile_buffers_from_expr(stmt.offsets, used)
+            self._collect_used_tile_buffers_from_expr(stmt.active_lanes, used)
+            return
         if isinstance(stmt, SemanticPredicateStoreStmt):
             self._collect_used_tile_buffers_from_expr(stmt.value, used)
             self._record_tile_buffer_use(stmt.destination, used)
@@ -421,6 +439,8 @@ class _AuthoringRenderer:
             return self._render_dma_store(stmt, env, indent=indent)
         if isinstance(stmt, SemanticVectorStoreStmt):
             return self._render_vector_store(stmt, env, indent=indent)
+        if isinstance(stmt, SemanticVScatterStmt):
+            return self._render_vscatter(stmt, env, indent=indent)
         if isinstance(stmt, SemanticVectorPairStoreStmt):
             return self._render_vector_pair_store(stmt, env, indent=indent)
         if isinstance(stmt, SemanticPredicateStoreStmt):
@@ -505,6 +525,19 @@ class _AuthoringRenderer:
     ) -> list[str]:
         lines: list[str] = []
         value = self._lower_expr(stmt.value, env, indent=indent, into=lines)
+        if (
+            stmt.name == "set_mov_pad_val"
+            and isinstance(value.type, SemanticScalarType)
+            and is_integer_dtype(value.type.dtype)
+        ):
+            signless_type = _signless_mov_pad_scalar_type(value.type.dtype)
+            if signless_type is not None:
+                value = self._coerce_rendered_value(
+                    value,
+                    signless_type,
+                    indent=indent,
+                    into=lines,
+                )
         lines.append(
             self._indent(indent)
             + f"pto.{stmt.name} {value.name} : {self._render_type(value.type)}"
@@ -1061,6 +1094,27 @@ class _AuthoringRenderer:
             + f"{low.name}, {high.name}, {destination.name}[{rendered_indices}], {dist}, {mask.name} : "
             + f"{self._render_type(low.type)}, {self._render_type(high.type)}, "
             + f"{self._render_type(destination.type)}, {self._render_type(mask.type)}"
+        )
+        return lines
+
+    def _render_vscatter(
+        self,
+        stmt: SemanticVScatterStmt,
+        env: dict[str, _RenderedValue],
+        *,
+        indent: int,
+    ) -> list[str]:
+        lines: list[str] = []
+        value = self._lower_expr(stmt.value, env, indent=indent, into=lines)
+        destination = self._lower_expr(stmt.destination, env, indent=indent, into=lines)
+        offsets = self._lower_expr(stmt.offsets, env, indent=indent, into=lines)
+        active_lanes = self._lower_to_index(stmt.active_lanes, env, indent=indent, into=lines)
+        lines.append(
+            self._indent(indent)
+            + "pto.vscatter "
+            + f"{value.name}, {destination.name}, {offsets.name}, {active_lanes.name} : "
+            + f"{self._render_type(value.type)}, {self._render_type(destination.type)}, "
+            + f"{self._render_type(offsets.type)}, {self._render_type(active_lanes.type)}"
         )
         return lines
 
@@ -1815,7 +1869,7 @@ class _AuthoringRenderer:
 
     def _mask_granularity_for_dtype(self, dtype: ScalarType) -> str:
         int_bits = integer_bitwidth(dtype)
-        if dtype.name == "f32" or int_bits == 32:
+        if dtype.name == "f32" or int_bits in {32, 64}:
             return "b32"
         if dtype.name in {"f16", "bf16"} or int_bits == 16:
             return "b16"
@@ -2451,16 +2505,12 @@ class _AuthoringRenderer:
         if isinstance(expr, SemanticBindingRef):
             return env.get(expr.binding.name, _RenderedValue(expr.binding.ssa_name, expr.type))
         if isinstance(expr, SemanticLiteralExpr):
-            if desired_name is not None and into is not None:
-                into.append(
-                    self._indent(indent)
-                    + f"{desired_name} = arith.constant {self._format_constant(expr.value, expr.type)} : "
-                    f"{self._render_arith_constant_type(expr.type)}"
-                )
-                return _RenderedValue(name=desired_name, type=expr.type)
-            return _RenderedValue(
-                name=self._materialize_constant(expr.value, expr.type),
-                type=expr.type,
+            return self._lower_literal_expr(
+                expr.value,
+                expr.type,
+                indent=indent,
+                desired_name=desired_name,
+                into=into,
             )
         if isinstance(expr, SemanticSubscriptAccess):
             return self._lower_subscript_access(
@@ -2925,6 +2975,15 @@ class _AuthoringRenderer:
             )
             return _RenderedValue(name=result_name, type=expr.type)
 
+        if expr.name == "pbitcast":
+            value = self._lower_expr(expr.args[0], env, indent=indent, into=into)
+            into.append(
+                self._indent(indent)
+                + f"{result_name} = pto.pbitcast {value.name} : "
+                + f"{self._render_type(value.type)} -> {self._render_type(expr.type)}"
+            )
+            return _RenderedValue(name=result_name, type=expr.type)
+
         if expr.name == "vbitsort":
             destination = self._lower_expr(expr.args[0], env, indent=indent, into=into)
             source = self._lower_expr(expr.args[1], env, indent=indent, into=into)
@@ -2988,7 +3047,6 @@ class _AuthoringRenderer:
             "vzunpack",
             "vusqz",
             "vsqz",
-            "vexpdiff",
             "vcgadd",
             "vcgmax",
             "vcgmin",
@@ -3001,6 +3059,17 @@ class _AuthoringRenderer:
                 self._indent(indent)
                 + f"{result_name} = pto.{expr.name} {value.name}, {mask.name} : "
                 + f"{self._render_type(value.type)}, {self._render_type(mask.type)} -> {self._render_type(expr.type)}"
+            )
+            return _RenderedValue(name=result_name, type=expr.type)
+
+        if expr.name == "vexpdif":
+            lhs = self._lower_expr(expr.args[0], env, indent=indent, into=into)
+            rhs = self._lower_expr(expr.args[1], env, indent=indent, into=into)
+            part = self._render_string_literal(expr.args[2])
+            into.append(
+                self._indent(indent)
+                + f"{result_name} = pto.vexpdif {lhs.name}, {rhs.name}, {part} : "
+                + f"{self._render_type(lhs.type)}, {self._render_type(rhs.type)} -> {self._render_type(expr.type)}"
             )
             return _RenderedValue(name=result_name, type=expr.type)
 
@@ -3218,15 +3287,10 @@ class _AuthoringRenderer:
         into: list[str],
     ) -> _RenderedValue:
         value = self._lower_expr(expr, env, indent=indent, into=into)
-        if isinstance(value.type, SemanticScalarType) and value.type.dtype.name == "i32":
-            return value
-        if isinstance(value.type, SemanticIndexType):
-            cast_name = self._new_temp()
-            into.append(
-                self._indent(indent)
-                + f"{cast_name} = arith.index_cast {value.name} : index to i32"
-            )
-            return _RenderedValue(name=cast_name, type=_I32_TYPE)
+        if isinstance(value.type, SemanticIndexType) or (
+            isinstance(value.type, SemanticScalarType) and is_integer_dtype(value.type.dtype)
+        ):
+            return self._coerce_rendered_value(value, _I32_TYPE, indent=indent, into=into)
         raise NotImplementedError("expected an i32 or index operand during TileLang DSL v1 lowering")
 
     def _lower_to_index(
@@ -3238,11 +3302,21 @@ class _AuthoringRenderer:
         into: list[str],
     ) -> _RenderedValue:
         value = self._lower_expr(expr, env, indent=indent, into=into)
+        return self._coerce_rendered_to_index(value, indent=indent, into=into)
+
+    def _coerce_rendered_to_index(
+        self,
+        value: _RenderedValue,
+        *,
+        indent: int,
+        into: list[str],
+    ) -> _RenderedValue:
         if isinstance(value.type, SemanticIndexType):
             return value
         if isinstance(value.type, SemanticScalarType) and is_integer_dtype(value.type.dtype):
             bits = integer_bitwidth(value.type.dtype)
             if bits in {32, 64}:
+                value = self._bridge_rendered_to_signless_integer(value, indent=indent, into=into)
                 cast_name = self._new_temp()
                 into.append(
                     self._indent(indent)
@@ -3258,15 +3332,10 @@ class _AuthoringRenderer:
         indent: int,
         into: list[str],
     ) -> _RenderedValue:
-        if isinstance(value.type, SemanticScalarType) and value.type.dtype.name == "i64":
-            return value
-        if isinstance(value.type, SemanticIndexType):
-            cast_name = self._new_temp()
-            into.append(
-                self._indent(indent)
-                + f"{cast_name} = arith.index_castui {value.name} : index to i64"
-            )
-            return _RenderedValue(name=cast_name, type=_I64_TYPE)
+        if isinstance(value.type, SemanticIndexType) or (
+            isinstance(value.type, SemanticScalarType) and is_integer_dtype(value.type.dtype)
+        ):
+            return self._coerce_rendered_value(value, _I64_TYPE, indent=indent, into=into)
         raise NotImplementedError("expected an i64 or index operand during TileLang DSL v1 lowering")
 
     def _lower_remaining_to_i32(
@@ -3278,16 +3347,49 @@ class _AuthoringRenderer:
         into: list[str],
     ) -> _RenderedValue:
         value = self._lower_expr(expr, env, indent=indent, into=into)
-        if isinstance(value.type, SemanticScalarType) and value.type.dtype.name == "i32":
-            return value
-        if isinstance(value.type, SemanticIndexType):
-            cast_name = self._new_temp()
-            into.append(
-                self._indent(indent)
-                + f"{cast_name} = arith.index_cast {value.name} : index to i32"
-            )
-            return _RenderedValue(name=cast_name, type=_I32_TYPE)
+        if isinstance(value.type, SemanticIndexType) or (
+            isinstance(value.type, SemanticScalarType) and is_integer_dtype(value.type.dtype)
+        ):
+            return self._coerce_rendered_value(value, _I32_TYPE, indent=indent, into=into)
         raise NotImplementedError("tail make_mask lowering expects an i32 or index remaining operand")
+
+    def _bridge_rendered_to_signless_integer(
+        self,
+        value: _RenderedValue,
+        *,
+        indent: int,
+        into: list[str],
+    ) -> _RenderedValue:
+        if not isinstance(value.type, SemanticScalarType) or not is_integer_dtype(value.type.dtype):
+            return value
+        raw_type = self._signless_integer_scalar_type(value.type)
+        if raw_type is None:
+            return value
+        cast_name = self._new_temp()
+        into.append(
+            self._indent(indent)
+            + f"{cast_name} = builtin.unrealized_conversion_cast {value.name} : "
+            f"{self._render_type(value.type)} to {self._render_type(raw_type)}"
+        )
+        return _RenderedValue(name=cast_name, type=raw_type)
+
+    def _bridge_rendered_integer_to_target(
+        self,
+        value: _RenderedValue,
+        target_type: SemanticScalarType,
+        *,
+        indent: int,
+        into: list[str],
+    ) -> _RenderedValue:
+        if value.type == target_type:
+            return value
+        cast_name = self._new_temp()
+        into.append(
+            self._indent(indent)
+            + f"{cast_name} = builtin.unrealized_conversion_cast {value.name} : "
+            f"{self._render_type(value.type)} to {self._render_type(target_type)}"
+        )
+        return _RenderedValue(name=cast_name, type=target_type)
 
     def _materialize_copy_buffer_ptr(
         self,
@@ -3333,27 +3435,49 @@ class _AuthoringRenderer:
             sign = integer_signedness(dtype)
             return "signless" if sign is None else sign
 
+        def _signless_int_type_for_bits(bits: int) -> SemanticScalarType:
+            if bits not in {8, 16, 32, 64}:
+                raise NotImplementedError(
+                    f"unsupported integer bitwidth {bits!r} for signless coercion in TileLang DSL v1 lowering"
+                )
+            return SemanticScalarType(dtype=ScalarType(f"i{bits}"))
+
         if type(value.type) is type(target_type) and value.type == target_type:
             return value
         if isinstance(value.type, SemanticIndexType) and isinstance(target_type, SemanticScalarType):
             target_int_bits = _scalar_int_bits(target_type.dtype)
             target_sign = _scalar_int_sign(target_type.dtype)
-            if target_int_bits == 32:
+            signless_target_type = self._signless_integer_scalar_type(target_type)
+            if signless_target_type is None and target_int_bits in {8, 16, 32, 64}:
+                signless_target_type = target_type
+            if target_int_bits in {8, 16, 32, 64} and signless_target_type is not None:
+                carrier_type = (
+                    _signless_int_type_for_bits(32)
+                    if target_int_bits in {8, 16}
+                    else _signless_int_type_for_bits(target_int_bits)
+                )
                 op = "arith.index_castui" if target_sign == "unsigned" else "arith.index_cast"
                 cast_name = self._new_temp()
                 into.append(
                     self._indent(indent)
-                    + f"{cast_name} = {op} {value.name} : index to {target_type.dtype.name}"
+                    + f"{cast_name} = {op} {value.name} : index to {carrier_type.dtype.name}"
                 )
-                return _RenderedValue(name=cast_name, type=target_type)
-            if target_int_bits == 64:
-                op = "arith.index_castui" if target_sign in {"signless", "unsigned"} else "arith.index_cast"
-                cast_name = self._new_temp()
-                into.append(
-                    self._indent(indent)
-                    + f"{cast_name} = {op} {value.name} : index to {target_type.dtype.name}"
-                )
-                return _RenderedValue(name=cast_name, type=target_type)
+                lowered_value = _RenderedValue(name=cast_name, type=carrier_type)
+                if target_int_bits in {8, 16}:
+                    lowered_value = self._coerce_rendered_value(
+                        lowered_value,
+                        signless_target_type,
+                        indent=indent,
+                        into=into,
+                    )
+                if signless_target_type != target_type:
+                    return self._coerce_rendered_value(
+                        lowered_value,
+                        target_type,
+                        indent=indent,
+                        into=into,
+                    )
+                return lowered_value
             if target_type.dtype.name in {"f16", "bf16", "f32"}:
                 index_to_int_name = self._new_temp()
                 index_to_int_op = "arith.index_castui"
@@ -3372,35 +3496,73 @@ class _AuthoringRenderer:
             dst = target_type.dtype.name
             if src == dst:
                 return value
-            cast_name = self._new_temp()
             src_bits = _scalar_int_bits(value.type.dtype)
             dst_bits = _scalar_int_bits(target_type.dtype)
             if src_bits is not None and dst_bits is not None:
-                if src_bits == dst_bits:
-                    op = "arith.bitcast"
-                elif src_bits < dst_bits:
+                src_sign = _scalar_int_sign(value.type.dtype)
+                signless_value = self._bridge_rendered_to_signless_integer(value, indent=indent, into=into)
+                signless_target_type = self._signless_integer_scalar_type(target_type) or target_type
+                if signless_value.type == signless_target_type:
+                    if signless_target_type != target_type:
+                        return self._bridge_rendered_integer_to_target(
+                            signless_value,
+                            target_type,
+                            indent=indent,
+                            into=into,
+                        )
+                    return signless_value
+                cast_name = self._new_temp()
+                if src_bits < dst_bits:
                     op = "arith.extui" if _scalar_int_sign(value.type.dtype) == "unsigned" else "arith.extsi"
-                else:
+                elif src_bits > dst_bits:
                     op = "arith.trunci"
+                else:
+                    raise NotImplementedError(
+                        f"unsupported same-width integer coercion from {value.type!r} to {target_type!r} "
+                        "in TileLang DSL v1 lowering"
+                    )
                 into.append(
                     self._indent(indent)
-                    + f"{cast_name} = {op} {value.name} : {src} to {dst}"
+                    + f"{cast_name} = {op} {signless_value.name} : "
+                    f"{self._render_type(signless_value.type)} to {self._render_type(signless_target_type)}"
                 )
-                return _RenderedValue(name=cast_name, type=target_type)
+                lowered_value = _RenderedValue(name=cast_name, type=signless_target_type)
+                if signless_target_type != target_type:
+                    return self._bridge_rendered_integer_to_target(
+                        lowered_value,
+                        target_type,
+                        indent=indent,
+                        into=into,
+                    )
+                return lowered_value
             if src_bits is not None and dst in {"f16", "bf16", "f32"}:
+                signless_value = self._bridge_rendered_to_signless_integer(value, indent=indent, into=into)
+                cast_name = self._new_temp()
                 op = "arith.uitofp" if _scalar_int_sign(value.type.dtype) == "unsigned" else "arith.sitofp"
                 into.append(
                     self._indent(indent)
-                    + f"{cast_name} = {op} {value.name} : {src} to {dst}"
+                    + f"{cast_name} = {op} {signless_value.name} : "
+                    f"{self._render_type(signless_value.type)} to {dst}"
                 )
                 return _RenderedValue(name=cast_name, type=target_type)
             if src in {"f16", "bf16", "f32"} and dst_bits is not None:
+                signless_target_type = self._signless_integer_scalar_type(target_type) or target_type
+                cast_name = self._new_temp()
                 op = "arith.fptoui" if _scalar_int_sign(target_type.dtype) == "unsigned" else "arith.fptosi"
                 into.append(
                     self._indent(indent)
-                    + f"{cast_name} = {op} {value.name} : {src} to {dst}"
+                    + f"{cast_name} = {op} {value.name} : {src} to {self._render_type(signless_target_type)}"
                 )
-                return _RenderedValue(name=cast_name, type=target_type)
+                lowered_value = _RenderedValue(name=cast_name, type=signless_target_type)
+                if signless_target_type != target_type:
+                    return self._bridge_rendered_integer_to_target(
+                        lowered_value,
+                        target_type,
+                        indent=indent,
+                        into=into,
+                    )
+                return lowered_value
+            cast_name = self._new_temp()
             if src in {"f16", "bf16", "f32"} and dst in {"f16", "bf16", "f32"}:
                 op = "arith.extf" if src in {"f16", "bf16"} and dst == "f32" else "arith.truncf"
                 into.append(
@@ -3648,6 +3810,18 @@ class _AuthoringRenderer:
         if cache_key in self._constant_cache:
             return self._constant_cache[cache_key]
 
+        raw_type = self._signless_integer_scalar_type(ty)
+        if raw_type is not None:
+            raw_name = self._materialize_constant(value, raw_type)
+            name = self._constant_name(value, ty)
+            self._constant_cache[cache_key] = name
+            self._constant_lines.append(
+                self._indent(4)
+                + f"{name} = builtin.unrealized_conversion_cast {raw_name} : "
+                f"{self._render_type(raw_type)} to {self._render_type(ty)}"
+            )
+            return name
+
         name = self._constant_name(value, ty)
         self._constant_cache[cache_key] = name
         self._constant_lines.append(
@@ -3656,6 +3830,56 @@ class _AuthoringRenderer:
             f"{self._render_arith_constant_type(ty)}"
         )
         return name
+
+    def _signless_integer_scalar_type(self, ty: SemanticType) -> SemanticScalarType | None:
+        if not isinstance(ty, SemanticScalarType) or not is_integer_dtype(ty.dtype):
+            return None
+        signedness = integer_signedness(ty.dtype)
+        if signedness in {None, "signless"}:
+            return None
+        bitwidth = integer_bitwidth(ty.dtype)
+        if bitwidth not in {8, 16, 32, 64}:
+            raise NotImplementedError(
+                f"unsupported integer bitwidth {bitwidth!r} for signless literal lowering"
+            )
+        return SemanticScalarType(dtype=ScalarType(f"i{bitwidth}"))
+
+    def _lower_literal_expr(
+        self,
+        value: object,
+        ty: SemanticType,
+        *,
+        indent: int,
+        desired_name: str | None = None,
+        into: list[str] | None = None,
+    ) -> _RenderedValue:
+        raw_type = self._signless_integer_scalar_type(ty) or ty
+        if desired_name is not None and into is not None and raw_type == ty:
+            into.append(
+                self._indent(indent)
+                + f"{desired_name} = arith.constant {self._format_constant(value, ty)} : "
+                f"{self._render_arith_constant_type(ty)}"
+            )
+            return _RenderedValue(name=desired_name, type=ty)
+
+        if desired_name is not None and into is not None:
+            raw_name = self._new_temp()
+            into.append(
+                self._indent(indent)
+                + f"{raw_name} = arith.constant {self._format_constant(value, raw_type)} : "
+                f"{self._render_arith_constant_type(raw_type)}"
+            )
+            into.append(
+                self._indent(indent)
+                + f"{desired_name} = builtin.unrealized_conversion_cast {raw_name} : "
+                f"{self._render_type(raw_type)} to {self._render_type(ty)}"
+            )
+            return _RenderedValue(name=desired_name, type=ty)
+
+        return _RenderedValue(
+            name=self._materialize_constant(value, ty),
+            type=ty,
+        )
 
     def _constant_name(self, value: object, ty: SemanticType) -> str:
         if isinstance(ty, SemanticIndexType):

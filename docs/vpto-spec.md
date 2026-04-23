@@ -141,11 +141,15 @@ The PTO micro Instruction enforces a strict memory hierarchy. The Unified Buffer
 └─────────────────────────────────────────────┘
 ```
 
-1. **GM → UB**: DMA transfer via MTE2 (`pto.copy_gm_to_ubuf`)
+1. **GM → UB**: DMA transfer via MTE2 (`pto.dma_load`)
 2. **UB → vreg**: Vector Load instructions (`pto.vlds`, `pto.vldsx2`, etc.)
 3. **vreg → vreg**: Compute instructions (`pto.vadd`, `pto.vmul`, etc.)
 4. **vreg → UB**: Vector Store instructions (`pto.vsts`, `pto.vstsx2`, etc.)
-5. **UB → GM**: DMA transfer via MTE3 (`pto.copy_ubuf_to_gm`)
+5. **UB → GM**: DMA transfer via MTE3 (`pto.dma_store`)
+
+The grouped DMA surface in this specification covers GM↔UB transfer only.
+Low-level raw copy families such as UB→UB copy use separate operand contracts
+and are outside this grouped DMA interface.
 
 **Load/Store Access Patterns**:
 
@@ -246,14 +250,10 @@ pto.strict_vecscope(%ub, %ub_out, %lane) {
 ### Example: VecScope
 
 ```mlir
-%pad = arith.constant 0 : i32
-pto.set_mov_pad_val %pad : i32
-pto.set_loop2_stride_outtoub %c4096_i64, %c4096_i64 : i64, i64
-pto.set_loop1_stride_outtoub %c4096_i64, %c4096_i64 : i64, i64
-pto.set_loop_size_outtoub %c1_i64, %c1_i64 : i64, i64
-pto.copy_gm_to_ubuf %7, %2, %3, %3, %c0_i64, %c32_i64, %4, %c0_i64, %c0_i64,
-    %false, %c0_i64, %c128_i64, %c128_i64
-    : !pto.ptr<f32, gm>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64, i64, i64, i1, i64, i64, i64
+pto.dma_load %7, %2, %c0_i64, %c0_i64, %c128_i64
+  nburst(%c32_i64, %c128_i64, %c128_i64)
+  : !pto.ptr<f32, gm>, !pto.ptr<f32, ub>, i64, i64, i64,
+    i64, i64, i64
 
 pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
 pto.wait_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]
@@ -269,11 +269,10 @@ pto.vecscope {
 
 pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
 pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
-pto.set_loop_size_ubtoout %c1_i64, %c1_i64 : i64, i64
-pto.set_loop1_stride_ubtoout %c4096_i64, %c4096_i64 : i64, i64
-pto.set_loop2_stride_ubtoout %c4096_i64, %c4096_i64 : i64, i64
-pto.copy_ubuf_to_gm %8, %14, %3, %3, %c0_i64, %c32_i64, %4, %c0_i64, %c128_i64, %c128_i64
-    : !pto.ptr<f32, ub>, !pto.ptr<f32, gm>, i64, i64, i64, i64, i64, i64, i64, i64
+pto.dma_store %8, %14, %c0_i64, %c0_i64, %c128_i64
+  nburst(%c32_i64, %c128_i64, %c128_i64)
+  : !pto.ptr<f32, ub>, !pto.ptr<f32, gm>, i64, i64, i64,
+    i64, i64, i64
 ```
 
 ### Example: Strict VecScope
@@ -852,6 +851,12 @@ for (int g = 0; g < 8; g++) {
 }
 ```
 
+For A5 reduction result types:
+
+- `pto.vcadd` widens `i8 -> i16`, `u8 -> u16`, `i16 -> i32`, and `u16 -> u32`,
+  with the lane count halved in each widening case.
+- `pto.vcadd` keeps the same result type for `f16`, `f32`, `i32`, and `u32`.
+
 ### Template Placeholder Conventions
 
 | Placeholder | Meaning |
@@ -881,18 +886,18 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | # | Group | Description | Count | Details |
 |---|-------|-------------|-------|---------|
 | 1 | [Pipeline Sync](isa/01-pipeline-sync.md) | Intra-core pipeline synchronization | 5 | `pto.set_flag`, `pto.wait_flag`, `pto.pipe_barrier`, `pto.get_buf`, `pto.rls_buf` |
-| 2 | [DMA Copy Programming](isa/02-dma-copy.md) | DMA configuration and transfer between GM↔UB | 10 | `pto.set_loop*_stride_*`, `pto.set_loop_size_*`, `pto.set_mov_pad_val`, `pto.copy_gm_to_ubuf`, `pto.copy_ubuf_to_ubuf`, `pto.copy_ubuf_to_gm` |
+| 2 | [DMA Copy Programming](isa/02-dma-copy.md) | Public DMA transfer interface between GM↔UB and UB↔UB | 3 | `pto.dma_load`, `pto.dma_store`, `pto.dma_copy` |
 | 3 | [Vector Load/Store](isa/03-vector-load-store.md) | UB↔vreg data movement with various access patterns | ~20 | `pto.vlds`, `pto.vldsx2`, `pto.vgather2`, `pto.vsts`, `pto.vstsx2`, `pto.vscatter`, etc. |
 | 4 | [Predicate Load/Store](isa/04-predicate-load-store.md) | UB↔mask register movement | 5 | `pto.plds`, `pto.pldi`, `pto.psts`, `pto.psti`, `pto.pstu` |
 | 5 | [Materialization & Predicate Ops](isa/05-materialization-predicate.md) | Scalar broadcast, predicate generation and manipulation | ~17 | `pto.vbr`, `pto.vdup`, `pto.pset_b*`, `pto.pge_b*`, `pto.plt_b*`, `pto.ppack`, `pto.punpack`, `pto.pnot`, `pto.psel`, etc. |
 | 6 | [Unary Vector Ops](isa/06-unary-vector-ops.md) | Single-input element-wise operations | 6 | `pto.vabs`, `pto.vexp`, `pto.vln`, `pto.vsqrt`, `pto.vrelu`, `pto.vnot` |
 | 7 | [Binary Vector Ops](isa/07-binary-vector-ops.md) | Two-input element-wise operations | 13 | `pto.vadd`, `pto.vsub`, `pto.vmul`, `pto.vdiv`, `pto.vmax`, `pto.vmin`, `pto.vand`, `pto.vor`, `pto.vxor`, `pto.vshl`, `pto.vshr`, `pto.vaddc`, `pto.vsubc` |
 | 8 | [Vec-Scalar Ops](isa/08-vec-scalar-ops.md) | Vector-scalar operations | 9 | `pto.vadds`, `pto.vmuls`, `pto.vmaxs`, `pto.vmins`, `pto.vlrelu`, `pto.vshls`, `pto.vshrs`, `pto.vaddcs`, `pto.vsubcs` |
-| 9 | [Conversion Ops](isa/09-conversion-ops.md) | Type conversion with rounding/saturation control | 3 | `pto.vcvt`, `pto.vtrc`, `pto.vbitcast` |
+| 9 | [Conversion Ops](isa/09-conversion-ops.md) | Type conversion with rounding/saturation control | 4 | `pto.vcvt`, `pto.vtrc`, `pto.vbitcast`, `pto.pbitcast` |
 | 10 | [Reduction Ops](isa/10-reduction-ops.md) | Vector reductions | 7 | `pto.vcadd`, `pto.vcmax`, `pto.vcmin`, `pto.vcgadd`, `pto.vcgmax`, `pto.vcgmin`, `pto.vcpadd` |
 | 11 | [Compare & Select](isa/11-compare-select.md) | Comparison and conditional selection | 4 (+1 not A5) | `pto.vcmp`, `pto.vcmps`, `pto.vsel`, `pto.vselr` (`pto.vselrv2` removed: not A5) |
 | 12 | [Data Rearrangement](isa/12-data-rearrangement.md) | In-register data movement and permutation | 2 (+2 not A5) | `pto.vintlv`, `pto.vdintlv` (`pto.vintlvv2`, `pto.vdintlvv2` removed: not A5) |
-| 13 | [DSA/SFU Ops](isa/13-dsa-sfu-ops.md) | Specialized ops, index generation, and sorting helpers | 9 | `pto.vlrelu`, `pto.vprelu`, `pto.vexpdiff`, `pto.vaxpy`, `pto.vmull`, `pto.vmula`, `pto.vci`, `pto.vbitsort`, `pto.vmrgsort4` |
+| 13 | [DSA/SFU Ops](isa/13-dsa-sfu-ops.md) | Specialized ops, index generation, and sorting helpers | 9 | `pto.vlrelu`, `pto.vprelu`, `pto.vexpdif`, `pto.vaxpy`, `pto.vmull`, `pto.vmula`, `pto.vci`, `pto.vbitsort`, `pto.vmrgsort4` |
 | 14 | [Arith (Shared MLIR Dialect)](isa/14-shared-arith.md) | Full scalar `arith` surface used around PTO ops; the companion page lists categories and representative examples | all scalar ops | `arith.constant`, `arith.addi`, `arith.addf`, `arith.cmpi`, `arith.cmpf`, `arith.select`, `arith.index_cast`, `arith.extsi`, `arith.trunci`, `arith.andi`, `arith.shli`, etc. |
 | 15 | [SCF (Shared MLIR Dialect)](isa/15-shared-scf.md) | Structured loops, branches, and loop-carried state around PTO regions | 5 | `scf.for`, `scf.if`, `scf.while`, `scf.condition`, `scf.yield` |
 
@@ -904,9 +909,8 @@ This section provides a categorized overview of all PTO micro Instruction operat
 
 | Operation | Group | Description |
 |-----------|-------|-------------|
-| GM→UB DMA | 2 | `pto.copy_gm_to_ubuf` |
-| UB→GM DMA | 2 | `pto.copy_ubuf_to_gm` |
-| UB→UB Copy | 2 | `pto.copy_ubuf_to_ubuf` |
+| GM→UB DMA | 2 | `pto.dma_load` |
+| UB→GM DMA | 2 | `pto.dma_store` |
 | Contiguous Load | 3 | `pto.vlds` with `NORM` dist |
 | Broadcast Load | 3 | `pto.vlds` with `BRC` family dist |
 | Gather | 3 | `pto.vgather2`, `pto.vgatherb` |
@@ -928,7 +932,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 
 | Operation | Group | Description |
 |-----------|-------|-------------|
-| Type Conversion | 9 | `pto.vcvt`, `pto.vbitcast` |
+| Type Conversion | 9 | `pto.vcvt`, `pto.vbitcast`, `pto.pbitcast` |
 | Interleave/Deinterleave | 12 | `pto.vintlv`, `pto.vdintlv` |
 | Interleave/Deinterleave (not A5) | 12 | `pto.vintlvv2`, `pto.vdintlvv2` |
 
@@ -982,7 +986,7 @@ pto.vsts %max_vec, %ub_tmp[%c0], %mask : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !
 %max_bc = pto.vlds %ub_tmp[%c0] {dist = "BRC_B32"} : !pto.ptr<f32, ub> -> !pto.vreg<64xf32>
 
 // 2. exp(x - max) using fused op
-%exp = pto.vexpdiff %logits, %max_bc, "ODD" : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
+%exp = pto.vexpdif %logits, %max_bc, "ODD" : !pto.vreg<64xf32>, !pto.vreg<64xf32> -> !pto.vreg<64xf32>
 
 // 3. Sum
 %sum = pto.vcadd %exp, %mask : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<64xf32>
