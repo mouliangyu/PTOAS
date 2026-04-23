@@ -29,14 +29,28 @@ void LaunchTREMS_f16_63x64(unsigned short *src, unsigned short *dst, void *strea
     TREMS_f16_63x64<<<1, nullptr, stream>>>((__gm__ unsigned short *)src, (__gm__ unsigned short *)dst, (unsigned short)0x4200);
 }
 
-// Case 2: f32 7x448
+// Case 2: i32 31x128
+extern "C" __global__ AICORE void TREMS_i32_31x128(__gm__ int32_t *src, __gm__ int32_t *dst, int32_t scalar);
+
+void LaunchTREMS_i32_31x128(int32_t *src, int32_t *dst, void *stream) {
+    TREMS_i32_31x128<<<1, nullptr, stream>>>((__gm__ int32_t *)src, (__gm__ int32_t *)dst, (int32_t)3);
+}
+
+// Case 3: i16 15x192
+extern "C" __global__ AICORE void TREMS_i16_15x192(__gm__ int16_t *src, __gm__ int16_t *dst, int16_t scalar);
+
+void LaunchTREMS_i16_15x192(int16_t *src, int16_t *dst, void *stream) {
+    TREMS_i16_15x192<<<1, nullptr, stream>>>((__gm__ int16_t *)src, (__gm__ int16_t *)dst, (int16_t)3);
+}
+
+// Case 4: f32 7x448
 extern "C" __global__ AICORE void TREMS_f32_7x448(__gm__ float *src, __gm__ float *dst, float scalar);
 
 void LaunchTREMS_f32_7x448(float *src, float *dst, void *stream) {
     TREMS_f32_7x448<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst, TREMS_SCALAR_F32);
 }
 
-// Case 3: f32 256x16
+// Case 5: f32 256x16
 extern "C" __global__ AICORE void TREMS_f32_256x16(__gm__ float *src, __gm__ float *dst, float scalar);
 
 void LaunchTREMS_f32_256x16(float *src, float *dst, void *stream) {

@@ -16,7 +16,8 @@ import tilelang_dsl as pto
 @pto.vkernel(
     target="a5",
     op="pto.trems",
-    dtypes=[(pto.f32, pto.f32, pto.f32, pto.f32), (pto.f16, pto.f16, pto.f16, pto.f16)],
+    dtypes=[(pto.f32, pto.f32, pto.f32, pto.f32), (pto.f16, pto.f16, pto.f16, pto.f16),
+            (pto.i32, pto.i32, pto.i32, pto.i32), (pto.i16, pto.i16, pto.i16, pto.i16)],
     advanced=True,
 )
 def template_trems(src: pto.Tile, scalar: pto.AnyType, tmp: pto.Tile, dst: pto.Tile):

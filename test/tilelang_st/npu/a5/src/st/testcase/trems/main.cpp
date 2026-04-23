@@ -24,6 +24,8 @@ using namespace PtoTestCommon;
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTREMS_f32_32x64(float *src, float *dst, void *stream);
 void LaunchTREMS_f16_63x64(uint16_t *src, uint16_t *dst, void *stream);
+void LaunchTREMS_i32_31x128(int32_t *src, int32_t *dst, void *stream);
+void LaunchTREMS_i16_15x192(int16_t *src, int16_t *dst, void *stream);
 void LaunchTREMS_f32_7x448(float *src, float *dst, void *stream);
 void LaunchTREMS_f32_256x16(float *src, float *dst, void *stream);
 
@@ -40,6 +42,8 @@ struct TestCase {
 static const TestCase kCases[] = {
     {"f32_32x64",   (void (*)(void*,void*,void*))LaunchTREMS_f32_32x64,   32,  64,  32,  64,  sizeof(float)},
     {"f16_63x64",   (void (*)(void*,void*,void*))LaunchTREMS_f16_63x64,   63,  64,  63,  64,  sizeof(uint16_t)},
+    {"i32_31x128",  (void (*)(void*,void*,void*))LaunchTREMS_i32_31x128,  31,  128, 31,  128, sizeof(int32_t)},
+    {"i16_15x192",  (void (*)(void*,void*,void*))LaunchTREMS_i16_15x192,  15,  192, 15,  192, sizeof(int16_t)},
     {"f32_7x448",   (void (*)(void*,void*,void*))LaunchTREMS_f32_7x448,   7,   448, 7,   448, sizeof(float)},
     {"f32_256x16",  (void (*)(void*,void*,void*))LaunchTREMS_f32_256x16,  256, 16,  256, 16,  sizeof(float)},
 };
