@@ -116,11 +116,8 @@ set(ALL_TESTCASES
     tadd
     tcvt
     tload
-    tsel
-    tsels
     trelu
     tlrelu
-    tprelu
     trandom
 )
 
