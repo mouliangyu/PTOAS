@@ -11,13 +11,28 @@
 
 """Single source of truth for trems ST test cases.
 
-trems: integer remainder via vdiv, dst = src - trunc(src/scalar) * scalar.
-All types: f32, f16, i32, i16.
+trems:
+- float/half: dst = src - trunc(src / scalar) * scalar
+- integer: dst = src % scalar
 """
 
 import numpy as np
 
 CASES = [
+    {
+        "name": "f32_32x64",
+        "dtype": np.float32,
+        "shape": (32, 64),
+        "valid_shape": (32, 64),
+        "eps": 1e-6,
+    },
+    {
+        "name": "f16_63x64",
+        "dtype": np.float16,
+        "shape": (63, 64),
+        "valid_shape": (63, 64),
+        "eps": 5e-3,
+    },
     {
         "name": "i32_31x128",
         "dtype": np.int32,
@@ -31,5 +46,19 @@ CASES = [
         "shape": (15, 192),
         "valid_shape": (15, 192),
         "eps": 0,
+    },
+    {
+        "name": "f32_7x448",
+        "dtype": np.float32,
+        "shape": (7, 448),
+        "valid_shape": (7, 448),
+        "eps": 1e-6,
+    },
+    {
+        "name": "f32_256x16",
+        "dtype": np.float32,
+        "shape": (256, 16),
+        "valid_shape": (256, 16),
+        "eps": 1e-6,
     },
 ]
