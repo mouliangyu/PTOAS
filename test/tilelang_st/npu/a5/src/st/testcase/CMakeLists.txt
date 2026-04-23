@@ -118,6 +118,8 @@ set(ALL_TESTCASES
     tload
     tcolmax
     tcolmin
+    tcolsum
+    tcolprod
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
