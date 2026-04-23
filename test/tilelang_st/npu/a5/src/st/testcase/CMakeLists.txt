@@ -116,6 +116,12 @@ set(ALL_TESTCASES
     tadd
     tcvt
     tload
+    tsel
+    tsels
+    trelu
+    tlrelu
+    tprelu
+    trandom
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
