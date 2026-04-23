@@ -116,6 +116,8 @@ set(ALL_TESTCASES
     tadd
     tcvt
     tload
+    tcolmax
+    tcolmin
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
