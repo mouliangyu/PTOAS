@@ -24,10 +24,8 @@ def template_tlrelu(src: pto.Tile, slope: pto.f32, dst: pto.Tile):
     
     lanes = pto.get_lanes(dtype)
     if pto.constexpr(dtype == pto.f16):
-        zero_scalar = pto.f16(0.0)
         slope_scalar = pto.f16(slope)
     else:
-        zero_scalar = pto.f32(0.0)
         slope_scalar = slope
     
     for row in range(0, valid_rows, 1):
@@ -35,8 +33,6 @@ def template_tlrelu(src: pto.Tile, slope: pto.f32, dst: pto.Tile):
         for col in range(0, valid_cols, lanes):
             mask, remained = pto.make_mask(dtype, remained)
             src_vec = pto.vlds(src[row, col:])
-            positive_mask = pto.vcmps(src_vec, zero_scalar, mask, "gt")
-            scaled = pto.vmuls(src_vec, slope_scalar, mask)
-            result = pto.vsel(src_vec, scaled, positive_mask)
+            result = pto.vlrelu(src_vec, slope_scalar, mask)
             pto.vsts(result, dst[row, col:], mask)
     return
