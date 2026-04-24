@@ -116,9 +116,9 @@ set(ALL_TESTCASES
     tadd
     tcvt
     tload
-    trelu
     tlrelu
     tprelu
+    trelu
     tsel
     tsels
 )
