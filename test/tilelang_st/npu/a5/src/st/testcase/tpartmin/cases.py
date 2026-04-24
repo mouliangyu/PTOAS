@@ -130,24 +130,24 @@ CASES = [
         "dst_vshape": (122, 123),     # dst valid region
         "eps": 0,
     },
-    # # int8 cases from pto-isa
-    # {
-    #     "name": "i8_122x123_complex",
-    #     "dtype": np.int8,
-    #     "shape": (122, 123),
-    #     "valid_shape": (104, 123),    # src0 valid region
-    #     "src1_vshape": (122, 110),    # src1 valid region
-    #     "dst_vshape": (122, 123),     # dst valid region
-    #     "eps": 0,
-    # },
-    # # uint8 cases from pto-isa
-    # {
-    #     "name": "u8_122x123_complex",
-    #     "dtype": np.uint8,
-    #     "shape": (122, 123),
-    #     "valid_shape": (104, 123),    # src0 valid region
-    #     "src1_vshape": (122, 110),    # src1 valid region
-    #     "dst_vshape": (122, 123),     # dst valid region
-    #     "eps": 0,
-    # },
+    # int8 cases from pto-isa
+    {
+        "name": "i8_122x123_complex",
+        "dtype": np.int8,
+        "shape": (122, 123),
+        "valid_shape": (104, 123),    # src0 valid region
+        "src1_vshape": (122, 110),    # src1 valid region
+        "dst_vshape": (122, 123),     # dst valid region
+        "eps": 0,
+    },
+    # uint8 cases from pto-isa
+    {
+        "name": "u8_122x123_complex",
+        "dtype": np.uint8,
+        "shape": (122, 123),
+        "valid_shape": (104, 123),    # src0 valid region
+        "src1_vshape": (122, 110),    # src1 valid region
+        "dst_vshape": (122, 123),     # dst valid region
+        "eps": 0,
+    },
 ]

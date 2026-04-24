@@ -23,19 +23,13 @@ def template_tpartmin(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
     src1_valid_rows, src1_valid_cols = src1.valid_shape
     lanes = pto.get_lanes(dtype)
 
-    if pto.constexpr(
-        dtype == pto.f32 or dtype == pto.f16
-        or dtype == pto.i32 or dtype == pto.i16
-        or dtype == pto.ui32 or dtype == pto.ui16
-        # or dtype == pto.i8 or dtype == pto.ui8
-    ):
-        pad_scalar = pto.PadValue.MAX.eval(dtype)
-        pad_vec = pto.vbr(pad_scalar)
-        for row in range(0, valid_rows, 1):
-            remained = valid_cols
-            for col in range(0, valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                pto.vsts(pad_vec, dst[row, col:], mask)
+    pad_scalar = pto.PadValue.MAX.eval(dtype)
+    pad_vec = pto.vbr(pad_scalar)
+    for row in range(0, valid_rows, 1):
+        remained = valid_cols
+        for col in range(0, valid_cols, lanes):
+            mask, remained = pto.make_mask(dtype, remained)
+            pto.vsts(pad_vec, dst[row, col:], mask)
 
     for row in range(0, src0_valid_rows, 1):
         remained = src0_valid_cols

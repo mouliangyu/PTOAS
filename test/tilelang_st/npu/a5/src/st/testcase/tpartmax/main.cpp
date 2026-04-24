@@ -62,8 +62,8 @@ static const TestCase kCases[] = {
     {"i32_122x123_complex",      reinterpret_cast<LaunchFn>(LaunchTPARTMAX_i32_122x123_complex),      122,123,104,123,122,110,122,123, sizeof(int32_t)},
     {"u16_122x123_complex",      reinterpret_cast<LaunchFn>(LaunchTPARTMAX_u16_122x123_complex),      122,123,104,123,122,110,122,123, sizeof(uint16_t)},
     {"u32_122x123_complex",      reinterpret_cast<LaunchFn>(LaunchTPARTMAX_u32_122x123_complex),      122,123,104,123,122,110,122,123, sizeof(uint32_t)},
-    // {"i8_122x123_complex",       reinterpret_cast<LaunchFn>(LaunchTPARTMAX_i8_122x123_complex),       122,123,104,123,122,110,122,123, sizeof(int8_t)},
-    // {"u8_122x123_complex",       reinterpret_cast<LaunchFn>(LaunchTPARTMAX_u8_122x123_complex),       122,123,104,123,122,110,122,123, sizeof(uint8_t)},
+    {"i8_122x123_complex",       reinterpret_cast<LaunchFn>(LaunchTPARTMAX_i8_122x123_complex),       122,123,104,123,122,110,122,123, sizeof(int8_t)},
+    {"u8_122x123_complex",       reinterpret_cast<LaunchFn>(LaunchTPARTMAX_u8_122x123_complex),       122,123,104,123,122,110,122,123, sizeof(uint8_t)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
