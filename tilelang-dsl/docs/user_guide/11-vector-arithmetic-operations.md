@@ -89,6 +89,8 @@ abs_vec = pto.vabs(vec_f32, mask32)
 
 **Description**: ReLU activation (max(0, x)) of vector elements.
 
+**Supported dtypes**: `si32`, `i32`, `f16`, `f32`
+
 **Parameters**:
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -1412,12 +1414,19 @@ family.
   `f16 -> si32` requires `rnd` and `part`, and rejects `sat`;
   `bf16 -> f16` requires `rnd` and `sat`;
   `f16 -> f32` requires `part`;
+  `f32 -> f16` requires `rnd`, `sat`, and `part`;
   `si32 -> f32` requires `rnd`.
 - VPTO does not define a `mask_b64` form. Conversions that produce `si64`
   results still use the typed mask granularity of the source vector family.
 - Width-changing conversions continue to follow VPTO packing semantics even on
   the simplified DSL surface. For example, `f16 -> f32` uses an `f16`-family
   `mask_b16`, because the mask is attached to the source vector family.
+- A common `tcvt`-style pair is:
+  `f16 -> f32`: `pto.vlds(..., dist=pto.VLoadDist.UNPK_B16)` + `pto.vcvt(..., part=pto.VcvtPartMode.EVEN)`;
+  `f32 -> f16`: `pto.vcvt(..., rnd=..., sat=..., part=pto.VcvtPartMode.EVEN)` + `pto.vsts(..., dist=pto.VStoreDist.PK_B32)`.
+- In those `tcvt` flows, the `vcvt` mask still follows the source vector family:
+  `f16 -> f32` uses `mask_b16`, while `f32 -> f16` uses `mask_b32`.
+- The follow-on `vsts` mask is checked against the store `dist`, not the narrowed element dtype alone. For example, `pto.vsts(vec_f16, ..., mask32, dist=pto.VStoreDist.PK_B32)` is valid and expected for `f32 -> f16` rowwise `tcvt`.
 
 **Example**:
 ```python
@@ -1452,6 +1461,26 @@ vec_f16_narrow = pto.vcvt(
     sat=pto.VcvtSatMode.SAT,
     part=pto.VcvtPartMode.ODD,
 )
+
+# Rowwise tcvt-style widening from f16 to f32
+vec_f16_unpacked = pto.vlds(src, 0, dist=pto.VLoadDist.UNPK_B16)
+vec_f32_from_f16 = pto.vcvt(
+    vec_f16_unpacked,
+    pto.f32,
+    mask16,
+    part=pto.VcvtPartMode.EVEN,
+)
+
+# Rowwise tcvt-style narrowing from f32 to f16
+vec_f16_packed = pto.vcvt(
+    vec_f32,
+    pto.f16,
+    mask32,
+    rnd=pto.VcvtRoundMode.R,
+    sat=pto.VcvtSatMode.SAT,
+    part=pto.VcvtPartMode.EVEN,
+)
+pto.vsts(vec_f16_packed, dst, 0, mask32, dist=pto.VStoreDist.PK_B32)
 ```
 
 #### `pto.vbitsort(dest: ptr, src: ptr, indices: ptr, repeat_times: index) -> None`  [Advanced Tier]
@@ -1499,7 +1528,7 @@ None. The op writes UB memory directly.
 - `dest` and `src0` through `src3` must be UB-backed pointers
 - Inputs must already be sorted according to the order encoded by `config`
 
-**Order Mode Enum**: The `OrderMode` enum provides type-safe order selection for `pto.vci` operations. Currently only `ASC` (ascending order) is supported, with more order options planned for future releases.
+**Order Mode Enum**: The `OrderMode` enum provides type-safe order selection for `pto.vci` operations. `ASC` and `DESC` are supported.
 
 #### `pto.vci(index: ScalarType, order: OrderMode = OrderMode.ASC) -> VRegType`
 
@@ -1509,7 +1538,7 @@ None. The op writes UB memory directly.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `index` | `ScalarType` | Scalar seed or base index value |
-| `order` | `OrderMode` | Order mode enum (default: `OrderMode.ASC` for ascending order) |
+| `order` | `OrderMode` | Order mode enum (default: `OrderMode.ASC`; supported values: `ASC`, `DESC`) |
 
 **Returns**:
 | Return Value | Type | Description |
@@ -1519,12 +1548,15 @@ None. The op writes UB memory directly.
 **Constraints**:
 - This is an index-generation family, not a numeric conversion
 - The `order` parameter and result element type together determine how indices are generated
-- Currently only ascending order (`OrderMode.ASC`) is supported
+- Supported order modes are ascending (`OrderMode.ASC`) and descending (`OrderMode.DESC`)
 
 **Example**:
 ```python
 # Generate ascending indices starting from 0
 indices = pto.vci(pto.i32(0), OrderMode.ASC)
+
+# Generate descending indices starting from the seed value
+indices_desc = pto.vci(pto.i32(63), OrderMode.DESC)
 
 # Keyword form for the optional order argument is also supported
 indices_kw = pto.vci(pto.i32(0), order=OrderMode.ASC)

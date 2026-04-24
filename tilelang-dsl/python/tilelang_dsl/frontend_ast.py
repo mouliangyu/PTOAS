@@ -829,6 +829,7 @@ _DMA_CALL_KEYWORDS: dict[str, frozenset[str]] = {
     "vlds": frozenset({"dist"}),
     "vsts": frozenset({"dist"}),
     "vbitcast": frozenset(),
+    "pbitcast": frozenset(),
 }
 
 
@@ -988,6 +989,8 @@ def _build_expr(node: ast.AST, context: _FrontendBuildContext) -> FrontendExprNo
             "EVENT",
             "MaskPattern",
             "PredicateDist",
+            "VLoadDist",
+            "VStoreDist",
             "PredicatePart",
             "CmpMode",
             "Pipe",

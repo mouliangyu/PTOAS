@@ -1,3 +1,11 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
 """CLI helper invoked by ExpandTileOp to instantiate a tilelang DSL template.
 
 Usage:
@@ -121,6 +129,26 @@ def _match_descriptor(
     return None
 
 
+def _parse_optional_int_sequence(
+    values: list[object],
+    *,
+    field_name: str,
+    index: int,
+) -> tuple[int | None, ...]:
+    parsed: list[int | None] = []
+    for dim in values:
+        if dim is None:
+            parsed.append(None)
+            continue
+        try:
+            parsed.append(int(dim))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"operand-specs[{index}] {field_name} entries must be integers or null"
+            ) from exc
+    return tuple(parsed)
+
+
 def _parse_operand_specs(spec_text: str) -> list[dict]:
     try:
         raw_specs = json.loads(spec_text)
@@ -170,7 +198,13 @@ def _parse_operand_specs(spec_text: str) -> list[dict]:
                     "kind": "tile",
                     "dtype": dtype,
                     "shape": tuple(int(dim) for dim in shape),
-                    "valid_shape": None if valid_shape is None else tuple(int(dim) for dim in valid_shape),
+                    "valid_shape": None
+                    if valid_shape is None
+                    else _parse_optional_int_sequence(
+                        valid_shape,
+                        field_name="tile valid_shape",
+                        index=index,
+                    ),
                     "config": config,
                     "memory_space": memory_space,
                 }
@@ -188,7 +222,11 @@ def _parse_operand_specs(spec_text: str) -> list[dict]:
             view_spec: dict = {
                 "kind": "view",
                 "dtype": dtype,
-                "shape": tuple(int(dim) for dim in shape),
+                "shape": _parse_optional_int_sequence(
+                    shape,
+                    field_name="view shape",
+                    index=index,
+                ),
                 "memory_space": memory_space,
             }
             raw_strides = raw.get("strides")

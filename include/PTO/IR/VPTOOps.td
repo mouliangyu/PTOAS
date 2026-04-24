@@ -77,10 +77,13 @@ def TileBufAddrOp : PTO_Op<"tile_buf_addr", [Pure]> {
     shape and address space.
 
     This op is emitted by TileLang DSL templates and resolved by the
-    FoldTileBufIntrinsics pass after inlining.
+    FoldTileBufIntrinsics pass after inlining. Hand-written `.pto` may also
+    use it directly on the memref result of `pto.bind_tile` / lowered
+    `pto.alloc_tile`.
   }];
 
-  let arguments = (ins TileBufType:$src);
+  let arguments = (ins AnyTypeOf<[TileBufType, AnyMemRef],
+                                 "tile_buf or tile-bound memref">:$src);
   let results = (outs PtrOrMemRef:$dst);
 
   let hasVerifier = 1;
@@ -296,6 +299,32 @@ def PTO_CopyUbufToUbufOp : PTO_Op<"copy_ubuf_to_ubuf"> {
     $source `,` $destination `,` $sid `,` $n_burst `,` $len_burst `,` $src_stride `,` $dst_stride
     attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,` type($n_burst) `,`
     type($len_burst) `,` type($src_stride) `,` type($dst_stride)
+  }];
+}
+
+def PTO_DmaCopyOp : PTO_Op<"dma_copy", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$sid,
+    I64:$n_burst,
+    I64:$len_burst,
+    I64:$src_stride,
+    I64:$dst_stride
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $sid `,` $len_burst
+    `nburst` `(` $n_burst `,` $src_stride `,` $dst_stride `)`
+    attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,`
+    type($n_burst) `,` type($len_burst) `,` type($src_stride) `,`
+    type($dst_stride)
   }];
 }
 
@@ -583,6 +612,8 @@ def PTO_PunpackOp : PTO_MaskUnaryOp<"punpack"> {
     $input `,` $part attr-dict `:` type($input) `->` type($result)
   }];
 }
+
+def PTO_PbitcastOp : PTO_MaskUnaryOp<"pbitcast">;
 
 def PTO_PnotOp : PTO_Op<"pnot", [Pure]> {
   let arguments = (ins
@@ -1003,7 +1034,7 @@ def PTO_VbitcastOp : PTO_Op<"vbitcast", [Pure]> {
 
 def PTO_VciOp : PTO_Op<"vci", [Pure]> {
   let arguments = (ins
-    AnyInteger:$index,
+    AnyTypeOf<[AnyInteger, AnyFloat], "integer/float scalar">:$index,
     OptionalAttr<StrAttr>:$order
   );
   let results = (outs PTO_VectorType:$result);

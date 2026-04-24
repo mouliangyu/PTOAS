@@ -7,7 +7,6 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 #include "PTO/IR/PTO.h"
-#include "PTO/Transforms/VPTOLowering.h"
 #include "PTO/Transforms/VPTOLLVMEmitter.h"
 #include "PTO/Transforms/Passes.h"
 #include "PTO/Transforms/BufferizableOpInterfaceImpl.h"
@@ -200,7 +199,8 @@ static llvm::cl::opt<bool> enableInsertSync("enable-insert-sync",
 static llvm::cl::opt<bool> enableTileOpExpand(
     "enable-tile-op-expand",
     llvm::cl::desc(
-        "Enable Tile-to-Vector lowering path (memref->tile_buf recovery)"),
+        "Deprecated compatibility flag. TileOp expansion is controlled by "
+        "--pto-backend=vpto."),
     llvm::cl::init(false));
 
 #ifndef PTOAS_DEFAULT_TILELANG_PATH
@@ -457,6 +457,17 @@ static bool containsVPTOIR(llvm::StringRef input) {
     rest = split.second;
   }
   return false;
+}
+
+static bool hasUnexpandedTileOps(ModuleOp module) {
+  bool found = false;
+  module.walk([&](Operation *op) {
+    if (found)
+      return;
+    if (isa<pto::OpPipeInterface>(op))
+      found = true;
+  });
+  return found;
 }
 
 // --------------------------------------------------------------------------
@@ -1121,31 +1132,29 @@ static LogicalResult prepareVPTOForEmission(ModuleOp module) {
 
 static LogicalResult lowerPTOToVPTOBackend(ModuleOp module) {
   PassManager backendPM(module.getContext());
-  if (enableTileOpExpand) {
-    // TileOp Expand path:
-    //   1. MemrefToTileBuf: recover tile_buf from memref
-    //   2. ExpandTileOp: instantiate TileLang DSL templates, replace tile ops
-    //      with func.call to template functions (tile_buf params)
-    //   3. InlineLibCall: inline template function bodies
-    //   4. FoldTileBufIntrinsics: fold tile_buf_addr / tile_valid_rows /
-    //      tile_valid_cols to concrete memref/constant values
-    backendPM.addPass(pto::createMemrefToTileBufPass());
+  // TileOp Expand path:
+  //   1. MemrefToTileBuf: recover tile_buf from memref
+  //   2. ExpandTileOp: instantiate TileLang DSL templates, replace tile ops
+  //      with func.call to template functions (tile_buf params)
+  //   3. InlineLibCall: inline template function bodies
+  //   4. FoldTileBufIntrinsics: fold tile_buf_addr / tile_valid_rows /
+  //      tile_valid_cols to concrete memref/constant values
+  backendPM.addPass(pto::createMemrefToTileBufPass());
 
-    pto::ExpandTileOpOptions expandOpts;
-    expandOpts.tilelangPath = tilelangPath;
-    expandOpts.tilelangPkgPath = tilelangPkgPath;
-    backendPM.addPass(pto::createExpandTileOpPass(expandOpts));
+  pto::ExpandTileOpOptions expandOpts;
+  expandOpts.tilelangPath = tilelangPath;
+  expandOpts.tilelangPkgPath = tilelangPkgPath;
+  backendPM.addPass(pto::createExpandTileOpPass(expandOpts));
 
-    backendPM.addPass(pto::createPTOInlineLibCallPass());
-    backendPM.addNestedPass<mlir::func::FuncOp>(
-        pto::createFoldTileBufIntrinsicsPass());
-    // FoldTileBufIntrinsics materializes many constant branch conditions.
-    // Clean them up immediately on the TileOp expansion path before the
-    // authoring-stage VPTO verifier and let the existing CSE passes remove the
-    // resulting dead values later in the pipeline.
-    backendPM.addPass(mlir::createSCCPPass());
-    backendPM.addPass(mlir::createCanonicalizerPass());
-  }
+  backendPM.addPass(pto::createPTOInlineLibCallPass());
+  backendPM.addNestedPass<mlir::func::FuncOp>(
+      pto::createFoldTileBufIntrinsicsPass());
+  // FoldTileBufIntrinsics materializes many constant branch conditions.
+  // Clean them up immediately on the TileOp expansion path before the
+  // authoring-stage VPTO verifier and let the existing CSE passes remove the
+  // resulting dead values later in the pipeline.
+  backendPM.addPass(mlir::createSCCPPass());
+  backendPM.addPass(mlir::createCanonicalizerPass());
   if (failed(applyConfiguredPassManagerCLOptions(backendPM,
                                                  "VPTO backend lowering")))
     return failure();
@@ -1444,7 +1453,10 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (effectiveBackend == PTOBackend::VPTO && inputIsVPTOIR) {
+  const bool hasTileOpsToExpand = hasUnexpandedTileOps(*module);
+
+  if (effectiveBackend == PTOBackend::VPTO && inputIsVPTOIR &&
+      !hasTileOpsToExpand) {
     if (ptoPrintSeamIR || !ptoSeamIRFile.empty()) {
       llvm::errs() << "Error: shared pre-backend seam IR is unavailable when "
                       "the input is already VPTO IR.\n";
