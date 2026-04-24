@@ -87,6 +87,12 @@ static LogicalResult verifyMaskTypeWithGranularityLike(Operation *op, Type type,
   return success();
 }
 
+static bool isMaskGranularityAdjacentWidening(StringRef inputGranularity,
+                                              StringRef resultGranularity) {
+  return (inputGranularity == "b8" && resultGranularity == "b16") ||
+         (inputGranularity == "b16" && resultGranularity == "b32");
+}
+
 static LogicalResult verifyEnclosingLoopLike(Operation *op,
                                              StringRef opNameForDiag) {
   if (!op->getParentOfType<LoopLikeOpInterface>()) {
@@ -1534,6 +1540,23 @@ LogicalResult SetMovPadValOp::verify() {
          << valueType;
 }
 
+static bool isCompatibleScalarForSemanticType(Type semanticType,
+                                              Type scalarType) {
+  if (semanticType == scalarType)
+    return true;
+
+  auto semanticInt = dyn_cast<IntegerType>(semanticType);
+  auto scalarInt = dyn_cast<IntegerType>(scalarType);
+  if (!semanticInt || !scalarInt || semanticInt.getWidth() != scalarInt.getWidth())
+    return false;
+
+  if (semanticInt.isSigned())
+    return scalarInt.isSigned() || scalarInt.isSignless();
+  if (semanticInt.isUnsigned())
+    return scalarInt.isUnsigned() || scalarInt.isSignless();
+  return scalarInt.isSignless();
+}
+
 LogicalResult VbrOp::verify() {
   if (failed(verifyVRegTypeLike(*this, getResult().getType(), "result")))
     return failure();
@@ -1542,7 +1565,8 @@ LogicalResult VbrOp::verify() {
   Type elementType = getValue().getType();
   if (isa<ShapedType, VectorType>(elementType))
     return emitOpError("value must be a scalar matching the result element type");
-  if (elementType != resultVecType.getElementType())
+  Type resultElementType = resultVecType.getElementType();
+  if (!isCompatibleScalarForSemanticType(resultElementType, elementType))
     return emitOpError("value type must match result element type");
   return success();
 }
@@ -1616,12 +1640,15 @@ LogicalResult VciOp::verify() {
   auto resultType = dyn_cast<VRegType>(getResult().getType());
   if (!resultType)
     return emitOpError("result must be !pto.vreg<...>");
-  if (!isa<IntegerType>(resultType.getElementType()))
-    return emitOpError("result element type must be integer");
-  auto indexType = dyn_cast<IntegerType>(getIndex().getType());
-  if (!indexType)
-    return emitOpError("index must be an integer scalar");
-  if (indexType != resultType.getElementType())
+  Type resultElemType = resultType.getElementType();
+  bool supportedInteger = false;
+  if (auto intType = dyn_cast<IntegerType>(resultElemType))
+    supportedInteger = intType.getWidth() == 8 || intType.getWidth() == 16 ||
+                       intType.getWidth() == 32;
+  bool supportedFloat = resultElemType.isF16() || resultElemType.isF32();
+  if (!supportedInteger && !supportedFloat)
+    return emitOpError("result element type must be integer or f16/f32");
+  if (!isCompatibleScalarForSemanticType(resultElemType, getIndex().getType()))
     return emitOpError("index type must match result element type");
   return success();
 }
@@ -1948,7 +1975,8 @@ LogicalResult VdupOp::verify() {
   if (getPosition())
     return emitOpError("position is only supported for vector input");
 
-  if (inputType != resultType.getElementType())
+  Type resultElementType = resultType.getElementType();
+  if (!isCompatibleScalarForSemanticType(resultElementType, inputType))
     return emitOpError("scalar input must match result element type");
 
   return success();
@@ -2004,19 +2032,38 @@ LogicalResult TensorViewAddrOp::verify() {
 }
 
 LogicalResult TileBufAddrOp::verify() {
-  auto srcType = dyn_cast<pto::TileBufType>(getSrc().getType());
-  if (!srcType)
-    return emitOpError("source must be a !pto.tile_buf<...>");
-
   Type dstType = getDst().getType();
-  Type elementType = srcType.getElementType();
-  auto srcSpace = dyn_cast_or_null<pto::AddressSpaceAttr>(srcType.getMemorySpace());
+  Type elementType;
+  Attribute srcMemorySpace;
+  int64_t srcRank = 0;
+
+  if (auto srcTileType = dyn_cast<pto::TileBufType>(getSrc().getType())) {
+    elementType = srcTileType.getElementType();
+    srcMemorySpace = srcTileType.getMemorySpace();
+    srcRank = static_cast<int64_t>(srcTileType.getShape().size());
+  } else if (auto srcMemRefType = dyn_cast<BaseMemRefType>(getSrc().getType())) {
+    // Compatibility for the current TileOp expansion pipeline:
+    // PTOViewToMemref lowers tile_buf producers (for example alloc_tile) to
+    // memref + pto.bind_tile before MemrefToTileBuf reconstructs tile_buf
+    // values. Hand-written pto.tile_buf_addr may therefore temporarily see a
+    // tile-bound memref operand in this intermediate stage. If the pipeline is
+    // changed to avoid that PTOViewToMemref round-trip, this memref acceptance
+    // can be removed and TileBufAddrOp can go back to requiring tile_buf-only
+    // operands.
+    elementType = srcMemRefType.getElementType();
+    srcMemorySpace = srcMemRefType.getMemorySpace();
+    srcRank = srcMemRefType.getRank();
+  } else {
+    return emitOpError("source must be a !pto.tile_buf<...> or memref");
+  }
+
+  auto srcSpace = dyn_cast_or_null<pto::AddressSpaceAttr>(srcMemorySpace);
 
   if (auto dstMemRefType = dyn_cast<BaseMemRefType>(dstType)) {
     if (dstMemRefType.getElementType() != elementType)
       return emitOpError(
           "memref result element type must match tile element type");
-    if (dstMemRefType.getRank() != static_cast<int64_t>(srcType.getShape().size()))
+    if (dstMemRefType.getRank() != srcRank)
       return emitOpError("memref result rank must match tile rank");
     auto dstSpace =
         dyn_cast_or_null<pto::AddressSpaceAttr>(dstMemRefType.getMemorySpace());
@@ -2130,6 +2177,15 @@ LogicalResult PunpackOp::verify() {
     return failure();
   if (getPart() != "LOWER")
     return emitOpError("currently supports only LOWER part");
+  auto inputMaskType = cast<MaskType>(getInput().getType());
+  auto resultMaskType = cast<MaskType>(getResult().getType());
+  StringRef inputGranularity = inputMaskType.getGranularity();
+  StringRef resultGranularity = resultMaskType.getGranularity();
+  if (inputGranularity != resultGranularity &&
+      !isMaskGranularityAdjacentWidening(inputGranularity, resultGranularity)) {
+    return emitOpError(
+        "requires result mask granularity to match the input or widen by one step");
+  }
   return success();
 }
 
@@ -2356,7 +2412,20 @@ LogicalResult VexpOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VlnOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VsqrtOp::verify() { return verifyUnaryVecOp(*this); }
 LogicalResult VnegOp::verify() { return verifyUnaryVecOp(*this); }
-LogicalResult VreluOp::verify() { return verifyUnaryVecOp(*this); }
+LogicalResult VreluOp::verify() {
+  if (failed(verifyUnaryVecOp(*this)))
+    return failure();
+  auto inputType = cast<VRegType>(getInput().getType());
+  Type elemType = inputType.getElementType();
+  if (auto intType = dyn_cast<IntegerType>(elemType)) {
+    if (intType.getWidth() != 32 || intType.isUnsigned())
+      return emitOpError("requires si32/i32/f16/f32 vector element type");
+    return success();
+  }
+  if (!elemType.isF16() && !elemType.isF32())
+    return emitOpError("requires si32/i32/f16/f32 vector element type");
+  return success();
+}
 LogicalResult VnotOp::verify() { return verifyUnaryVecOp(*this); }
 
 template <typename BinaryOp>
@@ -2605,7 +2674,9 @@ LogicalResult VcmpsOp::verify() {
       failed(verifyMaskTypeLike(*this, getResult().getType(), "result type")))
     return failure();
   auto srcType = cast<VRegType>(getSrc().getType());
-  if (getScalar().getType() != srcType.getElementType())
+  Type srcElementType = srcType.getElementType();
+  Type scalarType = getScalar().getType();
+  if (!isCompatibleScalarForSemanticType(srcElementType, scalarType))
     return emitOpError("requires scalar type to match source element type");
   if (!isSupportedCmpMode(getCmpMode()))
     return emitOpError("requires cmp_mode to be one of eq/ne/lt/le/gt/ge");

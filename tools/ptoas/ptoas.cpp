@@ -7,7 +7,6 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 #include "PTO/IR/PTO.h"
-#include "PTO/Transforms/VPTOLowering.h"
 #include "PTO/Transforms/VPTOLLVMEmitter.h"
 #include "PTO/Transforms/Passes.h"
 #include "PTO/Transforms/BufferizableOpInterfaceImpl.h"
@@ -458,6 +457,17 @@ static bool containsVPTOIR(llvm::StringRef input) {
     rest = split.second;
   }
   return false;
+}
+
+static bool hasUnexpandedTileOps(ModuleOp module) {
+  bool found = false;
+  module.walk([&](Operation *op) {
+    if (found)
+      return;
+    if (isa<pto::OpPipeInterface>(op))
+      found = true;
+  });
+  return found;
 }
 
 // --------------------------------------------------------------------------
@@ -1443,7 +1453,10 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (effectiveBackend == PTOBackend::VPTO && inputIsVPTOIR) {
+  const bool hasTileOpsToExpand = hasUnexpandedTileOps(*module);
+
+  if (effectiveBackend == PTOBackend::VPTO && inputIsVPTOIR &&
+      !hasTileOpsToExpand) {
     if (ptoPrintSeamIR || !ptoSeamIRFile.empty()) {
       llvm::errs() << "Error: shared pre-backend seam IR is unavailable when "
                       "the input is already VPTO IR.\n";

@@ -186,7 +186,11 @@ ADVANCED_VECSCOPE_PTO_CALLS = frozenset(
         "pst",
         "psti",
         "pdintlv_b8",
+        "pdintlv_b16",
+        "pdintlv_b32",
+        "pintlv_b8",
         "pintlv_b16",
+        "pintlv_b32",
         "vaddc",
         "vsubc",
         "vaddcs",
@@ -197,6 +201,17 @@ ADVANCED_VECSCOPE_PTO_CALLS = frozenset(
         "vdintlvv2",
         "vbitsort",
         "vmrgsort4",
+    }
+)
+
+INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS = frozenset(
+    SUPPORTED_VECSCOPE_PTO_CALLS | ADVANCED_VECSCOPE_PTO_CALLS
+)
+
+INFERRED_VECSCOPE_NEUTRAL_PTO_CALLS = frozenset(
+    {
+        "mem_bar",
+        "store_scalar",
     }
 )
 
@@ -440,6 +455,8 @@ __all__ = [
     "ADVANCED_EXPR_PTO_CALLS",
     "ADVANCED_TOPLEVEL_PTO_CALLS",
     "ADVANCED_VECSCOPE_PTO_CALLS",
+    "INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS",
+    "INFERRED_VECSCOPE_NEUTRAL_PTO_CALLS",
     "SUPPORTED_TOPLEVEL_PTO_CALLS",
     "SUPPORTED_VECSCOPE_PTO_CALLS",
     "BASIC_TIER",
