@@ -24,15 +24,14 @@ surface op.
 
 - **syntax:**
 ```mlir
-pto.dma_load %gm_src, %ub_dst, %sid, %l2_cache_ctl, %len_burst
+pto.dma_load %gm_src, %ub_dst, %l2_cache_ctl, %len_burst
   nburst(%n_burst, %src_stride, %dst_stride)
-  [loop1(%loop1_count, %loop1_src_stride, %loop1_dst_stride)]
-  [loop2(%loop2_count, %loop2_src_stride, %loop2_dst_stride)]
+  [loop(%loop1_count, %loop1_src_stride, %loop1_dst_stride)]
+  [loop(%loop2_count, %loop2_src_stride, %loop2_dst_stride)]
   [pad(%pad_value[, %left_padding_count, %right_padding_count])]
   : !pto.ptr<T, gm>, !pto.ptr<T, ub>, i64, i64, i64,
-    i64, i64, i64,
-    [loop1 i64, i64, i64,]
-    [loop2 i64, i64, i64,]
+    [loop i64, i64, i64,]
+    [loop i64, i64, i64,]
     [pad T[, i64, i64]]
 ```
 - **semantics:** Grouped GM→UB DMA transfer. It carries the burst, optional HW loop, and optional padding configuration on the copy op itself.
@@ -43,34 +42,33 @@ pto.dma_load %gm_src, %ub_dst, %sid, %l2_cache_ctl, %len_burst
 |-----------|-------|-------------|
 | `%gm_src` | ptr | GM source pointer (`!pto.ptr<T, gm>`) |
 | `%ub_dst` | ptr | UB destination pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
-| `%sid` | 32 bits | Stream ID |
 | `%l2_cache_ctl` | 2 bits | L2 cache allocate control |
 | `%len_burst` | 16 bits | Contiguous bytes transferred per burst row |
 | `nburst(%n_burst, %src_stride, %dst_stride)` | 16 bits / 40 bits / 21 bits | Required innermost burst loop: count, GM source stride, UB destination stride |
-| `loop1(%loop1_count, %loop1_src_stride, %loop1_dst_stride)` | 21 bits / 40 bits / 21 bits | Optional inner HW loop: count, GM source stride, UB destination stride |
-| `loop2(%loop2_count, %loop2_src_stride, %loop2_dst_stride)` | 21 bits / 40 bits / 21 bits | Optional outer HW loop: count, GM source stride, UB destination stride |
+| `loop(%loop1_count, %loop1_src_stride, %loop1_dst_stride)` | 21 bits / 40 bits / 21 bits | Optional inner HW loop: count, GM source stride, UB destination stride |
+| `loop(%loop2_count, %loop2_src_stride, %loop2_dst_stride)` | 21 bits / 40 bits / 21 bits | Optional outer HW loop: count, GM source stride, UB destination stride |
 | `pad(%pad_value[, %left_padding_count, %right_padding_count])` | scalar / 8 bits / 8 bits | Optional padding: fill value, optional left padding count, optional right padding count |
 
 **Constraints:**
 
 - `nburst(...)` is always required.
-- `loop1(...)` and `loop2(...)` must each be provided as a complete group when present.
+- Each `loop(...)` group must be provided as a complete triple when present.
 - `pad(...)` may contain only `%pad_value`; omitted left and right padding counts default to 0.
 - If either left or right padding count is provided, both counts must be provided.
-- `loop1(...)` may be used without `loop2(...)`; in that case `loop2_count` is treated as 1 when programming the loop-size register.
-- `loop2(...)` requires `loop1(...)`; `loop2` without `loop1` is rejected by the verifier.
-- `pad(...)` is independent of `loop1(...)` and `loop2(...)`.
+- The first `loop(...)` group may be used without the second one; in that case `loop2_count` is treated as 1 when programming the loop-size register.
+- The second `loop(...)` group requires the first one.
+- `pad(...)` is independent of the optional `loop(...)` groups.
 - A DMA load may use `nburst(...) pad(...)` without any HW loop group.
 
 **Example:**
 
 ```mlir
-pto.dma_load %gm_in, %ub_out, %sid, %cache, %len_burst
+pto.dma_load %gm_in, %ub_out, %cache, %len_burst
   nburst(%rows, %gm_row_stride, %ub_row_stride)
-  loop1(%tiles, %gm_tile_stride, %ub_tile_stride)
+  loop(%tiles, %gm_tile_stride, %ub_tile_stride)
   pad(%pad)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64,
-    i64, i64, i64, loop1 i64, i64, i64, pad f16
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64,
+    loop i64, i64, i64, pad f16
 ```
 
 ---
@@ -79,14 +77,13 @@ pto.dma_load %gm_in, %ub_out, %sid, %cache, %len_burst
 
 - **syntax:**
 ```mlir
-pto.dma_store %ub_src, %gm_dst, %sid, %reserved, %len_burst
+pto.dma_store %ub_src, %gm_dst, %reserved, %len_burst
   nburst(%n_burst, %src_stride, %dst_stride)
-  [loop1(%loop1_count, %loop1_src_stride, %loop1_dst_stride)]
-  [loop2(%loop2_count, %loop2_src_stride, %loop2_dst_stride)]
+  [loop(%loop1_count, %loop1_src_stride, %loop1_dst_stride)]
+  [loop(%loop2_count, %loop2_src_stride, %loop2_dst_stride)]
   : !pto.ptr<T, ub>, !pto.ptr<T, gm>, i64, i64, i64,
-    i64, i64, i64,
-    [loop1 i64, i64, i64,]
-    [loop2 i64, i64, i64]
+    [loop i64, i64, i64,]
+    [loop i64, i64, i64]
 ```
 - **semantics:** Grouped UB→GM DMA transfer. It carries the burst and optional HW loop configuration on the copy op itself.
 
@@ -96,29 +93,28 @@ pto.dma_store %ub_src, %gm_dst, %sid, %reserved, %len_burst
 |-----------|-------|-------------|
 | `%ub_src` | ptr | UB source pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
 | `%gm_dst` | ptr | GM destination pointer (`!pto.ptr<T, gm>`) |
-| `%sid` | 32 bits | Stream ID |
 | `%reserved` | 8 bits | Reserved field, normally 0 |
 | `%len_burst` | 16 bits | Contiguous bytes transferred per burst row |
 | `nburst(%n_burst, %src_stride, %dst_stride)` | 16 bits / 21 bits / 40 bits | Required innermost burst loop: count, UB source stride, GM destination stride |
-| `loop1(%loop1_count, %loop1_src_stride, %loop1_dst_stride)` | 21 bits / 21 bits / 40 bits | Optional inner HW loop: count, UB source stride, GM destination stride |
-| `loop2(%loop2_count, %loop2_src_stride, %loop2_dst_stride)` | 21 bits / 21 bits / 40 bits | Optional outer HW loop: count, UB source stride, GM destination stride |
+| `loop(%loop1_count, %loop1_src_stride, %loop1_dst_stride)` | 21 bits / 21 bits / 40 bits | Optional inner HW loop: count, UB source stride, GM destination stride |
+| `loop(%loop2_count, %loop2_src_stride, %loop2_dst_stride)` | 21 bits / 21 bits / 40 bits | Optional outer HW loop: count, UB source stride, GM destination stride |
 
 **Constraints:**
 
 - `nburst(...)` is always required.
-- `loop1(...)` and `loop2(...)` must each be provided as a complete group when present.
-- `loop1(...)` may be used without `loop2(...)`; in that case `loop2_count` is treated as 1 when programming the loop-size register.
-- `loop2(...)` requires `loop1(...)`; `loop2` without `loop1` is rejected by the verifier.
+- Each `loop(...)` group must be provided as a complete triple when present.
+- The first `loop(...)` group may be used without the second one; in that case `loop2_count` is treated as 1 when programming the loop-size register.
+- The second `loop(...)` group requires the first one.
 
 **Example:**
 
 ```mlir
-pto.dma_store %ub_in, %gm_out, %sid, %zero, %len_burst
+pto.dma_store %ub_in, %gm_out, %zero, %len_burst
   nburst(%rows, %ub_row_stride, %gm_row_stride)
-  loop1(%tiles, %ub_tile_stride, %gm_tile_stride)
-  loop2(%batches, %ub_batch_stride, %gm_batch_stride)
-  : !pto.ptr<f16, ub>, !pto.ptr<f16, gm>, i64, i64, i64,
-    i64, i64, i64, loop1 i64, i64, i64, loop2 i64, i64, i64
+  loop(%tiles, %ub_tile_stride, %gm_tile_stride)
+  loop(%batches, %ub_batch_stride, %gm_batch_stride)
+  : !pto.ptr<f16, ub>, !pto.ptr<f16, gm>, i64, i64,
+    loop i64, i64, i64, loop i64, i64, i64
 ```
 
 ---
@@ -127,9 +123,9 @@ pto.dma_store %ub_in, %gm_out, %sid, %zero, %len_burst
 
 - **syntax:**
 ```mlir
-pto.dma_copy %ub_src, %ub_dst, %sid, %len_burst
+pto.dma_copy %ub_src, %ub_dst, %len_burst
   nburst(%n_burst, %src_gap, %dst_gap)
-  : !pto.ptr<T, ub>, !pto.ptr<T, ub>, i64, i64, i64, i64, i64
+  : !pto.ptr<T, ub>, !pto.ptr<T, ub>, i64, i64, i64, i64
 ```
 - **semantics:** Grouped UB→UB raw copy..
 
@@ -139,7 +135,6 @@ pto.dma_copy %ub_src, %ub_dst, %sid, %len_burst
 |-----------|-------|-------------|
 | `%ub_src` | ptr | UB source pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
 | `%ub_dst` | ptr | UB destination pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
-| `%sid` | 16 bits | Stream ID |
 | `%len_burst` | 16 bits | Burst length in units of 32 bytes |
 | `nburst(%n_burst, %src_gap, %dst_gap)` | 16 bits / 16 bits / 16 bits | Required UB→UB outer burst group: count, source gap, destination gap |
 
@@ -151,9 +146,9 @@ pto.dma_copy %ub_src, %ub_dst, %sid, %len_burst
 **Example:**
 
 ```mlir
-pto.dma_copy %ub_src, %ub_dst, %sid, %len32b
+pto.dma_copy %ub_src, %ub_dst, %len32b
   nburst(%rows, %src_gap, %dst_gap)
-  : !pto.ptr<i16, ub>, !pto.ptr<i16, ub>, i64, i64, i64, i64, i64
+  : !pto.ptr<i16, ub>, !pto.ptr<i16, ub>, i64, i64, i64, i64
 ```
 
 ---
@@ -262,8 +257,8 @@ Only len_burst bytes are written to each GM row.
 
 ## Multi-Level Loop Semantics (C Code)
 
-The full DMA transfer is a nested loop. `loop1(...)` / `loop2(...)` control the
-outer levels, and `nburst(...)` controls the innermost burst level.
+The full DMA transfer is a nested loop. The optional `loop(...)` groups control
+the outer levels, and `nburst(...)` controls the innermost burst level.
 
 ### GM→UB Full Loop
 
@@ -341,10 +336,9 @@ UB layout (32 × 32 f32, 32B-aligned, contiguous):
 
 ```mlir
 // Simple 2D load — only nburst(...) is needed
-pto.dma_load %arg0, %ub_in, %c0_i64, %c0_i64, %c128_i64
+pto.dma_load %arg0, %ub_in, %c0_i64, %c128_i64
   nburst(%c32_i64, %c128_i64, %c128_i64)
-  : !pto.ptr<f32, gm>, !pto.ptr<f32, ub>, i64, i64, i64,
-    i64, i64, i64
+  : !pto.ptr<f32, gm>, !pto.ptr<f32, ub>, i64, i64, i64
 ```
 
 ---
@@ -380,10 +374,9 @@ UB layout (64 × 128 f16, 32B-aligned, contiguous):
 ```
 
 ```mlir
-pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c0_i64, %c256_i64
+pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c256_i64
   nburst(%c64_i64, %c1024_i64, %c256_i64)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64,
-    i64, i64, i64
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64
 ```
 
 ---
@@ -419,11 +412,10 @@ UB (128 cols wide, 32B-aligned, padded):
 
 ```mlir
 %pad = arith.constant 0 : i16
-pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c0_i64, %c200_i64
+pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c200_i64
   nburst(%c64_i64, %c200_i64, %c256_i64)
   pad(%pad, %c0_i64, %c0_i64)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64,
-    i64, i64, i64, pad i16, i64, i64
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64, pad i16, i64, i64
 ```
 
 ---
@@ -455,10 +447,9 @@ GM (dest, 32 × 32 f32):
 ```
 
 ```mlir
-pto.dma_store %ub_out, %arg1, %c0_i64, %c0_i64, %c128_i64
+pto.dma_store %ub_out, %arg1, %c0_i64, %c128_i64
   nburst(%c32_i64, %c128_i64, %c128_i64)
-  : !pto.ptr<f32, ub>, !pto.ptr<f32, gm>, i64, i64, i64,
-    i64, i64, i64
+  : !pto.ptr<f32, ub>, !pto.ptr<f32, gm>, i64, i64, i64
 ```
 
 ---
@@ -494,10 +485,9 @@ GM (dest, into 1024 × 512 matrix):
 ```
 
 ```mlir
-pto.dma_store %ub_ptr, %gm_ptr, %c0_i64, %c0_i64, %c256_i64
+pto.dma_store %ub_ptr, %gm_ptr, %c0_i64, %c256_i64
   nburst(%c64_i64, %c256_i64, %c1024_i64)
-  : !pto.ptr<f16, ub>, !pto.ptr<f16, gm>, i64, i64, i64,
-    i64, i64, i64
+  : !pto.ptr<f16, ub>, !pto.ptr<f16, gm>, i64, i64, i64
 ```
 
 ---
@@ -519,11 +509,10 @@ GM [4, 8, 128] f16 (contiguous):        UB (4 tiles laid out sequentially):
 
 ```mlir
 // loop1_count = 4 batches, loop2 omitted
-pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c0_i64, %c256_i64
+pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c256_i64
   nburst(%c8_i64, %c256_i64, %c256_i64)
-  loop1(%c4_i64, %c2048_i64, %c2048_i64)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64,
-    i64, i64, i64, loop1 i64, i64, i64
+  loop(%c4_i64, %c2048_i64, %c2048_i64)
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64, loop i64, i64, i64
 ```
 
 Execution trace:

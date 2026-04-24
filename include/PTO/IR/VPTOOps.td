@@ -239,7 +239,6 @@ def PTO_DmaLoadOp : PTO_Op<"dma_load", [
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$sid,
     I64:$l2_cache_ctl,
     I64:$len_burst,
     I64:$n_burst,
@@ -265,7 +264,6 @@ def PTO_DmaLoadOp : PTO_Op<"dma_load", [
     OpBuilder<(ins
       "::mlir::Value":$source,
       "::mlir::Value":$destination,
-      "::mlir::Value":$sid,
       "::mlir::Value":$l2CacheCtl,
       "::mlir::Value":$lenBurst,
       "::mlir::pto::DmaLoopConfig":$nburst,
@@ -305,7 +303,6 @@ def PTO_DmaCopyOp : PTO_Op<"dma_copy", [
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$sid,
     I64:$n_burst,
     I64:$len_burst,
     I64:$src_stride,
@@ -317,10 +314,10 @@ def PTO_DmaCopyOp : PTO_Op<"dma_copy", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `,` $destination `,` $sid `,` $len_burst
+    $source `,` $destination `,` $len_burst
     `nburst` `(` $n_burst `,` $src_stride `,` $dst_stride `)`
-    attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,`
-    type($n_burst) `,` type($len_burst) `,` type($src_stride) `,`
+    attr-dict `:` type($source) `,` type($destination) `,` type($n_burst) `,`
+    type($len_burst) `,` type($src_stride) `,`
     type($dst_stride)
   }];
 }
@@ -1258,7 +1255,6 @@ def PTO_DmaStoreOp : PTO_Op<"dma_store", [
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$sid,
     I64:$reserved,
     I64:$len_burst,
     I64:$n_burst,
@@ -1281,7 +1277,6 @@ def PTO_DmaStoreOp : PTO_Op<"dma_store", [
     OpBuilder<(ins
       "::mlir::Value":$source,
       "::mlir::Value":$destination,
-      "::mlir::Value":$sid,
       "::mlir::Value":$reserved,
       "::mlir::Value":$lenBurst,
       "::mlir::pto::DmaLoopConfig":$nburst,

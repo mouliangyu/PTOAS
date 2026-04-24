@@ -117,6 +117,7 @@ struct ExpandDmaLoadPattern : public OpRewritePattern<pto::DmaLoadOp> {
   LogicalResult matchAndRewrite(pto::DmaLoadOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
+    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
     Value loop2Size = op.getLoop2Count();
     if (!loop2Size)
@@ -145,7 +146,7 @@ struct ExpandDmaLoadPattern : public OpRewritePattern<pto::DmaLoadOp> {
       rewriter.create<pto::SetMovPadValOp>(loc, padValue);
 
     rewriter.create<pto::CopyGmToUbufOp>(
-        loc, op.getSource(), op.getDestination(), op.getSid(), op.getNBurst(),
+        loc, op.getSource(), op.getDestination(), zero, op.getNBurst(),
         op.getLenBurst(), leftPadding, rightPadding, dataSelect,
         op.getL2CacheCtl(), op.getNburstSrcStride(), op.getNburstDstStride());
     if (shouldRestoreDmaLoopSize(op.getLoop1Count(), loop2Size))
@@ -161,6 +162,7 @@ struct ExpandDmaStorePattern : public OpRewritePattern<pto::DmaStoreOp> {
   LogicalResult matchAndRewrite(pto::DmaStoreOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
+    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
     Value loop2Size = op.getLoop2Count();
     if (!loop2Size)
@@ -176,7 +178,7 @@ struct ExpandDmaStorePattern : public OpRewritePattern<pto::DmaStoreOp> {
     }
 
     rewriter.create<pto::CopyUbufToGmOp>(
-        loc, op.getSource(), op.getDestination(), op.getSid(), op.getNBurst(),
+        loc, op.getSource(), op.getDestination(), zero, op.getNBurst(),
         op.getLenBurst(), op.getReserved(), op.getNburstDstStride(),
         op.getNburstSrcStride());
     if (shouldRestoreDmaLoopSize(op.getLoop1Count(), loop2Size))
@@ -191,8 +193,9 @@ struct ExpandDmaCopyPattern : public OpRewritePattern<pto::DmaCopyOp> {
 
   LogicalResult matchAndRewrite(pto::DmaCopyOp op,
                                 PatternRewriter &rewriter) const override {
+    Value zero = rewriter.create<arith::ConstantIntOp>(op.getLoc(), 0, 64);
     rewriter.replaceOpWithNewOp<pto::CopyUbufToUbufOp>(
-        op, op.getSource(), op.getDestination(), op.getSid(), op.getNBurst(),
+        op, op.getSource(), op.getDestination(), zero, op.getNBurst(),
         op.getLenBurst(), op.getSrcStride(), op.getDstStride());
     return success();
   }
