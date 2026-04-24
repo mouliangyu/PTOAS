@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd.
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
-# Please refer to the License for details. You can not use this file except in compliance with the License.
+# Please refer to the License for details. You may not use this file in compliance with the License.
 # THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
@@ -14,7 +14,7 @@ import sys
 import numpy as np
 
 from cases import CASES
-from st_common import style_fail, style_pass, validate_cases
+from st_common import result_cmp, style_fail, style_pass, validate_cases
 
 
 def main():
@@ -28,13 +28,17 @@ def main():
 
         case_dir = case["name"]
         shape = case["shape"]
-        dtype = case["dtype"]
         vr, vc = case["valid_shape"]
 
-        output = np.fromfile(os.path.join(case_dir, "output.bin"), dtype=dtype).reshape(shape)
+        golden = np.fromfile(os.path.join(case_dir, "golden.bin"), dtype=case["dtype"]).reshape(shape)
+        output = np.fromfile(os.path.join(case_dir, "output.bin"), dtype=case["dtype"]).reshape(shape)
 
-        print(style_pass(f"[INFO] {case['name']}: output shape={shape}, dtype={dtype.__name__}"))
-        print(f"[INFO] Output stats: min={output[:vr, :vc].min()}, max={output[:vr, :vc].max()}, mean={output[:vr, :vc].mean()}")
+        ok = result_cmp(golden[:vr, :vc], output[:vr, :vc], case["eps"])
+        if ok:
+            print(style_pass(f"[INFO] {case['name']}: compare passed"))
+        else:
+            print(style_fail(f"[ERROR] {case['name']}: compare failed"))
+            all_passed = False
 
     if not all_passed:
         sys.exit(2)

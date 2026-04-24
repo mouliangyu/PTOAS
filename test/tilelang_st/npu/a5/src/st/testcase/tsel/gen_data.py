@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd.
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
-# Please refer to the License for details. You can not use this file except in compliance with the License.
+# Please refer to the License for details. You may not use this file in compliance with the License.
 # THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
@@ -21,16 +21,24 @@ for case in CASES:
     dtype = case["dtype"]
     shape = case["shape"]
     valid_shape = case["valid_shape"]
-    key_shape = case["key_shape"]
-    counter_shape = case["counter_shape"]
+    vr, vc = valid_shape
+    mask_cols = (vc + 7) // 8
 
-    value_min = np.iinfo(dtype).min
-    value_max = np.iinfo(dtype).max
-
-    key = np.random.uniform(low=value_min, high=value_max, size=key_shape).astype(dtype)
-    counter = np.random.uniform(low=value_min, high=value_max, size=counter_shape).astype(dtype)
+    src0 = np.random.randint(1, 10, size=shape).astype(dtype)
+    src1 = np.random.randint(1, 10, size=shape).astype(dtype)
+    mask = np.random.randint(0, 256, size=(vr, mask_cols), dtype=np.uint8)
 
     golden = np.zeros(shape, dtype=dtype)
+    src0_valid = src0[:vr, :vc]
+    src1_valid = src1[:vr, :vc]
+    for row in range(vr):
+        for packed_col in range(mask_cols):
+            byte = int(mask[row, packed_col])
+            for bit in range(8):
+                col = packed_col * 8 + bit
+                if col >= vc:
+                    break
+                golden[row, col] = src0_valid[row, col] if ((byte >> bit) & 1) else src1_valid[row, col]
 
-    save_case_data(case["name"], {"key": key, "counter": counter, "golden": golden})
+    save_case_data(case["name"], {"input1": src0, "input2": src1, "input3": mask, "golden": golden})
     print(f"[INFO] gen_data: {case['name']} shape={shape} valid_shape={valid_shape} dtype={dtype.__name__}")
