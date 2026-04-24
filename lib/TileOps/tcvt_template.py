@@ -1,3 +1,11 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
 """TileLang DSL template for pto.tcvt."""
 
 import tilelang_dsl as pto
@@ -66,7 +74,7 @@ def template_tcvt_f32_to_f16(src: pto.Tile, dst: pto.Tile):
                 sat=pto.VcvtSatMode.SAT,
                 part=pto.VcvtPartMode.EVEN,
             )
-            pto.vsts(converted, dst[row, col:], store_mask, dist="PK_B32")
+            pto.vsts(converted, dst[row, col:], store_mask, dist=pto.VStoreDist.PK_B32)
     return
 
 
@@ -126,7 +134,7 @@ def template_tcvt_f16_to_f32(src: pto.Tile, dst: pto.Tile):
         remained = valid_cols
         for col in range(0, valid_cols, pto.get_lanes(pto.f32)):
             store_mask, remained = pto.make_mask(pto.f32, remained)
-            vec = pto.vlds(src[row, col:], dist="UNPK_B16")
+            vec = pto.vlds(src[row, col:], dist=pto.VLoadDist.UNPK_B16)
             converted = pto.vcvt(
                 vec,
                 pto.f32,
