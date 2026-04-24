@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 
 
-ROWS = 4
+ROWS = 8
 INPUT_COLS = 56
 OUTPUT_COLS = 64
 PAD_VALUE = 1.0

@@ -30,9 +30,9 @@ using namespace PtoTestCommon;
 void LaunchVlds_dma_loop_kernel(float *v1, float *v2, void *stream);
 
 int main() {
-    size_t elemCount_v1 = 224;
+    size_t elemCount_v1 = 448;
     size_t fileSize_v1 = elemCount_v1 * sizeof(float);
-    size_t elemCount_v2 = 256;
+    size_t elemCount_v2 = 512;
     size_t fileSize_v2 = elemCount_v2 * sizeof(float);
     float *v1Host = nullptr;
     float *v1Device = nullptr;

@@ -244,12 +244,9 @@ def PTO_DmaLoadOp : PTO_Op<"dma_load", [
     I64:$n_burst,
     I64:$nburst_src_stride,
     I64:$nburst_dst_stride,
-    Optional<I64>:$loop1_count,
-    Optional<I64>:$loop1_src_stride,
-    Optional<I64>:$loop1_dst_stride,
-    Optional<I64>:$loop2_count,
-    Optional<I64>:$loop2_src_stride,
-    Optional<I64>:$loop2_dst_stride,
+    Variadic<I64>:$loop_counts,
+    Variadic<I64>:$loop_src_strides,
+    Variadic<I64>:$loop_dst_strides,
     Optional<AnyTypeOf<[AnyInteger, AnyFloat], "integer/float scalar">>:$pad_value,
     Optional<I64>:$left_padding_count,
     Optional<I64>:$right_padding_count
@@ -261,6 +258,15 @@ def PTO_DmaLoadOp : PTO_Op<"dma_load", [
   let hasCustomAssemblyFormat = 1;
 
   let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$l2CacheCtl,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::llvm::ArrayRef<::mlir::pto::DmaLoopConfig>":$loops,
+      "::std::optional<::mlir::pto::DmaPadConfig>":$pad
+    )>,
     OpBuilder<(ins
       "::mlir::Value":$source,
       "::mlir::Value":$destination,
@@ -1255,17 +1261,13 @@ def PTO_DmaStoreOp : PTO_Op<"dma_store", [
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$reserved,
     I64:$len_burst,
     I64:$n_burst,
     I64:$nburst_src_stride,
     I64:$nburst_dst_stride,
-    Optional<I64>:$loop1_count,
-    Optional<I64>:$loop1_src_stride,
-    Optional<I64>:$loop1_dst_stride,
-    Optional<I64>:$loop2_count,
-    Optional<I64>:$loop2_src_stride,
-    Optional<I64>:$loop2_dst_stride
+    Variadic<I64>:$loop_counts,
+    Variadic<I64>:$loop_src_strides,
+    Variadic<I64>:$loop_dst_strides
   );
 
   let results = (outs);
@@ -1277,7 +1279,13 @@ def PTO_DmaStoreOp : PTO_Op<"dma_store", [
     OpBuilder<(ins
       "::mlir::Value":$source,
       "::mlir::Value":$destination,
-      "::mlir::Value":$reserved,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::llvm::ArrayRef<::mlir::pto::DmaLoopConfig>":$loops
+    )>,
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
       "::mlir::Value":$lenBurst,
       "::mlir::pto::DmaLoopConfig":$nburst,
       "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
