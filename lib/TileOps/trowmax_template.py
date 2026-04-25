@@ -21,9 +21,18 @@ def template_trowmax(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     dtype = dst.element_type
     lanes = pto.get_lanes(dtype)
     valid_rows, valid_cols = src.valid_shape
+    elem_bytes = pto.bytewidth(dtype)
 
     # Initialize with dtype-specific minimum value (aligned with pto-isa Padding<T>::Min)
     init_val = pto.PadValue.MIN.eval(dtype)
+
+    # Select one-point store dist based on dtype size
+    if pto.constexpr(elem_bytes == 4):
+        store_dist = pto.VStoreDist.ONE_POINT_B32
+    elif pto.constexpr(elem_bytes == 2):
+        store_dist = pto.VStoreDist.ONE_POINT_B16
+    else:
+        store_dist = pto.VStoreDist.ONE_POINT_B8
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols
@@ -42,13 +51,11 @@ def template_trowmax(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
             v_reduced = pto.vcmax(v_src, mask)
 
             # Clear masked lanes to init_val for float types so vmax doesn't see NaN
-            if pto.constexpr(dtype == pto.f32):
-                v_reduced = pto.vsel(v_reduced, v_acc, mask)
-            if pto.constexpr(dtype == pto.f16):
+            if pto.constexpr(dtype == pto.f32 or dtype == pto.f16):
                 v_reduced = pto.vsel(v_reduced, v_acc, mask)
 
             v_acc = pto.vmax(v_acc, v_reduced, mask_1)
 
-        # Write final reduction to dest buffer once
-        pto.vsts(v_acc, dst[row, 0:], mask_1)
+        # Write final reduction to dest buffer once using one-point mode
+        pto.vsts(v_acc, dst[row, 0:], mask_1, dist=store_dist)
     return

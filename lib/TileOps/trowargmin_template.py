@@ -22,9 +22,18 @@ def template_trowargmin(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     idx_dtype = dst.element_type
     lanes = pto.get_lanes(src_dtype)
     valid_rows, valid_cols = src.valid_shape
+    elem_bytes = pto.bytewidth(idx_dtype)
 
     # Initialize with dtype-specific maximum value (aligned with pto-isa Padding<T>::Max)
     init_val = pto.PadValue.MAX.eval(src_dtype)
+
+    # Select one-point store dist based on index dtype size
+    if pto.constexpr(elem_bytes == 4):
+        store_dist = pto.VStoreDist.ONE_POINT_B32
+    elif pto.constexpr(elem_bytes == 2):
+        store_dist = pto.VStoreDist.ONE_POINT_B16
+    else:
+        store_dist = pto.VStoreDist.ONE_POINT_B8
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols
@@ -33,7 +42,8 @@ def template_trowargmin(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
         init_zero_idx = idx_dtype(0)
         v_idx_acc = pto.vbr(init_zero_idx)
 
-        # Masks: src for data ops, idx_dtype for index ops and final store
+        # Masks: src_dtype for data ops and final store (matches pto-isa CreatePredicate<TSrc>)
+        # idx_dtype for index arithmetic operations
         mask_1, _ = pto.make_mask(src_dtype, 1)
         mask_1_idx, _ = pto.make_mask(idx_dtype, 1)
         
@@ -59,6 +69,6 @@ def template_trowargmin(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
             cmp_mask_b32 = pto.pbitcast(cmp_mask, pto.mask_b32)
             v_idx_acc = pto.vsel(v_idx, v_idx_acc, cmp_mask_b32)
 
-        # Store index accumulator to destination tile
-        pto.vsts(v_idx_acc, dst[row, 0:], mask_1_idx)
+        # Store index accumulator to destination tile using one-point mode
+        pto.vsts(v_idx_acc, dst[row, 0:], mask_1_idx, dist=store_dist)
     return

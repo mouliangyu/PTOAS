@@ -21,6 +21,7 @@ def template_trowprod(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     dtype = dst.element_type
     lanes = pto.get_lanes(dtype)
     valid_rows, valid_cols = src.valid_shape
+    elem_bytes = pto.bytewidth(dtype)
 
     # nLoop from C++ constants: TROW_PROD_LOOP_B16=7, TROW_PROD_LOOP_B32=6
     TROW_PROD_LOOP_B16 = 7
@@ -29,6 +30,14 @@ def template_trowprod(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
         n_loop = TROW_PROD_LOOP_B16
     else:
         n_loop = TROW_PROD_LOOP_B32
+
+    # Select one-point store dist based on dtype size
+    if pto.constexpr(elem_bytes == 4):
+        store_dist = pto.VStoreDist.ONE_POINT_B32
+    elif pto.constexpr(elem_bytes == 2):
+        store_dist = pto.VStoreDist.ONE_POINT_B16
+    else:
+        store_dist = pto.VStoreDist.ONE_POINT_B8
 
     mask_1, _ = pto.make_mask(dtype, 1)
 
@@ -57,6 +66,6 @@ def template_trowprod(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
             v_intlv1, v_intlv2 = pto.vintlv(v_acc, v_one)
             v_acc = pto.vmul(v_intlv1, v_intlv2, reduce_mask)
 
-        # Write final result at lane 0
-        pto.vsts(v_acc, dst[row, 0:], mask_1)
+        # Write final result at lane 0 using one-point mode
+        pto.vsts(v_acc, dst[row, 0:], mask_1, dist=store_dist)
     return

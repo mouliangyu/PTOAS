@@ -33,6 +33,17 @@ def template_trowsum(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     # Use type-appropriate zero for accumulator initialization
     zero_val = acc_dtype(0)
 
+    # Select one-point store dist based on dst dtype size
+    elem_bytes = pto.bytewidth(dst_dtype)
+    if pto.constexpr(elem_bytes == 4):
+        store_dist = pto.VStoreDist.ONE_POINT_B32
+    elif pto.constexpr(elem_bytes == 2):
+        store_dist = pto.VStoreDist.ONE_POINT_B16
+    else:
+        store_dist = pto.VStoreDist.ONE_POINT_B8
+
+    dst_mask_1, _ = pto.make_mask(dst_dtype, 1)
+
     for row in range(0, valid_rows, 1):
         remained = valid_cols
 
@@ -52,14 +63,13 @@ def template_trowsum(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
             # accumulate using the accumulator's mask logic
             v_acc = pto.vadd(v_acc, v_reduced, acc_mask_1)
 
-        # Store the accumulated result safely once per row
-        dst_mask_1, _ = pto.make_mask(dst_dtype, 1)
+        # Store the accumulated result safely once per row using one-point mode
         if pto.constexpr(acc_dtype != dst_dtype):
             # Truncate / Type cast before storing
             # Note: For int32 -> int16 mapping, vcvt processes it.
             acc_mask_for_cvt, _ = pto.make_mask(acc_dtype, 1)
             v_acc_casted = pto.vcvt(v_acc, dst_dtype, acc_mask_for_cvt, sat=pto.VcvtSatMode.SAT, part=pto.VcvtPartMode.EVEN)
-            pto.vsts(v_acc_casted, dst[row, 0:], dst_mask_1)
+            pto.vsts(v_acc_casted, dst[row, 0:], dst_mask_1, dist=store_dist)
         else:
-            pto.vsts(v_acc, dst[row, 0:], dst_mask_1)
+            pto.vsts(v_acc, dst[row, 0:], dst_mask_1, dist=store_dist)
     return
