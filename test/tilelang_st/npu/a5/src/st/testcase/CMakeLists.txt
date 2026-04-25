@@ -136,13 +136,27 @@ set(ALL_TESTCASES
     trelu
     tsel
     tsels
+    tcolmax
+    tcolmin
+    tcolsum
+    tcolprod
     softmax
     tabs
     texp
     tlog
     tneg
     tnot
+    tpartmax
+    tpartmin
+    tpartadd
+    tpartmul
     trecip
+    trowargmax
+    trowargmin
+    trowsum
+    trowmax
+    trowmin
+    trowprod
     trsqrt
     tsqrt
 )
