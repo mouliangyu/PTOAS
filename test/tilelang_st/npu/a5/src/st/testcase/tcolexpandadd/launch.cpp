@@ -7,7 +7,6 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 #include <stdint.h>
-#include "acl/acl.h"
 
 #ifndef AICORE
 #define AICORE [aicore]
@@ -28,17 +27,17 @@ void LaunchTCOLEXPANDADD_fp32_32_32_1_32(float *src0, float *src1, float *dst, v
 }
 
 // Case 3: fp16_4_256_1_256
-extern "C" __global__ AICORE void TCOLEXPANDADD_fp16_4_256_1_256(__gm__ aclFloat16 *src0, __gm__ aclFloat16 *src1, __gm__ aclFloat16 *dst);
+extern "C" __global__ AICORE void TCOLEXPANDADD_fp16_4_256_1_256(__gm__ uint16_t *src0, __gm__ uint16_t *src1, __gm__ uint16_t *dst);
 
-void LaunchTCOLEXPANDADD_fp16_4_256_1_256(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream) {
-    TCOLEXPANDADD_fp16_4_256_1_256<<<1, nullptr, stream>>>((__gm__ aclFloat16 *)src0, (__gm__ aclFloat16 *)src1, (__gm__ aclFloat16 *)dst);
+void LaunchTCOLEXPANDADD_fp16_4_256_1_256(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream) {
+    TCOLEXPANDADD_fp16_4_256_1_256<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
 }
 
 // Case 4: fp16_10_64_1_64
-extern "C" __global__ AICORE void TCOLEXPANDADD_fp16_10_64_1_64(__gm__ aclFloat16 *src0, __gm__ aclFloat16 *src1, __gm__ aclFloat16 *dst);
+extern "C" __global__ AICORE void TCOLEXPANDADD_fp16_10_64_1_64(__gm__ uint16_t *src0, __gm__ uint16_t *src1, __gm__ uint16_t *dst);
 
-void LaunchTCOLEXPANDADD_fp16_10_64_1_64(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream) {
-    TCOLEXPANDADD_fp16_10_64_1_64<<<1, nullptr, stream>>>((__gm__ aclFloat16 *)src0, (__gm__ aclFloat16 *)src1, (__gm__ aclFloat16 *)dst);
+void LaunchTCOLEXPANDADD_fp16_10_64_1_64(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream) {
+    TCOLEXPANDADD_fp16_10_64_1_64<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
 }
 // Case: int32_16_32_1_32
 extern "C" __global__ AICORE void TCOLEXPANDADD_int32_16_32_1_32(__gm__ int32_t *src0, __gm__ int32_t *src1, __gm__ int32_t *dst);

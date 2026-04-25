@@ -22,10 +22,10 @@
 using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
-void LaunchTCOLEXPAND_half_1_16_512_512(aclFloat16 *src, aclFloat16 *dst, void *stream);
+void LaunchTCOLEXPAND_half_1_16_512_512(uint16_t *src, uint16_t *dst, void *stream);
 void LaunchTCOLEXPAND_int8_2_32_256_255(int8_t *src, int8_t *dst, void *stream);
 void LaunchTCOLEXPAND_float_1_8_128_63(float *src, float *dst, void *stream);
-void LaunchTCOLEXPAND_half_1_33_512_512(aclFloat16 *src, aclFloat16 *dst, void *stream);
+void LaunchTCOLEXPAND_half_1_33_512_512(uint16_t *src, uint16_t *dst, void *stream);
 void LaunchTCOLEXPAND_int8_2_17_256_44(int8_t *src, int8_t *dst, void *stream);
 void LaunchTCOLEXPAND_float_1_54_64_63(float *src, float *dst, void *stream);
 
@@ -44,10 +44,10 @@ struct TestCase {
 };
 
 static const TestCase kCases[] = {
-    {"half_1_16_512_512",   (LaunchFn)LaunchTCOLEXPAND_half_1_16_512_512,   1, 512, 16, 512, 16, 512, sizeof(aclFloat16)},
+    {"half_1_16_512_512",   (LaunchFn)LaunchTCOLEXPAND_half_1_16_512_512,   1, 512, 16, 512, 16, 512, sizeof(uint16_t)},
     {"int8_2_32_256_255",   (LaunchFn)LaunchTCOLEXPAND_int8_2_32_256_255,   2, 256, 32, 256, 32, 255, sizeof(int8_t)},
     {"float_1_8_128_63",    (LaunchFn)LaunchTCOLEXPAND_float_1_8_128_63,    1, 128,  8, 128,  8,  63, sizeof(float)},
-    {"half_1_33_512_512",   (LaunchFn)LaunchTCOLEXPAND_half_1_33_512_512,   1, 512, 33, 512, 33, 512, sizeof(aclFloat16)},
+    {"half_1_33_512_512",   (LaunchFn)LaunchTCOLEXPAND_half_1_33_512_512,   1, 512, 33, 512, 33, 512, sizeof(uint16_t)},
     {"int8_2_17_256_44",    (LaunchFn)LaunchTCOLEXPAND_int8_2_17_256_44,    2, 256, 17, 256, 17,  44, sizeof(int8_t)},
     {"float_1_54_64_63",    (LaunchFn)LaunchTCOLEXPAND_float_1_54_64_63,    1,  64, 54,  64, 54,  63, sizeof(float)},
 };

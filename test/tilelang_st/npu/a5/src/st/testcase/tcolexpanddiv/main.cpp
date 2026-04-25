@@ -24,12 +24,12 @@ using namespace PtoTestCommon;
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTCOLEXPANDDIV_fp32_32_64_1_64(float *src0, float *src1, float *dst, void *stream);
 void LaunchTCOLEXPANDDIV_fp32_8_32_1_32(float *src0, float *src1, float *dst, void *stream);
-void LaunchTCOLEXPANDDIV_fp16_16_64_1_64(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream);
-void LaunchTCOLEXPANDDIV_fp16_4_128_1_128(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream);
+void LaunchTCOLEXPANDDIV_fp16_16_64_1_64(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
+void LaunchTCOLEXPANDDIV_fp16_4_128_1_128(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
 void LaunchTCOLEXPANDDIV_int32_16_32_1_32(int32_t *src0, int32_t *src1, int32_t *dst, void *stream);
 void LaunchTCOLEXPANDDIV_int16_16_64_1_64(int16_t *src0, int16_t *src1, int16_t *dst, void *stream);
 void LaunchTCOLEXPANDDIV_fp32_40_32_1_32(float *src0, float *src1, float *dst, void *stream);
-void LaunchTCOLEXPANDDIV_fp16_16_128_1_128(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream);
+void LaunchTCOLEXPANDDIV_fp16_16_128_1_128(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
 void LaunchTCOLEXPANDDIV_fp32_20_64_1_64(float *src0, float *src1, float *dst, void *stream);
 
 using LaunchFn = void (*)(void *, void *, void *, void *);
@@ -51,12 +51,12 @@ struct TestCase {
 static const TestCase kCases[] = {
     {"fp32_32_64_1_64",   (LaunchFn)LaunchTCOLEXPANDDIV_fp32_32_64_1_64,   32, 64, 1, 64, 32, 64, 32, 64, sizeof(float)},
     {"fp32_8_32_1_32",    (LaunchFn)LaunchTCOLEXPANDDIV_fp32_8_32_1_32,    8,  32, 1, 32, 8,  32, 8,  32, sizeof(float)},
-    {"fp16_16_64_1_64",   (LaunchFn)LaunchTCOLEXPANDDIV_fp16_16_64_1_64,   16, 64, 1, 64, 16, 64, 16, 64, sizeof(aclFloat16)},
-    {"fp16_4_128_1_128",  (LaunchFn)LaunchTCOLEXPANDDIV_fp16_4_128_1_128,  4, 128, 1, 128, 4, 128, 4, 128, sizeof(aclFloat16)},
+    {"fp16_16_64_1_64",   (LaunchFn)LaunchTCOLEXPANDDIV_fp16_16_64_1_64,   16, 64, 1, 64, 16, 64, 16, 64, sizeof(uint16_t)},
+    {"fp16_4_128_1_128",  (LaunchFn)LaunchTCOLEXPANDDIV_fp16_4_128_1_128,  4, 128, 1, 128, 4, 128, 4, 128, sizeof(uint16_t)},
     {"int32_16_32_1_32",  (LaunchFn)LaunchTCOLEXPANDDIV_int32_16_32_1_32,  16,  32, 1,  32, 16,  32, 16,  32, sizeof(int32_t)},
     {"int16_16_64_1_64",  (LaunchFn)LaunchTCOLEXPANDDIV_int16_16_64_1_64,  16,  64, 1,  64, 16,  64, 16,  64, sizeof(int16_t)},
     {"fp32_40_32_1_32",   (LaunchFn)LaunchTCOLEXPANDDIV_fp32_40_32_1_32,   40,  32, 1,  32, 40,  32, 40,  32, sizeof(float)},
-    {"fp16_16_128_1_128", (LaunchFn)LaunchTCOLEXPANDDIV_fp16_16_128_1_128, 16, 128, 1, 128, 16, 128, 16, 128, sizeof(aclFloat16)},
+    {"fp16_16_128_1_128", (LaunchFn)LaunchTCOLEXPANDDIV_fp16_16_128_1_128, 16, 128, 1, 128, 16, 128, 16, 128, sizeof(uint16_t)},
     {"fp32_20_64_1_64",   (LaunchFn)LaunchTCOLEXPANDDIV_fp32_20_64_1_64,   20,  64, 1,  64, 20,  64, 20,  64, sizeof(float)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);

@@ -31,8 +31,8 @@ using namespace PtoTestCommon;
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTCOLEXPANDMIN_fp32_16_128_1_128(float *src0, float *src1, float *dst, void *stream);
 void LaunchTCOLEXPANDMIN_fp32_32_32_1_32(float *src0, float *src1, float *dst, void *stream);
-void LaunchTCOLEXPANDMIN_fp16_4_256_1_256(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream);
-void LaunchTCOLEXPANDMIN_fp16_10_64_1_64(aclFloat16 *src0, aclFloat16 *src1, aclFloat16 *dst, void *stream);
+void LaunchTCOLEXPANDMIN_fp16_4_256_1_256(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
+void LaunchTCOLEXPANDMIN_fp16_10_64_1_64(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream);
 void LaunchTCOLEXPANDMIN_int32_16_32_1_32(int32_t *src0, int32_t *src1, int32_t *dst, void *stream);
 void LaunchTCOLEXPANDMIN_int16_16_64_1_64(int16_t *src0, int16_t *src1, int16_t *dst, void *stream);
 
@@ -55,8 +55,8 @@ struct TestCase {
 static const TestCase kCases[] = {
     {"fp32_16_128_1_128", (LaunchFn)LaunchTCOLEXPANDMIN_fp32_16_128_1_128, 16, 128, 1, 128, 16, 128, 16, 128, sizeof(float)},
     {"fp32_32_32_1_32",   (LaunchFn)LaunchTCOLEXPANDMIN_fp32_32_32_1_32,   32, 32, 1, 32, 32, 32, 32, 32, sizeof(float)},
-    {"fp16_4_256_1_256",  (LaunchFn)LaunchTCOLEXPANDMIN_fp16_4_256_1_256,   4, 256, 1, 256, 4, 256, 4, 256, sizeof(aclFloat16)},
-    {"fp16_10_64_1_64",   (LaunchFn)LaunchTCOLEXPANDMIN_fp16_10_64_1_64,   10, 64, 1, 64, 10, 64, 10, 64, sizeof(aclFloat16)},
+    {"fp16_4_256_1_256",  (LaunchFn)LaunchTCOLEXPANDMIN_fp16_4_256_1_256,   4, 256, 1, 256, 4, 256, 4, 256, sizeof(uint16_t)},
+    {"fp16_10_64_1_64",   (LaunchFn)LaunchTCOLEXPANDMIN_fp16_10_64_1_64,   10, 64, 1, 64, 10, 64, 10, 64, sizeof(uint16_t)},
     {"int32_16_32_1_32",  (LaunchFn)LaunchTCOLEXPANDMIN_int32_16_32_1_32,  16,  32, 1,  32, 16,  32, 16,  32, sizeof(int32_t)},
     {"int16_16_64_1_64",  (LaunchFn)LaunchTCOLEXPANDMIN_int16_16_64_1_64,  16,  64, 1,  64, 16,  64, 16,  64, sizeof(int16_t)},
 };

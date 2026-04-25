@@ -5,26 +5,18 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
-// Copyright (c) 2026 Huawei Technologies Co., Ltd.
-// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-// CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You may not use this file in the compliance with the License.
-// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
-// See LICENSE in the root of the software repository for the full text of the License.
 
 #include <stdint.h>
-#include "acl/acl.h"
 
 #ifndef AICORE
 #define AICORE [aicore]
 #endif
 
 // Case 1: half_1_16_512_512
-extern "C" __global__ AICORE void TCOLEXPAND_half_1_16_512_512(__gm__ aclFloat16 *src, __gm__ aclFloat16 *dst);
+extern "C" __global__ AICORE void TCOLEXPAND_half_1_16_512_512(__gm__ uint16_t *src, __gm__ uint16_t *dst);
 
-void LaunchTCOLEXPAND_half_1_16_512_512(aclFloat16 *src, aclFloat16 *dst, void *stream) {
-    TCOLEXPAND_half_1_16_512_512<<<1, nullptr, stream>>>((__gm__ aclFloat16 *)src, (__gm__ aclFloat16 *)dst);
+void LaunchTCOLEXPAND_half_1_16_512_512(uint16_t *src, uint16_t *dst, void *stream) {
+    TCOLEXPAND_half_1_16_512_512<<<1, nullptr, stream>>>((__gm__ uint16_t *)src, (__gm__ uint16_t *)dst);
 }
 
 // Case 2: int8_2_32_256_255
@@ -42,10 +34,10 @@ void LaunchTCOLEXPAND_float_1_8_128_63(float *src, float *dst, void *stream) {
 }
 
 // Case 4: half_1_33_512_512
-extern "C" __global__ AICORE void TCOLEXPAND_half_1_33_512_512(__gm__ aclFloat16 *src, __gm__ aclFloat16 *dst);
+extern "C" __global__ AICORE void TCOLEXPAND_half_1_33_512_512(__gm__ uint16_t *src, __gm__ uint16_t *dst);
 
-void LaunchTCOLEXPAND_half_1_33_512_512(aclFloat16 *src, aclFloat16 *dst, void *stream) {
-    TCOLEXPAND_half_1_33_512_512<<<1, nullptr, stream>>>((__gm__ aclFloat16 *)src, (__gm__ aclFloat16 *)dst);
+void LaunchTCOLEXPAND_half_1_33_512_512(uint16_t *src, uint16_t *dst, void *stream) {
+    TCOLEXPAND_half_1_33_512_512<<<1, nullptr, stream>>>((__gm__ uint16_t *)src, (__gm__ uint16_t *)dst);
 }
 
 // Case 5: int8_2_17_256_44
