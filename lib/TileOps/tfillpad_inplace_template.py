@@ -41,11 +41,12 @@ _DTYPE_SIGNATURES = [
     target="a5",
     op="pto.tfillpad_inplace",
     dtypes=_DTYPE_SIGNATURES,
+    advanced=True,  # Required for as_ptr()
 )
 def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
     """tfillpad_inplace: skip copy phase, only fill expansion regions.
 
-    Based on tfillpad_template.py, but skips Phase 1+3 (copy phases).
+    Uses vstur+vstas for unaligned column fill, matching C++ TFillPad.hpp.
     """
     dtype = dst.element_type
     src_rows, _ = src.shape
@@ -56,7 +57,7 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
     lanes = pto.get_lanes(dtype)
     has_valid_expansion = (src_valid_cols < dst_valid_cols) or (src_valid_rows < dst_valid_rows)
 
-    # PadValue handling - exactly same as tfillpad_template.py
+    # PadValue handling - same as tfillpad_template.py
     if pto.constexpr(dtype == pto.f32):
         if pto.constexpr(dst.pad_value == pto.PadValue.ZERO and has_valid_expansion):
             fill_scalar = pto.f32(_NEG1_F32)
@@ -111,16 +112,32 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
             fill_scalar = pto.i8(0)
 
     # Phase 2: Fill cols from src_valid_cols to dst_valid_cols-1
+    # Use vstur+vstas for unaligned starting column
     if pto.constexpr(src_valid_cols < dst_valid_cols):
-        expansion_cols = dst_valid_cols - src_valid_cols
-        for row in range(0, dst_valid_rows, 1):
-            remained = expansion_cols
-            for col in range(src_valid_cols, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
+        pad_cols = dst_valid_cols - src_valid_cols
+        pad_repeat_times = (pad_cols + lanes - 1) // lanes  # ceil division
 
-    # Phase 4: Fill row expansion
+        # Create fill vector once (reused across all rows)
+        fill_vec = pto.vdup(fill_scalar)
+
+        for row in range(0, dst_valid_rows, 1):
+            # Initialize align register
+            ureg = pto.init_align()
+
+            # Get pointer to this row's expansion region starting at src_valid_cols
+            base_ptr = dst.as_ptr()
+
+            cols = pad_cols
+            # Loop: vstur with POST_UPDATE for each repeat
+            for j in range(0, pad_repeat_times, 1):
+                # vstur: unaligned store, POST_UPDATE mode advances pointer
+                ureg = pto.vstur(ureg, fill_vec, base_ptr, pto.PostUpdateMode.POST_UPDATE)
+                cols = cols - lanes
+
+            # vstas: align final address
+            pto.vstas(ureg, fill_vec, dst[row, src_valid_cols:], 0)
+
+    # Phase 4: Fill row expansion (rows src_rows to dst_rows-1)
     if pto.constexpr(src_rows < dst_rows):
         for row in range(src_rows, dst_rows, 1):
             remained = dst_valid_cols
