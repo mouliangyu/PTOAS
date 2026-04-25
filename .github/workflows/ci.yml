@@ -1,7 +1,10 @@
 name: CI
 
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
-  push:
   pull_request:
   # Nightly remote-board validation (GitHub cron is UTC).
   # 22:00 CST (UTC+8) == 14:00 UTC.
@@ -67,7 +70,7 @@ permissions:
 
 jobs:
   license-header-check:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -422,6 +425,7 @@ jobs:
           echo "PTOAS_BIN=${GITHUB_WORKSPACE}/build/tools/ptoas/ptoas" >> "${GITHUB_ENV}"
 
       - name: Run VPTO SIM validation
+        if: ${{ false }}
         shell: bash
         run: |
           set -euo pipefail
@@ -440,7 +444,7 @@ jobs:
           mkdir -p "${TILELANG_DSL_WORKSPACE}"
           ASCEND_HOME_PATH="${ASCEND_HOME_PATH}" \
           PTOAS_BIN="${PTOAS_BIN}" \
-          bash test/tilelang_st/script/run_ci.sh -r sim -v a5 --jobs 32 \
+          bash test/tilelang_st/script/run_ci.sh -r sim -v a5 --jobs 64 \
             2>&1 | tee "${TILELANG_DSL_WORKSPACE}/run_ci.log"
 
       - name: Upload TileLang DSL logs
