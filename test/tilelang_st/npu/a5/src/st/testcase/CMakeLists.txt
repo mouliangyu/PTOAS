@@ -136,6 +136,7 @@ set(ALL_TESTCASES
     tabs
     texp
     tlog
+    tmrgsort
     tneg
     tnot
     tpartmax
