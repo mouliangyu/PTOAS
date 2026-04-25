@@ -140,6 +140,8 @@ set(ALL_TESTCASES
     tnot
     tpartmax
     tpartmin
+    tpartadd
+    tpartmul
     trecip
     trsqrt
     tsqrt
