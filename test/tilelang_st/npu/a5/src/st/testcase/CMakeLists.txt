@@ -132,19 +132,44 @@ set(ALL_TESTCASES
     tadd
     tcvt
     tload
+    tcolmax
+    tcolmin
+    tcolsum
+    tcolprod
     softmax
     tabs
     texp
     tlog
     tneg
     tnot
+    tpartmax
+    tpartmin
+    tpartadd
+    tpartmul
     trecip
+    trowargmax
+    trowargmin
+    trowsum
+    trowmax
+    trowmin
+    trowprod
     trsqrt
     tsqrt
     texpands
     tfillpad
     tfillpad_inplace
     tfillpad_expand
+    tadds
+    tands
+    tdivs
+    tmaxs
+    tmins
+    tmuls
+    tors
+    tshls
+    tshrs
+    tsubs
+    txors
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
