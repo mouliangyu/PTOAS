@@ -7,7 +7,8 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // Host driver for TileLang trowexpanddiv ST — row-wise broadcast division.
-// Supports f32, f16 (verifier only allows FloatType f16/f32)
+// Supports f32, f16
+// Div variants: src1Col=1 (broadcast single value) or src1Col>1 (block broadcast)
 
 #include "acl/acl.h"
 #include "test_common.h"
@@ -29,9 +30,14 @@ void LaunchTROWEXPANDDIV_f16_16x32(void *src0, void *src1, void *dst, void *stre
 void LaunchTROWEXPANDDIV_f16_32x512(void *src0, void *src1, void *dst, void *stream);
 void LaunchTROWEXPANDDIV_f16_32x64_noeq(void *src0, void *src1, void *dst, void *stream);
 void LaunchTROWEXPANDDIV_f16_16x128_hp(void *src0, void *src1, void *dst, void *stream);
-
-// Note: launchTRowExpandDiv2 with src1Col>1 has different semantics - TBD
-// Note: trowexpanddiv verifier only supports f16/f32, not i32/i16
+// f32 Div2 kernels
+void LaunchTROWEXPANDDIV_f32_24x64_v2(float *src0, float *src1, float *dst, void *stream);
+void LaunchTROWEXPANDDIV_f32_20x64_v2_noeq(float *src0, float *src1, float *dst, void *stream);
+void LaunchTROWEXPANDDIV_f32_8x32_v2_hp(float *src0, float *src1, float *dst, void *stream);
+// f16 Div2 kernels
+void LaunchTROWEXPANDDIV_f16_32x32_v2(void *src0, void *src1, void *dst, void *stream);
+void LaunchTROWEXPANDDIV_f16_16x64_v2_noeq(void *src0, void *src1, void *dst, void *stream);
+void LaunchTROWEXPANDDIV_f16_8x128_v2_hp(void *src0, void *src1, void *dst, void *stream);
 
 using LaunchFn = void (*)(void *, void *, void *, void *);
 
@@ -54,6 +60,14 @@ static const TestCase kCases[] = {
     {"f16_32x512", LaunchTROWEXPANDDIV_f16_32x512, 32, 512, 32, 16, 32, 512, 32, 512, sizeof(uint16_t)},
     {"f16_32x64_noeq", LaunchTROWEXPANDDIV_f16_32x64_noeq, 32, 64, 32, 16, 32, 64, 32, 64, sizeof(uint16_t)},
     {"f16_16x128_hp", LaunchTROWEXPANDDIV_f16_16x128_hp, 16, 128, 16, 16, 16, 128, 16, 128, sizeof(uint16_t)},
+    // f32 Div2 cases (src1Col=8)
+    {"f32_24x64_v2", (LaunchFn)LaunchTROWEXPANDDIV_f32_24x64_v2, 24, 64, 24, 8, 24, 64, 24, 64, sizeof(float)},
+    {"f32_20x64_v2_noeq", (LaunchFn)LaunchTROWEXPANDDIV_f32_20x64_v2_noeq, 20, 64, 20, 8, 20, 64, 20, 64, sizeof(float)},
+    {"f32_8x32_v2_hp", (LaunchFn)LaunchTROWEXPANDDIV_f32_8x32_v2_hp, 8, 32, 8, 8, 8, 32, 8, 32, sizeof(float)},
+    // f16 Div2 cases (src1Col=16)
+    {"f16_32x32_v2", LaunchTROWEXPANDDIV_f16_32x32_v2, 32, 32, 32, 16, 32, 32, 32, 32, sizeof(uint16_t)},
+    {"f16_16x64_v2_noeq", LaunchTROWEXPANDDIV_f16_16x64_v2_noeq, 16, 64, 16, 16, 16, 64, 16, 64, sizeof(uint16_t)},
+    {"f16_8x128_v2_hp", LaunchTROWEXPANDDIV_f16_8x128_v2_hp, 8, 128, 8, 16, 8, 128, 8, 128, sizeof(uint16_t)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

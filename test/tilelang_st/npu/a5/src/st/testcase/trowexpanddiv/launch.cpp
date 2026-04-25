@@ -50,5 +50,32 @@ void LaunchTROWEXPANDDIV_f16_16x128_hp(void *src0, void *src1, void *dst, void *
     TROWEXPANDDIV_f16_16x128_hp<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
 }
 
-// Note: launchTRowExpandDiv2 with src1Col>1 has different semantics - TBD
-// Note: trowexpanddiv verifier only supports f16/f32, not i32/i16
+// f32 Div2 kernels (src1Col=8)
+extern "C" __global__ AICORE void TROWEXPANDDIV_f32_24x64_v2(__gm__ float *src0, __gm__ float *src1, __gm__ float *dst);
+extern "C" __global__ AICORE void TROWEXPANDDIV_f32_20x64_v2_noeq(__gm__ float *src0, __gm__ float *src1, __gm__ float *dst);
+extern "C" __global__ AICORE void TROWEXPANDDIV_f32_8x32_v2_hp(__gm__ float *src0, __gm__ float *src1, __gm__ float *dst);
+
+void LaunchTROWEXPANDDIV_f32_24x64_v2(float *src0, float *src1, float *dst, void *stream) {
+    TROWEXPANDDIV_f32_24x64_v2<<<1, nullptr, stream>>>((__gm__ float *)src0, (__gm__ float *)src1, (__gm__ float *)dst);
+}
+void LaunchTROWEXPANDDIV_f32_20x64_v2_noeq(float *src0, float *src1, float *dst, void *stream) {
+    TROWEXPANDDIV_f32_20x64_v2_noeq<<<1, nullptr, stream>>>((__gm__ float *)src0, (__gm__ float *)src1, (__gm__ float *)dst);
+}
+void LaunchTROWEXPANDDIV_f32_8x32_v2_hp(float *src0, float *src1, float *dst, void *stream) {
+    TROWEXPANDDIV_f32_8x32_v2_hp<<<1, nullptr, stream>>>((__gm__ float *)src0, (__gm__ float *)src1, (__gm__ float *)dst);
+}
+
+// f16 Div2 kernels (src1Col=16)
+extern "C" __global__ AICORE void TROWEXPANDDIV_f16_32x32_v2(__gm__ uint16_t *src0, __gm__ uint16_t *src1, __gm__ uint16_t *dst);
+extern "C" __global__ AICORE void TROWEXPANDDIV_f16_16x64_v2_noeq(__gm__ uint16_t *src0, __gm__ uint16_t *src1, __gm__ uint16_t *dst);
+extern "C" __global__ AICORE void TROWEXPANDDIV_f16_8x128_v2_hp(__gm__ uint16_t *src0, __gm__ uint16_t *src1, __gm__ uint16_t *dst);
+
+void LaunchTROWEXPANDDIV_f16_32x32_v2(void *src0, void *src1, void *dst, void *stream) {
+    TROWEXPANDDIV_f16_32x32_v2<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
+}
+void LaunchTROWEXPANDDIV_f16_16x64_v2_noeq(void *src0, void *src1, void *dst, void *stream) {
+    TROWEXPANDDIV_f16_16x64_v2_noeq<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
+}
+void LaunchTROWEXPANDDIV_f16_8x128_v2_hp(void *src0, void *src1, void *dst, void *stream) {
+    TROWEXPANDDIV_f16_8x128_v2_hp<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
+}

@@ -141,6 +141,14 @@ set(ALL_TESTCASES
     trecip
     trsqrt
     tsqrt
+    trowexpand
+    trowexpandadd
+    trowexpanddiv
+    trowexpandexpdif
+    trowexpandmax
+    trowexpandmin
+    trowexpandmul
+    trowexpandsub
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))

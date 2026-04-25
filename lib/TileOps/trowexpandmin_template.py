@@ -5,10 +5,20 @@ from pathlib import Path
 import tilelang_dsl as pto
 
 
+def _constraint_trowexpandmin_row_major(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile) -> bool:
+    """Constraint for RowMajor layout trowexpandmin template."""
+    # All tiles must be RowMajor layout
+    src0_row_major = src0.config.b_layout == pto.BLayout.ROW_MAJOR
+    src1_row_major = src1.config.b_layout == pto.BLayout.ROW_MAJOR
+    dst_row_major = dst.config.b_layout == pto.BLayout.ROW_MAJOR
+    return src0_row_major and src1_row_major and dst_row_major
+
+
 @pto.vkernel(
     target="a5",
     op="pto.trowexpandmin",
     dtypes=[(pto.AnyFloat, pto.AnyFloat, pto.AnyFloat), (pto.AnyInt, pto.AnyInt, pto.AnyInt)],
+    constraints=[_constraint_trowexpandmin_row_major],
 )
 def template_trowexpandmin(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
     """Template for pto.trowexpandmin.

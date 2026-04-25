@@ -20,11 +20,17 @@ import sys
 import numpy as np
 
 from cases import CASES
-from st_common import result_cmp, style_fail, style_pass, validate_cases
+from st_common import result_cmp, style_fail, style_pass
+
+# Inline validation for multi-input format (trowexpand uses src0/dst only)
+REQUIRED_KEYS = {"name", "dtype", "src0_shape", "src0_valid_shape", "dst_shape", "dst_valid_shape"}
+for i, case in enumerate(CASES):
+    missing = REQUIRED_KEYS - case.keys()
+    if missing:
+        raise ValueError(f"cases[{i}] ({case.get('name', '?')}) missing keys: {missing}")
 
 
 def main():
-    validate_cases(CASES)
     case_filter = sys.argv[1] if len(sys.argv) > 1 else None
 
     all_passed = True

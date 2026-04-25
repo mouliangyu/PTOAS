@@ -16,9 +16,15 @@ trowexpanddiv: dst = src0 / broadcast(src1)
 
 import numpy as np
 from cases import CASES
-from st_common import validate_cases, setup_case_rng, save_case_data
+from st_common import setup_case_rng, save_case_data
 
-validate_cases(CASES)
+# Inline validation for multi-input format (trowexpanddiv uses src0/src1/dst)
+REQUIRED_KEYS = {"name", "dtype", "src0_shape", "src0_valid_shape", "src1_shape",
+                 "src1_valid_shape", "dst_shape", "dst_valid_shape"}
+for i, case in enumerate(CASES):
+    missing = REQUIRED_KEYS - case.keys()
+    if missing:
+        raise ValueError(f"cases[{i}] ({case.get('name', '?')}) missing keys: {missing}")
 
 for case in CASES:
     setup_case_rng(case)
@@ -37,11 +43,35 @@ for case in CASES:
     golden = np.zeros(dst_shape, dtype=dtype)
     dst_vr, dst_vc = dst_valid_shape
     src0_vr, src0_vc = src0_valid_shape
-    src1_vr = src1_valid_shape[0]
+    src1_vr, src1_vc = src1_valid_shape
 
-    golden[:dst_vr, :dst_vc] = (
-        input1[:src0_vr, :src0_vc] / input2[:src1_vr, 0:1]
-    ).astype(dtype, copy=False)
+    # Compute golden based on src1Col semantics
+    # src1Col=1: broadcast single column to all dst columns
+    # src1Col>1: each src1 column broadcasts to dst_vc/src1_vc columns
+    if dtype in (np.int8, np.int16, np.int32):
+        if src1_vc == 1:
+            golden[:dst_vr, :dst_vc] = (
+                input1[:src0_vr, :src0_vc] // input2[:src1_vr, 0:1]
+            ).astype(dtype, copy=False)
+        else:
+            # src1Col > 1: each src1 column broadcasts to dst_vc/src1_vc dst columns
+            block_size = dst_vc // src1_vc
+            for c in range(src1_vc):
+                golden[:dst_vr, c*block_size:(c+1)*block_size] = (
+                    input1[:src0_vr, c*block_size:(c+1)*block_size] // input2[:src1_vr, c:c+1]
+                ).astype(dtype, copy=False)
+    else:
+        if src1_vc == 1:
+            golden[:dst_vr, :dst_vc] = (
+                input1[:src0_vr, :src0_vc] / input2[:src1_vr, 0:1]
+            ).astype(dtype, copy=False)
+        else:
+            # src1Col > 1: each src1 column broadcasts to dst_vc/src1_vc dst columns
+            block_size = dst_vc // src1_vc
+            for c in range(src1_vc):
+                golden[:dst_vr, c*block_size:(c+1)*block_size] = (
+                    input1[:src0_vr, c*block_size:(c+1)*block_size] / input2[:src1_vr, c:c+1]
+                ).astype(dtype, copy=False)
 
     save_case_data(case["name"], {"input1": input1, "input2": input2, "golden": golden})
     print(f"[INFO] gen_data: {case['name']} dtype={dtype.__name__}")

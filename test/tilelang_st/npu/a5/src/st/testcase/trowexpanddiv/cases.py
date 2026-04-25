@@ -14,10 +14,9 @@
 trowexpanddiv: dst = src0 / broadcast(src1) across columns.
 - src1Col determines how src1 is broadcast:
   - src1Col=1: only first column is valid, broadcast to dstCols
-  - src1Col>1: each src1 column maps to a block of dst columns
+  - src1Col>1: each src1 column maps to a block of dst columns (dstCol/src1Col columns per src1 value)
 - src1 physical cols = 32/sizeof(dtype) for NPU alignment
 - highPrecision: use high precision mode for computation
-- Note: trowexpanddiv verifier only supports f16/f32, not i32/i16
 """
 
 import numpy as np
@@ -127,6 +126,84 @@ CASES = [
         "eps": 1e-3,
         "high_precision": True,
     },
-    # Note: launchTRowExpandDiv2 with src1Col>1 has different semantics - TBD
-    # Note: trowexpanddiv verifier only supports f16/f32, not i32/i16
+    # launchTRowExpandDiv2<float, 24, 64, 24, 8, true, false>
+    # src1Col=8: each src1 column broadcasts to 64/8=8 dst columns
+    {
+        "name": "f32_24x64_v2",
+        "dtype": np.float32,
+        "src0_shape": (24, 64),
+        "src0_valid_shape": (24, 64),
+        "src1_shape": (24, 8),
+        "src1_valid_shape": (24, 8),
+        "dst_shape": (24, 64),
+        "dst_valid_shape": (24, 64),
+        "eps": 1e-6,
+        "high_precision": False,
+    },
+    # launchTRowExpandDiv2<aclFloat16, 32, 32, 32, 16, true, false>
+    # src1Col=16: each src1 column broadcasts to 32/16=2 dst columns
+    {
+        "name": "f16_32x32_v2",
+        "dtype": np.float16,
+        "src0_shape": (32, 32),
+        "src0_valid_shape": (32, 32),
+        "src1_shape": (32, 16),
+        "src1_valid_shape": (32, 16),
+        "dst_shape": (32, 32),
+        "dst_valid_shape": (32, 32),
+        "eps": 1e-3,
+        "high_precision": False,
+    },
+    # launchTRowExpandDiv2<float, 20, 64, 20, 8, false, false>
+    {
+        "name": "f32_20x64_v2_noeq",
+        "dtype": np.float32,
+        "src0_shape": (20, 64),
+        "src0_valid_shape": (20, 64),
+        "src1_shape": (20, 8),
+        "src1_valid_shape": (20, 8),
+        "dst_shape": (20, 64),
+        "dst_valid_shape": (20, 64),
+        "eps": 1e-6,
+        "high_precision": False,
+    },
+    # launchTRowExpandDiv2<aclFloat16, 16, 64, 16, 16, false, false>
+    {
+        "name": "f16_16x64_v2_noeq",
+        "dtype": np.float16,
+        "src0_shape": (16, 64),
+        "src0_valid_shape": (16, 64),
+        "src1_shape": (16, 16),
+        "src1_valid_shape": (16, 16),
+        "dst_shape": (16, 64),
+        "dst_valid_shape": (16, 64),
+        "eps": 1e-3,
+        "high_precision": False,
+    },
+    # launchTRowExpandDiv2<float, 8, 32, 8, 8, true, true>
+    {
+        "name": "f32_8x32_v2_hp",
+        "dtype": np.float32,
+        "src0_shape": (8, 32),
+        "src0_valid_shape": (8, 32),
+        "src1_shape": (8, 8),
+        "src1_valid_shape": (8, 8),
+        "dst_shape": (8, 32),
+        "dst_valid_shape": (8, 32),
+        "eps": 1e-6,
+        "high_precision": True,
+    },
+    # launchTRowExpandDiv2<aclFloat16, 8, 128, 8, 16, true, true>
+    {
+        "name": "f16_8x128_v2_hp",
+        "dtype": np.float16,
+        "src0_shape": (8, 128),
+        "src0_valid_shape": (8, 128),
+        "src1_shape": (8, 16),
+        "src1_valid_shape": (8, 16),
+        "dst_shape": (8, 128),
+        "dst_valid_shape": (8, 128),
+        "eps": 1e-3,
+        "high_precision": True,
+    },
 ]

@@ -5,10 +5,19 @@ from pathlib import Path
 import tilelang_dsl as pto
 
 
+def _constraint_trowexpand_row_major(src: pto.Tile, dst: pto.Tile) -> bool:
+    """Constraint for RowMajor layout trowexpand template."""
+    # Both src and dst must be RowMajor layout
+    src_row_major = src.config.b_layout == pto.BLayout.ROW_MAJOR
+    dst_row_major = dst.config.b_layout == pto.BLayout.ROW_MAJOR
+    return src_row_major and dst_row_major
+
+
 @pto.vkernel(
     target="a5",
     op="pto.trowexpand",
     dtypes=[(pto.AnyFloat, pto.AnyFloat), (pto.AnyInt, pto.AnyInt)],
+    constraints=[_constraint_trowexpand_row_major],
 )
 def template_trowexpand(src: pto.Tile, dst: pto.Tile):
     """Template for pto.trowexpand.
