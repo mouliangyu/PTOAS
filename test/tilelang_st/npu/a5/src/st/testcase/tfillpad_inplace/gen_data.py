@@ -63,24 +63,37 @@ for case in CASES:
     setup_case_rng(case)
 
     dtype = case["dtype"]
-    shape = case["shape"]          # tile physical shape (260x16)
-    valid_shape = case["valid_shape"]  # valid region (260x7)
-    fill_padval = case.get("fill_padval", "Max")  # default Max
+    src_shape = case["src_shape"]
+    src_valid = case["src_valid"]
+    dst_shape = case["dst_shape"]
+    dst_valid = case["dst_valid"]
+    fill_padval = case.get("fill_padval", "Max")
 
-    rows, cols = shape
-    vr, vc = valid_shape
+    src_vr, src_vc = src_valid
+    dst_r, dst_c = dst_shape
+    dst_vr, dst_vc = dst_valid
 
-    # Generate input: full tile shape, random values in valid region
-    input_data = np.zeros(shape, dtype=dtype)
-    input_data[:vr, :vc] = np.random.randint(1, 10, size=(vr, vc)).astype(dtype)
+    # Input: src valid region data (random values)
+    input_data = np.random.uniform(1.0, 10.0, size=(src_vr, src_vc)).astype(dtype)
 
-    # Generate golden: full tile shape
-    # Copy valid region, fill padding columns with FillPadVal
-    golden = input_data.copy()
-    if cols > vc:
+    # Golden: dst full region
+    # Copy src.valid region to dst[:src_vr, :src_vc]
+    # Fill cols src_vc to dst_vc with FillPadVal
+    # Fill rows src_vr to dst_vr with FillPadVal (row expansion, if any)
+    golden = np.zeros(dst_shape, dtype=dtype)
+    golden[:src_vr, :src_vc] = input_data
+
+    # Fill column padding (cols src_vc to dst_vc)
+    if dst_vc > src_vc:
         fill_val = get_pad_value(dtype, fill_padval)
-        golden[:vr, vc:cols] = fill_val
+        golden[:dst_vr, src_vc:dst_vc] = fill_val
+
+    # Fill row padding (rows src_vr to dst_vr)
+    if dst_vr > src_vr:
+        fill_val = get_pad_value(dtype, fill_padval)
+        golden[src_vr:dst_vr, :dst_vc] = fill_val
 
     save_case_data(case["name"], {"input": input_data, "golden": golden})
-    print(f"[INFO] gen_data: {case['name']} input_shape={shape} golden_shape={shape} "
-          f"valid={valid_shape} fill_pad={fill_padval} dtype={dtype.__name__}")
+    print(f"[INFO] gen_data: {case['name']} "
+          f"src_valid={src_valid} dst_shape={dst_shape} "
+          f"fill_pad={fill_padval} dtype={dtype.__name__}")

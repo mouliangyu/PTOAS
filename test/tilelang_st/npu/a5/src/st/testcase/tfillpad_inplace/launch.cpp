@@ -12,10 +12,12 @@
 #define AICORE [aicore]
 #endif
 
-// ========== Case 5: float, 260x16, valid=260x7, inplace ==========
+// ========== Case: float, 260x16, no expansion (inplace single buffer) ==========
 
-extern "C" __global__ AICORE void TFILLPAD_INPLACE_f32_260x16_inplace_260x7(__gm__ float *tile);
+extern "C" __global__ AICORE void TFILLPAD_INPLACE_f32_260x16_noexpand(__gm__ float *buf);
 
-void LaunchTFILLPAD_INPLACE_f32_260x16_inplace_260x7(float *tile, void *stream) {
-    TFILLPAD_INPLACE_f32_260x16_inplace_260x7<<<1, nullptr, stream>>>((__gm__ float *)tile);
+void LaunchTFILLPAD_INPLACE_f32_260x16_noexpand(float *buf, float *dummy, void *stream) {
+    // Inplace kernel: single buffer, src == dst physically
+    // dummy parameter ignored, only buf is used
+    TFILLPAD_INPLACE_f32_260x16_noexpand<<<1, nullptr, stream>>>((__gm__ float *)buf);
 }

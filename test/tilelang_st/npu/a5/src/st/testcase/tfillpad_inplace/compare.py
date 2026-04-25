@@ -33,12 +33,12 @@ def main():
 
         case_dir = case["name"]
         dtype = case["dtype"]
-        shape = case["shape"]            # full tile shape
+        dst_shape = case["dst_shape"]
         eps = case["eps"]
 
-        # Load golden and output (both stored with full tile shape)
-        golden = np.fromfile(os.path.join(case_dir, "golden.bin"), dtype=dtype).reshape(shape)
-        output = np.fromfile(os.path.join(case_dir, "output.bin"), dtype=dtype).reshape(shape)
+        # Load golden and output (both stored with dst_shape)
+        golden = np.fromfile(os.path.join(case_dir, "golden.bin"), dtype=dtype).reshape(dst_shape)
+        output = np.fromfile(os.path.join(case_dir, "output.bin"), dtype=dtype).reshape(dst_shape)
 
         # For integer types, eps=0 means exact match
         # For float types, use np.allclose with eps

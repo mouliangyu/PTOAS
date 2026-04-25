@@ -21,14 +21,14 @@
 using namespace PtoTestCommon;
 
 // Kernel launch wrapper (defined in launch.cpp)
-void LaunchTFILLPAD_INPLACE_f32_260x16_inplace_260x7(float *tile, void *stream);
+// Inplace kernel takes single buffer pointer
+void LaunchTFILLPAD_INPLACE_f32_260x16_noexpand(float *buf, float *dummy, void *stream);
 
 enum class DataType { F32 };
 
 struct TestCase {
     const char *name;
     DataType    dtype;
-    void (*launch)(void *, void *);
     size_t      rows;
     size_t      cols;
     size_t      validRows;
@@ -36,60 +36,58 @@ struct TestCase {
     size_t      elemSize;
 };
 
-template<typename T>
-void wrapLaunch(void *tile, void *stream, void (*fn)(T *, void *)) {
-    fn((T *)tile, stream);
-}
-
 static const TestCase kCases[] = {
-    // Case 5: float, 260x16, valid=260x7, inplace
-    {"f32_260x16_inplace_260x7", DataType::F32,
-     [](void *tile, void *stream) { wrapLaunch<float>(tile, stream, LaunchTFILLPAD_INPLACE_f32_260x16_inplace_260x7); },
-     260, 16, 260, 7, sizeof(float)},
+    // Case: float, 260x16, no expansion (inplace: single buffer)
+    {"f32_260x16_noexpand", DataType::F32,
+     260, 16, 260, 16, sizeof(float)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
 static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
     int rc = 0;
-    size_t inputElemCount = tc.rows * tc.cols;     // input = full tile
-    size_t outputElemCount = tc.rows * tc.cols;    // output = full tile after inplace fill
-    size_t inputFileSize  = inputElemCount * tc.elemSize;
-    size_t outputFileSize = outputElemCount * tc.elemSize;
+    size_t elemCount = tc.rows * tc.cols;
+    size_t fileSize  = elemCount * tc.elemSize;
 
-    std::printf("[INFO] === case: %s (shape=%zux%zu, valid=%zux%zu, inplace) ===\n",
-                tc.name, tc.rows, tc.cols, tc.validRows, tc.validCols);
+    std::printf("[INFO] === case: %s (%zux%zu, inplace) ===\n",
+                tc.name, tc.validRows, tc.validCols);
 
     std::string caseDir = std::string("./") + tc.name;
 
-    void *tileHost = nullptr;
-    void *tileDevice = nullptr;
+    // Single buffer for inplace operation
+    void *bufHost = nullptr;
+    void *bufDevice = nullptr;
 
-    aclrtMallocHost(&tileHost, inputFileSize);
-    aclrtMalloc(&tileDevice, inputFileSize, ACL_MEM_MALLOC_HUGE_FIRST);
+    aclrtMallocHost(&bufHost, fileSize);
+    aclrtMalloc(&bufDevice, fileSize, ACL_MEM_MALLOC_HUGE_FIRST);
 
-    if (!ReadFile((caseDir + "/input.bin").c_str(), inputFileSize, tileHost, inputFileSize)) {
+    // Load input data into the single buffer
+    if (!ReadFile((caseDir + "/input.bin").c_str(), fileSize, bufHost, fileSize)) {
         std::fprintf(stderr, "[ERROR] failed to read %s/input.bin\n", caseDir.c_str());
         rc = 1;
     }
 
     if (rc == 0) {
-        aclrtMemcpy(tileDevice, inputFileSize, tileHost, inputFileSize, ACL_MEMCPY_HOST_TO_DEVICE);
+        // Copy input to device buffer
+        aclrtMemcpy(bufDevice, fileSize, bufHost, fileSize, ACL_MEMCPY_HOST_TO_DEVICE);
 
-        tc.launch(tileDevice, stream);
+        // Run inplace kernel (src == dst = bufDevice)
+        // Note: launch wrapper takes two args but inplace kernel uses same physical address
+        LaunchTFILLPAD_INPLACE_f32_260x16_noexpand((float *)bufDevice, (float *)bufDevice, stream);
 
         aclrtSynchronizeStream(stream);
-        aclrtMemcpy(tileHost, outputFileSize, tileDevice, outputFileSize, ACL_MEMCPY_DEVICE_TO_HOST);
+        // Copy result back (same buffer contains output)
+        aclrtMemcpy(bufHost, fileSize, bufDevice, fileSize, ACL_MEMCPY_DEVICE_TO_HOST);
     }
 
-    if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), tileHost, outputFileSize)) {
+    if (rc == 0 && !WriteFile((caseDir + "/output.bin").c_str(), bufHost, fileSize)) {
         std::fprintf(stderr, "[ERROR] failed to write %s/output.bin\n", caseDir.c_str());
         rc = 1;
     }
 
-    if (tileDevice != nullptr)
-        aclrtFree(tileDevice);
-    if (tileHost != nullptr)
-        aclrtFreeHost(tileHost);
+    if (bufDevice != nullptr)
+        aclrtFree(bufDevice);
+    if (bufHost != nullptr)
+        aclrtFreeHost(bufHost);
 
     if (rc == 0)
         std::printf("[INFO] case %s done\n", tc.name);

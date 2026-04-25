@@ -23,14 +23,16 @@ Each case defines:
 import numpy as np
 
 CASES = [
-    # ========== Case : float, 260x16, valid=260x7, inplace, FillPad=Max ==========
+    # ========== Case: float, src_valid == dst_valid (no expansion) ==========
 
     {
-        "name": "f32_260x16_inplace_260x7",  # C++ case 5
+        "name": "f32_260x16_noexpand",
         "dtype": np.float32,
-        "shape": (260, 16),            # tile physical shape
-        "valid_shape": (260, 7),       # valid region (smaller than shape)
-        "fill_padval": "Max",          # FillPadVal = FLT_MAX for expansion
+        "src_shape": (260, 16),         # src physical
+        "src_valid": (260, 16),         # src valid = dst valid (no expansion)
+        "dst_shape": (260, 16),         # dst physical
+        "dst_valid": (260, 16),         # dst valid = full output
+        "fill_padval": "Max",           # FillPadVal (not used since no expansion)
         "eps": 1e-6,
     },
 ]

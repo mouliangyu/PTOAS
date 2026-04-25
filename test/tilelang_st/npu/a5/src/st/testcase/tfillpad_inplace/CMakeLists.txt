@@ -6,4 +6,4 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 
-pto_tilelang_vec_st(tfillpad_inplace)
+pto_tilelang_vec_st(tfillpad_inplace PTO_LEVEL level3)

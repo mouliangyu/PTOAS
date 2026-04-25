@@ -54,10 +54,6 @@ _DTYPE_SIGNATURES = [
 ]
 
 
-# ============================================================================
-# tfillpad: full copy + fill
-# ============================================================================
-
 @pto.vkernel(
     target="a5",
     op="pto.tfillpad",
@@ -68,11 +64,6 @@ def template_tfillpad(src: pto.Tile, dst: pto.Tile):
 
     Based on C++ TFillPad.hpp reference:
       - TFILLPAD (non-inplace): CopyValidElementsVec + FillExpansion
-      - TFILLPAD_INPLACE: Skip CopyValidElementsVec, only FillExpansion
-
-    In PTO IR, there's no separate tfillpad_inplace op. Detection strategy:
-      - All attributes identical (shape, valid_shape, pad_value) → inplace with no expansion → return
-      - Attributes differ → need copy and/or fill operations
 
     tfillpad requires src.shape == dst.shape (same physical size).
     If dst.valid > src.valid, fill the expansion regions.
@@ -82,16 +73,6 @@ def template_tfillpad(src: pto.Tile, dst: pto.Tile):
     src_valid_rows, src_valid_cols = src.valid_shape
     dst_rows, dst_cols = dst.shape
     dst_valid_rows, dst_valid_cols = dst.valid_shape
-
-    # Inplace with no expansion: all attributes identical → nothing to do
-    if pto.constexpr(
-        src.shape[0] == dst.shape[0] and
-        src.shape[1] == dst.shape[1] and
-        src.valid_shape[0] == dst.valid_shape[0] and
-        src.valid_shape[1] == dst.valid_shape[1] and
-        src.pad_value == dst.pad_value
-    ):
-        return
 
     lanes = pto.get_lanes(dtype)
     aligned_col = (src_valid_cols // lanes) * lanes
