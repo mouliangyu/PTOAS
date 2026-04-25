@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd.
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
-# Please refer to the License for details. You can not use this file except in compliance with the License.
+# Please refer to the License for details. You may not use this file except in compliance with the License.
 # THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
@@ -34,16 +34,21 @@ def template_trowexpanddiv_f32(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
     Divide each row of src0 by a per-row scalar from src1[row, 0].
     Semantics: dst[row, col] = src0[row, col] / src1[row, 0]
     """
+    dtype = dst.element_type
     valid_rows, valid_cols = dst.valid_shape
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols
-        for col in range(0, valid_cols, pto.get_lanes(pto.f32)):
-            mask, remained = pto.make_mask(pto.f32, remained)
+        for col in range(0, valid_cols, pto.get_lanes(dtype)):
+            mask, remained = pto.make_mask(dtype, remained)
+            # Load the scalar vector from src1[row, :]
+            # For row-major src1, valid_shape[1] is 32/sizeof(dtype) (e.g., 8 for f32)
+            # vdup broadcasts the first element to the full vector width
             scalar_vec = pto.vlds(src1[row, :])
             broadcasted = pto.vdup(scalar_vec, mask)
             lhs = pto.vlds(src0[row, col:])
             result = pto.vdiv(lhs, broadcasted, mask)
+            # TODO: pto-isa vdiv supports high-precision mode. Current implementation uses Default mode. High-precision division needs to be implemented in future.
             pto.vsts(result, dst[row, col:], mask)
     return
 
@@ -60,15 +65,20 @@ def template_trowexpanddiv_f16(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
     Divide each row of src0 by a per-row scalar from src1[row, 0].
     Semantics: dst[row, col] = src0[row, col] / src1[row, 0]
     """
+    dtype = dst.element_type
     valid_rows, valid_cols = dst.valid_shape
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols
-        for col in range(0, valid_cols, pto.get_lanes(pto.f16)):
-            mask, remained = pto.make_mask(pto.f16, remained)
+        for col in range(0, valid_cols, pto.get_lanes(dtype)):
+            mask, remained = pto.make_mask(dtype, remained)
+            # Load the scalar vector from src1[row, :]
+            # For row-major src1, valid_shape[1] is 32/sizeof(dtype) (e.g., 16 for f16)
+            # vdup broadcasts the first element to the full vector width
             scalar_vec = pto.vlds(src1[row, :])
             broadcasted = pto.vdup(scalar_vec, mask)
             lhs = pto.vlds(src0[row, col:])
             result = pto.vdiv(lhs, broadcasted, mask)
+            # TODO: pto-isa vdiv supports high-precision mode. Current implementation uses Default mode. High-precision division needs to be implemented in future.
             pto.vsts(result, dst[row, col:], mask)
     return
