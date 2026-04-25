@@ -3710,3 +3710,45 @@ LogicalResult DmaStoreOp::verify() {
       getOperation(), getLoopCounts(), getLoopSrcStrides(),
       getLoopDstStrides());
 }
+
+void CubeLoadOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+void CubeLoadNd2NzOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+void LeftLoadOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+void RightLoadOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+void CubeStoreOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+void AccStoreOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
+  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
