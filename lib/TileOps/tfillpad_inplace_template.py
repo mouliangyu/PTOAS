@@ -46,7 +46,7 @@ _DTYPE_SIGNATURES = [
 def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
     """tfillpad_inplace: skip copy phase, only fill expansion regions.
 
-    Uses vstur+vstas for unaligned column fill, matching C++ TFillPad.hpp.
+    Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
     """
     dtype = dst.element_type
     src_rows, _ = src.shape
@@ -112,29 +112,35 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
             fill_scalar = pto.i8(0)
 
     # Phase 2: Fill cols from src_valid_cols to dst_valid_cols-1
-    # Use vstur+vstas for unaligned starting column
+    # Use vstus+vstas for unaligned starting column, matching C++ TFillPad.hpp
+    # vstus signature: vstus(align, offset/i32, value, base)
+    # offset is the number of elements to store
     if pto.constexpr(src_valid_cols < dst_valid_cols):
         pad_cols = dst_valid_cols - src_valid_cols
-        pad_repeat_times = (pad_cols + lanes - 1) // lanes  # ceil division
+        pad_repeat_times = (pad_cols + lanes - 1) // lanes
 
         # Create fill vector once (reused across all rows)
         fill_vec = pto.vdup(fill_scalar)
 
         for row in range(0, dst_valid_rows, 1):
-            # Initialize align register
+            # Initialize align register for this row
             ureg = pto.init_align()
 
-            # Get pointer to this row's expansion region starting at src_valid_cols
+            # Get pointer to UB buffer
             base_ptr = dst.as_ptr()
 
-            cols = pad_cols
-            # Loop: vstur with POST_UPDATE for each repeat
+            # Loop with DSL range, using j as constexpr loop variable
             for j in range(0, pad_repeat_times, 1):
-                # vstur: unaligned store, POST_UPDATE mode advances pointer
-                ureg = pto.vstur(ureg, fill_vec, base_ptr, pto.PostUpdateMode.POST_UPDATE)
-                cols = cols - lanes
+                # sreg calculation: constexpr evaluated per iteration
+                # remaining = pad_cols - j*lanes, sreg = min(remaining, lanes)
+                remaining = pad_cols - j * lanes
+                # Use constexpr to branch on sreg value
+                if pto.constexpr(remaining >= lanes):
+                    ureg = pto.vstus(ureg, lanes, fill_vec, base_ptr)
+                elif pto.constexpr(remaining > 0):
+                    ureg = pto.vstus(ureg, remaining, fill_vec, base_ptr)
 
-            # vstas: align final address
+            # vstas: align final address with offset=0
             pto.vstas(ureg, fill_vec, dst[row, src_valid_cols:], 0)
 
     # Phase 4: Fill row expansion (rows src_rows to dst_rows-1)
