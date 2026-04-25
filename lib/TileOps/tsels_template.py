@@ -59,12 +59,7 @@ def template_tsels(mask: pto.Tile, src: pto.Tile, tmp: pto.Tile, scalar: pto.Any
     mask_dtype = mask.element_type
 
     lanes = pto.get_lanes(dtype)
-    if pto.constexpr(mask_dtype == pto.i8):
-        mask_row_stride = mask.shape[1]
-    elif pto.constexpr(mask_dtype == pto.i16):
-        mask_row_stride = mask.shape[1] * 2
-    else:
-        mask_row_stride = mask.shape[1] * 4
+    mask_row_stride = mask.shape[1] * pto.bytewidth(mask_dtype)
     mask_ptr = pto.castptr(mask.as_ptr(), pto.ptr(pto.ui8, pto.MemorySpace.UB))
 
     scalar_mask, _ = pto.make_mask(dtype, lanes)

@@ -132,13 +132,10 @@ set(ALL_TESTCASES
     tadd
     tcvt
     tload
-<<<<<<< feature-vpto-backend
     tlrelu
-    tprelu
     trelu
     tsel
     tsels
-=======
     softmax
     tabs
     texp
@@ -148,7 +145,6 @@ set(ALL_TESTCASES
     trecip
     trsqrt
     tsqrt
->>>>>>> feature-vpto-backend
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
