@@ -31,12 +31,7 @@ def template_trowsum(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     valid_rows, valid_cols = src.valid_shape
 
     # Use type-appropriate zero for accumulator initialization
-    if pto.constexpr(acc_dtype == pto.f32):
-        zero_val = pto.f32(0.0)
-    elif pto.constexpr(acc_dtype == pto.f16):
-        zero_val = pto.f16(0.0)
-    elif pto.constexpr(acc_dtype == pto.i32):
-        zero_val = pto.i32(0)
+    zero_val = acc_dtype(0)
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols

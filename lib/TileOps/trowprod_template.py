@@ -35,14 +35,7 @@ def template_trowprod(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     for row in range(0, valid_rows, 1):
         remained = valid_cols
  
-        if pto.constexpr(dtype == pto.f16):
-            one_val = pto.f16(1.0)
-        elif pto.constexpr(dtype == pto.f32):
-            one_val = pto.f32(1.0)
-        elif pto.constexpr(dtype == pto.i32):
-            one_val = pto.i32(1)
-        elif pto.constexpr(dtype == pto.i16):
-            one_val = pto.i16(1)
+        one_val = dtype(1)
         v_acc = pto.vbr(one_val)
         v_one = pto.vbr(one_val)
         

@@ -24,14 +24,7 @@ def template_trowargmax(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     valid_rows, valid_cols = src.valid_shape
 
     # Initialize with dtype-specific minimum value (aligned with pto-isa Padding<T>::Min)
-    if pto.constexpr(src_dtype == pto.f32):
-        init_val = pto.f32("0xFF7FFFFF")  # -FLT_MAX, IEEE 0xFF7FFFFF
-    elif pto.constexpr(src_dtype == pto.f16):
-        init_val = pto.f16("0xFBFF")  # -F16_MAX, IEEE 0xFBFF
-    elif pto.constexpr(src_dtype == pto.si16):
-        init_val = pto.si16("0x8000")  # INT16_MIN
-    elif pto.constexpr(src_dtype == pto.si32):
-        init_val = pto.si32("0x80000000")  # INT32_MIN
+    init_val = pto.PadValue.MIN.eval(src_dtype)
 
     for row in range(0, valid_rows, 1):
         remained = valid_cols

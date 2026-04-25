@@ -24,15 +24,8 @@ def template_trowmin(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
     valid_rows, valid_cols = src.valid_shape
 
     # Initialize with dtype-specific maximum value (aligned with pto-isa Padding<T>::Max)
-    if pto.constexpr(dtype == pto.f32):
-      init_val = pto.f32("0x7F7FFFFF")  # FLT_MAX, IEEE 0x7F7FFFFF
-    elif pto.constexpr(dtype == pto.f16):
-      init_val = pto.f16("0x7BFF")  # F16_MAX, IEEE 0x7BFF
-    elif pto.constexpr(dtype == pto.i32):
-      init_val = pto.i32("0x7FFFFFFF")  # INT32_MAX
-    elif pto.constexpr(dtype == pto.i16):
-      init_val = pto.i16("0x7FFF")  # INT16_MAX
-
+    init_val = pto.PadValue.MAX.eval(dtype)
+  
     mask_1, _ = pto.make_mask(dtype, 1)
 
     for row in range(0, valid_rows, 1):
