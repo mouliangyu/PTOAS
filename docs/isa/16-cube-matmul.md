@@ -69,6 +69,42 @@ Supported element-type combinations follow the HIVM intrinsic selection in the c
 
 ---
 
+## Cube Bridge Wrapper Ops (Structured Convenience Layer)
+
+These ops are **wrapper interfaces** that fuse common cube register-configuration sequences plus a terminal cube movement op. They are expanded by `PTOVPTOExpandBridgeOps` into base PTO ops during lowering.
+
+### `pto.cube_load`
+
+- **semantics:** structured GM→L1 (`cbuf`) staging helper.
+- **expands to:** `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf`
+
+### `pto.cube_load_nd2nz`
+
+- **semantics:** structured GM→L1 multi-fractal ND2NZ staging helper with NZ parameters.
+- **expands to:** `pto.set_mte2_nz_para` + `pto.set_pad_val_outtol1` + `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf_multi_nd2nz`
+
+### `pto.left_load`
+
+- **semantics:** structured L1→L0A helper for matmul left operand loading.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.load_cbuf_to_ca`
+
+### `pto.right_load`
+
+- **semantics:** structured L1→L0B helper for matmul right operand loading.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.load_cbuf_to_cb`
+
+### `pto.cube_store`
+
+- **semantics:** structured L0C→GM write-back helper.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
+
+### `pto.acc_store`
+
+- **semantics:** structured accumulator-store helper (same current expansion path as `pto.cube_store`).
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
+
+---
+
 ## Verified A5 Op Set (Current Batch)
 
 The following PTO ops have been verified in the current A5 VPTO→LLVM/HIVM and Bisheng cube-flow validation batch:

@@ -303,6 +303,103 @@ struct ExpandDmaCopyPattern : public OpRewritePattern<pto::DmaCopyOp> {
   }
 };
 
+struct ExpandCubeLoadPattern : public OpRewritePattern<pto::CubeLoadOp> {
+  using OpRewritePattern<pto::CubeLoadOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::CubeLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
+    rewriter.create<pto::SetLoop2StrideOutToL1Op>(loc, op.getLoop2Stride());
+    rewriter.create<pto::SetLoop1StrideOutToL1Op>(loc, op.getLoop1Stride());
+    rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, op.getLoopSize());
+    rewriter.create<pto::CopyGmToCbufOp>(
+        loc, op.getSource(), op.getDestination(), op.getNBurst(),
+        op.getLenBurst(), op.getSrcStride(), op.getDstStride());
+    if (!isKnownOne(op.getLoopSize()))
+      rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, one);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ExpandCubeLoadNd2NzPattern
+    : public OpRewritePattern<pto::CubeLoadNd2NzOp> {
+  using OpRewritePattern<pto::CubeLoadNd2NzOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::CubeLoadNd2NzOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
+    rewriter.create<pto::SetMte2NzParaOp>(loc, op.getMte2NzPara());
+    rewriter.create<pto::SetPadValOutToL1Op>(loc, op.getPadValue());
+    rewriter.create<pto::SetLoop2StrideOutToL1Op>(loc, op.getLoop2Stride());
+    rewriter.create<pto::SetLoop1StrideOutToL1Op>(loc, op.getLoop1Stride());
+    rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, op.getLoopSize());
+    rewriter.create<pto::CopyGmToCbufMultiNd2NzOp>(
+        loc, op.getSource(), op.getDestination(), op.getSid(),
+        op.getLoop1SrcStride(), op.getL2CacheCtrl(), op.getNValue(),
+        op.getDValue(), op.getLoop4SrcStride(), op.getSmallc0En());
+    if (!isKnownOne(op.getLoopSize()))
+      rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, one);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ExpandLeftLoadPattern : public OpRewritePattern<pto::LeftLoadOp> {
+  using OpRewritePattern<pto::LeftLoadOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::LeftLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
+                                         op.getLoop3ParaB());
+    rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
+                                           op.getChannelParaB());
+    rewriter.create<pto::LoadCbufToCaOp>(loc, op.getSource(), op.getDestination(),
+                                         op.getM(), op.getK());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ExpandRightLoadPattern : public OpRewritePattern<pto::RightLoadOp> {
+  using OpRewritePattern<pto::RightLoadOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::RightLoadOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
+                                         op.getLoop3ParaB());
+    rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
+                                           op.getChannelParaB());
+    rewriter.create<pto::LoadCbufToCbOp>(loc, op.getSource(), op.getDestination(),
+                                         op.getK(), op.getN());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+template <typename StoreLikeOp>
+struct ExpandCubeStoreLikePattern : public OpRewritePattern<StoreLikeOp> {
+  using OpRewritePattern<StoreLikeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(StoreLikeOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
+                                         op.getLoop3ParaB());
+    rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
+                                           op.getChannelParaB());
+    rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
+                                             op.getDestination(), op.getM(),
+                                             op.getN());
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct PTOVPTOExpandBridgeOpsPass
     : public pto::impl::PTOVPTOExpandBridgeOpsBase<PTOVPTOExpandBridgeOpsPass> {
   using pto::impl::PTOVPTOExpandBridgeOpsBase<
@@ -315,7 +412,10 @@ struct PTOVPTOExpandBridgeOpsPass
 
     RewritePatternSet patterns(&getContext());
     patterns.add<ExpandUvldPattern, ExpandDmaLoadPattern, ExpandDmaStorePattern,
-                 ExpandDmaCopyPattern>(&getContext());
+                 ExpandDmaCopyPattern, ExpandCubeLoadPattern,
+                 ExpandCubeLoadNd2NzPattern, ExpandLeftLoadPattern,
+                 ExpandRightLoadPattern, ExpandCubeStoreLikePattern<pto::CubeStoreOp>,
+                 ExpandCubeStoreLikePattern<pto::AccStoreOp>>(&getContext());
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();
   }
