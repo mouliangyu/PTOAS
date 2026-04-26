@@ -467,6 +467,17 @@ def PTO_ReluPreModeAttr : EnumAttr<PTO_Dialect, PTO_ReluPreModeEnum, "relu_pre_m
   let summary = "TSTORE relu pre mode attribute";
 }
 
+def PTO_AccStoreFixModeEnum : PTO_I32Enum<
+  "AccStoreFixMode", "PTO accumulator store layout conversion mode", [
+    I32EnumAttrCase<"Nz2nd", 0, "nz2nd">,
+    I32EnumAttrCase<"Nz2dn", 1, "nz2dn">,
+    I32EnumAttrCase<"Nz2nz", 2, "nz2nz">
+  ]>;
+
+def PTO_AccStoreFixModeAttr : EnumAttr<PTO_Dialect, PTO_AccStoreFixModeEnum, "acc_store_mode"> {
+  let summary = "acc_store_fix layout conversion mode";
+}
+
 def PTO_GatherOOBEnum : PTO_I32Enum<
   "GatherOOB", "PTO MGATHER out-of-bounds mode", [
     I32EnumAttrCase<"Undefined", 0, "undefined">,

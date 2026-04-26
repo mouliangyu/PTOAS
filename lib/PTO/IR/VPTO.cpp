@@ -1123,6 +1123,79 @@ static void printDmaPadTypes(OpAsmPrinter &printer, Type valueType,
     printer << ", " << leftType << ", " << rightType;
 }
 
+static FailureOr<AccStoreFixMode> parseAccStoreFixModeKeyword(StringRef keyword) {
+  if (std::optional<AccStoreFixMode> mode = symbolizeAccStoreFixMode(keyword))
+    return *mode;
+  return failure();
+}
+
+static ParseResult parseAccStoreFixModeGroup(
+    OpAsmParser &parser, StringRef &modeKeyword,
+    SmallVectorImpl<OpAsmParser::UnresolvedOperand> &modeOperands) {
+  if (parser.parseKeyword(&modeKeyword))
+    return failure();
+  if (failed(parseAccStoreFixModeKeyword(modeKeyword)))
+    return parser.emitError(parser.getCurrentLocation(),
+                            "expected one of 'nz2nd', 'nz2dn', or 'nz2nz'");
+  if (failed(parser.parseOptionalLParen()))
+    return success();
+  OpAsmParser::UnresolvedOperand operand;
+  if (parser.parseOperand(operand) || parser.parseRParen())
+    return failure();
+  modeOperands.push_back(operand);
+  return success();
+}
+
+static ParseResult parseAccStoreFixModeTypes(OpAsmParser &parser,
+                                             StringRef modeKeyword,
+                                             SmallVectorImpl<Type> &modeTypes) {
+  if (parser.parseKeyword(modeKeyword))
+    return failure();
+  if (failed(parser.parseOptionalLParen()))
+    return success();
+  Type modeType;
+  if (parser.parseType(modeType) || parser.parseRParen())
+    return failure();
+  modeTypes.push_back(modeType);
+  return success();
+}
+
+static void printAccStoreFixModeGroup(OpAsmPrinter &printer, AccStoreFixMode mode,
+                                      Value split, Value loop0SrcStride) {
+  printer << ", " << pto::stringifyAccStoreFixMode(mode);
+  switch (mode) {
+  case AccStoreFixMode::Nz2nd:
+    return;
+  case AccStoreFixMode::Nz2dn:
+    if (loop0SrcStride)
+      printer << "(" << loop0SrcStride << ")";
+    return;
+  case AccStoreFixMode::Nz2nz:
+    if (split)
+      printer << "(" << split << ")";
+    return;
+  }
+  llvm_unreachable("unexpected acc_store_fix mode");
+}
+
+static void printAccStoreFixModeTypes(OpAsmPrinter &printer, AccStoreFixMode mode,
+                                      Type splitType, Type loop0SrcStrideType) {
+  printer << ", " << pto::stringifyAccStoreFixMode(mode);
+  switch (mode) {
+  case AccStoreFixMode::Nz2nd:
+    return;
+  case AccStoreFixMode::Nz2dn:
+    if (loop0SrcStrideType)
+      printer << "(" << loop0SrcStrideType << ")";
+    return;
+  case AccStoreFixMode::Nz2nz:
+    if (splitType)
+      printer << "(" << splitType << ")";
+    return;
+  }
+  llvm_unreachable("unexpected acc_store_fix mode");
+}
+
 template <typename CopyOp>
 static LogicalResult verifyCopyGmToUbufOp(CopyOp op, bool expectSourceGM) {
   auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
@@ -3728,11 +3801,390 @@ LogicalResult DmaStoreOp::verify() {
       getLoopDstStrides());
 }
 
+void CubeLoadOp::build(OpBuilder &builder, OperationState &state, Value source,
+                       Value destination, Value lenBurst,
+                       pto::DmaLoopConfig nburst,
+                       llvm::ArrayRef<pto::DmaLoopConfig> loops) {
+  state.addOperands(
+      {source, destination, lenBurst, nburst.count, nburst.srcStride,
+       nburst.dstStride});
+  for (const pto::DmaLoopConfig &loop : loops)
+    state.addOperands(loop.count);
+  for (const pto::DmaLoopConfig &loop : loops)
+    state.addOperands(loop.srcStride);
+  for (const pto::DmaLoopConfig &loop : loops)
+    state.addOperands(loop.dstStride);
+
+  state.addAttribute(
+      getOperandSegmentSizeAttr(),
+      builder.getDenseI32ArrayAttr(
+          {1, 1, 1, 1, 1, 1,
+           static_cast<int32_t>(loops.size()),
+           static_cast<int32_t>(loops.size()),
+           static_cast<int32_t>(loops.size())}));
+}
+
+void CubeLoadOp::build(OpBuilder &builder, OperationState &state, Value source,
+                       Value destination, Value lenBurst,
+                       pto::DmaLoopConfig nburst,
+                       std::optional<pto::DmaLoopConfig> loop1,
+                       std::optional<pto::DmaLoopConfig> loop2) {
+  SmallVector<pto::DmaLoopConfig> loops;
+  if (loop1)
+    loops.push_back(*loop1);
+  if (loop2)
+    loops.push_back(*loop2);
+  build(builder, state, source, destination, lenBurst, nburst, loops);
+}
+
+ParseResult CubeLoadOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand source, destination, lenBurst;
+  SmallVector<OpAsmParser::UnresolvedOperand> nburstOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loopCountOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loopSrcStrideOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loopDstStrideOperands;
+  if (parseRequiredOperandWithComma(parser, source) ||
+      parseRequiredOperandWithComma(parser, destination) ||
+      parser.parseOperand(lenBurst) ||
+      parseDmaTripleGroup(parser, "nburst", nburstOperands))
+    return failure();
+  while (true) {
+    StringRef parsedKeyword;
+    SmallVector<OpAsmParser::UnresolvedOperand, 3> loopGroupOperands;
+    if (parseOptionalDmaTripleGroupAlias(parser, {"loop", "loop1", "loop2"},
+                                         parsedKeyword, loopGroupOperands))
+      return failure();
+    if (parsedKeyword.empty())
+      break;
+    loopCountOperands.push_back(loopGroupOperands[0]);
+    loopSrcStrideOperands.push_back(loopGroupOperands[1]);
+    loopDstStrideOperands.push_back(loopGroupOperands[2]);
+  }
+
+  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon())
+    return failure();
+
+  Type sourceType, destinationType, lenBurstType;
+  SmallVector<Type> nburstTypes, loopCountTypes, loopSrcStrideTypes,
+      loopDstStrideTypes;
+  if (parser.parseType(sourceType) || parser.parseComma() ||
+      parser.parseType(destinationType) || parser.parseComma() ||
+      parser.parseType(lenBurstType) || parser.parseComma() ||
+      parseDmaTripleTypes(parser, nburstTypes))
+    return failure();
+  while (succeeded(parser.parseOptionalComma())) {
+    StringRef keyword;
+    if (parser.parseKeyword(&keyword))
+      return failure();
+    if (!isDmaLoopKeyword(keyword))
+      return parser.emitError(parser.getCurrentLocation(), "expected 'loop'");
+    SmallVector<Type> loopGroupTypes;
+    if (parseDmaTripleTypes(parser, loopGroupTypes))
+      return failure();
+    loopCountTypes.push_back(loopGroupTypes[0]);
+    loopSrcStrideTypes.push_back(loopGroupTypes[1]);
+    loopDstStrideTypes.push_back(loopGroupTypes[2]);
+  }
+
+  int32_t loopGroupCount = static_cast<int32_t>(loopCountOperands.size());
+  if (loopCountOperands.size() != loopSrcStrideOperands.size() ||
+      loopCountOperands.size() != loopDstStrideOperands.size() ||
+      loopCountTypes.size() != loopSrcStrideTypes.size() ||
+      loopCountTypes.size() != loopDstStrideTypes.size())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "requires each loop group to provide count, src stride, and dst stride");
+  if (loopCountOperands.size() != loopCountTypes.size())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "requires loop operand and type groups to match");
+
+  auto &segments =
+      result.getOrAddProperties<CubeLoadOp::Properties>().operandSegmentSizes;
+  llvm::copy(ArrayRef<int32_t>{1, 1, 1, 1, 1, 1,
+                               loopGroupCount, loopGroupCount, loopGroupCount},
+             segments.begin());
+
+  if (parser.resolveOperand(source, sourceType, result.operands) ||
+      parser.resolveOperand(destination, destinationType, result.operands) ||
+      parser.resolveOperand(lenBurst, lenBurstType, result.operands) ||
+      parser.resolveOperands(nburstOperands, nburstTypes,
+                             parser.getCurrentLocation(), result.operands) ||
+      parser.resolveOperands(loopCountOperands, loopCountTypes,
+                             parser.getCurrentLocation(), result.operands) ||
+      parser.resolveOperands(loopSrcStrideOperands, loopSrcStrideTypes,
+                             parser.getCurrentLocation(), result.operands) ||
+      parser.resolveOperands(loopDstStrideOperands, loopDstStrideTypes,
+                             parser.getCurrentLocation(), result.operands))
+    return failure();
+  return success();
+}
+
+void CubeLoadOp::print(OpAsmPrinter &printer) {
+  printer << " " << getSource() << ", " << getDestination() << ", "
+          << getLenBurst();
+  printDmaTripleGroup(printer, "nburst", getNBurst(), getNburstSrcStride(),
+                      getNburstDstStride());
+  for (auto [count, srcStride, dstStride] :
+       llvm::zip(getLoopCounts(), getLoopSrcStrides(), getLoopDstStrides()))
+    printDmaTripleGroup(printer, "loop", count, srcStride, dstStride);
+  printer.printOptionalAttrDict((*this)->getAttrs());
+  printer << " : " << getSource().getType() << ", " << getDestination().getType()
+          << ", " << getLenBurst().getType() << ", " << getNBurst().getType()
+          << ", " << getNburstSrcStride().getType() << ", "
+          << getNburstDstStride().getType();
+  for (auto [count, srcStride, dstStride] :
+       llvm::zip(getLoopCounts(), getLoopSrcStrides(), getLoopDstStrides()))
+    printDmaTripleTypes(printer, "loop", count.getType(), srcStride.getType(),
+                        dstStride.getType());
+}
+
+LogicalResult CubeLoadOp::verify() {
+  if (failed(verifyCopyGmToUbufOp(*this, true)))
+    return failure();
+  return verifyDmaLoadStoreLoopGroups(
+      getOperation(), getLoopCounts(), getLoopSrcStrides(),
+      getLoopDstStrides());
+}
+
 void CubeLoadOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {
   effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
   effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
+}
+
+void CubeStoreOp::build(OpBuilder &builder, OperationState &state, Value source,
+                        Value destination, Value m, Value n, Value srcStride,
+                        Value dstStride, Value unitFlagCtrl, Value quantPre,
+                        Value reluPreMode,
+                        pto::AccStoreFixModeConfig modeConfig,
+                        llvm::ArrayRef<pto::DmaLoopConfig> loops) {
+  state.addOperands({source, destination, m, n, srcStride, dstStride,
+                     unitFlagCtrl, quantPre, reluPreMode});
+  bool hasSplit = modeConfig.split.has_value();
+  bool hasLoop0SrcStride = modeConfig.loop0SrcStride.has_value();
+  if (hasSplit)
+    state.addOperands(*modeConfig.split);
+  if (hasLoop0SrcStride)
+    state.addOperands(*modeConfig.loop0SrcStride);
+  for (const pto::DmaLoopConfig &loop : loops)
+    state.addOperands(loop.count);
+  for (const pto::DmaLoopConfig &loop : loops)
+    state.addOperands(loop.srcStride);
+  for (const pto::DmaLoopConfig &loop : loops)
+    state.addOperands(loop.dstStride);
+
+  state.addAttribute(getModeAttrName(state.name),
+                     AccStoreFixModeAttr::get(builder.getContext(),
+                                              modeConfig.mode));
+  state.addAttribute(
+      getOperandSegmentSizeAttr(),
+      builder.getDenseI32ArrayAttr(
+          {1, 1, 1, 1, 1, 1, 1, 1, 1, hasSplit ? 1 : 0,
+           hasLoop0SrcStride ? 1 : 0, static_cast<int32_t>(loops.size()),
+           static_cast<int32_t>(loops.size()),
+           static_cast<int32_t>(loops.size())}));
+}
+
+void CubeStoreOp::build(OpBuilder &builder, OperationState &state, Value source,
+                        Value destination, Value m, Value n, Value srcStride,
+                        Value dstStride, Value unitFlagCtrl, Value quantPre,
+                        Value reluPreMode,
+                        pto::AccStoreFixModeConfig modeConfig,
+                        std::optional<pto::DmaLoopConfig> loop1,
+                        std::optional<pto::DmaLoopConfig> loop2) {
+  SmallVector<pto::DmaLoopConfig> loops;
+  if (loop1)
+    loops.push_back(*loop1);
+  if (loop2)
+    loops.push_back(*loop2);
+  build(builder, state, source, destination, m, n, srcStride, dstStride,
+        unitFlagCtrl, quantPre, reluPreMode, modeConfig, loops);
+}
+
+ParseResult CubeStoreOp::parse(OpAsmParser &parser, OperationState &result) {
+  OpAsmParser::UnresolvedOperand source, destination, m, n, srcStride,
+      dstStride, unitFlagCtrl, quantPre, reluPreMode;
+  SmallVector<OpAsmParser::UnresolvedOperand> modeOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loopCountOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loopSrcStrideOperands;
+  SmallVector<OpAsmParser::UnresolvedOperand> loopDstStrideOperands;
+  StringRef modeKeyword;
+  if (parseRequiredOperandWithComma(parser, source) ||
+      parseRequiredOperandWithComma(parser, destination) ||
+      parseRequiredOperandWithComma(parser, m) ||
+      parseRequiredOperandWithComma(parser, n) ||
+      parseRequiredOperandWithComma(parser, srcStride) ||
+      parseRequiredOperandWithComma(parser, dstStride) ||
+      parseRequiredOperandWithComma(parser, unitFlagCtrl) ||
+      parseRequiredOperandWithComma(parser, quantPre) ||
+      parseRequiredOperandWithComma(parser, reluPreMode) ||
+      parseAccStoreFixModeGroup(parser, modeKeyword, modeOperands))
+    return failure();
+  while (true) {
+    StringRef parsedKeyword;
+    SmallVector<OpAsmParser::UnresolvedOperand, 3> loopGroupOperands;
+    if (parseOptionalDmaTripleGroupAlias(parser, {"loop", "loop1", "loop2"},
+                                         parsedKeyword, loopGroupOperands))
+      return failure();
+    if (parsedKeyword.empty())
+      break;
+    loopCountOperands.push_back(loopGroupOperands[0]);
+    loopSrcStrideOperands.push_back(loopGroupOperands[1]);
+    loopDstStrideOperands.push_back(loopGroupOperands[2]);
+  }
+
+  if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon())
+    return failure();
+
+  Type sourceType, destinationType, mType, nType, srcStrideType, dstStrideType,
+      unitFlagCtrlType, quantPreType, reluPreModeType;
+  SmallVector<Type> modeTypes;
+  SmallVector<Type> loopCountTypes, loopSrcStrideTypes, loopDstStrideTypes;
+  if (parser.parseType(sourceType) || parser.parseComma() ||
+      parser.parseType(destinationType) || parser.parseComma() ||
+      parser.parseType(mType) || parser.parseComma() || parser.parseType(nType) ||
+      parser.parseComma() || parser.parseType(srcStrideType) ||
+      parser.parseComma() || parser.parseType(dstStrideType) ||
+      parser.parseComma() || parser.parseType(unitFlagCtrlType) ||
+      parser.parseComma() || parser.parseType(quantPreType) ||
+      parser.parseComma() || parser.parseType(reluPreModeType) ||
+      parser.parseComma() ||
+      parseAccStoreFixModeTypes(parser, modeKeyword, modeTypes))
+    return failure();
+  while (succeeded(parser.parseOptionalComma())) {
+    StringRef keyword;
+    if (parser.parseKeyword(&keyword))
+      return failure();
+    if (!isDmaLoopKeyword(keyword))
+      return parser.emitError(parser.getCurrentLocation(), "expected 'loop'");
+    SmallVector<Type> loopGroupTypes;
+    if (parseDmaTripleTypes(parser, loopGroupTypes))
+      return failure();
+    loopCountTypes.push_back(loopGroupTypes[0]);
+    loopSrcStrideTypes.push_back(loopGroupTypes[1]);
+    loopDstStrideTypes.push_back(loopGroupTypes[2]);
+  }
+
+  auto modeOr = parseAccStoreFixModeKeyword(modeKeyword);
+  if (failed(modeOr))
+    return parser.emitError(parser.getCurrentLocation(),
+                            "expected one of 'nz2nd', 'nz2dn', or 'nz2nz'");
+  AccStoreFixMode mode = *modeOr;
+
+  if (mode == AccStoreFixMode::Nz2nd && !modeOperands.empty())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "nz2nd does not accept a mode parameter");
+  if ((mode == AccStoreFixMode::Nz2dn || mode == AccStoreFixMode::Nz2nz) &&
+      modeOperands.size() > 1)
+    return parser.emitError(parser.getCurrentLocation(),
+                            "mode accepts at most one parameter");
+  if (modeOperands.size() != modeTypes.size())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "requires mode operand and type groups to match");
+  if (loopCountOperands.size() != loopSrcStrideOperands.size() ||
+      loopCountOperands.size() != loopDstStrideOperands.size() ||
+      loopCountTypes.size() != loopSrcStrideTypes.size() ||
+      loopCountTypes.size() != loopDstStrideTypes.size())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "requires each loop group to provide count, src stride, and dst stride");
+  if (loopCountOperands.size() != loopCountTypes.size())
+    return parser.emitError(parser.getCurrentLocation(),
+                            "requires loop operand and type groups to match");
+
+  auto &segments =
+      result.getOrAddProperties<CubeStoreOp::Properties>().operandSegmentSizes;
+  bool hasSplit = mode == AccStoreFixMode::Nz2nz && !modeOperands.empty();
+  bool hasLoop0SrcStride =
+      mode == AccStoreFixMode::Nz2dn && !modeOperands.empty();
+  llvm::copy(ArrayRef<int32_t>{1, 1, 1, 1, 1, 1, 1, 1, 1,
+                               hasSplit ? 1 : 0, hasLoop0SrcStride ? 1 : 0,
+                               static_cast<int32_t>(loopCountOperands.size()),
+                               static_cast<int32_t>(loopCountOperands.size()),
+                               static_cast<int32_t>(loopCountOperands.size())},
+             segments.begin());
+  result.addAttribute(getModeAttrName(result.name),
+                      AccStoreFixModeAttr::get(parser.getContext(), mode));
+
+  if (parser.resolveOperand(source, sourceType, result.operands) ||
+      parser.resolveOperand(destination, destinationType, result.operands) ||
+      parser.resolveOperand(m, mType, result.operands) ||
+      parser.resolveOperand(n, nType, result.operands) ||
+      parser.resolveOperand(srcStride, srcStrideType, result.operands) ||
+      parser.resolveOperand(dstStride, dstStrideType, result.operands) ||
+      parser.resolveOperand(unitFlagCtrl, unitFlagCtrlType, result.operands) ||
+      parser.resolveOperand(quantPre, quantPreType, result.operands) ||
+      parser.resolveOperand(reluPreMode, reluPreModeType, result.operands) ||
+      parser.resolveOperands(modeOperands, modeTypes, parser.getCurrentLocation(),
+                             result.operands) ||
+      parser.resolveOperands(loopCountOperands, loopCountTypes,
+                             parser.getCurrentLocation(), result.operands) ||
+      parser.resolveOperands(loopSrcStrideOperands, loopSrcStrideTypes,
+                             parser.getCurrentLocation(), result.operands) ||
+      parser.resolveOperands(loopDstStrideOperands, loopDstStrideTypes,
+                             parser.getCurrentLocation(), result.operands))
+    return failure();
+  return success();
+}
+
+void CubeStoreOp::print(OpAsmPrinter &printer) {
+  printer << " " << getSource() << ", " << getDestination() << ", " << getM()
+          << ", " << getN() << ", " << getSrcStride() << ", "
+          << getDstStride() << ", " << getUnitFlagCtrl() << ", "
+          << getQuantPre() << ", " << getReluPreMode();
+  printAccStoreFixModeGroup(printer, getMode(), getSplit(),
+                            getLoop0SrcStride());
+  for (auto [count, srcStride, dstStride] :
+       llvm::zip(getLoopCounts(), getLoopSrcStrides(), getLoopDstStrides()))
+    printDmaTripleGroup(printer, "loop", count, srcStride, dstStride);
+  printer.printOptionalAttrDict((*this)->getAttrs(),
+                                /*elidedAttrs=*/{"operandSegmentSizes",
+                                                 "mode"});
+  printer << " : " << getSource().getType() << ", " << getDestination().getType()
+          << ", " << getM().getType() << ", " << getN().getType() << ", "
+          << getSrcStride().getType() << ", " << getDstStride().getType()
+          << ", " << getUnitFlagCtrl().getType() << ", "
+          << getQuantPre().getType() << ", " << getReluPreMode().getType();
+  printAccStoreFixModeTypes(printer, getMode(),
+                            getSplit() ? getSplit().getType() : Type(),
+                            getLoop0SrcStride() ? getLoop0SrcStride().getType()
+                                                : Type());
+  for (auto [count, srcStride, dstStride] :
+       llvm::zip(getLoopCounts(), getLoopSrcStrides(), getLoopDstStrides()))
+    printDmaTripleTypes(printer, "loop", count.getType(), srcStride.getType(),
+                        dstStride.getType());
+}
+
+LogicalResult CubeStoreOp::verify() {
+  auto sourceType = dyn_cast<pto::PtrType>(getSource().getType());
+  auto destinationType = dyn_cast<pto::PtrType>(getDestination().getType());
+  if (!sourceType || !destinationType)
+    return emitOpError("requires typed !pto.ptr source and destination");
+  if (sourceType.getMemorySpace().getAddressSpace() != AddressSpace::ACC ||
+      destinationType.getMemorySpace().getAddressSpace() != AddressSpace::GM) {
+    return emitOpError("requires ACC source and GM destination");
+  }
+  if (failed(verifyDmaLoadStoreLoopGroups(
+          getOperation(), getLoopCounts(), getLoopSrcStrides(),
+          getLoopDstStrides())))
+    return failure();
+
+  switch (getMode()) {
+  case AccStoreFixMode::Nz2nd:
+    if (getSplit())
+      return emitOpError("nz2nd does not accept split");
+    if (getLoop0SrcStride())
+      return emitOpError("nz2nd does not accept loop0_src_stride");
+    return success();
+  case AccStoreFixMode::Nz2dn:
+    if (getSplit())
+      return emitOpError("nz2dn does not accept split");
+    return success();
+  case AccStoreFixMode::Nz2nz:
+    if (getLoop0SrcStride())
+      return emitOpError("nz2nz does not accept loop0_src_stride");
+    return success();
+  }
+  llvm_unreachable("unexpected acc_store_fix mode");
 }
 
 void CubeLoadNd2NzOp::getEffects(

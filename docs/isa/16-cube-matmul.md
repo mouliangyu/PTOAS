@@ -43,8 +43,8 @@ Supported element-type combinations follow the HIVM intrinsic selection in the c
 
 ## `pto.copy_matrix_cc_to_gm`
 
-- **syntax:** `pto.copy_matrix_cc_to_gm %src, %dst, %m, %n : !pto.ptr<…, ub>, !pto.ptr<…, gm>, i64, i64`
-- **semantics:** L0C (`cc`) → GM matrix writeback. `%src` is UB-backed `cc`; `%dst` is GM.
+- **syntax:** `pto.copy_matrix_cc_to_gm %src, %dst, %xm, %xt : !pto.ptr<…, ub>, !pto.ptr<…, gm>, i64, i64`
+- **semantics:** L0C (`cc`) → GM matrix writeback. `%src` is UB-backed `cc`; `%dst` is GM. `%xm` and `%xt` are the target writeback configuration registers passed through directly.
 
 ---
 
@@ -75,7 +75,9 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 
 ### `pto.cube_load`
 
+- **syntax:** `pto.cube_load %src, %dst, %len_burst nburst(%count, %src_stride, %dst_stride) loop(%count, %src_stride, %dst_stride) ... : !pto.ptr<..., gm>, !pto.ptr<..., mat>, i64, i64, i64, i64[, i64, i64, i64 ...]`
 - **semantics:** structured GM→L1 (`cbuf`) staging helper.
+- **loop order:** repeated `loop(...)` groups are written from inner to outer. The first two groups lower to hardware loop config; any remaining outer groups expand to software `scf.for` loops around the copy.
 - **expands to:** `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf`
 
 ### `pto.cube_load_nd2nz`
@@ -85,22 +87,25 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 
 ### `pto.left_load`
 
-- **semantics:** structured L1→L0A helper for matmul left operand loading.
+- **syntax:** `pto.left_load %src, %dst, %m, %k, %loop3_count, %loop3_src_stride, %loop3_dst_stride, %loop0_src_stride : !pto.ptr<..., mat>, !pto.ptr<..., left>, i64, i64, i64, i64, i64, i64`
+- **semantics:** structured L1→L0A helper for matmul left operand loading. `%loop3_count`, `%loop3_src_stride`, and `%loop3_dst_stride` describe the `LOOP3_PARA` register fields `LOOP3_PARA[15:0]`, `LOOP3_PARA[31:16]`, and `LOOP3_PARA[63:32]`. `%loop0_src_stride` describes `CHANNEL_PARA[63:48]`, the loop0 source stride in units of `C0_SIZE`.
 - **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.load_cbuf_to_ca`
 
 ### `pto.right_load`
 
-- **semantics:** structured L1→L0B helper for matmul right operand loading.
+- **syntax:** `pto.right_load %src, %dst, %k, %n, %loop3_count, %loop3_src_stride, %loop3_dst_stride, %loop0_src_stride : !pto.ptr<..., mat>, !pto.ptr<..., right>, i64, i64, i64, i64, i64, i64`
+- **semantics:** structured L1→L0B helper for matmul right operand loading. `%loop3_count`, `%loop3_src_stride`, and `%loop3_dst_stride` describe the `LOOP3_PARA` register fields `LOOP3_PARA[15:0]`, `LOOP3_PARA[31:16]`, and `LOOP3_PARA[63:32]`. `%loop0_src_stride` describes `CHANNEL_PARA[63:48]`, the loop0 source stride in units of `C0_SIZE`.
 - **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.load_cbuf_to_cb`
 
-### `pto.cube_store`
+### `pto.acc_store_fix`
 
-- **semantics:** structured L0C→GM write-back helper.
+- **syntax:** `pto.acc_store_fix %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop(%count, %src_stride, %dst_stride) ... : !pto.ptr<..., acc>, !pto.ptr<..., gm>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop(i64, i64, i64) ...]`
+- **semantics:** structured L0C→GM write-back helper. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. Repeated `loop(...)` groups are ordered from inner to outer and describe additional outer repetition levels around the base write-back step.
 - **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
 
 ### `pto.acc_store`
 
-- **semantics:** structured accumulator-store helper (same current expansion path as `pto.cube_store`).
+- **semantics:** legacy structured accumulator-store helper. It expands through the same register-programming sequence and terminal `pto.copy_matrix_cc_to_gm`, with the write-back configuration defaulted from its legacy operand list.
 - **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
 
 ---

@@ -1376,49 +1376,6 @@ packLoadCbufToS4Config1(Operation *anchor, Value srcStride, Value dstStride) {
 }
 
 static FailureOr<Value>
-packCopyMatrixCcToGmConfig0(Operation *anchor, Value m, Value n) {
-  OpBuilder builder(anchor);
-  builder.setInsertionPoint(anchor);
-  Location loc = anchor->getLoc();
-
-  Value mI64 = castIntegerLikeTo(anchor, m, builder.getI64Type());
-  Value nI64 = castIntegerLikeTo(anchor, n, builder.getI64Type());
-  if (!mI64 || !nI64)
-    return failure();
-
-  auto shl = [&](Value value, uint64_t amount) -> Value {
-    return builder.create<arith::ShLIOp>(loc, value,
-                                         getI64Constant(builder, loc, amount));
-  };
-  auto bitOr = [&](Value lhs, Value rhs) -> Value {
-    return builder.create<arith::OrIOp>(loc, lhs, rhs);
-  };
-
-  Value sid = getI64Constant(builder, loc, 0);
-  Value loopDstStride = nI64;
-
-  Value config0 = sid;
-  config0 = bitOr(config0, shl(nI64, 4));         // n_size[15:4]
-  config0 = bitOr(config0, shl(mI64, 16));        // m_size[31:16]
-  config0 = bitOr(config0, shl(loopDstStride, 32)); // loop_dst_stride[63:32]
-  return config0;
-}
-
-static FailureOr<Value>
-packCopyMatrixCcToGmConfig1(Operation *anchor, Value n) {
-  OpBuilder builder(anchor);
-  builder.setInsertionPoint(anchor);
-
-  Value nI64 = castIntegerLikeTo(anchor, n, builder.getI64Type());
-  if (!nI64)
-    return failure();
-
-  // config1 currently enables the minimal default behavior:
-  // loop_src_stride = n, all control bits = 0.
-  return nI64;
-}
-
-static FailureOr<Value>
 packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
@@ -3798,9 +3755,9 @@ public:
       ConversionPatternRewriter &rewriter) const override {
     Value sourceRaw = adaptor.getSource();
     Value destinationRaw = adaptor.getDestination();
-    Value m = adaptor.getM();
-    Value n = adaptor.getN();
-    if (!sourceRaw || !destinationRaw || !m || !n)
+    Value xm = adaptor.getXm();
+    Value xt = adaptor.getXt();
+    if (!sourceRaw || !destinationRaw || !xm || !xt)
       return rewriter.notifyMatchFailure(op, "expected converted operands");
 
     if (!isa<LLVM::LLVMPointerType>(sourceRaw.getType()) ||
@@ -3809,8 +3766,8 @@ public:
     }
 
     Type i64Ty = rewriter.getI64Type();
-    if (m.getType() != i64Ty || n.getType() != i64Ty)
-      return rewriter.notifyMatchFailure(op, "expected i64 m/n operands");
+    if (xm.getType() != i64Ty || xt.getType() != i64Ty)
+      return rewriter.notifyMatchFailure(op, "expected i64 xm/xt operands");
 
     constexpr unsigned gmAddressSpace =
         static_cast<unsigned>(pto::AddressSpace::GM);
@@ -3822,17 +3779,12 @@ public:
     if (failed(source) || failed(destination))
       return rewriter.notifyMatchFailure(op, "failed to map cc/gm pointer spaces");
 
-    FailureOr<Value> config0 = packCopyMatrixCcToGmConfig0(op, m, n);
-    FailureOr<Value> config1 = packCopyMatrixCcToGmConfig1(op, n);
-    if (failed(config0) || failed(config1))
-      return rewriter.notifyMatchFailure(op, "failed to pack copy_matrix_cc_to_gm config");
-
     StringRef calleeName = buildCopyMatrixCcToGmCallee(op.getContext());
     auto funcType = rewriter.getFunctionType(
         TypeRange{destination->getType(), source->getType(), i64Ty, i64Ty},
         TypeRange{});
     rewriter.create<func::CallOp>(op.getLoc(), calleeName, TypeRange{},
-                                  ValueRange{*destination, *source, *config0, *config1});
+                                  ValueRange{*destination, *source, xm, xt});
     state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
     rewriter.eraseOp(op);
     return success();

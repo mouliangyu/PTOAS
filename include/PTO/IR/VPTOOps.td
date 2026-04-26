@@ -565,14 +565,14 @@ def PTO_CopyMatrixCcToGmOp : PTO_Op<"copy_matrix_cc_to_gm"> {
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$m,
-    I64:$n
+    I64:$xm,
+    I64:$xt
   );
 
   let results = (outs);
 
   let assemblyFormat = [{
-    $source `,` $destination `,` $m `,` $n attr-dict `:` type($source) `,` type($destination) `,` type($m) `,` type($n)
+    $source `,` $destination `,` $xm `,` $xt attr-dict `:` type($source) `,` type($destination) `,` type($xm) `,` type($xt)
   }];
 }
 
@@ -1618,29 +1618,43 @@ def PTO_DmaStoreOp : PTO_Op<"dma_store", [
 // Cube bridge wrappers: fuse common register config sequences with the core
 // cube transfer/load/store ops, similar to dma_load/dma_store wrappers.
 def PTO_CubeLoadOp : PTO_Op<"cube_load", [
+    AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$n_burst,
     I64:$len_burst,
-    I64:$src_stride,
-    I64:$dst_stride,
-    I64:$loop2_stride,
-    I64:$loop1_stride,
-    I64:$loop_size
+    I64:$n_burst,
+    I64:$nburst_src_stride,
+    I64:$nburst_dst_stride,
+    Variadic<I64>:$loop_counts,
+    Variadic<I64>:$loop_src_strides,
+    Variadic<I64>:$loop_dst_strides
   );
 
   let results = (outs);
 
-  let assemblyFormat = [{
-    $source `,` $destination `,` $n_burst `,` $len_burst `,` $src_stride `,`
-    $dst_stride `,` $loop2_stride `,` $loop1_stride `,` $loop_size
-    attr-dict `:` type($source) `,` type($destination) `,` type($n_burst) `,`
-    type($len_burst) `,` type($src_stride) `,` type($dst_stride) `,`
-    type($loop2_stride) `,` type($loop1_stride) `,` type($loop_size)
-  }];
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::llvm::ArrayRef<::mlir::pto::DmaLoopConfig>":$loops
+    )>,
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop2
+    )>
+  ];
 }
 
 def PTO_CubeLoadNd2NzOp : PTO_Op<"cube_load_nd2nz", [
@@ -1686,20 +1700,20 @@ def PTO_LeftLoadOp : PTO_Op<"left_load", [
     PTO_BufferType:$destination,
     I64:$m,
     I64:$k,
-    I64:$loop3_para_a,
-    I64:$loop3_para_b,
-    I64:$channel_para_a,
-    I64:$channel_para_b
+    I64:$loop3_count,
+    I64:$loop3_src_stride,
+    I64:$loop3_dst_stride,
+    I64:$loop0_src_stride
   );
 
   let results = (outs);
 
   let assemblyFormat = [{
-    $source `,` $destination `,` $m `,` $k `,` $loop3_para_a `,`
-    $loop3_para_b `,` $channel_para_a `,` $channel_para_b
+    $source `,` $destination `,` $m `,` $k `,` $loop3_count `,`
+    $loop3_src_stride `,` $loop3_dst_stride `,` $loop0_src_stride
     attr-dict `:` type($source) `,` type($destination) `,` type($m) `,`
-    type($k) `,` type($loop3_para_a) `,` type($loop3_para_b) `,`
-    type($channel_para_a) `,` type($channel_para_b)
+    type($k) `,` type($loop3_count) `,` type($loop3_src_stride) `,`
+    type($loop3_dst_stride) `,` type($loop0_src_stride)
   }];
 }
 
@@ -1711,24 +1725,25 @@ def PTO_RightLoadOp : PTO_Op<"right_load", [
     PTO_BufferType:$destination,
     I64:$k,
     I64:$n,
-    I64:$loop3_para_a,
-    I64:$loop3_para_b,
-    I64:$channel_para_a,
-    I64:$channel_para_b
+    I64:$loop3_count,
+    I64:$loop3_src_stride,
+    I64:$loop3_dst_stride,
+    I64:$loop0_src_stride
   );
 
   let results = (outs);
 
   let assemblyFormat = [{
-    $source `,` $destination `,` $k `,` $n `,` $loop3_para_a `,`
-    $loop3_para_b `,` $channel_para_a `,` $channel_para_b
+    $source `,` $destination `,` $k `,` $n `,` $loop3_count `,`
+    $loop3_src_stride `,` $loop3_dst_stride `,` $loop0_src_stride
     attr-dict `:` type($source) `,` type($destination) `,` type($k) `,`
-    type($n) `,` type($loop3_para_a) `,` type($loop3_para_b) `,`
-    type($channel_para_a) `,` type($channel_para_b)
+    type($n) `,` type($loop3_count) `,` type($loop3_src_stride) `,`
+    type($loop3_dst_stride) `,` type($loop0_src_stride)
   }];
 }
 
-def PTO_CubeStoreOp : PTO_Op<"cube_store", [
+def PTO_CubeStoreOp : PTO_Op<"acc_store_fix", [
+    AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
@@ -1736,21 +1751,53 @@ def PTO_CubeStoreOp : PTO_Op<"cube_store", [
     PTO_BufferType:$destination,
     I64:$m,
     I64:$n,
-    I64:$loop3_para_a,
-    I64:$loop3_para_b,
-    I64:$channel_para_a,
-    I64:$channel_para_b
+    I64:$src_stride,
+    I64:$dst_stride,
+    I64:$unit_flag_ctrl,
+    I64:$quant_pre,
+    I64:$relu_pre_mode,
+    Optional<I64>:$split,
+    Optional<I64>:$loop0_src_stride,
+    Variadic<I64>:$loop_counts,
+    Variadic<I64>:$loop_src_strides,
+    Variadic<I64>:$loop_dst_strides,
+    PTO_AccStoreFixModeAttr:$mode
   );
 
   let results = (outs);
 
-  let assemblyFormat = [{
-    $source `,` $destination `,` $m `,` $n `,` $loop3_para_a `,`
-    $loop3_para_b `,` $channel_para_a `,` $channel_para_b
-    attr-dict `:` type($source) `,` type($destination) `,` type($m) `,`
-    type($n) `,` type($loop3_para_a) `,` type($loop3_para_b) `,`
-    type($channel_para_a) `,` type($channel_para_b)
-  }];
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$m,
+      "::mlir::Value":$n,
+      "::mlir::Value":$srcStride,
+      "::mlir::Value":$dstStride,
+      "::mlir::Value":$unitFlagCtrl,
+      "::mlir::Value":$quantPre,
+      "::mlir::Value":$reluPreMode,
+      "::mlir::pto::AccStoreFixModeConfig":$modeConfig,
+      "::llvm::ArrayRef<::mlir::pto::DmaLoopConfig>":$loops
+    )>,
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$m,
+      "::mlir::Value":$n,
+      "::mlir::Value":$srcStride,
+      "::mlir::Value":$dstStride,
+      "::mlir::Value":$unitFlagCtrl,
+      "::mlir::Value":$quantPre,
+      "::mlir::Value":$reluPreMode,
+      "::mlir::pto::AccStoreFixModeConfig":$modeConfig,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop2
+    )>
+  ];
 }
 
 def PTO_AccStoreOp : PTO_Op<"acc_store", [

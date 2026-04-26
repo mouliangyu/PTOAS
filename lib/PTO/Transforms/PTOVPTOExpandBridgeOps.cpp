@@ -123,6 +123,122 @@ static Value buildAccumulatedByteOffset(Location loc, Value baseOffset,
   return rewriter.create<arith::AddIOp>(loc, baseOffset, delta);
 }
 
+static Value packLoopPair(Location loc, Value low, Value high,
+                          PatternRewriter &rewriter) {
+  Value shift = rewriter.create<arith::ConstantIntOp>(loc, 40, 64);
+  Value highShifted = rewriter.create<arith::ShLIOp>(loc, high, shift);
+  return rewriter.create<arith::OrIOp>(loc, highShifted, low);
+}
+
+static Value packLoopSize(Location loc, Value loop2, Value loop1,
+                          PatternRewriter &rewriter) {
+  Value shift = rewriter.create<arith::ConstantIntOp>(loc, 21, 64);
+  Value loop2Shifted = rewriter.create<arith::ShLIOp>(loc, loop2, shift);
+  return rewriter.create<arith::OrIOp>(loc, loop2Shifted, loop1);
+}
+
+static Value packCopyMatrixCcToGmXm(Location loc, Value nSize, Value mSize,
+                                    Value dstStride,
+                                    PatternRewriter &rewriter) {
+  Value nShift4 = rewriter.create<arith::ConstantIntOp>(loc, 4, 64);
+  Value mShift16 = rewriter.create<arith::ConstantIntOp>(loc, 16, 64);
+  Value dstShift32 = rewriter.create<arith::ConstantIntOp>(loc, 32, 64);
+  Value nBits = rewriter.create<arith::ShLIOp>(loc, nSize, nShift4);
+  Value mBits = rewriter.create<arith::ShLIOp>(loc, mSize, mShift16);
+  Value dstStrideBits = rewriter.create<arith::ShLIOp>(loc, dstStride, dstShift32);
+  Value xmLow = rewriter.create<arith::OrIOp>(loc, nBits, mBits);
+  return rewriter.create<arith::OrIOp>(loc, xmLow, dstStrideBits);
+}
+
+static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
+                                    Value unitFlagCtrl, Value quantPre,
+                                    Value reluPreMode, Value nz2ndEn,
+                                    Value channelSplitEn, Value nz2dnEn,
+                                    PatternRewriter &rewriter) {
+  Value unitFlagShift32 = rewriter.create<arith::ConstantIntOp>(loc, 32, 64);
+  Value quantBlockBitShift29 =
+      rewriter.create<arith::ConstantIntOp>(loc, 29, 64);
+  Value quantFieldShift34 = rewriter.create<arith::ConstantIntOp>(loc, 34, 64);
+  Value reluShift39 = rewriter.create<arith::ConstantIntOp>(loc, 39, 64);
+  Value channelSplitShift42 =
+      rewriter.create<arith::ConstantIntOp>(loc, 42, 64);
+  Value nz2ndShift43 = rewriter.create<arith::ConstantIntOp>(loc, 43, 64);
+  Value nz2dnShift62 = rewriter.create<arith::ConstantIntOp>(loc, 62, 64);
+
+  Value quantShift5 = rewriter.create<arith::ConstantIntOp>(loc, 5, 64);
+  Value quantLowMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1f, 64);
+  Value quantBitMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1, 64);
+  Value unitFlagMask = rewriter.create<arith::ConstantIntOp>(loc, 0x3, 64);
+  Value reluMask = rewriter.create<arith::ConstantIntOp>(loc, 0x7, 64);
+
+  Value unitFlagBits = rewriter.create<arith::AndIOp>(loc, unitFlagCtrl, unitFlagMask);
+  unitFlagBits =
+      rewriter.create<arith::ShLIOp>(loc, unitFlagBits, unitFlagShift32);
+
+  Value quantBlockBit = rewriter.create<arith::ShRUIOp>(loc, quantPre, quantShift5);
+  quantBlockBit =
+      rewriter.create<arith::AndIOp>(loc, quantBlockBit, quantBitMask);
+  quantBlockBit = rewriter.create<arith::ShLIOp>(loc, quantBlockBit,
+                                                 quantBlockBitShift29);
+
+  Value quantField = rewriter.create<arith::AndIOp>(loc, quantPre, quantLowMask);
+  quantField =
+      rewriter.create<arith::ShLIOp>(loc, quantField, quantFieldShift34);
+
+  Value reluBits = rewriter.create<arith::AndIOp>(loc, reluPreMode, reluMask);
+  reluBits = rewriter.create<arith::ShLIOp>(loc, reluBits, reluShift39);
+
+  Value channelSplitBits =
+      rewriter.create<arith::AndIOp>(loc, channelSplitEn, quantBitMask);
+  channelSplitBits = rewriter.create<arith::ShLIOp>(loc, channelSplitBits,
+                                                    channelSplitShift42);
+
+  Value nz2ndBits = rewriter.create<arith::AndIOp>(loc, nz2ndEn, quantBitMask);
+  nz2ndBits =
+      rewriter.create<arith::ShLIOp>(loc, nz2ndBits, nz2ndShift43);
+
+  Value nz2dnBits = rewriter.create<arith::AndIOp>(loc, nz2dnEn, quantBitMask);
+  nz2dnBits =
+      rewriter.create<arith::ShLIOp>(loc, nz2dnBits, nz2dnShift62);
+
+  Value xt = rewriter.create<arith::OrIOp>(loc, srcStride, unitFlagBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, quantBlockBit);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, quantField);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, reluBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, channelSplitBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, nz2ndBits);
+  return rewriter.create<arith::OrIOp>(loc, xt, nz2dnBits);
+}
+
+static Value packLoop3Config(Location loc, Value count, Value srcStride,
+                             Value dstStride, PatternRewriter &rewriter) {
+  Value srcShift16 = rewriter.create<arith::ConstantIntOp>(loc, 16, 64);
+  Value dstShift32 = rewriter.create<arith::ConstantIntOp>(loc, 32, 64);
+  Value srcBits = rewriter.create<arith::ShLIOp>(loc, srcStride, srcShift16);
+  Value dstBits = rewriter.create<arith::ShLIOp>(loc, dstStride, dstShift32);
+  Value low = rewriter.create<arith::OrIOp>(loc, count, srcBits);
+  return rewriter.create<arith::OrIOp>(loc, low, dstBits);
+}
+
+static Value packChannelConfig(Location loc, Value loop0SrcStride,
+                               PatternRewriter &rewriter) {
+  Value shift48 = rewriter.create<arith::ConstantIntOp>(loc, 48, 64);
+  return rewriter.create<arith::ShLIOp>(loc, loop0SrcStride, shift48);
+}
+
+static Value extractConfigLow40(Location loc, Value packed,
+                                PatternRewriter &rewriter) {
+  Value lowMask =
+      rewriter.create<arith::ConstantIntOp>(loc, 0xffffffffffULL, 64);
+  return rewriter.create<arith::AndIOp>(loc, packed, lowMask);
+}
+
+static Value extractConfigHigh24(Location loc, Value packed,
+                                 PatternRewriter &rewriter) {
+  Value shift40 = rewriter.create<arith::ConstantIntOp>(loc, 40, 64);
+  return rewriter.create<arith::ShRUIOp>(loc, packed, shift40);
+}
+
 template <typename BodyBuilder>
 static void buildSoftwareLoopNest(PatternRewriter &rewriter, Location loc,
                                   ArrayRef<pto::DmaLoopConfig> loops,
@@ -309,15 +425,57 @@ struct ExpandCubeLoadPattern : public OpRewritePattern<pto::CubeLoadOp> {
   LogicalResult matchAndRewrite(pto::CubeLoadOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
+    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
-    rewriter.create<pto::SetLoop2StrideOutToL1Op>(loc, op.getLoop2Stride());
-    rewriter.create<pto::SetLoop1StrideOutToL1Op>(loc, op.getLoop1Stride());
-    rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, op.getLoopSize());
-    rewriter.create<pto::CopyGmToCbufOp>(
-        loc, op.getSource(), op.getDestination(), op.getNBurst(),
-        op.getLenBurst(), op.getSrcStride(), op.getDstStride());
-    if (!isKnownOne(op.getLoopSize()))
-      rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, one);
+    SmallVector<pto::DmaLoopConfig> loops =
+        collectLoopConfigs(op.getLoopCounts(), op.getLoopSrcStrides(),
+                           op.getLoopDstStrides());
+    ArrayRef<pto::DmaLoopConfig> hwLoops =
+        ArrayRef<pto::DmaLoopConfig>(loops).take_front(2);
+    ArrayRef<pto::DmaLoopConfig> swLoops =
+        ArrayRef<pto::DmaLoopConfig>(loops).drop_front(hwLoops.size());
+
+    Value loop1Count;
+    Value loop2Count = one;
+    if (hwLoops.size() == 2) {
+      rewriter.create<pto::SetLoop2StrideOutToL1Op>(
+          loc,
+          packLoopPair(loc, hwLoops[0].srcStride, hwLoops[0].dstStride,
+                       rewriter));
+      loop2Count = hwLoops[0].count;
+      loop1Count = hwLoops[1].count;
+      rewriter.create<pto::SetLoop1StrideOutToL1Op>(
+          loc,
+          packLoopPair(loc, hwLoops[1].srcStride, hwLoops[1].dstStride,
+                       rewriter));
+      rewriter.create<pto::SetLoopSizeOutToL1Op>(
+          loc, packLoopSize(loc, loop2Count, loop1Count, rewriter));
+    } else if (hwLoops.size() == 1) {
+      loop1Count = hwLoops[0].count;
+      rewriter.create<pto::SetLoop1StrideOutToL1Op>(
+          loc,
+          packLoopPair(loc, hwLoops[0].srcStride, hwLoops[0].dstStride,
+                       rewriter));
+      rewriter.create<pto::SetLoopSizeOutToL1Op>(
+          loc, packLoopSize(loc, loop2Count, loop1Count, rewriter));
+    }
+
+    SmallVector<pto::DmaLoopConfig> swLoopNestOrder(swLoops.rbegin(),
+                                                    swLoops.rend());
+    buildSoftwareLoopNest(
+        rewriter, loc, swLoopNestOrder, zero, zero,
+        [&](Value srcOffset, Value dstOffset) {
+          Value source =
+              offsetPointerByBytes(op.getSource(), srcOffset, rewriter, loc);
+          Value destination = offsetPointerByBytes(op.getDestination(), dstOffset,
+                                                   rewriter, loc);
+          rewriter.create<pto::CopyGmToCbufOp>(
+              loc, source, destination, op.getNBurst(), op.getLenBurst(),
+              op.getNburstSrcStride(), op.getNburstDstStride());
+        });
+    if (loop1Count && (!isKnownOne(loop1Count) || !isKnownOne(loop2Count)))
+      rewriter.create<pto::SetLoopSizeOutToL1Op>(
+          loc, packLoopSize(loc, one, one, rewriter));
     rewriter.eraseOp(op);
     return success();
   }
@@ -353,10 +511,17 @@ struct ExpandLeftLoadPattern : public OpRewritePattern<pto::LeftLoadOp> {
   LogicalResult matchAndRewrite(pto::LeftLoadOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
-    rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
-                                         op.getLoop3ParaB());
-    rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
-                                           op.getChannelParaB());
+    Value loop3Config = packLoop3Config(loc, op.getLoop3Count(),
+                                        op.getLoop3SrcStride(),
+                                        op.getLoop3DstStride(), rewriter);
+    Value channelConfig =
+        packChannelConfig(loc, op.getLoop0SrcStride(), rewriter);
+    rewriter.create<pto::SetLoop3ParaOp>(
+        loc, extractConfigLow40(loc, loop3Config, rewriter),
+        extractConfigHigh24(loc, loop3Config, rewriter));
+    rewriter.create<pto::SetChannelParaOp>(
+        loc, extractConfigLow40(loc, channelConfig, rewriter),
+        extractConfigHigh24(loc, channelConfig, rewriter));
     rewriter.create<pto::LoadCbufToCaOp>(loc, op.getSource(), op.getDestination(),
                                          op.getM(), op.getK());
     rewriter.eraseOp(op);
@@ -370,10 +535,17 @@ struct ExpandRightLoadPattern : public OpRewritePattern<pto::RightLoadOp> {
   LogicalResult matchAndRewrite(pto::RightLoadOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
-    rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
-                                         op.getLoop3ParaB());
-    rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
-                                           op.getChannelParaB());
+    Value loop3Config = packLoop3Config(loc, op.getLoop3Count(),
+                                        op.getLoop3SrcStride(),
+                                        op.getLoop3DstStride(), rewriter);
+    Value channelConfig =
+        packChannelConfig(loc, op.getLoop0SrcStride(), rewriter);
+    rewriter.create<pto::SetLoop3ParaOp>(
+        loc, extractConfigLow40(loc, loop3Config, rewriter),
+        extractConfigHigh24(loc, loop3Config, rewriter));
+    rewriter.create<pto::SetChannelParaOp>(
+        loc, extractConfigLow40(loc, channelConfig, rewriter),
+        extractConfigHigh24(loc, channelConfig, rewriter));
     rewriter.create<pto::LoadCbufToCbOp>(loc, op.getSource(), op.getDestination(),
                                          op.getK(), op.getN());
     rewriter.eraseOp(op);
@@ -381,20 +553,87 @@ struct ExpandRightLoadPattern : public OpRewritePattern<pto::RightLoadOp> {
   }
 };
 
-template <typename StoreLikeOp>
-struct ExpandCubeStoreLikePattern : public OpRewritePattern<StoreLikeOp> {
-  using OpRewritePattern<StoreLikeOp>::OpRewritePattern;
+struct ExpandAccStoreFixPattern : public OpRewritePattern<pto::CubeStoreOp> {
+  using OpRewritePattern<pto::CubeStoreOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(StoreLikeOp op,
+  LogicalResult matchAndRewrite(pto::CubeStoreOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
+    Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
+    SmallVector<pto::DmaLoopConfig> loops =
+        collectLoopConfigs(op.getLoopCounts(), op.getLoopSrcStrides(),
+                           op.getLoopDstStrides());
+    pto::DmaLoopConfig hwLoop{one, zero, zero};
+    if (!loops.empty())
+      hwLoop = loops.front();
+    ArrayRef<pto::DmaLoopConfig> swLoops = ArrayRef<pto::DmaLoopConfig>(loops).drop_front(loops.empty() ? 0 : 1);
+    SmallVector<pto::DmaLoopConfig> swLoopNestOrder(swLoops.rbegin(),
+                                                    swLoops.rend());
+
+    Value channelLoop0Stride = zero;
+    Value nz2ndEn = zero;
+    Value channelSplitEn = zero;
+    Value nz2dnEn = zero;
+    switch (op.getMode()) {
+    case pto::AccStoreFixMode::Nz2nd:
+      nz2ndEn = one;
+      break;
+    case pto::AccStoreFixMode::Nz2dn:
+      nz2dnEn = one;
+      channelLoop0Stride = op.getLoop0SrcStride() ? op.getLoop0SrcStride() : one;
+      break;
+    case pto::AccStoreFixMode::Nz2nz:
+      channelSplitEn = op.getSplit() ? op.getSplit() : zero;
+      break;
+    }
+
+    Value loop3Config = packLoop3Config(loc, hwLoop.count, hwLoop.srcStride,
+                                        hwLoop.dstStride, rewriter);
+    Value channelConfig =
+        packChannelConfig(loc, channelLoop0Stride, rewriter);
+    rewriter.create<pto::SetLoop3ParaOp>(
+        loc, extractConfigLow40(loc, loop3Config, rewriter),
+        extractConfigHigh24(loc, loop3Config, rewriter));
+    rewriter.create<pto::SetChannelParaOp>(
+        loc, extractConfigLow40(loc, channelConfig, rewriter),
+        extractConfigHigh24(loc, channelConfig, rewriter));
+    Value xm =
+        packCopyMatrixCcToGmXm(loc, op.getN(), op.getM(), op.getDstStride(),
+                              rewriter);
+    Value xt = packCopyMatrixCcToGmXt(
+        loc, op.getSrcStride(), op.getUnitFlagCtrl(), op.getQuantPre(),
+        op.getReluPreMode(), nz2ndEn, channelSplitEn, nz2dnEn, rewriter);
+    buildSoftwareLoopNest(
+        rewriter, loc, swLoopNestOrder, zero, zero,
+        [&](Value srcOffset, Value dstOffset) {
+          Value source =
+              offsetPointerByBytes(op.getSource(), srcOffset, rewriter, loc);
+          Value destination =
+              offsetPointerByBytes(op.getDestination(), dstOffset, rewriter, loc);
+          rewriter.create<pto::CopyMatrixCcToGmOp>(loc, source, destination, xm,
+                                                   xt);
+        });
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct ExpandAccStorePattern : public OpRewritePattern<pto::AccStoreOp> {
+  using OpRewritePattern<pto::AccStoreOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::AccStoreOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
                                          op.getLoop3ParaB());
     rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
                                            op.getChannelParaB());
+    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
+    Value xm = packCopyMatrixCcToGmXm(loc, op.getN(), op.getM(), op.getN(),
+                                      rewriter);
     rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
-                                             op.getDestination(), op.getM(),
-                                             op.getN());
+                                             op.getDestination(), xm, zero);
     rewriter.eraseOp(op);
     return success();
   }
@@ -414,8 +653,8 @@ struct PTOVPTOExpandBridgeOpsPass
     patterns.add<ExpandUvldPattern, ExpandDmaLoadPattern, ExpandDmaStorePattern,
                  ExpandDmaCopyPattern, ExpandCubeLoadPattern,
                  ExpandCubeLoadNd2NzPattern, ExpandLeftLoadPattern,
-                 ExpandRightLoadPattern, ExpandCubeStoreLikePattern<pto::CubeStoreOp>,
-                 ExpandCubeStoreLikePattern<pto::AccStoreOp>>(&getContext());
+                 ExpandRightLoadPattern, ExpandAccStoreFixPattern,
+                 ExpandAccStorePattern>(&getContext());
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();
   }

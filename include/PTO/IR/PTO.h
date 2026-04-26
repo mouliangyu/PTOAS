@@ -81,6 +81,12 @@ struct DmaPadConfig {
   Value rightCount;
 };
 
+struct AccStoreFixModeConfig {
+  AccStoreFixMode mode;
+  std::optional<Value> split;
+  std::optional<Value> loop0SrcStride;
+};
+
 } // namespace pto
 } // namespace mlir
 
