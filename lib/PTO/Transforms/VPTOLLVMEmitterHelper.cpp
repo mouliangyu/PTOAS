@@ -537,6 +537,18 @@ void attachHIVMKernelAnnotations(llvm::Module &llvmModule) {
   llvm::Type *i32Ty = llvm::Type::getInt32Ty(ctx);
   llvm::Constant *one = llvm::ConstantInt::get(i32Ty, 1);
 
+  auto hasInModuleCaller = [](llvm::Function &function) {
+    for (llvm::User *user : function.users()) {
+      auto *call = llvm::dyn_cast<llvm::CallBase>(user);
+      if (!call)
+        continue;
+      if (call->getCalledFunction() != &function)
+        continue;
+      return true;
+    }
+    return false;
+  };
+
   auto addAnnotation = [&](llvm::Function &function, llvm::StringRef kind) {
     llvm::Metadata *ops[] = {
         llvm::ValueAsMetadata::get(&function),
@@ -553,6 +565,8 @@ void attachHIVMKernelAnnotations(llvm::Module &llvmModule) {
 
     llvm::StringRef name = function.getName();
     if (name.contains(".extracted") || name.contains(".vector.thread"))
+      continue;
+    if (hasInModuleCaller(function))
       continue;
 
     addAnnotation(function, "kernel");
