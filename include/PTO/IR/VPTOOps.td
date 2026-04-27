@@ -497,7 +497,8 @@ def PTO_LoadCbufToCbOp : PTO_Op<"load_cbuf_to_cb"> {
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
     I64:$k,
-    I64:$n
+    I64:$n,
+    DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
@@ -1657,6 +1658,43 @@ def PTO_CubeLoadOp : PTO_Op<"cube_load", [
   ];
 }
 
+def PTO_CubeLoadFracOp : PTO_Op<"cube_load_frac", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
+    I64:$n_value,
+    I64:$d_value,
+    I64:$src_inner_stride,
+    I64:$group_count,
+    I64:$dst_loop2_stride,
+    I64:$dst_loop3_stride,
+    I64:$dst_loop4_stride,
+    I64:$l2_cache_ctrl,
+    I1:$smallc0_en,
+    Optional<I64>:$src_outer_stride,
+    PTO_CubeLoadFracModeAttr:$mode
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::pto::CubeLoadFracMode":$mode,
+      "::mlir::pto::CubeLoadFracShapeConfig":$shape,
+      "::mlir::pto::CubeLoadFracSrcLayoutConfig":$srcLayout,
+      "::mlir::pto::CubeLoadFracDstGroupConfig":$dstGroup,
+      "::mlir::pto::CubeLoadFracCtrlConfig":$ctrl
+    )>
+  ];
+}
+
 def PTO_LeftLoadOp : PTO_Op<"left_load", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -1693,7 +1731,8 @@ def PTO_RightLoadOp : PTO_Op<"right_load", [
     I64:$loop3_count,
     I64:$loop3_src_stride,
     I64:$loop3_dst_stride,
-    I64:$loop0_src_stride
+    I64:$loop0_src_stride,
+    DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
@@ -1723,9 +1762,9 @@ def PTO_CubeStoreOp : PTO_Op<"acc_store_fix", [
     I64:$relu_pre_mode,
     Optional<I64>:$split,
     Optional<I64>:$loop0_src_stride,
-    Variadic<I64>:$loop_counts,
-    Variadic<I64>:$loop_src_strides,
-    Variadic<I64>:$loop_dst_strides,
+    Optional<I64>:$loop3_count,
+    Optional<I64>:$loop3_src_stride,
+    Optional<I64>:$loop3_dst_stride,
     PTO_AccStoreFixModeAttr:$mode
   );
 
@@ -1746,21 +1785,7 @@ def PTO_CubeStoreOp : PTO_Op<"acc_store_fix", [
       "::mlir::Value":$quantPre,
       "::mlir::Value":$reluPreMode,
       "::mlir::pto::AccStoreFixModeConfig":$modeConfig,
-      "::llvm::ArrayRef<::mlir::pto::DmaLoopConfig>":$loops
-    )>,
-    OpBuilder<(ins
-      "::mlir::Value":$source,
-      "::mlir::Value":$destination,
-      "::mlir::Value":$m,
-      "::mlir::Value":$n,
-      "::mlir::Value":$srcStride,
-      "::mlir::Value":$dstStride,
-      "::mlir::Value":$unitFlagCtrl,
-      "::mlir::Value":$quantPre,
-      "::mlir::Value":$reluPreMode,
-      "::mlir::pto::AccStoreFixModeConfig":$modeConfig,
-      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
-      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop2
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop3
     )>
   ];
 }

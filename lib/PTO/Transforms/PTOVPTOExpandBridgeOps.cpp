@@ -101,19 +101,28 @@ static Value offsetPointerByBytes(Value basePtr, Value byteOffset,
   if (!basePtr)
     return {};
 
+  Value basePtrValue = materializeBufferPointer(basePtr, rewriter, loc);
+  auto ptrType = dyn_cast_or_null<pto::PtrType>(basePtrValue.getType());
+  if (!ptrType)
+    return {};
+
   APInt constOffset;
   if (matchPattern(byteOffset, m_ConstantInt(&constOffset)) && constOffset.isZero())
-    return basePtr;
+    return basePtrValue;
 
-  Value baseInt =
-      rewriter.create<pto::CastPtrOp>(loc, rewriter.getI64Type(), basePtr);
-  Value offsetI64 = byteOffset;
-  if (!offsetI64.getType().isInteger(64))
-    offsetI64 =
-        rewriter.create<arith::IndexCastUIOp>(loc, rewriter.getI64Type(),
-                                              offsetI64);
-  Value sum = rewriter.create<arith::AddIOp>(loc, baseInt, offsetI64);
-  return rewriter.create<pto::CastPtrOp>(loc, basePtr.getType(), sum);
+  auto bytePtrType =
+      pto::PtrType::get(rewriter.getContext(), rewriter.getI8Type(),
+                        ptrType.getMemorySpace());
+  Value bytePtr =
+      rewriter.create<pto::CastPtrOp>(loc, bytePtrType, basePtrValue);
+  Value offsetIndex = byteOffset;
+  if (!offsetIndex.getType().isIndex())
+    offsetIndex =
+        rewriter.create<arith::IndexCastUIOp>(loc, rewriter.getIndexType(),
+                                              offsetIndex);
+  Value advanced =
+      rewriter.create<pto::AddPtrOp>(loc, bytePtrType, bytePtr, offsetIndex);
+  return rewriter.create<pto::CastPtrOp>(loc, ptrType, advanced);
 }
 
 static Value buildAccumulatedByteOffset(Location loc, Value baseOffset,
@@ -135,6 +144,23 @@ static Value packLoopSize(Location loc, Value loop2, Value loop1,
   Value shift = rewriter.create<arith::ConstantIntOp>(loc, 21, 64);
   Value loop2Shifted = rewriter.create<arith::ShLIOp>(loc, loop2, shift);
   return rewriter.create<arith::OrIOp>(loc, loop2Shifted, loop1);
+}
+
+static Value packMte2NzPara(Location loc, Value groupCount, Value dstLoop2Stride,
+                            Value dstLoop3Stride, Value dstLoop4Stride,
+                            PatternRewriter &rewriter) {
+  Value shift16 = rewriter.create<arith::ConstantIntOp>(loc, 16, 64);
+  Value shift32 = rewriter.create<arith::ConstantIntOp>(loc, 32, 64);
+  Value shift48 = rewriter.create<arith::ConstantIntOp>(loc, 48, 64);
+  Value loop2Bits =
+      rewriter.create<arith::ShLIOp>(loc, dstLoop2Stride, shift16);
+  Value loop3Bits =
+      rewriter.create<arith::ShLIOp>(loc, dstLoop3Stride, shift32);
+  Value loop4Bits =
+      rewriter.create<arith::ShLIOp>(loc, dstLoop4Stride, shift48);
+  Value low = rewriter.create<arith::OrIOp>(loc, groupCount, loop2Bits);
+  Value high = rewriter.create<arith::OrIOp>(loc, loop3Bits, loop4Bits);
+  return rewriter.create<arith::OrIOp>(loc, low, high);
 }
 
 static Value packCopyMatrixCcToGmXm(Location loc, Value nSize, Value mSize,
@@ -481,6 +507,41 @@ struct ExpandCubeLoadPattern : public OpRewritePattern<pto::CubeLoadOp> {
   }
 };
 
+struct ExpandCubeLoadFracPattern : public OpRewritePattern<pto::CubeLoadFracOp> {
+  using OpRewritePattern<pto::CubeLoadFracOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(pto::CubeLoadFracOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op.getLoc();
+    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
+    Value mte2NzPara = packMte2NzPara(
+        loc, op.getGroupCount(), op.getDstLoop2Stride(), op.getDstLoop3Stride(),
+        op.getDstLoop4Stride(), rewriter);
+    rewriter.create<pto::SetMte2NzParaOp>(loc, mte2NzPara);
+
+    Value srcOuterStride = op.getSrcOuterStride() ? op.getSrcOuterStride() : zero;
+    Value source = materializeBufferPointer(op.getSource(), rewriter, loc);
+    Value destination =
+        materializeBufferPointer(op.getDestination(), rewriter, loc);
+    switch (op.getMode()) {
+    case pto::CubeLoadFracMode::Nd2nz:
+      rewriter.create<pto::CopyGmToCbufMultiNd2NzOp>(
+          loc, source, destination, zero, op.getSrcInnerStride(),
+          op.getL2CacheCtrl(), op.getNValue(), op.getDValue(), srcOuterStride,
+          op.getSmallc0En());
+      break;
+    case pto::CubeLoadFracMode::Dn2nz:
+      rewriter.create<pto::CopyGmToCbufMultiDn2NzOp>(
+          loc, source, destination, zero, op.getSrcInnerStride(),
+          op.getL2CacheCtrl(), op.getNValue(), op.getDValue(), srcOuterStride,
+          op.getSmallc0En());
+      break;
+    }
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct ExpandLeftLoadPattern : public OpRewritePattern<pto::LeftLoadOp> {
   using OpRewritePattern<pto::LeftLoadOp>::OpRewritePattern;
 
@@ -522,8 +583,10 @@ struct ExpandRightLoadPattern : public OpRewritePattern<pto::RightLoadOp> {
     rewriter.create<pto::SetChannelParaOp>(
         loc, extractConfigLow40(loc, channelConfig, rewriter),
         extractConfigHigh24(loc, channelConfig, rewriter));
-    rewriter.create<pto::LoadCbufToCbOp>(loc, op.getSource(), op.getDestination(),
-                                         op.getK(), op.getN());
+    auto load = rewriter.create<pto::LoadCbufToCbOp>(loc, op.getSource(),
+                                                     op.getDestination(),
+                                                     op.getK(), op.getN());
+    load->setAttr("transpose", rewriter.getBoolAttr(op.getTranspose()));
     rewriter.eraseOp(op);
     return success();
   }
@@ -537,15 +600,10 @@ struct ExpandAccStoreFixPattern : public OpRewritePattern<pto::CubeStoreOp> {
     Location loc = op.getLoc();
     Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
-    SmallVector<pto::DmaLoopConfig> loops =
-        collectLoopConfigs(op.getLoopCounts(), op.getLoopSrcStrides(),
-                           op.getLoopDstStrides());
     pto::DmaLoopConfig hwLoop{one, zero, zero};
-    if (!loops.empty())
-      hwLoop = loops.front();
-    ArrayRef<pto::DmaLoopConfig> swLoops = ArrayRef<pto::DmaLoopConfig>(loops).drop_front(loops.empty() ? 0 : 1);
-    SmallVector<pto::DmaLoopConfig> swLoopNestOrder(swLoops.rbegin(),
-                                                    swLoops.rend());
+    if (Value loop3Count = op.getLoop3Count()) {
+      hwLoop = {loop3Count, op.getLoop3SrcStride(), op.getLoop3DstStride()};
+    }
 
     Value channelLoop0Stride = zero;
     Value nz2ndEn = zero;
@@ -580,16 +638,8 @@ struct ExpandAccStoreFixPattern : public OpRewritePattern<pto::CubeStoreOp> {
     Value xt = packCopyMatrixCcToGmXt(
         loc, op.getSrcStride(), op.getUnitFlagCtrl(), op.getQuantPre(),
         op.getReluPreMode(), nz2ndEn, channelSplitEn, nz2dnEn, rewriter);
-    buildSoftwareLoopNest(
-        rewriter, loc, swLoopNestOrder, zero, zero,
-        [&](Value srcOffset, Value dstOffset) {
-          Value source =
-              offsetPointerByBytes(op.getSource(), srcOffset, rewriter, loc);
-          Value destination =
-              offsetPointerByBytes(op.getDestination(), dstOffset, rewriter, loc);
-          rewriter.create<pto::CopyMatrixCcToGmOp>(loc, source, destination, xm,
-                                                   xt);
-        });
+    rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
+                                             op.getDestination(), xm, xt);
     rewriter.eraseOp(op);
     return success();
   }
@@ -627,7 +677,8 @@ struct PTOVPTOExpandBridgeOpsPass
 
     RewritePatternSet patterns(&getContext());
     patterns.add<ExpandUvldPattern, ExpandDmaLoadPattern, ExpandDmaStorePattern,
-                 ExpandDmaCopyPattern, ExpandCubeLoadPattern, ExpandLeftLoadPattern,
+                 ExpandDmaCopyPattern, ExpandCubeLoadPattern,
+                 ExpandCubeLoadFracPattern, ExpandLeftLoadPattern,
                  ExpandRightLoadPattern, ExpandAccStoreFixPattern,
                  ExpandAccStorePattern>(&getContext());
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))

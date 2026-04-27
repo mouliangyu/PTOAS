@@ -478,6 +478,16 @@ def PTO_AccStoreFixModeAttr : EnumAttr<PTO_Dialect, PTO_AccStoreFixModeEnum, "ac
   let summary = "acc_store_fix layout conversion mode";
 }
 
+def PTO_CubeLoadFracModeEnum : PTO_I32Enum<
+  "CubeLoadFracMode", "PTO cube fractal load source layout mode", [
+    I32EnumAttrCase<"Nd2nz", 0, "nd2nz">,
+    I32EnumAttrCase<"Dn2nz", 1, "dn2nz">
+  ]>;
+
+def PTO_CubeLoadFracModeAttr : EnumAttr<PTO_Dialect, PTO_CubeLoadFracModeEnum, "cube_load_frac_mode"> {
+  let summary = "cube_load_frac source layout conversion mode";
+}
+
 def PTO_GatherOOBEnum : PTO_I32Enum<
   "GatherOOB", "PTO MGATHER out-of-bounds mode", [
     I32EnumAttrCase<"Undefined", 0, "undefined">,

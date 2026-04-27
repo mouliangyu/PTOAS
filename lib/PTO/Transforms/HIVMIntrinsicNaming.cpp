@@ -116,6 +116,76 @@ static std::string getCopyElementFragment(Type type) {
   return {};
 }
 
+static std::string getNd2NzCopyElementFragment(Type type) {
+  auto ptrType = dyn_cast<pto::PtrType>(type);
+  if (!ptrType)
+    return {};
+
+  Type elementType = ptrType.getElementType();
+  std::string typeText;
+  llvm::raw_string_ostream os(typeText);
+  elementType.print(os);
+  os.flush();
+  std::string lower = StringRef(typeText).lower();
+  if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
+      StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+    return "U8";
+
+  if (elementType.isF16() || elementType.isBF16())
+    return "U16";
+  if (elementType.isF32())
+    return "U32";
+
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return "U8";
+    case 16:
+      return "U16";
+    case 32:
+      return "U32";
+    default:
+      return {};
+    }
+  }
+  return {};
+}
+
+static std::string getDn2NzCopyElementFragment(Type type) {
+  auto ptrType = dyn_cast<pto::PtrType>(type);
+  if (!ptrType)
+    return {};
+
+  Type elementType = ptrType.getElementType();
+  std::string typeText;
+  llvm::raw_string_ostream os(typeText);
+  elementType.print(os);
+  os.flush();
+  std::string lower = StringRef(typeText).lower();
+  if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
+      StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+    return "u8";
+
+  if (elementType.isF16() || elementType.isBF16())
+    return "u16";
+  if (elementType.isF32())
+    return "u32";
+
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return "u8";
+    case 16:
+      return "u16";
+    case 32:
+      return "u32";
+    default:
+      return {};
+    }
+  }
+  return {};
+}
+
 static bool isMxElementType(Type type) {
   if (auto floatType = dyn_cast<FloatType>(type))
     return floatType.getWidth() == 8;
@@ -697,15 +767,32 @@ FailureOr<IntrinsicSelection> selectStoreIntrinsic(Operation *op) {
   }
 
   if (auto copy = dyn_cast<pto::CopyGmToCbufMultiNd2NzOp>(op)) {
+    std::string elemFragment =
+        getNd2NzCopyElementFragment(copy.getSource().getType());
     usedFields = {"family=copy_gm_to_cbuf_multi_nd2nz"};
-    return makeResolved(op, "llvm.hivm.MOV.OUT.TO.L1.MULTI.ND2NZ", usedFields,
-                        "");
+    if (!elemFragment.empty()) {
+      return makeResolved(op,
+                          "llvm.hivm.MOV.OUT.TO.L1.MULTI.ND2NZ." +
+                              elemFragment + ".V310",
+                          usedFields, "");
+    }
+    return makeUnresolved(op, "copy_gm_to_cbuf_multi_nd2nz",
+                          "llvm.hivm.MOV.OUT.TO.L1.MULTI.ND2NZ.<elem>.V310",
+                          usedFields, {"element_type_mapping"}, "");
   }
 
   if (auto copy = dyn_cast<pto::CopyGmToCbufMultiDn2NzOp>(op)) {
+    std::string elemFragment =
+        getDn2NzCopyElementFragment(copy.getSource().getType());
     usedFields = {"family=copy_gm_to_cbuf_multi_dn2nz"};
-    return makeResolved(op, "llvm.hivm.MOV.OUT.TO.L1.MULTI.DN2NZ", usedFields,
-                        "");
+    if (!elemFragment.empty()) {
+      return makeResolved(op,
+                          "llvm.hivm.MOV.OUT.TO.L1.MULTI.DN2NZ." + elemFragment,
+                          usedFields, "");
+    }
+    return makeUnresolved(op, "copy_gm_to_cbuf_multi_dn2nz",
+                          "llvm.hivm.MOV.OUT.TO.L1.MULTI.DN2NZ.<elem>",
+                          usedFields, {"element_type_mapping"}, "");
   }
 
   if (auto matmul = dyn_cast<pto::MadOp>(op)) {

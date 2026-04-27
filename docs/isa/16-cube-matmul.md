@@ -83,6 +83,16 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 - **loop order:** repeated `loop(...)` groups are written from inner to outer. The first two groups lower to hardware loop config; any remaining outer groups expand to software `scf.for` loops around the copy.
 - **expands to:** `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf`
 
+### `pto.cube_load_frac`
+
+- **syntax:** `pto.cube_load_frac %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_layout(%src_inner_stride[, %src_outer_stride]), dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride), ctrl(%l2_cache_ctrl, %smallc0_en) : !pto.ptr<..., gm>, !pto.ptr<..., mat>, nd2nz|dn2nz, shape i64, i64, src_layout(i64[, i64]), dst_group i64, i64, i64, i64, ctrl i64, i1`
+- **semantics:** structured GM→L1 fractal staging helper for `ND2NZ` / `DN2NZ`.
+- `shape(...)` describes the logical `N x D` payload moved by one multi-fractal transfer.
+- `src_layout(...)` describes source-side traversal. `%src_outer_stride` is optional and defaults to `0`.
+- `dst_group(...)` maps directly to `pto.set_mte2_nz_para`, providing group count plus destination loop2/loop3/loop4 strides in units of `C0_size`.
+- `ctrl(...)` exposes the intrinsic `l2_cache_ctrl` and `smallc0_en` fields. `smallc0_en` is only valid when `d_value <= 4`.
+- **expands to:** `pto.set_mte2_nz_para` + `pto.copy_gm_to_cbuf_multi_nd2nz|pto.copy_gm_to_cbuf_multi_dn2nz`
+
 ### `pto.left_load`
 
 - **syntax:** `pto.left_load %src, %dst, %m, %k, %loop3_count, %loop3_src_stride, %loop3_dst_stride, %loop0_src_stride : !pto.ptr<..., mat>, !pto.ptr<..., left>, i64, i64, i64, i64, i64, i64`
@@ -97,8 +107,8 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 
 ### `pto.acc_store_fix`
 
-- **syntax:** `pto.acc_store_fix %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop(%count, %src_stride, %dst_stride) ... : !pto.ptr<..., acc>, !pto.ptr<..., gm>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop(i64, i64, i64) ...]`
-- **semantics:** structured L0C→GM write-back helper. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. Repeated `loop(...)` groups are ordered from inner to outer and describe additional outer repetition levels around the base write-back step.
+- **syntax:** `pto.acc_store_fix %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., gm>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
+- **semantics:** structured L0C→GM write-back helper. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. `loop3(%count, %src_stride, %dst_stride)` is an optional special hardware loop descriptor for this op. `nz2nz` does not accept `loop3(...)`.
 - **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
 
 ### `pto.acc_store`

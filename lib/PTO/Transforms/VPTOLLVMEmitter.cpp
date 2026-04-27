@@ -484,6 +484,37 @@ static std::string getCopyElementFragment(Type elementType) {
   return {};
 }
 
+static std::string getNd2NzCopyElementFragment(Type elementType) {
+  if (!elementType)
+    return {};
+  std::string typeText;
+  llvm::raw_string_ostream os(typeText);
+  elementType.print(os);
+  os.flush();
+  std::string lower = StringRef(typeText).lower();
+  if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
+      StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+    return "U8";
+
+  if (elementType.isF16() || elementType.isBF16())
+    return "U16";
+  if (elementType.isF32())
+    return "U32";
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return "U8";
+    case 16:
+      return "U16";
+    case 32:
+      return "U32";
+    default:
+      return {};
+    }
+  }
+  return {};
+}
+
 static std::optional<uint64_t> parsePredicatePatternImmediate(StringRef pattern) {
   if (pattern == "PAT_ALL")
     return 0;
@@ -1376,7 +1407,8 @@ packLoadCbufToS4Config1(Operation *anchor, Value srcStride, Value dstStride) {
 }
 
 static FailureOr<Value>
-packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k) {
+packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k,
+                        Type elementType) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
@@ -1385,6 +1417,10 @@ packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k) {
   Value kI64 = castIntegerLikeTo(anchor, k, builder.getI64Type());
   if (!mI64 || !kI64)
     return failure();
+  unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
+  if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+    return failure();
+  uint64_t elemBytes = elemBitWidth / 8;
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
@@ -1393,11 +1429,19 @@ packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k) {
   auto bitOr = [&](Value lhs, Value rhs) -> Value {
     return builder.create<arith::OrIOp>(loc, lhs, rhs);
   };
+  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+    Value bias = getI64Constant(builder, loc, divisor - 1);
+    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
+    return builder.create<arith::DivUIOp>(loc, sum,
+                                          getI64Constant(builder, loc, divisor));
+  };
 
   Value mStart = getI64Constant(builder, loc, 0);
   Value kStart = getI64Constant(builder, loc, 0);
-  Value mStep = mI64;
-  Value kStep = getI64Constant(builder, loc, 1);
+  Value mStep = ceilDivConst(mI64, 16);
+  Value kBytes =
+      builder.create<arith::MulIOp>(loc, kI64, getI64Constant(builder, loc, elemBytes));
+  Value kStep = ceilDivConst(kBytes, 32);
 
   Value config0 = mStart;
   config0 = bitOr(config0, shl(kStart, 16));
@@ -1407,24 +1451,32 @@ packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k) {
 }
 
 static FailureOr<Value>
-packLoadCbufToCaConfig1(Operation *anchor, Value k) {
+packLoadCbufToCaConfig1(Operation *anchor, Value m) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
 
-  Value kI64 = castIntegerLikeTo(anchor, k, builder.getI64Type());
-  if (!kI64)
+  Value mI64 = castIntegerLikeTo(anchor, m, builder.getI64Type());
+  if (!mI64)
     return failure();
+  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+    Value bias = getI64Constant(builder, loc, divisor - 1);
+    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
+    return builder.create<arith::DivUIOp>(loc, sum,
+                                          getI64Constant(builder, loc, divisor));
+  };
+  Value stride = ceilDivConst(mI64, 16);
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
                                          getI64Constant(builder, loc, amount));
   };
-  return builder.create<arith::OrIOp>(loc, shl(kI64, 16), kI64).getResult();
+  return builder.create<arith::OrIOp>(loc, stride, shl(stride, 16)).getResult();
 }
 
 static FailureOr<Value>
-packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n) {
+packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n,
+                        Type elementType, bool transpose) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
@@ -1433,6 +1485,10 @@ packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n) {
   Value nI64 = castIntegerLikeTo(anchor, n, builder.getI64Type());
   if (!kI64 || !nI64)
     return failure();
+  unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
+  if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+    return failure();
+  uint64_t elemBytes = elemBitWidth / 8;
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
@@ -1441,11 +1497,35 @@ packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n) {
   auto bitOr = [&](Value lhs, Value rhs) -> Value {
     return builder.create<arith::OrIOp>(loc, lhs, rhs);
   };
+  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+    Value bias = getI64Constant(builder, loc, divisor - 1);
+    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
+    return builder.create<arith::DivUIOp>(loc, sum,
+                                          getI64Constant(builder, loc, divisor));
+  };
 
   Value mStart = getI64Constant(builder, loc, 0);
   Value kStart = getI64Constant(builder, loc, 0);
-  Value mStep = kI64;
-  Value kStep = getI64Constant(builder, loc, 1);
+  Value mStep;
+  Value kStep;
+  if (!transpose) {
+    mStep = ceilDivConst(nI64, 16);
+    Value kBytes = builder.create<arith::MulIOp>(
+        loc, kI64, getI64Constant(builder, loc, elemBytes));
+    kStep = ceilDivConst(kBytes, 32);
+  } else {
+    uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
+    Value kAlign = ceilDivConst(kI64, c0Size);
+    kAlign = builder.create<arith::MulIOp>(loc, kAlign,
+                                           getI64Constant(builder, loc, c0Size));
+    Value nAlign = ceilDivConst(nI64, c0Size);
+    nAlign = builder.create<arith::MulIOp>(loc, nAlign,
+                                           getI64Constant(builder, loc, c0Size));
+    mStep = ceilDivConst(kAlign, 16);
+    Value nBytes = builder.create<arith::MulIOp>(
+        loc, nAlign, getI64Constant(builder, loc, elemBytes));
+    kStep = ceilDivConst(nBytes, 32);
+  }
 
   Value config0 = mStart;
   config0 = bitOr(config0, shl(kStart, 16));
@@ -1455,20 +1535,52 @@ packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n) {
 }
 
 static FailureOr<Value>
-packLoadCbufToCbConfig1(Operation *anchor, Value n) {
+packLoadCbufToCbConfig1(Operation *anchor, Value k, Value n, Type elementType,
+                        bool transpose) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
 
+  Value kI64 = castIntegerLikeTo(anchor, k, builder.getI64Type());
   Value nI64 = castIntegerLikeTo(anchor, n, builder.getI64Type());
-  if (!nI64)
+  if (!kI64 || !nI64)
     return failure();
+  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+    Value bias = getI64Constant(builder, loc, divisor - 1);
+    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
+    return builder.create<arith::DivUIOp>(loc, sum,
+                                          getI64Constant(builder, loc, divisor));
+  };
+  Value stride;
+  if (!transpose) {
+    stride = ceilDivConst(nI64, 16);
+  } else {
+    unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
+    if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+      return failure();
+    uint64_t elemBytes = elemBitWidth / 8;
+    uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
+    Value kAlign = ceilDivConst(kI64, c0Size);
+    kAlign = builder.create<arith::MulIOp>(loc, kAlign,
+                                           getI64Constant(builder, loc, c0Size));
+    Value nAlign = ceilDivConst(nI64, c0Size);
+    nAlign = builder.create<arith::MulIOp>(loc, nAlign,
+                                           getI64Constant(builder, loc, c0Size));
+    Value srcStride = ceilDivConst(kAlign, 16);
+    Value dstStride = ceilDivConst(nAlign, 16);
+    auto shl = [&](Value value, uint64_t amount) -> Value {
+      return builder.create<arith::ShLIOp>(loc, value,
+                                           getI64Constant(builder, loc, amount));
+    };
+    return builder.create<arith::OrIOp>(loc, srcStride, shl(dstStride, 16))
+        .getResult();
+  }
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
                                          getI64Constant(builder, loc, amount));
   };
-  return builder.create<arith::OrIOp>(loc, shl(nI64, 16), nI64).getResult();
+  return builder.create<arith::OrIOp>(loc, stride, shl(stride, 16)).getResult();
 }
 
 static FailureOr<Value>
@@ -1492,13 +1604,12 @@ packMadConfig(Operation *anchor, Value m, Value n, Value k) {
   };
 
   Value config = mI64;
-  config = bitOr(config, shl(kI64, 16));
-  config = bitOr(config, shl(nI64, 32));
-  config = bitOr(config, shl(getI64Constant(builder, loc, 0), 48)); // unitFlag
-  config = bitOr(config, shl(getI64Constant(builder, loc, 0), 56)); // gemvCtrl
-  config = bitOr(config, shl(getI64Constant(builder, loc, 0), 57)); // btBufCtrl
+  config = bitOr(config, shl(kI64, 12));
+  config = bitOr(config, shl(nI64, 24));
   config =
-      bitOr(config, shl(getI64Constant(builder, loc, 1), 58)); // zeroCmatrixCtrl
+      bitOr(config, shl(getI64Constant(builder, loc, 1), 61)); // gemvCtrl
+  config =
+      bitOr(config, shl(getI64Constant(builder, loc, 1), 63)); // cmatrixInitVal
   return config;
 }
 
@@ -1936,13 +2047,64 @@ static FailureOr<StringRef> buildCopyGmToCbufCallee(MLIRContext *context,
       .getValue();
 }
 
-static StringRef buildCopyGmToCbufMultiNd2NzCallee(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.MOV.OUT.TO.L1.MULTI.ND2NZ")
+static FailureOr<StringRef>
+buildCopyGmToCbufMultiNd2NzCallee(MLIRContext *context, Type sourceType) {
+  auto ptrType = dyn_cast<pto::PtrType>(sourceType);
+  if (!ptrType)
+    return failure();
+  std::string elem = getNd2NzCopyElementFragment(ptrType.getElementType());
+  if (elem.empty())
+    return failure();
+  return StringAttr::get(context, "llvm.hivm.MOV.OUT.TO.L1.MULTI.ND2NZ." +
+                                      elem + ".V310")
       .getValue();
 }
 
-static StringRef buildCopyGmToCbufMultiDn2NzCallee(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.MOV.OUT.TO.L1.MULTI.DN2NZ")
+static std::string getDn2NzCopyElementFragment(Type type) {
+  auto ptrType = dyn_cast<pto::PtrType>(type);
+  if (!ptrType)
+    return {};
+
+  Type elementType = ptrType.getElementType();
+  std::string typeText;
+  llvm::raw_string_ostream os(typeText);
+  elementType.print(os);
+  os.flush();
+  std::string lower = StringRef(typeText).lower();
+  if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
+      StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+    return "u8";
+
+  if (elementType.isF16() || elementType.isBF16())
+    return "u16";
+  if (elementType.isF32())
+    return "u32";
+
+  if (auto intType = dyn_cast<IntegerType>(elementType)) {
+    switch (intType.getWidth()) {
+    case 8:
+      return "u8";
+    case 16:
+      return "u16";
+    case 32:
+      return "u32";
+    default:
+      return {};
+    }
+  }
+  return {};
+}
+
+static FailureOr<StringRef>
+buildCopyGmToCbufMultiDn2NzCallee(MLIRContext *context, Type sourceType) {
+  auto ptrType = dyn_cast<pto::PtrType>(sourceType);
+  if (!ptrType)
+    return failure();
+  std::string elem = getDn2NzCopyElementFragment(sourceType);
+  if (elem.empty())
+    return failure();
+  return StringAttr::get(context,
+                         "llvm.hivm.MOV.OUT.TO.L1.MULTI.DN2NZ." + elem)
       .getValue();
 }
 
@@ -3318,20 +3480,24 @@ public:
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op, "failed to pack multi copy config");
 
-    StringRef calleeName = [] (MLIRContext *ctx) -> StringRef {
+    FailureOr<StringRef> calleeName = [&] (MLIRContext *ctx, Type sourceType)
+        -> FailureOr<StringRef> {
       if constexpr (std::is_same_v<CopyOp, pto::CopyGmToCbufMultiNd2NzOp>)
-        return buildCopyGmToCbufMultiNd2NzCallee(ctx);
-      return buildCopyGmToCbufMultiDn2NzCallee(ctx);
-    }(op.getContext());
+        return buildCopyGmToCbufMultiNd2NzCallee(ctx, op.getSource().getType());
+      return buildCopyGmToCbufMultiDn2NzCallee(ctx, sourceType);
+    }(op.getContext(), op.getSource().getType());
+    if (failed(calleeName))
+      return rewriter.notifyMatchFailure(
+          op, "unsupported copy_gm_to_cbuf_multi element type");
 
     Type i64Ty = rewriter.getI64Type();
     auto funcType = rewriter.getFunctionType(
         TypeRange{destination->getType(), source->getType(), i64Ty, i64Ty},
         TypeRange{});
     rewriter.create<func::CallOp>(
-        op.getLoc(), calleeName, TypeRange{},
+        op.getLoc(), *calleeName, TypeRange{},
         ValueRange{*destination, *source, *config0, *config1});
-    state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
+    state.plannedDecls.push_back(PlannedDecl{calleeName->str(), funcType});
     rewriter.eraseOp(op);
     return success();
   }
@@ -3481,8 +3647,9 @@ public:
     if (failed(source) || failed(destination))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/ca pointer spaces");
 
-    FailureOr<Value> config0 = packLoadCbufToCaConfig0(op, m, k);
-    FailureOr<Value> config1 = packLoadCbufToCaConfig1(op, k);
+    Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+    FailureOr<Value> config0 = packLoadCbufToCaConfig0(op, m, k, sourceElemType);
+    FailureOr<Value> config1 = packLoadCbufToCaConfig1(op, m);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op, "failed to pack load_cbuf_to_ca config");
     Value transpose = getI64Constant(rewriter, op.getLoc(), 0);
@@ -3610,11 +3777,16 @@ public:
     if (failed(source) || failed(destination))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/cb pointer spaces");
 
-    FailureOr<Value> config0 = packLoadCbufToCbConfig0(op, k, n);
-    FailureOr<Value> config1 = packLoadCbufToCbConfig1(op, n);
+    Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+    bool transpose = op.getTranspose();
+    FailureOr<Value> config0 =
+        packLoadCbufToCbConfig0(op, k, n, sourceElemType, transpose);
+    FailureOr<Value> config1 =
+        packLoadCbufToCbConfig1(op, k, n, sourceElemType, transpose);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op, "failed to pack load_cbuf_to_cb config");
-    Value transpose = getI64Constant(rewriter, op.getLoc(), 0);
+    Value transposeValue =
+        getI64Constant(rewriter, op.getLoc(), transpose ? 1 : 0);
 
     FailureOr<StringRef> calleeName =
         buildLoadCbufToCbCallee(op.getContext(), op.getSource().getType());
@@ -3627,7 +3799,7 @@ public:
         TypeRange{});
     rewriter.create<func::CallOp>(op.getLoc(), *calleeName, TypeRange{},
                                   ValueRange{*destination, *source, *config0,
-                                             *config1, transpose});
+                                             *config1, transposeValue});
     state.plannedDecls.push_back(PlannedDecl{calleeName->str(), funcType});
     rewriter.eraseOp(op);
     return success();
@@ -3666,8 +3838,10 @@ public:
     if (failed(src) || failed(dst))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/ca pointer spaces");
 
-    FailureOr<Value> config0 = packLoadCbufToCaConfig0(op, adaptor.getM(), adaptor.getK());
-    FailureOr<Value> config1 = packLoadCbufToCaConfig1(op, adaptor.getK());
+    Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+    FailureOr<Value> config0 =
+        packLoadCbufToCaConfig0(op, adaptor.getM(), adaptor.getK(), sourceElemType);
+    FailureOr<Value> config1 = packLoadCbufToCaConfig1(op, adaptor.getM());
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op,
                                          "failed to pack load_cbuf_to_ca_mx config");
@@ -3718,8 +3892,11 @@ public:
     if (failed(src) || failed(dst))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/cb pointer spaces");
 
-    FailureOr<Value> config0 = packLoadCbufToCbConfig0(op, adaptor.getK(), adaptor.getN());
-    FailureOr<Value> config1 = packLoadCbufToCbConfig1(op, adaptor.getN());
+    Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+    FailureOr<Value> config0 = packLoadCbufToCbConfig0(
+        op, adaptor.getK(), adaptor.getN(), sourceElemType, false);
+    FailureOr<Value> config1 = packLoadCbufToCbConfig1(
+        op, adaptor.getK(), adaptor.getN(), sourceElemType, false);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op,
                                          "failed to pack load_cbuf_to_cb_mx config");

@@ -87,6 +87,28 @@ struct AccStoreFixModeConfig {
   std::optional<Value> loop0SrcStride;
 };
 
+struct CubeLoadFracShapeConfig {
+  Value nValue;
+  Value dValue;
+};
+
+struct CubeLoadFracSrcLayoutConfig {
+  Value srcInnerStride;
+  std::optional<Value> srcOuterStride;
+};
+
+struct CubeLoadFracDstGroupConfig {
+  Value groupCount;
+  Value dstLoop2Stride;
+  Value dstLoop3Stride;
+  Value dstLoop4Stride;
+};
+
+struct CubeLoadFracCtrlConfig {
+  Value l2CacheCtrl;
+  Value smallc0En;
+};
+
 } // namespace pto
 } // namespace mlir
 
