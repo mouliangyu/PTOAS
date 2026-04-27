@@ -50,8 +50,11 @@ Supported element-type combinations follow the HIVM intrinsic selection in the c
 
 ## `pto.copy_gm_to_cbuf_multi_nd2nz` / `pto.copy_gm_to_cbuf_multi_dn2nz`
 
-- **syntax:** `pto.copy_gm_to_cbuf_multi_* %src, %dst, ... : !pto.ptr<…, gm>, !pto.ptr<…, ub>, ...`
+- **syntax:** `pto.copy_gm_to_cbuf_multi_* %src, %dst, %sid, %loop1_src_stride, %l2_cache_ctrl, %n_value, %d_value, %loop4_src_stride, %smallc0_en : !pto.ptr<…, gm>, !pto.ptr<…, ub>, i64, i64, i64, i64, i64, i64, i1`
 - **semantics:** GM→L1 (`cbuf`) multi-fractal staging paths for cube data layout conversion variants (`ND2NZ` / `DN2NZ`), lowered to `llvm.hivm.MOV.OUT.TO.L1.MULTI.*` families.
+- `%loop1_src_stride`, `%n_value`, `%d_value`, and `%loop4_src_stride` describe the source traversal and packing shape.
+- `%smallc0_en` controls small-C0 mode. It is only valid when `d_value <= 4`.
+- The destination NZ layout is additionally configured through `pto.set_mte2_nz_para`, whose fields provide the group count and destination loop2/loop3/loop4 strides.
 
 ---
 
@@ -79,11 +82,6 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 - **semantics:** structured GM→L1 (`cbuf`) staging helper.
 - **loop order:** repeated `loop(...)` groups are written from inner to outer. The first two groups lower to hardware loop config; any remaining outer groups expand to software `scf.for` loops around the copy.
 - **expands to:** `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf`
-
-### `pto.cube_load_nd2nz`
-
-- **semantics:** structured GM→L1 multi-fractal ND2NZ staging helper with NZ parameters.
-- **expands to:** `pto.set_mte2_nz_para` + `pto.set_pad_val_outtol1` + `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf_multi_nd2nz`
 
 ### `pto.left_load`
 

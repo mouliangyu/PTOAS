@@ -481,30 +481,6 @@ struct ExpandCubeLoadPattern : public OpRewritePattern<pto::CubeLoadOp> {
   }
 };
 
-struct ExpandCubeLoadNd2NzPattern
-    : public OpRewritePattern<pto::CubeLoadNd2NzOp> {
-  using OpRewritePattern<pto::CubeLoadNd2NzOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(pto::CubeLoadNd2NzOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op.getLoc();
-    Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
-    rewriter.create<pto::SetMte2NzParaOp>(loc, op.getMte2NzPara());
-    rewriter.create<pto::SetPadValOutToL1Op>(loc, op.getPadValue());
-    rewriter.create<pto::SetLoop2StrideOutToL1Op>(loc, op.getLoop2Stride());
-    rewriter.create<pto::SetLoop1StrideOutToL1Op>(loc, op.getLoop1Stride());
-    rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, op.getLoopSize());
-    rewriter.create<pto::CopyGmToCbufMultiNd2NzOp>(
-        loc, op.getSource(), op.getDestination(), op.getSid(),
-        op.getLoop1SrcStride(), op.getL2CacheCtrl(), op.getNValue(),
-        op.getDValue(), op.getLoop4SrcStride(), op.getSmallc0En());
-    if (!isKnownOne(op.getLoopSize()))
-      rewriter.create<pto::SetLoopSizeOutToL1Op>(loc, one);
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
 struct ExpandLeftLoadPattern : public OpRewritePattern<pto::LeftLoadOp> {
   using OpRewritePattern<pto::LeftLoadOp>::OpRewritePattern;
 
@@ -651,8 +627,7 @@ struct PTOVPTOExpandBridgeOpsPass
 
     RewritePatternSet patterns(&getContext());
     patterns.add<ExpandUvldPattern, ExpandDmaLoadPattern, ExpandDmaStorePattern,
-                 ExpandDmaCopyPattern, ExpandCubeLoadPattern,
-                 ExpandCubeLoadNd2NzPattern, ExpandLeftLoadPattern,
+                 ExpandDmaCopyPattern, ExpandCubeLoadPattern, ExpandLeftLoadPattern,
                  ExpandRightLoadPattern, ExpandAccStoreFixPattern,
                  ExpandAccStorePattern>(&getContext());
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))

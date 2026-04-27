@@ -4187,13 +4187,6 @@ LogicalResult CubeStoreOp::verify() {
   llvm_unreachable("unexpected acc_store_fix mode");
 }
 
-void CubeLoadNd2NzOp::getEffects(
-    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
-        &effects) {
-  effects.emplace_back(MemoryEffects::Read::get(), &getSourceMutable());
-  effects.emplace_back(MemoryEffects::Write::get(), &getDestinationMutable());
-}
-
 void LeftLoadOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {

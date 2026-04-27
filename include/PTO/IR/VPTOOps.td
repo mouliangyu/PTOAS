@@ -1657,41 +1657,6 @@ def PTO_CubeLoadOp : PTO_Op<"cube_load", [
   ];
 }
 
-def PTO_CubeLoadNd2NzOp : PTO_Op<"cube_load_nd2nz", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
-    I64:$sid,
-    I64:$loop1_src_stride,
-    I64:$l2_cache_ctrl,
-    I64:$n_value,
-    I64:$d_value,
-    I64:$loop4_src_stride,
-    I1:$smallc0_en,
-    I64:$mte2_nz_para,
-    I64:$pad_value,
-    I64:$loop2_stride,
-    I64:$loop1_stride,
-    I64:$loop_size
-  );
-
-  let results = (outs);
-
-  let assemblyFormat = [{
-    $source `,` $destination `,` $sid `,` $loop1_src_stride `,` $l2_cache_ctrl
-    `,` $n_value `,` $d_value `,` $loop4_src_stride `,` $smallc0_en `,`
-    $mte2_nz_para `,` $pad_value `,` $loop2_stride `,` $loop1_stride `,`
-    $loop_size
-    attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,`
-    type($loop1_src_stride) `,` type($l2_cache_ctrl) `,` type($n_value) `,`
-    type($d_value) `,` type($loop4_src_stride) `,` type($smallc0_en) `,`
-    type($mte2_nz_para) `,` type($pad_value) `,` type($loop2_stride) `,`
-    type($loop1_stride) `,` type($loop_size)
-  }];
-}
-
 def PTO_LeftLoadOp : PTO_Op<"left_load", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
