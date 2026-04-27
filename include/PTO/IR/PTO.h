@@ -81,8 +81,8 @@ struct DmaPadConfig {
   Value rightCount;
 };
 
-struct AccStoreFixModeConfig {
-  AccStoreFixMode mode;
+struct AccStoreModeConfig {
+  AccStoreMode mode;
   std::optional<Value> split;
   std::optional<Value> loop0SrcStride;
 };

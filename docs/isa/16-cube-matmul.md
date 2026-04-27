@@ -105,16 +105,11 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 - **semantics:** structured L1→L0B helper for matmul right operand loading. `%loop3_count`, `%loop3_src_stride`, and `%loop3_dst_stride` describe the `LOOP3_PARA` register fields `LOOP3_PARA[15:0]`, `LOOP3_PARA[31:16]`, and `LOOP3_PARA[63:32]`. `%loop0_src_stride` describes `CHANNEL_PARA[63:48]`, the loop0 source stride in units of `C0_SIZE`.
 - **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.load_cbuf_to_cb`
 
-### `pto.acc_store_fix`
-
-- **syntax:** `pto.acc_store_fix %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., gm>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
-- **semantics:** structured L0C→GM write-back helper. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. `loop3(%count, %src_stride, %dst_stride)` is an optional special hardware loop descriptor for this op. `nz2nz` does not accept `loop3(...)`.
-- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
-
 ### `pto.acc_store`
 
-- **semantics:** legacy structured accumulator-store helper. It expands through the same register-programming sequence and terminal `pto.copy_matrix_cc_to_gm`, with the write-back configuration defaulted from its legacy operand list.
-- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
+- **syntax:** `pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., gm|mat>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
+- **semantics:** structured accumulator-store helper. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. `loop3(%count, %src_stride, %dst_stride)` is an optional special hardware loop descriptor for this op. `nz2nz` does not accept `loop3(...)`. The terminal intrinsic is selected by destination address space: GM lowers to `pto.copy_matrix_cc_to_gm`, MAT/L1 lowers to `pto.copy_matrix_cc_to_cbuf`.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + (`pto.copy_matrix_cc_to_gm` | `pto.copy_matrix_cc_to_cbuf`)
 
 ---
 

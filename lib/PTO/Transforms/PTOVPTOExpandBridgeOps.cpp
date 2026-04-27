@@ -592,10 +592,10 @@ struct ExpandRightLoadPattern : public OpRewritePattern<pto::RightLoadOp> {
   }
 };
 
-struct ExpandAccStoreFixPattern : public OpRewritePattern<pto::CubeStoreOp> {
-  using OpRewritePattern<pto::CubeStoreOp>::OpRewritePattern;
+struct ExpandAccStorePattern : public OpRewritePattern<pto::AccStoreOp> {
+  using OpRewritePattern<pto::AccStoreOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(pto::CubeStoreOp op,
+  LogicalResult matchAndRewrite(pto::AccStoreOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
     Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
@@ -610,14 +610,14 @@ struct ExpandAccStoreFixPattern : public OpRewritePattern<pto::CubeStoreOp> {
     Value channelSplitEn = zero;
     Value nz2dnEn = zero;
     switch (op.getMode()) {
-    case pto::AccStoreFixMode::Nz2nd:
+    case pto::AccStoreMode::Nz2nd:
       nz2ndEn = one;
       break;
-    case pto::AccStoreFixMode::Nz2dn:
+    case pto::AccStoreMode::Nz2dn:
       nz2dnEn = one;
       channelLoop0Stride = op.getLoop0SrcStride() ? op.getLoop0SrcStride() : one;
       break;
-    case pto::AccStoreFixMode::Nz2nz:
+    case pto::AccStoreMode::Nz2nz:
       channelSplitEn = op.getSplit() ? op.getSplit() : zero;
       break;
     }
@@ -638,28 +638,20 @@ struct ExpandAccStoreFixPattern : public OpRewritePattern<pto::CubeStoreOp> {
     Value xt = packCopyMatrixCcToGmXt(
         loc, op.getSrcStride(), op.getUnitFlagCtrl(), op.getQuantPre(),
         op.getReluPreMode(), nz2ndEn, channelSplitEn, nz2dnEn, rewriter);
-    rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
-                                             op.getDestination(), xm, xt);
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct ExpandAccStorePattern : public OpRewritePattern<pto::AccStoreOp> {
-  using OpRewritePattern<pto::AccStoreOp>::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(pto::AccStoreOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op.getLoc();
-    rewriter.create<pto::SetLoop3ParaOp>(loc, op.getLoop3ParaA(),
-                                         op.getLoop3ParaB());
-    rewriter.create<pto::SetChannelParaOp>(loc, op.getChannelParaA(),
-                                           op.getChannelParaB());
-    Value zero = rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
-    Value xm = packCopyMatrixCcToGmXm(loc, op.getN(), op.getM(), op.getN(),
-                                      rewriter);
-    rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
-                                             op.getDestination(), xm, zero);
+    auto destinationType = cast<pto::PtrType>(op.getDestination().getType());
+    switch (destinationType.getMemorySpace().getAddressSpace()) {
+    case pto::AddressSpace::GM:
+      rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
+                                               op.getDestination(), xm, xt);
+      break;
+    case pto::AddressSpace::MAT:
+      rewriter.create<pto::CopyMatrixCcToCbufOp>(loc, op.getSource(),
+                                                 op.getDestination(), xm, xt);
+      break;
+    default:
+      return rewriter.notifyMatchFailure(
+          op, "expected acc_store destination in GM or MAT address space");
+    }
     rewriter.eraseOp(op);
     return success();
   }
@@ -679,8 +671,7 @@ struct PTOVPTOExpandBridgeOpsPass
     patterns.add<ExpandUvldPattern, ExpandDmaLoadPattern, ExpandDmaStorePattern,
                  ExpandDmaCopyPattern, ExpandCubeLoadPattern,
                  ExpandCubeLoadFracPattern, ExpandLeftLoadPattern,
-                 ExpandRightLoadPattern, ExpandAccStoreFixPattern,
-                 ExpandAccStorePattern>(&getContext());
+                 ExpandRightLoadPattern, ExpandAccStorePattern>(&getContext());
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();
   }

@@ -1746,7 +1746,7 @@ def PTO_RightLoadOp : PTO_Op<"right_load", [
   }];
 }
 
-def PTO_CubeStoreOp : PTO_Op<"acc_store_fix", [
+def PTO_AccStoreOp : PTO_Op<"acc_store", [
     AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -1765,7 +1765,7 @@ def PTO_CubeStoreOp : PTO_Op<"acc_store_fix", [
     Optional<I64>:$loop3_count,
     Optional<I64>:$loop3_src_stride,
     Optional<I64>:$loop3_dst_stride,
-    PTO_AccStoreFixModeAttr:$mode
+    PTO_AccStoreModeAttr:$mode
   );
 
   let results = (outs);
@@ -1784,35 +1784,10 @@ def PTO_CubeStoreOp : PTO_Op<"acc_store_fix", [
       "::mlir::Value":$unitFlagCtrl,
       "::mlir::Value":$quantPre,
       "::mlir::Value":$reluPreMode,
-      "::mlir::pto::AccStoreFixModeConfig":$modeConfig,
+      "::mlir::pto::AccStoreModeConfig":$modeConfig,
       "::std::optional<::mlir::pto::DmaLoopConfig>":$loop3
     )>
   ];
-}
-
-def PTO_AccStoreOp : PTO_Op<"acc_store", [
-    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
-  ]> {
-  let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
-    I64:$m,
-    I64:$n,
-    I64:$loop3_para_a,
-    I64:$loop3_para_b,
-    I64:$channel_para_a,
-    I64:$channel_para_b
-  );
-
-  let results = (outs);
-
-  let assemblyFormat = [{
-    $source `,` $destination `,` $m `,` $n `,` $loop3_para_a `,`
-    $loop3_para_b `,` $channel_para_a `,` $channel_para_b
-    attr-dict `:` type($source) `,` type($destination) `,` type($m) `,`
-    type($n) `,` type($loop3_para_a) `,` type($loop3_para_b) `,`
-    type($channel_para_a) `,` type($channel_para_b)
-  }];
 }
 
 // NOTE: Unvalidated new x2 / pair / align-store-family abstractions. Added to
