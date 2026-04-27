@@ -1415,14 +1415,14 @@ def PTO_Vgather2Op : PTO_Op<"vgather2", [
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_VectorType:$offsets,
-    Index:$active_lanes
+    PTO_MaskTypeConstraint:$mask
   );
   let results = (outs PTO_VectorType:$result);
 
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $source `,` $offsets `,` $active_lanes attr-dict `:` type($source) `,` type($offsets) `,` type($active_lanes) `->` type($result)
+    $source `,` $offsets `,` $mask attr-dict `:` type($source) `,` type($offsets) `,` type($mask) `->` type($result)
   }];
 }
 
@@ -1517,7 +1517,7 @@ def PTO_VscatterOp : PTO_Op<"vscatter", [
     PTO_VectorType:$value,
     PTO_BufferType:$destination,
     PTO_VectorType:$offsets,
-    Index:$active_lanes
+    PTO_MaskTypeConstraint:$mask
   );
 
   let results = (outs);
@@ -1525,7 +1525,7 @@ def PTO_VscatterOp : PTO_Op<"vscatter", [
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $value `,` $destination `,` $offsets `,` $active_lanes attr-dict `:` type($value) `,` type($destination) `,` type($offsets) `,` type($active_lanes)
+    $value `,` $destination `,` $offsets `,` $mask attr-dict `:` type($value) `,` type($destination) `,` type($offsets) `,` type($mask)
   }];
 }
 
@@ -1826,6 +1826,7 @@ def PTO_VexpdifOp : PTO_Op<"vexpdif", [Pure]> {
   let arguments = (ins
     PTO_VectorType:$input,
     PTO_VectorType:$max,
+    PTO_MaskTypeConstraint:$mask,
     StrAttr:$part
   );
   let results = (outs PTO_VectorType:$result);
@@ -1833,7 +1834,7 @@ def PTO_VexpdifOp : PTO_Op<"vexpdif", [Pure]> {
   let hasVerifier = 1;
 
   let assemblyFormat = [{
-    $input `,` $max `,` $part attr-dict `:` type($input) `,` type($max) `->` type($result)
+    $input `,` $max `,` $mask `,` $part attr-dict `:` type($input) `,` type($max) `,` type($mask) `->` type($result)
   }];
 }
 
