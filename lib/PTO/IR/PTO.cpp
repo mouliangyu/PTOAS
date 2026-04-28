@@ -1944,6 +1944,54 @@ LogicalResult TLoadOp::verify() {
           pad != static_cast<int32_t>(pto::PadValue::Zero))
         return emitOpError("expects A5 i64/u64 tload dst pad to be null or zero");
     }
+
+    auto dstSpace = getPTOMemorySpaceEnum(dstTile);
+    if (dstSpace && *dstSpace == pto::AddressSpace::VEC) {
+      int32_t bl = dstTile.getBLayoutValueI32();
+      int32_t sl = dstTile.getSLayoutValueI32();
+      bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
+                   sl == static_cast<int32_t>(pto::SLayout::NoneBox));
+      bool isDN = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
+                   sl == static_cast<int32_t>(pto::SLayout::NoneBox));
+      bool isNZ = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
+                   sl == static_cast<int32_t>(pto::SLayout::RowMajor));
+      if (!isND && !isDN && !isNZ)
+        return emitOpError("expects A5 tload vec dst layout to be ND, DN, or NZ");
+
+      auto srcShape = srcPart.getShape();
+      auto dstValid = dstTile.getValidShape();
+      if (srcShape.size() != 5 || dstValid.size() != 2)
+        return emitOpError("expects A5 tload src to have 5 dims and dst to have 2 valid dims");
+
+      if (isND) {
+        if (dstValid[1] != ShapedType::kDynamic && srcShape[4] != ShapedType::kDynamic) {
+          if (dstValid[1] != srcShape[4])
+            return emitOpError("expects A5 tload ND dst valid_col to match src shape[4]");
+        }
+        if (dstValid[0] != ShapedType::kDynamic &&
+            srcShape[0] != ShapedType::kDynamic && srcShape[1] != ShapedType::kDynamic &&
+            srcShape[2] != ShapedType::kDynamic && srcShape[3] != ShapedType::kDynamic) {
+          int64_t mergedRows = srcShape[0] * srcShape[1] * srcShape[2] * srcShape[3];
+          if (dstValid[0] != mergedRows)
+            return emitOpError("expects A5 tload ND dst valid_row to match src shape[0]*shape[1]*shape[2]*shape[3]");
+        }
+      }
+
+      if (isNZ) {
+        constexpr int32_t BLOCK_BYTE_SIZE = 32;
+        constexpr int32_t BLOCK_LEN = 16;
+        if (srcShape[4] != ShapedType::kDynamic) {
+          int64_t expectedShape4 = BLOCK_BYTE_SIZE / dstBytes;
+          if (srcShape[4] != expectedShape4)
+            return emitOpError("expects A5 tload NZ src shape[4] to match BLOCK_BYTE_SIZE / elem_size");
+        }
+        if (srcShape[3] != ShapedType::kDynamic) {
+          if (srcShape[3] != BLOCK_LEN)
+            return emitOpError("expects A5 tload NZ src shape[3] to match BLOCK_LEN");
+        }
+      }
+    }
+
     return success();
   };
 
@@ -2266,6 +2314,30 @@ LogicalResult TStoreOp::verify() {
         return emitOpError("expects A5 vec tstore src element type to be i8/i16/i32/i64/u64/f16/bf16/f32");
       if (getElemByteSize(srcElem) != getElemByteSize(dstElem))
         return emitOpError("expects A5 vec tstore src and dst element types to have the same bitwidth");
+
+      int32_t bl = srcTile.getBLayoutValueI32();
+      int32_t sl = srcTile.getSLayoutValueI32();
+      bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
+                   sl == static_cast<int32_t>(pto::SLayout::NoneBox));
+      bool isDN = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
+                   sl == static_cast<int32_t>(pto::SLayout::NoneBox));
+      bool isNZ = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
+                   sl == static_cast<int32_t>(pto::SLayout::RowMajor));
+      auto srcValid = srcTile.getValidShape();
+      bool isSpecialCase = (srcValid.size() == 2 && (srcValid[0] == 1 || srcValid[1] == 1));
+      if (!isSpecialCase && !isND && !isDN && !isNZ)
+        return emitOpError("expects A5 vec tstore src layout to be ND, DN, or NZ (or special case with 1 row/col)");
+
+      unsigned elemBytes = getElemByteSize(srcElem);
+      if (!isSpecialCase) {
+        if (isND && srcValid[1] != ShapedType::kDynamic &&
+            srcValid[1] * elemBytes % 32 != 0)
+          return emitOpError() << "expects A5 vec tstore ND format Cols*sizeof(dtype) to be divisible by 32";
+        if (isDN && srcValid[0] != ShapedType::kDynamic &&
+            srcValid[0] * elemBytes % 32 != 0)
+          return emitOpError() << "expects A5 vec tstore DN format Rows*sizeof(dtype) to be divisible by 32";
+      }
+
       return success();
     }
 
@@ -2840,19 +2912,20 @@ verifyNumericScalarTileOpCommon(Operation *op, Type srcTy, Type dstTy,
 
 static FailureOr<Type>
 verifyShiftLikeBinaryTileOpCommon(Operation *op, Type src0Ty, Type src1Ty,
-                                  Type dstTy) {
+                                   Type dstTy) {
   if (failed(verifyTileBufCommon(op, src0Ty, "src0")) ||
       failed(verifyTileBufCommon(op, src1Ty, "src1")) ||
       failed(verifyTileBufCommon(op, dstTy, "dst")))
     return failure();
   Type e0 = getElemTy(src0Ty);
   Type e1 = getElemTy(src1Ty);
-  if (!e0 || !e1) {
+  Type ed = getElemTy(dstTy);
+  if (!e0 || !e1 || !ed) {
     op->emitOpError("failed to get element type for operands");
     return failure();
   }
-  if (e0 != e1) {
-    op->emitOpError("expects src0 and src1 to have the same element type");
+  if (e0 != e1 || e0 != ed) {
+    op->emitOpError("expects src0, src1, and dst to have the same element type");
     return failure();
   }
   if (!isRowMajorTileBuf(src0Ty) || !isRowMajorTileBuf(src1Ty) ||
@@ -3326,7 +3399,7 @@ LogicalResult pto::TAddSOp::verify() {
       "expects A2/A3 tadds element type to be i32/i16/f16/f32",
       "expects A5 tadds element type to be i32/i16/i8/f16/bf16/f32",
       /*requireValidRowsEqualOnA2A3=*/true,
-      /*requireValidRowsEqualOnA5=*/false);
+      /*requireValidRowsEqualOnA5=*/true);
 }
 
 LogicalResult pto::TAxpyOp::verify() {
@@ -4234,7 +4307,45 @@ llvm::LogicalResult mlir::pto::TCvtOp::verify() {
   if (failed(verifyTileBufSameValidShape(*this, srcTy, dstTy, "src", "dst")))
     return failure();
 
-  return mlir::success();
+  auto verifyA2A3 = [&]() -> LogicalResult {
+    return success();
+  };
+
+  auto verifyA5 = [&]() -> LogicalResult {
+    Type srcElemTy = getElemTy(srcTy);
+    Type dstElemTy = getElemTy(dstTy);
+
+    auto isValidCvt = [&]() -> bool {
+      if (srcElemTy.isF32()) {
+        return dstElemTy.isF16() || dstElemTy.isBF16() ||
+               dstElemTy.isInteger(32) || dstElemTy.isUnsignedInteger(32) ||
+               dstElemTy.isInteger(64) || dstElemTy.isUnsignedInteger(64);
+      }
+      if (srcElemTy.isF16()) {
+        return dstElemTy.isF32() ||
+               dstElemTy.isInteger(32) || dstElemTy.isUnsignedInteger(32) ||
+               dstElemTy.isInteger(16) || dstElemTy.isUnsignedInteger(16) ||
+               dstElemTy.isInteger(8) || dstElemTy.isUnsignedInteger(8);
+      }
+      if (srcElemTy.isInteger(32) || srcElemTy.isUnsignedInteger(32)) {
+        return dstElemTy.isF32() ||
+               dstElemTy.isInteger(16) || dstElemTy.isUnsignedInteger(16) ||
+               dstElemTy.isInteger(64) || dstElemTy.isUnsignedInteger(64);
+      }
+      if (srcElemTy.isBF16()) {
+        return dstElemTy.isF32() ||
+               dstElemTy.isInteger(32) || dstElemTy.isUnsignedInteger(32);
+      }
+      return false;
+    };
+
+    if (!isValidCvt())
+      return emitOpError("unsupported type conversion for A5");
+
+    return success();
+  };
+
+  return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
 }
 
 llvm::LogicalResult mlir::pto::TRandomOp::verify() {
@@ -6921,6 +7032,8 @@ mlir::LogicalResult mlir::pto::TPartAddOp::verify() {
     auto d = getShapeVec(dstTy);
     if (s0.size() != 2 || s1.size() != 2 || d.size() != 2)
       return emitOpError() << "expects src0/src1/dst to be rank-2 (tile-shaped)";
+    if (failed(verifyPartialValidPattern(*this, src0Ty, src1Ty, dstTy)))
+      return failure();
     return mlir::success();
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
@@ -6954,6 +7067,8 @@ mlir::LogicalResult mlir::pto::TPartMaxOp::verify() {
     if (!(e0.isInteger(32) || e0.isInteger(16) || e0.isInteger(8) ||
           e0.isF16() || e0.isBF16() || e0.isF32()))
       return emitOpError("expects A5 tpartmax element type to be i32/i16/i8/f16/bf16/f32");
+    if (failed(verifyPartialValidPattern(*this, t0, t1, td)))
+      return failure();
     return mlir::success();
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
@@ -6987,6 +7102,8 @@ mlir::LogicalResult mlir::pto::TPartMinOp::verify() {
     if (!(e0.isInteger(32) || e0.isInteger(16) || e0.isInteger(8) ||
           e0.isF16() || e0.isBF16() || e0.isF32()))
       return emitOpError("expects A5 tpartmin element type to be i32/i16/i8/f16/bf16/f32");
+    if (failed(verifyPartialValidPattern(*this, t0, t1, td)))
+      return failure();
     return mlir::success();
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
@@ -7041,6 +7158,8 @@ mlir::LogicalResult mlir::pto::TPartMulOp::verify() {
     if (s0.size() != 2 || s1.size() != 2 || d.size() != 2)
       return emitOpError()
              << "expects src0/src1/dst to be rank-2 (tile-shaped)";
+    if (failed(verifyPartialValidPattern(*this, src0Ty, src1Ty, dstTy)))
+      return failure();
     return mlir::success();
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
@@ -8619,8 +8738,8 @@ mlir::LogicalResult mlir::pto::TSelSOp::verify() {
     Type tSrc = getSrc().getType();
     Type tTmp = getTmp().getType();
     Type tDst = getDst().getType();
-    if (!isRowMajorTileBuf(tSrc) || !isRowMajorTileBuf(tDst))
-      return emitOpError("expects src and dst to use row-major layout");
+    if (!isRowMajorTileBuf(tMask) || !isRowMajorTileBuf(tSrc) || !isRowMajorTileBuf(tDst))
+      return emitOpError("expects mask, src, and dst to use row-major layout");
     Type elem = *elemOr;
     bool ok = elem.isF16() || elem.isF32();
     if (auto it = mlir::dyn_cast<mlir::IntegerType>(elem))
