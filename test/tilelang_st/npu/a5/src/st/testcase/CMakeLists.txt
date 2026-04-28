@@ -150,6 +150,8 @@ set(ALL_TESTCASES
     tcolmin
     tcolsum
     tcolprod
+    tcolargmax
+    tcolargmin
     tcolexpand
     tcolexpandadd
     tcolexpandsub
