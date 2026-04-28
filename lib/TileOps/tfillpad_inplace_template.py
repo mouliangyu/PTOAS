@@ -46,8 +46,8 @@ _DTYPE_SIGNATURES = [
 def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
     """tfillpad_inplace: skip copy phase, only fill expansion regions.
 
-    Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
-    """
+Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
+"""
     dtype = dst.element_type
     src_rows, _ = src.shape
     src_valid_rows, src_valid_cols = src.valid_shape
@@ -58,9 +58,15 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
     has_valid_expansion = (src_valid_cols < dst_valid_cols) or (src_valid_rows < dst_valid_rows)
 
     # PadValue handling - same as tfillpad_template.py
+    # Note: dtype and pad_value are compile-time known, so constexpr is valid for those.
+    # has_valid_expansion is a runtime value derived from dynamic shapes, so split the condition.
     if pto.constexpr(dtype == pto.f32):
-        if pto.constexpr(dst.pad_value == pto.PadValue.ZERO and has_valid_expansion):
-            fill_scalar = pto.f32(_NEG1_F32)
+        if pto.constexpr(dst.pad_value == pto.PadValue.ZERO):
+            # For ZERO pad_value, use -1.0 encoding only when there's valid expansion
+            if has_valid_expansion:
+                fill_scalar = pto.f32(_NEG1_F32)
+            else:
+                fill_scalar = pto.f32(0.0)
         elif pto.constexpr(dst.pad_value != pto.PadValue.NULL):
             fill_scalar = dst.pad_value.eval()
         else:
@@ -113,14 +119,12 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
 
     # Phase 2: Fill cols from src_valid_cols to dst_valid_cols-1
     # Use vstus+vstas for unaligned starting column, matching C++ TFillPad.hpp
-    # vstus signature: vstus(align, offset/i32, value, base)
-    # offset is the number of elements to store
-    if pto.constexpr(src_valid_cols < dst_valid_cols):
+    # Runtime condition: valid_shape values may be dynamic at kernel specialization time.
+    if src_valid_cols < dst_valid_cols:
         pad_cols = dst_valid_cols - src_valid_cols
-        pad_repeat_times = (pad_cols + lanes - 1) // lanes
 
         # Create fill vector once (reused across all rows)
-        fill_vec = pto.vdup(fill_scalar)
+        fill_vec = pto.vdup(fill_scalar, pto.make_mask(dtype, pto.PAT.ALL))
 
         for row in range(0, dst_valid_rows, 1):
             # Initialize align register for this row
@@ -129,22 +133,26 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
             # Get pointer to UB buffer
             base_ptr = dst.as_ptr()
 
-            # Loop with DSL range, using j as constexpr loop variable
-            for j in range(0, pad_repeat_times, 1):
-                # sreg calculation: constexpr evaluated per iteration
-                # remaining = pad_cols - j*lanes, sreg = min(remaining, lanes)
-                remaining = pad_cols - j * lanes
-                # Use constexpr to branch on sreg value
-                if pto.constexpr(remaining >= lanes):
+            # Simple loop: always iterate pad_cols times, each iteration uses min(lanes, remaining)
+            # This keeps vstus structure without complex nested branching
+            # ureg is loop-carried, updated in every iteration
+            remaining = pad_cols
+            for _ in range(0, pad_cols, lanes):
+                # Compute current iteration count (always >= 1 since loop runs)
+                # Use min to handle last partial iteration
+                if remaining >= lanes:
                     ureg = pto.vstus(ureg, lanes, fill_vec, base_ptr)
-                elif pto.constexpr(remaining > 0):
+                    remaining = remaining - lanes
+                else:
                     ureg = pto.vstus(ureg, remaining, fill_vec, base_ptr)
+                    remaining = 0
 
-            # vstas: align final address with offset=0
-            pto.vstas(ureg, fill_vec, dst[row, src_valid_cols:], 0)
+            # vstas: flush buffered bytes with offset pointing to src_valid_cols
+            pto.vstas(ureg, base_ptr, src_valid_cols)
 
     # Phase 4: Fill row expansion (rows src_rows to dst_rows-1)
-    if pto.constexpr(src_rows < dst_rows):
+    # Runtime condition: shape values may be dynamic at kernel specialization time.
+    if src_rows < dst_rows:
         for row in range(src_rows, dst_rows, 1):
             remained = dst_valid_cols
             for col in range(0, dst_valid_cols, lanes):
