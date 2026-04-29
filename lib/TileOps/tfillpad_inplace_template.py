@@ -15,7 +15,8 @@ Semantic (based on C++ TFillPad.hpp reference):
 Strategy (inplace mode):
   - Skip Phase 1+3: Copy phases (data already in buffer)
   - Phase 2: Fill cols from src_valid_cols to dst_valid_cols-1 with FillPadVal
-  - Phase 4: Fill row expansion
+
+Note: Row expansion is not handled in inplace mode since src.shape == dst.shape.
 """
 
 import tilelang_dsl as pto
@@ -49,9 +50,9 @@ def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
 Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
 """
     dtype = dst.element_type
-    src_rows, _ = src.shape
+    _, _ = src.shape
     src_valid_rows, src_valid_cols = src.valid_shape
-    dst_rows, dst_cols = dst.shape
+    _, _ = dst.shape
     dst_valid_rows, dst_valid_cols = dst.valid_shape
 
     lanes = pto.get_lanes(dtype)
@@ -122,17 +123,13 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
     # Runtime condition: valid_shape values may be dynamic at kernel specialization time.
     if src_valid_cols < dst_valid_cols:
         pad_cols = dst_valid_cols - src_valid_cols
-
         # Create fill vector once (reused across all rows)
         fill_vec = pto.vdup(fill_scalar, pto.make_mask(dtype, pto.PAT.ALL))
-
-        for row in range(0, dst_valid_rows, 1):
+        for _ in range(0, dst_valid_rows, 1):
             # Initialize align register for this row
             ureg = pto.init_align()
-
             # Get pointer to UB buffer
             base_ptr = dst.as_ptr()
-
             # Simple loop: always iterate pad_cols times, each iteration uses min(lanes, remaining)
             # This keeps vstus structure without complex nested branching
             # ureg is loop-carried, updated in every iteration
@@ -146,18 +143,6 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
                 else:
                     ureg = pto.vstus(ureg, remaining, fill_vec, base_ptr)
                     remaining = 0
-
             # vstas: flush buffered bytes with offset pointing to src_valid_cols
             pto.vstas(ureg, base_ptr, src_valid_cols)
-
-    # Phase 4: Fill row expansion (rows src_rows to dst_rows-1)
-    # Runtime condition: shape values may be dynamic at kernel specialization time.
-    if src_rows < dst_rows:
-        for row in range(src_rows, dst_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
-
     return
