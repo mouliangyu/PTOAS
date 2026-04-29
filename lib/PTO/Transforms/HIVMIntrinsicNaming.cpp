@@ -883,7 +883,7 @@ FailureOr<IntrinsicSelection> selectStoreIntrinsic(Operation *op) {
     std::string dstElem = getElementTypeFragment(
         cast<pto::PtrType>(load.getDestination().getType()).getElementType());
     usedFields = {"family=load_cbuf_to_cb", "src=" + srcElem, "dst=" + dstElem,
-                  "shape=i64xk_n"};
+                  "shape=2dv2_control"};
     if (srcElem.empty()) {
       missingFields.push_back("src_element_type_mapping");
       return makeUnresolved(op, "load_cbuf_to_cb",

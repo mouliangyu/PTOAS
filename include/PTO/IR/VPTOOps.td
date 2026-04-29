@@ -544,15 +544,23 @@ def PTO_LoadCbufToCbOp : PTO_Op<"load_cbuf_to_cb"> {
   let arguments = (ins
     PTO_BufferType:$source,
     PTO_BufferType:$destination,
-    I64:$k,
-    I64:$n,
+    I64:$m_start,
+    I64:$k_start,
+    I64:$m_step,
+    I64:$k_step,
+    I64:$src_stride,
+    I64:$dst_stride,
     DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
 
   let assemblyFormat = [{
-    $source `,` $destination `,` $k `,` $n attr-dict `:` type($source) `,` type($destination) `,` type($k) `,` type($n)
+    $source `,` $destination `,` $m_start `,` $k_start `,` $m_step `,`
+    $k_step `,` $src_stride `,` $dst_stride attr-dict `:` type($source) `,`
+    type($destination) `,` type($m_start) `,` type($k_start) `,`
+    type($m_step) `,` type($k_step) `,` type($src_stride) `,`
+    type($dst_stride)
   }];
 }
 
@@ -1937,21 +1945,14 @@ def PTO_RightLoadOp : PTO_Op<"right_load", [
     PTO_BufferType:$destination,
     I64:$k,
     I64:$n,
-    I64:$loop3_count,
-    I64:$loop3_src_stride,
-    I64:$loop3_dst_stride,
-    I64:$loop0_src_stride,
     DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
 
   let assemblyFormat = [{
-    $source `,` $destination `,` $k `,` $n `,` $loop3_count `,`
-    $loop3_src_stride `,` $loop3_dst_stride `,` $loop0_src_stride
-    attr-dict `:` type($source) `,` type($destination) `,` type($k) `,`
-    type($n) `,` type($loop3_count) `,` type($loop3_src_stride) `,`
-    type($loop3_dst_stride) `,` type($loop0_src_stride)
+    $source `,` $destination `,` $k `,` $n attr-dict `:` type($source) `,`
+    type($destination) `,` type($k) `,` type($n)
   }];
 }
 

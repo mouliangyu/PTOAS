@@ -27,8 +27,8 @@ Operands `%n_burst`, `%len_burst`, `%src_stride`, and `%dst_stride` configure th
 
 ## `pto.load_cbuf_to_cb`
 
-- **syntax:** `pto.load_cbuf_to_cb %src, %dst, %k, %n : !pto.ptr<…, ub>, !pto.ptr<…, ub>, i64, i64`
-- **semantics:** L1 (`cbuf`) → L0B load. `%src` is `cbuf`; `%dst` is UB-backed L0B staging.
+- **syntax:** `pto.load_cbuf_to_cb %src, %dst, %m_start, %k_start, %m_step, %k_step, %src_stride, %dst_stride : !pto.ptr<…, mat>, !pto.ptr<…, right>, i64, i64, i64, i64, i64, i64`
+- **semantics:** L1 (`cbuf`) → L0B 2Dv2 load with explicit hardware control. `%m_start`, `%k_start`, `%m_step`, and `%k_step` pack into `X_m`; `%src_stride` and `%dst_stride` pack into `X_t`. The optional `transpose` attribute maps to the instruction `#transpose` immediate.
 
 ---
 
@@ -158,9 +158,9 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 
 ### `pto.right_load`
 
-- **syntax:** `pto.right_load %src, %dst, %k, %n, %loop3_count, %loop3_src_stride, %loop3_dst_stride, %loop0_src_stride : !pto.ptr<..., mat>, !pto.ptr<..., right>, i64, i64, i64, i64, i64, i64`
-- **semantics:** structured L1→L0B helper for matmul right operand loading. `%loop3_count`, `%loop3_src_stride`, and `%loop3_dst_stride` describe the `LOOP3_PARA` register fields `LOOP3_PARA[15:0]`, `LOOP3_PARA[31:16]`, and `LOOP3_PARA[63:32]`. `%loop0_src_stride` describes `CHANNEL_PARA[63:48]`, the loop0 source stride in units of `C0_SIZE`.
-- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.load_cbuf_to_cb`
+- **syntax:** `pto.right_load %src, %dst, %k, %n : !pto.ptr<..., mat>, !pto.ptr<..., right>, i64, i64`
+- **semantics:** structured L1→L0B helper for matmul right operand loading. It derives the `LOAD_L1_TO_L0B_2Dv2` start, step, and stride fields from `%k`, `%n`, the source element type, and the optional `transpose` attribute.
+- **expands to:** `pto.load_cbuf_to_cb`
 
 ### `pto.acc_store`
 

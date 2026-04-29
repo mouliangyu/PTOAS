@@ -1547,20 +1547,18 @@ packLoadCbufToCaConfig1(Operation *anchor, Value m) {
 }
 
 static FailureOr<Value>
-packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n,
-                        Type elementType, bool transpose) {
+packLoadCbufToCbConfig0(Operation *anchor, Value mStart, Value kStart,
+                        Value mStep, Value kStep) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
 
-  Value kI64 = castIntegerLikeTo(anchor, k, builder.getI64Type());
-  Value nI64 = castIntegerLikeTo(anchor, n, builder.getI64Type());
-  if (!kI64 || !nI64)
+  Value mStartI64 = castIntegerLikeTo(anchor, mStart, builder.getI64Type());
+  Value kStartI64 = castIntegerLikeTo(anchor, kStart, builder.getI64Type());
+  Value mStepI64 = castIntegerLikeTo(anchor, mStep, builder.getI64Type());
+  Value kStepI64 = castIntegerLikeTo(anchor, kStep, builder.getI64Type());
+  if (!mStartI64 || !kStartI64 || !mStepI64 || !kStepI64)
     return failure();
-  unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
-  if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
-    return failure();
-  uint64_t elemBytes = elemBitWidth / 8;
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
@@ -1569,90 +1567,33 @@ packLoadCbufToCbConfig0(Operation *anchor, Value k, Value n,
   auto bitOr = [&](Value lhs, Value rhs) -> Value {
     return builder.create<arith::OrIOp>(loc, lhs, rhs);
   };
-  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
-    Value bias = getI64Constant(builder, loc, divisor - 1);
-    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
-    return builder.create<arith::DivUIOp>(loc, sum,
-                                          getI64Constant(builder, loc, divisor));
-  };
 
-  Value mStart = getI64Constant(builder, loc, 0);
-  Value kStart = getI64Constant(builder, loc, 0);
-  Value mStep;
-  Value kStep;
-  if (!transpose) {
-    mStep = ceilDivConst(nI64, 16);
-    Value kBytes = builder.create<arith::MulIOp>(
-        loc, kI64, getI64Constant(builder, loc, elemBytes));
-    kStep = ceilDivConst(kBytes, 32);
-  } else {
-    uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
-    Value kAlign = ceilDivConst(kI64, c0Size);
-    kAlign = builder.create<arith::MulIOp>(loc, kAlign,
-                                           getI64Constant(builder, loc, c0Size));
-    Value nAlign = ceilDivConst(nI64, c0Size);
-    nAlign = builder.create<arith::MulIOp>(loc, nAlign,
-                                           getI64Constant(builder, loc, c0Size));
-    mStep = ceilDivConst(kAlign, 16);
-    Value nBytes = builder.create<arith::MulIOp>(
-        loc, nAlign, getI64Constant(builder, loc, elemBytes));
-    kStep = ceilDivConst(nBytes, 32);
-  }
-
-  Value config0 = mStart;
-  config0 = bitOr(config0, shl(kStart, 16));
-  config0 = bitOr(config0, shl(mStep, 32));
-  config0 = bitOr(config0, shl(kStep, 40));
+  Value config0 = mStartI64;
+  config0 = bitOr(config0, shl(kStartI64, 16));
+  config0 = bitOr(config0, shl(mStepI64, 32));
+  config0 = bitOr(config0, shl(kStepI64, 40));
   return config0;
 }
 
 static FailureOr<Value>
-packLoadCbufToCbConfig1(Operation *anchor, Value k, Value n, Type elementType,
-                        bool transpose) {
+packLoadCbufToCbConfig1(Operation *anchor, Value srcStride, Value dstStride) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
 
-  Value kI64 = castIntegerLikeTo(anchor, k, builder.getI64Type());
-  Value nI64 = castIntegerLikeTo(anchor, n, builder.getI64Type());
-  if (!kI64 || !nI64)
+  Value srcStrideI64 =
+      castIntegerLikeTo(anchor, srcStride, builder.getI64Type());
+  Value dstStrideI64 =
+      castIntegerLikeTo(anchor, dstStride, builder.getI64Type());
+  if (!srcStrideI64 || !dstStrideI64)
     return failure();
-  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
-    Value bias = getI64Constant(builder, loc, divisor - 1);
-    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
-    return builder.create<arith::DivUIOp>(loc, sum,
-                                          getI64Constant(builder, loc, divisor));
-  };
-  Value stride;
-  if (!transpose) {
-    stride = ceilDivConst(nI64, 16);
-  } else {
-    unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
-    if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
-      return failure();
-    uint64_t elemBytes = elemBitWidth / 8;
-    uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
-    Value kAlign = ceilDivConst(kI64, c0Size);
-    kAlign = builder.create<arith::MulIOp>(loc, kAlign,
-                                           getI64Constant(builder, loc, c0Size));
-    Value nAlign = ceilDivConst(nI64, c0Size);
-    nAlign = builder.create<arith::MulIOp>(loc, nAlign,
-                                           getI64Constant(builder, loc, c0Size));
-    Value srcStride = ceilDivConst(kAlign, 16);
-    Value dstStride = ceilDivConst(nAlign, 16);
-    auto shl = [&](Value value, uint64_t amount) -> Value {
-      return builder.create<arith::ShLIOp>(loc, value,
-                                           getI64Constant(builder, loc, amount));
-    };
-    return builder.create<arith::OrIOp>(loc, srcStride, shl(dstStride, 16))
-        .getResult();
-  }
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
                                          getI64Constant(builder, loc, amount));
   };
-  return builder.create<arith::OrIOp>(loc, stride, shl(stride, 16)).getResult();
+  return builder.create<arith::OrIOp>(loc, srcStrideI64, shl(dstStrideI64, 16))
+      .getResult();
 }
 
 static FailureOr<Value> packMadConfig(Operation *anchor, Value m, Value n,
@@ -4137,9 +4078,14 @@ public:
                                 ConversionPatternRewriter &rewriter) const override {
     Value sourceRaw = adaptor.getSource();
     Value destinationRaw = adaptor.getDestination();
-    Value k = adaptor.getK();
-    Value n = adaptor.getN();
-    if (!sourceRaw || !destinationRaw || !k || !n)
+    Value mStart = adaptor.getMStart();
+    Value kStart = adaptor.getKStart();
+    Value mStep = adaptor.getMStep();
+    Value kStep = adaptor.getKStep();
+    Value srcStride = adaptor.getSrcStride();
+    Value dstStride = adaptor.getDstStride();
+    if (!sourceRaw || !destinationRaw || !mStart || !kStart || !mStep ||
+        !kStep || !srcStride || !dstStride)
       return rewriter.notifyMatchFailure(op, "expected converted operands");
 
     if (!isa<LLVM::LLVMPointerType>(sourceRaw.getType()) ||
@@ -4159,12 +4105,11 @@ public:
     if (failed(source) || failed(destination))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/cb pointer spaces");
 
-    Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
     bool transpose = op.getTranspose();
     FailureOr<Value> config0 =
-        packLoadCbufToCbConfig0(op, k, n, sourceElemType, transpose);
+        packLoadCbufToCbConfig0(op, mStart, kStart, mStep, kStep);
     FailureOr<Value> config1 =
-        packLoadCbufToCbConfig1(op, k, n, sourceElemType, transpose);
+        packLoadCbufToCbConfig1(op, srcStride, dstStride);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op, "failed to pack load_cbuf_to_cb config");
     Value transposeValue =
@@ -4275,10 +4220,30 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/cb pointer spaces");
 
     Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
-    FailureOr<Value> config0 = packLoadCbufToCbConfig0(
-        op, adaptor.getK(), adaptor.getN(), sourceElemType, false);
-    FailureOr<Value> config1 = packLoadCbufToCbConfig1(
-        op, adaptor.getK(), adaptor.getN(), sourceElemType, false);
+    unsigned elemBitWidth = sourceElemType.getIntOrFloatBitWidth();
+    if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+      return rewriter.notifyMatchFailure(op,
+                                         "unsupported load_cbuf_to_cb_mx element type");
+    uint64_t elemBytes = elemBitWidth / 8;
+    Location loc = op.getLoc();
+    auto constant = [&](uint64_t value) -> Value {
+      return rewriter.create<arith::ConstantIntOp>(loc, value, 64);
+    };
+    auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+      Value bias = constant(divisor - 1);
+      Value sum = rewriter.create<arith::AddIOp>(loc, value, bias);
+      return rewriter.create<arith::DivUIOp>(loc, sum, constant(divisor));
+    };
+    Value zero = constant(0);
+    Value mStep = ceilDivConst(adaptor.getN(), 16);
+    Value kBytes =
+        rewriter.create<arith::MulIOp>(loc, adaptor.getK(), constant(elemBytes));
+    Value kStep = ceilDivConst(kBytes, 32);
+    Value stride = ceilDivConst(adaptor.getN(), 16);
+    FailureOr<Value> config0 =
+        packLoadCbufToCbConfig0(op, zero, zero, mStep, kStep);
+    FailureOr<Value> config1 =
+        packLoadCbufToCbConfig1(op, stride, stride);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op,
                                          "failed to pack load_cbuf_to_cb_mx config");
