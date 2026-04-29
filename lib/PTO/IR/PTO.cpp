@@ -4271,15 +4271,7 @@ llvm::LogicalResult mlir::pto::TCvtOp::verify() {
   if (failed(verifyTileBufSameValidShape(*this, srcTy, dstTy, "src", "dst")))
     return failure();
 
-  auto verifyA2A3 = [&]() -> LogicalResult {
-    return success();
-  };
-
-  auto verifyA5 = [&]() -> LogicalResult {
-    return success();
-  };
-
-  return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
+  return success();
 }
 
 llvm::LogicalResult mlir::pto::TRandomOp::verify() {
