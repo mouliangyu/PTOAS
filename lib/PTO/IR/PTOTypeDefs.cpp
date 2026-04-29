@@ -433,15 +433,39 @@ static LogicalResult parseCompactTileBufFields(AsmParser &parser,
 static Type buildTileBufType(AsmParser &parser,
                              const ParsedTileBufFields &fields) {
   MLIRContext *ctx = parser.getContext();
+  auto emitError = [&]() -> InFlightDiagnostic {
+    return parser.emitError(parser.getNameLoc());
+  };
 
+  // 1. Shape positivity check
   if (fields.rows < 0 || fields.cols < 0) {
-    parser.emitError(parser.getNameLoc(), "rows/cols must be non-negative");
+    emitError() << "rows/cols must be non-negative";
+    return Type();
+  }
+  if (fields.rows == 0) {
+    emitError() << "tile_buf rows must be positive, got 0";
+    return Type();
+  }
+  if (fields.cols == 0) {
+    emitError() << "tile_buf cols must be positive, got 0";
+    return Type();
+  }
+
+  // 2. ValidShape bounds check
+  int64_t vrow = fields.vrow < 0 ? ShapedType::kDynamic : fields.vrow;
+  int64_t vcol = fields.vcol < 0 ? ShapedType::kDynamic : fields.vcol;
+  if (vrow != ShapedType::kDynamic && vrow > fields.rows) {
+    emitError() << "tile_buf valid_shape[0] (" << vrow << ") exceeds shape[0] (" << fields.rows << ")";
+    return Type();
+  }
+  if (vcol != ShapedType::kDynamic && vcol > fields.cols) {
+    emitError() << "tile_buf valid_shape[1] (" << vcol << ") exceeds shape[1] (" << fields.cols << ")";
     return Type();
   }
 
   auto memorySpace = resolveTileBufMemorySpace(fields.locStr);
   if (!memorySpace.has_value()) {
-    parser.emitError(parser.getNameLoc(), "unknown loc: ") << fields.locStr;
+    emitError() << "unknown loc: " << fields.locStr;
     return Type();
   }
 
@@ -450,28 +474,96 @@ static Type buildTileBufType(AsmParser &parser,
   auto pv = symbolizePadValue(fields.padInt);
   auto compact = symbolizeCompactMode(fields.compactInt);
   if (!bl.has_value()) {
-    parser.emitError(parser.getNameLoc(), "unknown blayout: ")
-        << fields.blayoutStr;
+    emitError() << "unknown blayout: " << fields.blayoutStr;
     return Type();
   }
   if (!sl.has_value()) {
-    parser.emitError(parser.getNameLoc(), "unknown slayout: ")
-        << fields.slayoutStr;
+    emitError() << "unknown slayout: " << fields.slayoutStr;
     return Type();
   }
   if (!pv.has_value()) {
-    parser.emitError(parser.getNameLoc(), "unknown pad: ") << fields.padInt;
+    emitError() << "unknown pad: " << fields.padInt;
     return Type();
   }
   if (!compact.has_value()) {
-    parser.emitError(parser.getNameLoc(), "unknown compact: ")
-        << fields.compactInt;
+    emitError() << "unknown compact: " << fields.compactInt;
+    return Type();
+  }
+
+  // 3. Fractal value check (only 32/512/1024 allowed)
+  if (fields.fractal != 32 && fields.fractal != 512 && fields.fractal != 1024) {
+    emitError() << "unsupported s_fractal_size: " << fields.fractal << ", must be one of {32, 512, 1024}";
     return Type();
   }
 
   BLayout effectiveBLayout =
       resolveTileBufBLayout(parser.getContext(), memorySpace.value(),
                             bl.value());
+
+  int32_t blayoutInt = static_cast<int32_t>(effectiveBLayout);
+  int32_t slayoutInt = static_cast<int32_t>(sl.value());
+
+  // 4. Get element type byte size
+  unsigned elemBytes = 0;
+  if (fields.dtype.isF16() || fields.dtype.isBF16()) elemBytes = 2;
+  else if (fields.dtype.isF32() || fields.dtype.isInteger(32)) elemBytes = 4;
+  else if (fields.dtype.isF64()) elemBytes = 8;
+  else if (fields.dtype.isInteger(8)) elemBytes = 1;
+  else if (fields.dtype.isInteger(16)) elemBytes = 2;
+
+  // 5. 32-byte alignment check (unboxed layout: slayout == none_box)
+  const unsigned alignedSize = 32;
+  if (slayoutInt == 0 && elemBytes > 0) { // none_box
+    if (blayoutInt == 0) { // row_major
+      if ((fields.cols * elemBytes) % alignedSize != 0) {
+        emitError() << "tile_buf with blayout=row_major, slayout=none_box requires "
+                    << "cols * elem_bytes to be 32-byte aligned, "
+                    << "but cols=" << fields.cols << ", elem_bytes=" << elemBytes
+                    << ", total=" << (fields.cols * elemBytes) << " bytes";
+        return Type();
+      }
+    } else if (blayoutInt == 1) { // col_major
+      if ((fields.rows * elemBytes) % alignedSize != 0) {
+        emitError() << "tile_buf with blayout=col_major, slayout=none_box requires "
+                    << "rows * elem_bytes to be 32-byte aligned, "
+                    << "but rows=" << fields.rows << ", elem_bytes=" << elemBytes
+                    << ", total=" << (fields.rows * elemBytes) << " bytes";
+        return Type();
+      }
+    }
+  }
+
+  // 6. Boxed layout divisibility check (slayout != none_box)
+  if (slayoutInt != 0 && elemBytes > 0) { // boxed layout
+    int64_t innerRows = 0, innerCols = 0;
+    // Calculate innerRows/innerCols
+    if (fields.fractal == 1024) {
+      innerRows = 16; innerCols = 16;
+    } else if (fields.fractal == 32) {
+      innerRows = 16; innerCols = 2;
+    } else if (fields.fractal == 512) {
+      if (slayoutInt == 1) { // row_major
+        innerRows = 16; innerCols = 32 / elemBytes;
+      } else if (slayoutInt == 2) { // col_major
+        innerRows = 32 / elemBytes; innerCols = 16;
+      }
+    }
+
+    if (innerRows > 0 && innerCols > 0) {
+      // Rows divisibility check (skip when rows==1)
+      if (fields.rows != 1 && fields.rows % innerRows != 0) {
+        emitError() << "tile_buf boxed layout requires rows to be divisible by inner_rows, "
+                    << "got rows=" << fields.rows << ", inner_rows=" << innerRows;
+        return Type();
+      }
+      // Cols divisibility check
+      if (fields.cols % innerCols != 0) {
+        emitError() << "tile_buf boxed layout requires cols to be divisible by inner_cols, "
+                    << "got cols=" << fields.cols << ", inner_cols=" << innerCols;
+        return Type();
+      }
+    }
+  }
 
   auto blAttr = BLayoutAttr::get(ctx, effectiveBLayout);
   auto slAttr = SLayoutAttr::get(ctx, sl.value());
