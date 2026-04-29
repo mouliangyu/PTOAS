@@ -4276,36 +4276,6 @@ llvm::LogicalResult mlir::pto::TCvtOp::verify() {
   };
 
   auto verifyA5 = [&]() -> LogicalResult {
-    Type srcElemTy = getElemTy(srcTy);
-    Type dstElemTy = getElemTy(dstTy);
-
-    auto isValidCvt = [&]() -> bool {
-      if (srcElemTy.isF32()) {
-        return dstElemTy.isF16() || dstElemTy.isBF16() ||
-               dstElemTy.isInteger(32) || dstElemTy.isUnsignedInteger(32) ||
-               dstElemTy.isInteger(64) || dstElemTy.isUnsignedInteger(64);
-      }
-      if (srcElemTy.isF16()) {
-        return dstElemTy.isF32() ||
-               dstElemTy.isInteger(32) || dstElemTy.isUnsignedInteger(32) ||
-               dstElemTy.isInteger(16) || dstElemTy.isUnsignedInteger(16) ||
-               dstElemTy.isInteger(8) || dstElemTy.isUnsignedInteger(8);
-      }
-      if (srcElemTy.isInteger(32) || srcElemTy.isUnsignedInteger(32)) {
-        return dstElemTy.isF32() ||
-               dstElemTy.isInteger(16) || dstElemTy.isUnsignedInteger(16) ||
-               dstElemTy.isInteger(64) || dstElemTy.isUnsignedInteger(64);
-      }
-      if (srcElemTy.isBF16()) {
-        return dstElemTy.isF32() ||
-               dstElemTy.isInteger(32) || dstElemTy.isUnsignedInteger(32);
-      }
-      return false;
-    };
-
-    if (!isValidCvt())
-      return emitOpError("unsupported type conversion for A5");
-
     return success();
   };
 
