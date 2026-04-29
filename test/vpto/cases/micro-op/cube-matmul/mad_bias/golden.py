@@ -7,7 +7,6 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 
-
 import argparse
 from pathlib import Path
 
@@ -15,19 +14,21 @@ import numpy as np
 
 M = 16
 N = 16
-K = 64
+K = 16
 
 
 def generate(output_dir: Path) -> None:
-    a = np.zeros((M, K), dtype=np.uint8)
-    b = np.zeros((K, N), dtype=np.uint8)
+    a = np.zeros((M, K), dtype=np.float16)
+    b = np.zeros((K, N), dtype=np.float16)
     c = np.zeros((M, N), dtype=np.float32)
+    bias = np.zeros((N,), dtype=np.float16)
     golden_c = np.zeros((M, N), dtype=np.float32)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     a.reshape(-1).tofile(output_dir / "v1.bin")
     b.reshape(-1).tofile(output_dir / "v2.bin")
     c.reshape(-1).tofile(output_dir / "v3.bin")
+    bias.reshape(-1).tofile(output_dir / "v4.bin")
     golden_c.reshape(-1).tofile(output_dir / "golden_v3.bin")
 
 

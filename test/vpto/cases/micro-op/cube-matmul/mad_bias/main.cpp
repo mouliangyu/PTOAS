@@ -8,9 +8,9 @@
 
 #include "test_common.h"
 #include "acl/acl.h"
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstdint>
 
 using namespace PtoTestCommon;
 
@@ -30,7 +30,7 @@ struct MrgSortExecutedNumList {
       std::fprintf(stderr, "[ERROR] %s failed: %d (%s:%d)\n", #expr,             \
                    (int)_ret, __FILE__, __LINE__);                               \
       const char *_recent = aclGetRecentErrMsg();                                \
-      if (_recent != nullptr && _recent[0] != '\0')                             \
+      if (_recent != nullptr && _recent[0] != '\0')                              \
         std::fprintf(stderr, "[ERROR] RecentErrMsg: %s\n", _recent);             \
       rc = 1;                                                                    \
       goto cleanup;                                                              \
@@ -40,33 +40,38 @@ struct MrgSortExecutedNumList {
 #define FILE_CHECK(expr, path)                                                   \
   do {                                                                           \
     if (!(expr)) {                                                               \
-      std::fprintf(stderr, "[ERROR] file operation failed: %s (%s:%d)\n",       \
+      std::fprintf(stderr, "[ERROR] file operation failed: %s (%s:%d)\n",        \
                    path, __FILE__, __LINE__);                                    \
       rc = 1;                                                                    \
       goto cleanup;                                                              \
     }                                                                            \
   } while (0)
 
-void LaunchMad_mx_kernel(uint8_t *a, uint8_t *b, float *c, void *stream);
+void LaunchMad_bias_kernel(__fp16 *a, __fp16 *b, float *c, __fp16 *bias,
+                           void *stream);
 
 int main() {
   constexpr size_t kM = 16;
   constexpr size_t kN = 16;
-  constexpr size_t kK = 64;
+  constexpr size_t kK = 16;
   constexpr size_t aElem = kM * kK;
   constexpr size_t bElem = kK * kN;
   constexpr size_t cElem = kM * kN;
+  constexpr size_t biasElem = kN;
 
-  constexpr size_t aSize = aElem * sizeof(uint8_t);
-  constexpr size_t bSize = bElem * sizeof(uint8_t);
+  constexpr size_t aSize = aElem * sizeof(__fp16);
+  constexpr size_t bSize = bElem * sizeof(__fp16);
   constexpr size_t cSize = cElem * sizeof(float);
+  constexpr size_t biasSize = biasElem * sizeof(__fp16);
 
-  uint8_t *aHost = nullptr;
-  uint8_t *bHost = nullptr;
+  __fp16 *aHost = nullptr;
+  __fp16 *bHost = nullptr;
   float *cHost = nullptr;
-  uint8_t *aDevice = nullptr;
-  uint8_t *bDevice = nullptr;
+  __fp16 *biasHost = nullptr;
+  __fp16 *aDevice = nullptr;
+  __fp16 *bDevice = nullptr;
   float *cDevice = nullptr;
+  __fp16 *biasDevice = nullptr;
 
   int rc = 0;
   bool aclInited = false;
@@ -86,9 +91,11 @@ int main() {
   ACL_CHECK(aclrtMallocHost((void **)(&aHost), aSize));
   ACL_CHECK(aclrtMallocHost((void **)(&bHost), bSize));
   ACL_CHECK(aclrtMallocHost((void **)(&cHost), cSize));
+  ACL_CHECK(aclrtMallocHost((void **)(&biasHost), biasSize));
   ACL_CHECK(aclrtMalloc((void **)&aDevice, aSize, ACL_MEM_MALLOC_HUGE_FIRST));
   ACL_CHECK(aclrtMalloc((void **)&bDevice, bSize, ACL_MEM_MALLOC_HUGE_FIRST));
   ACL_CHECK(aclrtMalloc((void **)&cDevice, cSize, ACL_MEM_MALLOC_HUGE_FIRST));
+  ACL_CHECK(aclrtMalloc((void **)&biasDevice, biasSize, ACL_MEM_MALLOC_HUGE_FIRST));
 
   inputSize = aSize;
   FILE_CHECK(ReadFile("./v1.bin", inputSize, aHost, aSize) && inputSize == aSize,
@@ -99,12 +106,18 @@ int main() {
   inputSize = cSize;
   FILE_CHECK(ReadFile("./v3.bin", inputSize, cHost, cSize) && inputSize == cSize,
              "./v3.bin");
+  inputSize = biasSize;
+  FILE_CHECK(ReadFile("./v4.bin", inputSize, biasHost, biasSize) &&
+                 inputSize == biasSize,
+             "./v4.bin");
 
   ACL_CHECK(aclrtMemcpy(aDevice, aSize, aHost, aSize, ACL_MEMCPY_HOST_TO_DEVICE));
   ACL_CHECK(aclrtMemcpy(bDevice, bSize, bHost, bSize, ACL_MEMCPY_HOST_TO_DEVICE));
   ACL_CHECK(aclrtMemcpy(cDevice, cSize, cHost, cSize, ACL_MEMCPY_HOST_TO_DEVICE));
+  ACL_CHECK(aclrtMemcpy(biasDevice, biasSize, biasHost, biasSize,
+                        ACL_MEMCPY_HOST_TO_DEVICE));
 
-  LaunchMad_mx_kernel(aDevice, bDevice, cDevice, stream);
+  LaunchMad_bias_kernel(aDevice, bDevice, cDevice, biasDevice, stream);
   ACL_CHECK(aclrtSynchronizeStream(stream));
 
   ACL_CHECK(aclrtMemcpy(cHost, cSize, cDevice, cSize, ACL_MEMCPY_DEVICE_TO_HOST));
@@ -114,9 +127,11 @@ cleanup:
   aclrtFree(aDevice);
   aclrtFree(bDevice);
   aclrtFree(cDevice);
+  aclrtFree(biasDevice);
   aclrtFreeHost(aHost);
   aclrtFreeHost(bHost);
   aclrtFreeHost(cHost);
+  aclrtFreeHost(biasHost);
   if (stream != nullptr)
     aclrtDestroyStream(stream);
   if (deviceSet)
