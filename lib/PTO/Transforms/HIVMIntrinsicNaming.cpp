@@ -969,6 +969,16 @@ FailureOr<IntrinsicSelection> selectStoreIntrinsic(Operation *op) {
     return makeResolved(op, "llvm.hivm.MOV.UB.TO.UB.v310", usedFields, "");
   }
 
+  if (isa<pto::CopyCbufToUbufOp>(op)) {
+    usedFields = {"family=copy_cbuf_to_ubuf"};
+    return makeResolved(op, "llvm.hivm.MOV.L1.TO.UB.v310", usedFields, "");
+  }
+
+  if (isa<pto::CopyUbufToCbufOp>(op)) {
+    usedFields = {"family=copy_ubuf_to_cbuf"};
+    return makeResolved(op, "llvm.hivm.MOV.UB.TO.L1.v310", usedFields, "");
+  }
+
   return failure();
 }
 

@@ -323,6 +323,54 @@ def PTO_CopyUbufToUbufOp : PTO_Op<"copy_ubuf_to_ubuf"> {
   }];
 }
 
+def PTO_CopyCbufToUbufOp : PTO_Op<"copy_cbuf_to_ubuf", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$sid,
+    I64:$n_burst,
+    I64:$len_burst,
+    I64:$src_stride,
+    I64:$dst_stride
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $sid `,` $n_burst `,` $len_burst `,` $src_stride `,` $dst_stride
+    attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,` type($n_burst) `,`
+    type($len_burst) `,` type($src_stride) `,` type($dst_stride)
+  }];
+}
+
+def PTO_CopyUbufToCbufOp : PTO_Op<"copy_ubuf_to_cbuf", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$sid,
+    I64:$n_burst,
+    I64:$len_burst,
+    I64:$src_stride,
+    I64:$dst_stride
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $sid `,` $n_burst `,` $len_burst `,` $src_stride `,` $dst_stride
+    attr-dict `:` type($source) `,` type($destination) `,` type($sid) `,` type($n_burst) `,`
+    type($len_burst) `,` type($src_stride) `,` type($dst_stride)
+  }];
+}
+
 def PTO_DmaCopyOp : PTO_Op<"dma_copy", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -1067,7 +1115,9 @@ def PTO_MadOp : PTO_Op<"mad", [
     PTO_BufferType:$dst,
     I64:$m,
     I64:$n,
-    I64:$k
+    I64:$k,
+    DefaultValuedAttr<I32Attr, "0">:$unit_flag_ctrl,
+    DefaultValuedAttr<BoolAttr, "true">:$disable_gemv
   );
   let results = (outs);
 
@@ -1075,6 +1125,51 @@ def PTO_MadOp : PTO_Op<"mad", [
 
   let assemblyFormat = [{
     $lhs `,` $rhs `,` $dst `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($m) `,` type($n) `,` type($k)
+  }];
+}
+
+def PTO_MadAccOp : PTO_Op<"mad_acc", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$lhs,
+    PTO_BufferType:$rhs,
+    PTO_BufferType:$dst,
+    I64:$m,
+    I64:$n,
+    I64:$k,
+    DefaultValuedAttr<I32Attr, "0">:$unit_flag_ctrl,
+    DefaultValuedAttr<BoolAttr, "true">:$disable_gemv
+  );
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs `,` $dst `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($m) `,` type($n) `,` type($k)
+  }];
+}
+
+def PTO_MadBiasOp : PTO_Op<"mad_bias", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$lhs,
+    PTO_BufferType:$rhs,
+    PTO_BufferType:$dst,
+    PTO_BufferType:$bias,
+    I64:$m,
+    I64:$n,
+    I64:$k,
+    DefaultValuedAttr<I32Attr, "0">:$unit_flag_ctrl,
+    DefaultValuedAttr<BoolAttr, "true">:$disable_gemv
+  );
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs `,` $dst `,` $bias `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($bias) `,` type($m) `,` type($n) `,` type($k)
   }];
 }
 
@@ -1087,7 +1182,9 @@ def PTO_MadMxOp : PTO_Op<"mad_mx", [
     PTO_BufferType:$dst,
     I64:$m,
     I64:$n,
-    I64:$k
+    I64:$k,
+    DefaultValuedAttr<I32Attr, "0">:$unit_flag_ctrl,
+    DefaultValuedAttr<BoolAttr, "true">:$disable_gemv
   );
   let results = (outs);
 
@@ -1095,6 +1192,51 @@ def PTO_MadMxOp : PTO_Op<"mad_mx", [
 
   let assemblyFormat = [{
     $lhs `,` $rhs `,` $dst `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($m) `,` type($n) `,` type($k)
+  }];
+}
+
+def PTO_MadMxAccOp : PTO_Op<"mad_mx_acc", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$lhs,
+    PTO_BufferType:$rhs,
+    PTO_BufferType:$dst,
+    I64:$m,
+    I64:$n,
+    I64:$k,
+    DefaultValuedAttr<I32Attr, "0">:$unit_flag_ctrl,
+    DefaultValuedAttr<BoolAttr, "true">:$disable_gemv
+  );
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs `,` $dst `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($m) `,` type($n) `,` type($k)
+  }];
+}
+
+def PTO_MadMxBiasOp : PTO_Op<"mad_mx_bias", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$lhs,
+    PTO_BufferType:$rhs,
+    PTO_BufferType:$dst,
+    PTO_BufferType:$bias,
+    I64:$m,
+    I64:$n,
+    I64:$k,
+    DefaultValuedAttr<I32Attr, "0">:$unit_flag_ctrl,
+    DefaultValuedAttr<BoolAttr, "true">:$disable_gemv
+  );
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $lhs `,` $rhs `,` $dst `,` $bias `,` $m `,` $n `,` $k attr-dict `:` type($lhs) `,` type($rhs) `,` type($dst) `,` type($bias) `,` type($m) `,` type($n) `,` type($k)
   }];
 }
 
@@ -1658,6 +1800,73 @@ def PTO_CubeLoadOp : PTO_Op<"cube_load", [
   ];
 }
 
+def PTO_CubeStoreOp : PTO_Op<"cube_store", [
+    AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$len_burst,
+    I64:$n_burst,
+    I64:$nburst_src_stride,
+    I64:$nburst_dst_stride,
+    Variadic<I64>:$loop_counts,
+    Variadic<I64>:$loop_src_strides,
+    Variadic<I64>:$loop_dst_strides
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::llvm::ArrayRef<::mlir::pto::DmaLoopConfig>":$loops
+    )>,
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop1,
+      "::std::optional<::mlir::pto::DmaLoopConfig>":$loop2
+    )>
+  ];
+}
+
+def PTO_BiasLoadOp : PTO_Op<"bias_load", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$len_burst,
+    I64:$n_burst,
+    I64:$nburst_src_gap,
+    I64:$nburst_dst_gap
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst
+    )>
+  ];
+}
+
 def PTO_CubeLoadFracOp : PTO_Op<"cube_load_frac", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
@@ -1788,6 +1997,66 @@ def PTO_AccStoreOp : PTO_Op<"acc_store", [
       "::std::optional<::mlir::pto::DmaLoopConfig>":$loop3
     )>
   ];
+}
+
+def PTO_AccStoreGmOp : PTO_Op<"acc_store_gm", [
+    AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$m,
+    I64:$n,
+    I64:$src_stride,
+    I64:$dst_stride,
+    I64:$unit_flag_ctrl,
+    I64:$quant_pre,
+    I64:$relu_pre_mode,
+    I64:$sid,
+    I64:$l2_cache_ctrl,
+    Optional<I64>:$split,
+    Optional<I64>:$loop0_src_stride,
+    Optional<I64>:$loop3_count,
+    Optional<I64>:$loop3_src_stride,
+    Optional<I64>:$loop3_dst_stride,
+    PTO_AccStoreModeAttr:$mode
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+}
+
+def PTO_AccStoreUbOp : PTO_Op<"acc_store_ub", [
+    AttrSizedOperandSegments,
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferType:$source,
+    PTO_BufferType:$destination,
+    I64:$m,
+    I64:$n,
+    I64:$src_stride,
+    I64:$dst_stride,
+    I64:$unit_flag_ctrl,
+    I64:$quant_pre,
+    I64:$relu_pre_mode,
+    I64:$dual_dst_mode,
+    I64:$sub_blockid,
+    Optional<I64>:$split,
+    Optional<I64>:$loop0_src_stride,
+    Optional<I64>:$loop3_count,
+    Optional<I64>:$loop3_src_stride,
+    Optional<I64>:$loop3_dst_stride,
+    PTO_AccStoreModeAttr:$mode
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
 }
 
 // NOTE: Unvalidated new x2 / pair / align-store-family abstractions. Added to

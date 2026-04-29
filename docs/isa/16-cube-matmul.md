@@ -34,8 +34,51 @@ Operands `%n_burst`, `%len_burst`, `%src_stride`, and `%dst_stride` configure th
 
 ## `pto.mad`
 
-- **syntax:** `pto.mad %lhs, %rhs, %dst, %m, %n, %k : !pto.ptr<…, ub>, !pto.ptr<…, ub>, !pto.ptr<…, ub>, i64, i64, i64`
-- **semantics:** Cube **multiply** on L0A (`%lhs`) and L0B (`%rhs`) into L0C (`%dst`). All three pointers must be UB-backed **buffer** pointers (`!pto.ptr<…, ub>`) classified as left / right / accumulator roles in lowering.
+- **syntax:** `pto.mad %lhs, %rhs, %dst, %m, %n, %k : !pto.ptr<…, left>, !pto.ptr<…, right>, !pto.ptr<…, acc>, i64, i64, i64`
+- **semantics:** Cube matmul with zero-initialized `C`. Computes `dst = lhs * rhs`.
+- **attributes:**
+  - `unit_flag_ctrl` selects the accumulator phase control. Supported values are `0`, `2`, and `3`.
+  - `disable_gemv` controls the GEMV-disable bit in the packed MMAD config.
+
+## `pto.mad_acc`
+
+- **syntax:** `pto.mad_acc %lhs, %rhs, %dst, %m, %n, %k : !pto.ptr<…, left>, !pto.ptr<…, right>, !pto.ptr<…, acc>, i64, i64, i64`
+- **semantics:** Cube matmul with `dst` as the accumulator source. Computes `dst += lhs * rhs`.
+- **attributes:**
+  - `unit_flag_ctrl` selects the accumulator phase control. Supported values are `0`, `2`, and `3`.
+  - `disable_gemv` controls the GEMV-disable bit in the packed MMAD config.
+
+## `pto.mad_bias`
+
+- **syntax:** `pto.mad_bias %lhs, %rhs, %dst, %bias, %m, %n, %k : !pto.ptr<…, left>, !pto.ptr<…, right>, !pto.ptr<…, acc>, !pto.ptr<…, bias>, i64, i64, i64`
+- **semantics:** Cube matmul with bias-table initialization. Computes `dst = lhs * rhs + bias`, where `%bias` provides the BT address used as the initial C source.
+- **attributes:**
+  - `unit_flag_ctrl` selects the accumulator phase control. Supported values are `0`, `2`, and `3`.
+  - `disable_gemv` controls the GEMV-disable bit in the packed MMAD config.
+
+## `pto.mad_mx`
+
+- **syntax:** `pto.mad_mx %lhs, %rhs, %dst, %m, %n, %k : !pto.ptr<…, left>, !pto.ptr<…, right>, !pto.ptr<…, acc>, i64, i64, i64`
+- **semantics:** MX cube matmul with zero-initialized `C`. Computes `dst = lhs * rhs`.
+- **attributes:**
+  - `unit_flag_ctrl` selects the accumulator phase control. Supported values are `0`, `2`, and `3`.
+  - `disable_gemv` controls the GEMV-disable bit in the packed MMAD config.
+
+## `pto.mad_mx_acc`
+
+- **syntax:** `pto.mad_mx_acc %lhs, %rhs, %dst, %m, %n, %k : !pto.ptr<…, left>, !pto.ptr<…, right>, !pto.ptr<…, acc>, i64, i64, i64`
+- **semantics:** MX cube matmul with `dst` as the accumulator source. Computes `dst += lhs * rhs`.
+- **attributes:**
+  - `unit_flag_ctrl` selects the accumulator phase control. Supported values are `0`, `2`, and `3`.
+  - `disable_gemv` controls the GEMV-disable bit in the packed MMAD config.
+
+## `pto.mad_mx_bias`
+
+- **syntax:** `pto.mad_mx_bias %lhs, %rhs, %dst, %bias, %m, %n, %k : !pto.ptr<…, left>, !pto.ptr<…, right>, !pto.ptr<…, acc>, !pto.ptr<…, bias>, i64, i64, i64`
+- **semantics:** MX cube matmul with bias-table initialization. Computes `dst = lhs * rhs + bias`, where `%bias` provides the BT address used as the initial C source.
+- **attributes:**
+  - `unit_flag_ctrl` selects the accumulator phase control. Supported values are `0`, `2`, and `3`.
+  - `disable_gemv` controls the GEMV-disable bit in the packed MMAD config.
 
 Supported element-type combinations follow the HIVM intrinsic selection in the compiler (for example `f16` × `f16` → `f32` accumulation, and MX-dtyped paths where applicable).
 
@@ -70,6 +113,13 @@ Supported element-type combinations follow the HIVM intrinsic selection in the c
 - **syntax:** `pto.copy_cbuf_to_bt ...` and `pto.copy_cbuf_to_fbuf ...`
 - **semantics:** L1 (`cbuf`) to bias/scaling-side buffers for matrix post-processing setup. Lowered to `llvm.hivm.MOV.L1.TO.BT.f16` and `llvm.hivm.MOV.L1.TO.FB.V2`.
 
+## `pto.bias_load`
+
+- **syntax:** `pto.bias_load %src, %dst, %len_burst nburst(%count, %src_gap, %dst_gap) : !pto.ptr<T, mat>, !pto.ptr<U, bias>, i64, i64, i64, i64`
+- **semantics:** Structured L1 (`cbuf`) to bias-table (`BT`) load helper. Expands to `pto.copy_cbuf_to_bt`.
+- **type rules:** supported source/destination element-type pairs are `f32 -> f32`, `i32 -> i32`, `f16 -> f32`, and `bf16 -> f32`.
+- **conversion behavior:** `f16 -> f32` sets the underlying `CVT_EN` bit. For `bf16 -> f32`, conversion to `f32` is implied by the instruction semantics and the control bit is ignored.
+
 ---
 
 ## Cube Bridge Wrapper Ops (Structured Convenience Layer)
@@ -82,6 +132,13 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 - **semantics:** structured GM→L1 (`cbuf`) staging helper.
 - **loop order:** repeated `loop(...)` groups are written from inner to outer. The first two groups lower to hardware loop config; any remaining outer groups expand to software `scf.for` loops around the copy.
 - **expands to:** `pto.set_loop2_stride_outtol1` + `pto.set_loop1_stride_outtol1` + `pto.set_loop_size_outtol1` + `pto.copy_gm_to_cbuf`
+
+### `pto.cube_store`
+
+- **syntax:** `pto.cube_store %src, %dst, %len_burst nburst(%count, %src_stride, %dst_stride) loop(%count, %src_stride, %dst_stride) ... : !pto.ptr<..., mat>, !pto.ptr<..., ub>, i64, i64, i64, i64[, i64, i64, i64 ...]`
+- **semantics:** structured L1 (`cbuf`) → UB staging helper.
+- **loop order:** repeated `loop(...)` groups are written from inner to outer. All wrapper loop levels expand to software `scf.for` loops around the terminal copy.
+- **expands to:** `pto.copy_cbuf_to_ubuf`
 
 ### `pto.cube_load_frac`
 
@@ -107,9 +164,21 @@ These ops are **wrapper interfaces** that fuse common cube register-configuratio
 
 ### `pto.acc_store`
 
-- **syntax:** `pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., gm|mat>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
-- **semantics:** structured accumulator-store helper. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. `loop3(%count, %src_stride, %dst_stride)` is an optional special hardware loop descriptor for this op. `nz2nz` does not accept `loop3(...)`. The terminal intrinsic is selected by destination address space: GM lowers to `pto.copy_matrix_cc_to_gm`, MAT/L1 lowers to `pto.copy_matrix_cc_to_cbuf`.
-- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + (`pto.copy_matrix_cc_to_gm` | `pto.copy_matrix_cc_to_cbuf`)
+- **syntax:** `pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., mat>, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
+- **semantics:** structured accumulator-store helper for `FIX_L0C_TO_L1`. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. The mode selects the destination layout conversion: `nz2nd` writes NZ fragments to ND layout, `nz2dn` writes NZ fragments to DN layout, and `nz2nz` writes NZ fragments to NZ layout. `nz2dn(%loop0_src_stride)` additionally controls the loop0 source stride in units of `C0_SIZE`. `nz2nz(%split)` selects split NZ write-back when needed. `loop3(%count, %src_stride, %dst_stride)` is an optional special hardware loop descriptor for this op. `nz2nz` does not accept `loop3(...)`.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_cbuf`
+
+### `pto.acc_store_gm`
+
+- **syntax:** `pto.acc_store_gm %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, %sid, %l2_cache_ctrl, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., gm>, i64, i64, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
+- **semantics:** structured accumulator-store helper for `FIX_L0C_TO_OUT`. Compared with `pto.acc_store`, this GM path additionally exposes `%sid` and `%l2_cache_ctrl`, which map to the GM-specific OUT-path control fields.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_gm`
+
+### `pto.acc_store_ub`
+
+- **syntax:** `pto.acc_store_ub %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, %dual_dst_mode, %sub_blockid, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%channel_split_en)? loop3(%count, %src_stride, %dst_stride)? : !pto.ptr<..., acc>, !pto.ptr<..., ub>, i64, i64, i64, i64, i64, i64, i64, i64, i64[, nz2dn(i64)|nz2nz(i64)][, loop3(i64, i64, i64)]`
+- **semantics:** structured accumulator-to-UB helper for `FIX_L0C_TO_UB`. `%m` and `%n` describe the matrix tile shape for each write-back step. `%src_stride` and `%dst_stride` describe the per-step source and destination strides. `%dual_dst_mode` and `%sub_blockid` map to the UB dual-destination control fields. The mode selects the layout path: `nz2nd` writes NZ fragments to ND layout, `nz2dn(%loop0_src_stride)` writes NZ fragments to DN layout and additionally provides the loop0 source stride in units of `C0_SIZE`, and `nz2nz(%channel_split_en)` selects normal DMA behavior, with the optional operand controlling the F32 channel-split bit. `loop3(%count, %src_stride, %dst_stride)` is the optional `LOOP3_PARA` descriptor used by `nz2nd` / `nz2dn`. `nz2nz` does not accept `loop3(...)`.
+- **expands to:** `pto.set_loop3_para` + `pto.set_channel_para` + `pto.copy_matrix_cc_to_ub`
 
 ---
 
