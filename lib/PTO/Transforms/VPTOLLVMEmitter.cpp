@@ -1479,20 +1479,18 @@ packLoadCbufToS4Config1(Operation *anchor, Value srcStride, Value dstStride) {
 }
 
 static FailureOr<Value>
-packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k,
-                        Type elementType) {
+packLoadCbufToCaConfig0(Operation *anchor, Value mStart, Value kStart,
+                        Value mStep, Value kStep) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
 
-  Value mI64 = castIntegerLikeTo(anchor, m, builder.getI64Type());
-  Value kI64 = castIntegerLikeTo(anchor, k, builder.getI64Type());
-  if (!mI64 || !kI64)
+  Value mStartI64 = castIntegerLikeTo(anchor, mStart, builder.getI64Type());
+  Value kStartI64 = castIntegerLikeTo(anchor, kStart, builder.getI64Type());
+  Value mStepI64 = castIntegerLikeTo(anchor, mStep, builder.getI64Type());
+  Value kStepI64 = castIntegerLikeTo(anchor, kStep, builder.getI64Type());
+  if (!mStartI64 || !kStartI64 || !mStepI64 || !kStepI64)
     return failure();
-  unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
-  if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
-    return failure();
-  uint64_t elemBytes = elemBitWidth / 8;
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
@@ -1501,49 +1499,33 @@ packLoadCbufToCaConfig0(Operation *anchor, Value m, Value k,
   auto bitOr = [&](Value lhs, Value rhs) -> Value {
     return builder.create<arith::OrIOp>(loc, lhs, rhs);
   };
-  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
-    Value bias = getI64Constant(builder, loc, divisor - 1);
-    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
-    return builder.create<arith::DivUIOp>(loc, sum,
-                                          getI64Constant(builder, loc, divisor));
-  };
 
-  Value mStart = getI64Constant(builder, loc, 0);
-  Value kStart = getI64Constant(builder, loc, 0);
-  Value mStep = ceilDivConst(mI64, 16);
-  Value kBytes =
-      builder.create<arith::MulIOp>(loc, kI64, getI64Constant(builder, loc, elemBytes));
-  Value kStep = ceilDivConst(kBytes, 32);
-
-  Value config0 = mStart;
-  config0 = bitOr(config0, shl(kStart, 16));
-  config0 = bitOr(config0, shl(mStep, 32));
-  config0 = bitOr(config0, shl(kStep, 40));
+  Value config0 = mStartI64;
+  config0 = bitOr(config0, shl(kStartI64, 16));
+  config0 = bitOr(config0, shl(mStepI64, 32));
+  config0 = bitOr(config0, shl(kStepI64, 40));
   return config0;
 }
 
 static FailureOr<Value>
-packLoadCbufToCaConfig1(Operation *anchor, Value m) {
+packLoadCbufToCaConfig1(Operation *anchor, Value srcStride, Value dstStride) {
   OpBuilder builder(anchor);
   builder.setInsertionPoint(anchor);
   Location loc = anchor->getLoc();
 
-  Value mI64 = castIntegerLikeTo(anchor, m, builder.getI64Type());
-  if (!mI64)
+  Value srcStrideI64 =
+      castIntegerLikeTo(anchor, srcStride, builder.getI64Type());
+  Value dstStrideI64 =
+      castIntegerLikeTo(anchor, dstStride, builder.getI64Type());
+  if (!srcStrideI64 || !dstStrideI64)
     return failure();
-  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
-    Value bias = getI64Constant(builder, loc, divisor - 1);
-    Value sum = builder.create<arith::AddIOp>(loc, value, bias);
-    return builder.create<arith::DivUIOp>(loc, sum,
-                                          getI64Constant(builder, loc, divisor));
-  };
-  Value stride = ceilDivConst(mI64, 16);
 
   auto shl = [&](Value value, uint64_t amount) -> Value {
     return builder.create<arith::ShLIOp>(loc, value,
                                          getI64Constant(builder, loc, amount));
   };
-  return builder.create<arith::OrIOp>(loc, stride, shl(stride, 16)).getResult();
+  return builder.create<arith::OrIOp>(loc, srcStrideI64, shl(dstStrideI64, 16))
+      .getResult();
 }
 
 static FailureOr<Value>
@@ -3948,9 +3930,14 @@ public:
                                 ConversionPatternRewriter &rewriter) const override {
     Value sourceRaw = adaptor.getSource();
     Value destinationRaw = adaptor.getDestination();
-    Value m = adaptor.getM();
-    Value k = adaptor.getK();
-    if (!sourceRaw || !destinationRaw || !m || !k)
+    Value mStart = adaptor.getMStart();
+    Value kStart = adaptor.getKStart();
+    Value mStep = adaptor.getMStep();
+    Value kStep = adaptor.getKStep();
+    Value srcStride = adaptor.getSrcStride();
+    Value dstStride = adaptor.getDstStride();
+    if (!sourceRaw || !destinationRaw || !mStart || !kStart || !mStep ||
+        !kStep || !srcStride || !dstStride)
       return rewriter.notifyMatchFailure(op, "expected converted operands");
 
     if (!isa<LLVM::LLVMPointerType>(sourceRaw.getType()) ||
@@ -3970,12 +3957,14 @@ public:
     if (failed(source) || failed(destination))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/ca pointer spaces");
 
-    Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
-    FailureOr<Value> config0 = packLoadCbufToCaConfig0(op, m, k, sourceElemType);
-    FailureOr<Value> config1 = packLoadCbufToCaConfig1(op, m);
+    FailureOr<Value> config0 =
+        packLoadCbufToCaConfig0(op, mStart, kStart, mStep, kStep);
+    FailureOr<Value> config1 =
+        packLoadCbufToCaConfig1(op, srcStride, dstStride);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op, "failed to pack load_cbuf_to_ca config");
-    Value transpose = getI64Constant(rewriter, op.getLoc(), 0);
+    Value transpose =
+        getI64Constant(rewriter, op.getLoc(), op.getTranspose() ? 1 : 0);
 
     FailureOr<StringRef> calleeName =
         buildLoadCbufToCaCallee(op.getContext(), op.getSource().getType());
@@ -4166,9 +4155,30 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/ca pointer spaces");
 
     Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
+    unsigned elemBitWidth = sourceElemType.getIntOrFloatBitWidth();
+    if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+      return rewriter.notifyMatchFailure(op,
+                                         "unsupported load_cbuf_to_ca_mx element type");
+    uint64_t elemBytes = elemBitWidth / 8;
+    Location loc = op.getLoc();
+    auto constant = [&](uint64_t value) -> Value {
+      return rewriter.create<arith::ConstantIntOp>(loc, value, 64);
+    };
+    auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+      Value bias = constant(divisor - 1);
+      Value sum = rewriter.create<arith::AddIOp>(loc, value, bias);
+      return rewriter.create<arith::DivUIOp>(loc, sum, constant(divisor));
+    };
+    Value zero = constant(0);
+    Value mStep = ceilDivConst(adaptor.getM(), 16);
+    Value kBytes =
+        rewriter.create<arith::MulIOp>(loc, adaptor.getK(), constant(elemBytes));
+    Value kStep = ceilDivConst(kBytes, 32);
+    Value stride = ceilDivConst(adaptor.getM(), 16);
     FailureOr<Value> config0 =
-        packLoadCbufToCaConfig0(op, adaptor.getM(), adaptor.getK(), sourceElemType);
-    FailureOr<Value> config1 = packLoadCbufToCaConfig1(op, adaptor.getM());
+        packLoadCbufToCaConfig0(op, zero, zero, mStep, kStep);
+    FailureOr<Value> config1 =
+        packLoadCbufToCaConfig1(op, stride, stride);
     if (failed(config0) || failed(config1))
       return rewriter.notifyMatchFailure(op,
                                          "failed to pack load_cbuf_to_ca_mx config");

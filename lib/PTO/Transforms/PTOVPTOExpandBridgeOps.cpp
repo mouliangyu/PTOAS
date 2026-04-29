@@ -388,6 +388,45 @@ deriveLoadCbufToCbControl(Location loc, Value k, Value n, Type elementType,
   return LoadCbufToCbControl{zero, zero, mStep, kStep, srcStride, dstStride};
 }
 
+static FailureOr<LoadCbufToCbControl>
+deriveLoadCbufToCaControl(Location loc, Value m, Value k, Type elementType,
+                          bool transpose, PatternRewriter &rewriter) {
+  unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
+  if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+    return failure();
+  uint64_t elemBytes = elemBitWidth / 8;
+
+  auto constant = [&](uint64_t value) -> Value {
+    return rewriter.create<arith::ConstantIntOp>(loc, value, 64);
+  };
+  auto ceilDivConst = [&](Value value, uint64_t divisor) -> Value {
+    Value bias = constant(divisor - 1);
+    Value sum = rewriter.create<arith::AddIOp>(loc, value, bias);
+    return rewriter.create<arith::DivUIOp>(loc, sum, constant(divisor));
+  };
+
+  Value zero = constant(0);
+  if (!transpose) {
+    Value mStep = ceilDivConst(m, 16);
+    Value kBytes = rewriter.create<arith::MulIOp>(loc, k, constant(elemBytes));
+    Value kStep = ceilDivConst(kBytes, 32);
+    Value stride = ceilDivConst(m, 16);
+    return LoadCbufToCbControl{zero, zero, mStep, kStep, stride, stride};
+  }
+
+  uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
+  Value mAlign = ceilDivConst(m, c0Size);
+  mAlign = rewriter.create<arith::MulIOp>(loc, mAlign, constant(c0Size));
+  Value kAlign = ceilDivConst(k, c0Size);
+  kAlign = rewriter.create<arith::MulIOp>(loc, kAlign, constant(c0Size));
+  Value mStep = ceilDivConst(kAlign, 16);
+  Value mBytes = rewriter.create<arith::MulIOp>(loc, mAlign, constant(elemBytes));
+  Value kStep = ceilDivConst(mBytes, 32);
+  Value srcStride = ceilDivConst(kAlign, 16);
+  Value dstStride = ceilDivConst(mAlign, 16);
+  return LoadCbufToCbControl{zero, zero, mStep, kStep, srcStride, dstStride};
+}
+
 static Value extractConfigLow40(Location loc, Value packed,
                                 PatternRewriter &rewriter) {
   Value lowMask =
@@ -751,19 +790,20 @@ struct ExpandLeftLoadPattern : public OpRewritePattern<pto::LeftLoadOp> {
   LogicalResult matchAndRewrite(pto::LeftLoadOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
-    Value loop3Config = packLoop3Config(loc, op.getLoop3Count(),
-                                        op.getLoop3SrcStride(),
-                                        op.getLoop3DstStride(), rewriter);
-    Value channelConfig =
-        packChannelConfig(loc, op.getLoop0SrcStride(), rewriter);
-    rewriter.create<pto::SetLoop3ParaOp>(
-        loc, extractConfigLow40(loc, loop3Config, rewriter),
-        extractConfigHigh24(loc, loop3Config, rewriter));
-    rewriter.create<pto::SetChannelParaOp>(
-        loc, extractConfigLow40(loc, channelConfig, rewriter),
-        extractConfigHigh24(loc, channelConfig, rewriter));
-    rewriter.create<pto::LoadCbufToCaOp>(loc, op.getSource(), op.getDestination(),
-                                         op.getM(), op.getK());
+    auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
+    if (!sourceType)
+      return rewriter.notifyMatchFailure(op, "expected typed L1 source");
+    FailureOr<LoadCbufToCbControl> control = deriveLoadCbufToCaControl(
+        loc, op.getM(), op.getK(), sourceType.getElementType(),
+        op.getTranspose(), rewriter);
+    if (failed(control))
+      return rewriter.notifyMatchFailure(op,
+                                         "failed to derive load_cbuf_to_ca control");
+    auto load = rewriter.create<pto::LoadCbufToCaOp>(
+        loc, op.getSource(), op.getDestination(), control->mStart,
+        control->kStart, control->mStep, control->kStep, control->srcStride,
+        control->dstStride);
+    load->setAttr("transpose", rewriter.getBoolAttr(op.getTranspose()));
     rewriter.eraseOp(op);
     return success();
   }
