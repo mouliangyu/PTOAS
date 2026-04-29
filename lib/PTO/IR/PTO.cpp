@@ -1957,23 +1957,6 @@ LogicalResult TLoadOp::verify() {
                    sl == static_cast<int32_t>(pto::SLayout::RowMajor));
       if (!isND && !isDN && !isNZ)
         return emitOpError("expects A5 tload vec dst layout to be ND, DN, or NZ");
-
-      if (isNZ) {
-        auto srcShape = srcPart.getShape();
-        if (srcShape.size() != 5)
-          return emitOpError("expects A5 tload NZ src to have 5 dims");
-        constexpr int32_t BLOCK_BYTE_SIZE = 32;
-        constexpr int32_t BLOCK_LEN = 16;
-        if (srcShape[4] != ShapedType::kDynamic) {
-          int64_t expectedShape4 = BLOCK_BYTE_SIZE / dstBytes;
-          if (srcShape[4] != expectedShape4)
-            return emitOpError("expects A5 tload NZ src shape[4] to match BLOCK_BYTE_SIZE / elem_size");
-        }
-        if (srcShape[3] != ShapedType::kDynamic) {
-          if (srcShape[3] != BLOCK_LEN)
-            return emitOpError("expects A5 tload NZ src shape[3] to match BLOCK_LEN");
-        }
-      }
     }
 
     return success();
@@ -2808,9 +2791,6 @@ static LogicalResult verifyPartialValidPattern(Operation *op, Type src0Ty,
       return op->emitOpError(
           "expects src0/src1 valid_shape to be less than or equal to dst valid_shape");
   }
-  if (!equalsKnown(src0Valid, dstValid) && !equalsKnown(src1Valid, dstValid))
-    return op->emitOpError(
-        "expects at least one of src0/src1 valid_shape to match dst valid_shape");
   return success();
 }
 
