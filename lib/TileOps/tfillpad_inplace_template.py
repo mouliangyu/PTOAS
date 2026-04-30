@@ -118,51 +118,49 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
         else:
             fill_scalar = pto.i8(0)
 
-    # Phase 2: Fill cols from src_valid_cols to dst_valid_cols-1
+    # Phase 2: Fill cols from src_valid_cols to cols-1 (physical buffer end)
     # Use vstus+vstas for unaligned starting column, matching C++ TFillPad.hpp
-    # Runtime condition: valid_shape values may be dynamic at kernel specialization time.
-    if src_valid_cols < dst_valid_cols:
-        pad_cols = dst_valid_cols - src_valid_cols
+    pad_cols = cols - src_valid_cols  # Matching C++: TileDataDst::Cols - srcValidCol
 
-        # Create fill vector once (reused across all rows)
-        fill_vec = pto.vdup(fill_scalar, pto.make_mask(dtype, pto.PAT.ALL))
+    # Create fill vector once (reused across all rows)
+    fill_vec = pto.vdup(fill_scalar, pto.make_mask(dtype, pto.PAT.ALL))
 
-        # Get base pointer to UB buffer
-        base_ptr = dst.as_ptr()
+    # Get base pointer to UB buffer
+    base_ptr = dst.as_ptr()
 
-        for row in range(0, src_valid_rows, 1):
-            # Initialize align register for this row
-            ureg = pto.init_align()
+    for row in range(0, src_valid_rows, 1):
+        # Initialize align register for this row
+        ureg = pto.init_align()
 
-            # Pointer to dst[row, src_valid_cols]: base_ptr + (row * cols + src_valid_cols) * byte_width
-            # Matching C++: dstPtr + i * dstStride + srcValidCol
-            row_offset = (row * cols + src_valid_cols) * byte_width
-            row_ptr = pto.addptr(base_ptr, row_offset)
+        # Pointer to dst[row, src_valid_cols]: base_ptr + (row * cols + src_valid_cols) * byte_width
+        # Matching C++: dstPtr + i * dstStride + srcValidCol
+        row_offset = (row * cols + src_valid_cols) * byte_width
+        row_ptr = pto.addptr(base_ptr, row_offset)
 
-            # Simple loop: always iterate pad_cols times, each iteration uses min(lanes, remaining)
-            # This keeps vstus structure without complex nested branching
-            # ureg is loop-carried, updated in every iteration
-            remaining = pad_cols
-            for _ in range(0, pad_cols, lanes):
-                if remaining >= lanes:
-                    ureg = pto.vstus(ureg, lanes, fill_vec, row_ptr)
-                    remaining = remaining - lanes
-                else:
-                    ureg = pto.vstus(ureg, remaining, fill_vec, row_ptr)
-                    remaining = 0
+        # Simple loop: iterate pad_cols times with step lanes
+        # Use vstus + addptr in each branch to simulate C++ POST_UPDATE behavior
+        # ureg, remaining, row_ptr are all loop-carried, updated in every iteration
+        remaining = pad_cols
+        for _ in range(0, pad_cols, lanes):
+            if remaining >= lanes:
+                ureg = pto.vstus(ureg, lanes, fill_vec, row_ptr)
+                row_ptr = pto.addptr(row_ptr, lanes * byte_width)
+                remaining = remaining - lanes
+            else:
+                ureg = pto.vstus(ureg, remaining, fill_vec, row_ptr)
+                row_ptr = pto.addptr(row_ptr, remaining * byte_width)
+                remaining = 0
 
-            # vstas: flush buffered bytes (offset=0 since row_ptr already points to src_valid_cols)
-            pto.vstas(ureg, row_ptr, 0)
+        # vstas: flush buffered bytes
+        pto.vstas(ureg, row_ptr, 0)
 
     # Phase 4: Fill rows from src_valid_rows to dst_valid_rows-1
     # Fill entire physical rows (cols elements), matching C++: padRows * dstStride
-    # Runtime condition: valid_shape values may be dynamic at kernel specialization time.
-    if src_valid_rows < dst_valid_rows:
-        for row in range(src_valid_rows, dst_valid_rows, 1):
-            remained = cols
-            for col in range(0, cols, lanes):
-                mask, remained = pto.make_mask(dtype, remained)
-                vec = pto.vdup(fill_scalar, mask)
-                pto.vsts(vec, dst[row, col:], mask)
+    for row in range(src_valid_rows, dst_valid_rows, 1):
+        remained = cols
+        for col in range(0, cols, lanes):
+            mask, remained = pto.make_mask(dtype, remained)
+            vec = pto.vdup(fill_scalar, mask)
+            pto.vsts(vec, dst[row, col:], mask)
 
     return
