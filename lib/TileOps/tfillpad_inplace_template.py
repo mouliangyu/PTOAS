@@ -130,12 +130,13 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
         # Get base pointer to UB buffer
         base_ptr = dst.as_ptr()
 
-        for row in range(0, dst_valid_rows, 1):
+        for row in range(0, src_valid_rows, 1):
             # Initialize align register for this row
             ureg = pto.init_align()
 
-            # Update base_ptr for each row: base_ptr + row * cols * byte_width
-            row_offset = row * cols * byte_width
+            # Pointer to dst[row, src_valid_cols]: base_ptr + (row * cols + src_valid_cols) * byte_width
+            # Matching C++: dstPtr + i * dstStride + srcValidCol
+            row_offset = (row * cols + src_valid_cols) * byte_width
             row_ptr = pto.addptr(base_ptr, row_offset)
 
             # Simple loop: always iterate pad_cols times, each iteration uses min(lanes, remaining)
@@ -143,8 +144,6 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
             # ureg is loop-carried, updated in every iteration
             remaining = pad_cols
             for _ in range(0, pad_cols, lanes):
-                # Compute current iteration count (always >= 1 since loop runs)
-                # Use min to handle last partial iteration
                 if remaining >= lanes:
                     ureg = pto.vstus(ureg, lanes, fill_vec, row_ptr)
                     remaining = remaining - lanes
@@ -152,15 +151,16 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
                     ureg = pto.vstus(ureg, remaining, fill_vec, row_ptr)
                     remaining = 0
 
-            # vstas: flush buffered bytes with offset pointing to src_valid_cols
-            pto.vstas(ureg, row_ptr, src_valid_cols)
+            # vstas: flush buffered bytes (offset=0 since row_ptr already points to src_valid_cols)
+            pto.vstas(ureg, row_ptr, 0)
 
     # Phase 4: Fill rows from src_valid_rows to dst_valid_rows-1
+    # Fill entire physical rows (cols elements), matching C++: padRows * dstStride
     # Runtime condition: valid_shape values may be dynamic at kernel specialization time.
     if src_valid_rows < dst_valid_rows:
         for row in range(src_valid_rows, dst_valid_rows, 1):
-            remained = dst_valid_cols
-            for col in range(0, dst_valid_cols, lanes):
+            remained = cols
+            for col in range(0, cols, lanes):
                 mask, remained = pto.make_mask(dtype, remained)
                 vec = pto.vdup(fill_scalar, mask)
                 pto.vsts(vec, dst[row, col:], mask)
