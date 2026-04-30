@@ -175,7 +175,7 @@ PTOAS + TileLib 已经全部打通。
 | `f32` | `i32` | 1D+2D，`vcvt` | `ON` | 当前已先打通这一类普通路径 | `已支持` |
 | `f32` | `i64` | 1D+2D，`vcvt + part` | `ON` | | `已支持` |
 | `f32` | `fp8_e4m3` / `fp8_e5m2` | 1D+2D，`vcvt + part` | `ON` | | |
-| `f16` | `u8` | 1D+2D，`vcvt + part` | `OFF` | | |
+| `f16` | `u8` | 1D+2D，`vcvt + part` | `OFF` | | `已支持` |
 | `bf16` | `i32` | 1D+2D，`vcvt + part` | `ON` | | `已支持` |
 | `bf16` | `f16` | 1D+2D，`vcvt` | `ON` | helper 内部是 `SAT_ROUND` 顺序 | `已支持` |
 
@@ -187,7 +187,7 @@ PTOAS + TileLib 已经全部打通。
 |---|---|---|---|---|---|---|
 | `f32` | `i16` | 1D+2D，`vcvt + part` | `OFF` | 是 | `OFF` 时走 `NonSatTorch` | `已支持` |
 | `f16` | `i16` | 1D+2D，`vcvt` | `OFF` | 是 | | `已支持` |
-| `f16` | `i8` | 1D+2D，`vcvt + part` | `OFF` | 是 | | |
+| `f16` | `i8` | 1D+2D，`vcvt + part` | `OFF` | 是 | | `已支持` |
 
 #### 3.2.6 专用 helper，`round_mode` 受限
 

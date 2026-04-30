@@ -44,7 +44,7 @@ def gen_kernel(case, idx=0):
     
     lines = [
         f"  // Case {idx}: {src_dtype} -> {dst_dtype}, {rmode_command}",
-        f"  func.func @{kernel_name}(%src_ptr: !pto.ptr<{src_dtype}>, %dst_ptr: !pto.ptr<{dst_dtype}>) {{",
+        f"  func.func @{kernel_name}(%src_ptr: !pto.ptr<{src_dtype}>, %dst_ptr: !pto.ptr<{dst_dtype}>) attributes {{ pto.entry }} {{",
     ]
     lines.extend(const_defs)
     lines.extend([
