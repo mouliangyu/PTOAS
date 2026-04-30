@@ -68,7 +68,7 @@ LogicalResult TileBufConfigAttr::verify(function_ref<InFlightDiagnostic()> emitE
     return emitError() << "s_fractal_size must be i32", failure();
 
   int32_t s = (int32_t)sFractalSize.getInt();
-  f (s != 32 && s != 512 && s != 1024)
+  if (s != 32 && s != 512 && s != 1024)
     return emitError() << "unsupported s_fractal_size: " << s
                        << ", must be one of {32, 512, 1024}", failure();
 
