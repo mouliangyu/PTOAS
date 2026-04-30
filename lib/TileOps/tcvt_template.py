@@ -694,6 +694,48 @@ def template_tcvt_i32_to_ui16(src: pto.Tile, dst: pto.Tile):
     target="a5",
     op="pto.tcvt",
     dtypes=[
+        (pto.i32, pto.ui8),
+    ],
+    constraints=[_supports_basic_rowwise_tcvt],
+    advanced=True,
+)
+def template_tcvt_i32_to_ui8(src: pto.Tile, dst: pto.Tile):
+    valid_rows, valid_cols = dst.valid_shape
+    full_mask = pto.make_mask(pto.i32, pto.PAT.ALL)
+    idx_mask_b8 = pto.pset_b8(pto.PAT.ALL)
+    idx_mask_b16 = pto.pbitcast(idx_mask_b8, pto.mask_b16)
+    lanes_i32 = pto.get_lanes(pto.i32)
+    v_idx = pto.vci(pto.i8(0), pto.OrderMode.ASC)
+    v_idx_i16 = pto.vbitcast(v_idx, pto.i16)
+    v_idx_i16 = pto.vmuls(v_idx_i16, pto.i16(4), idx_mask_b16)
+    v_idx_ui8 = pto.vbitcast(v_idx_i16, pto.ui8)
+    for row in range(0, valid_rows, 1):
+        mask_len_tail = valid_cols % lanes_i32
+        if valid_cols % lanes_i32 == 0:
+            mask_len_tail = lanes_i32
+        for col in range(0, valid_cols, lanes_i32):
+            mask_len = lanes_i32
+            if col == valid_cols - lanes_i32:
+                mask_len = mask_len_tail
+            store_mask, _ = pto.make_mask(pto.ui8, mask_len)
+            vec = pto.vlds(src[row, col:])
+            converted = pto.vcvt(
+                vec,
+                pto.ui8,
+                full_mask,
+                sat=pto.VcvtSatMode.NOSAT,
+                part=pto.VcvtPartMode.P0,
+            )
+            result = pto.vselr(converted, v_idx_ui8)
+            pto.mem_bar(pto.BarrierType.VST_VST)
+            pto.vsts(result, dst[row, col:], store_mask, dist=pto.VStoreDist.NORM_B8)
+    return
+
+
+@pto.vkernel(
+    target="a5",
+    op="pto.tcvt",
+    dtypes=[
         (pto.ui32, pto.i16),
     ],
     constraints=[_supports_basic_rowwise_tcvt],
@@ -741,6 +783,48 @@ def template_tcvt_ui32_to_ui16(src: pto.Tile, dst: pto.Tile):
                 part=pto.VcvtPartMode.EVEN,
             )
             pto.vsts(converted, dst[row, col:], store_mask, dist=pto.VStoreDist.PK_B32)
+    return
+
+
+@pto.vkernel(
+    target="a5",
+    op="pto.tcvt",
+    dtypes=[
+        (pto.ui32, pto.ui8),
+    ],
+    constraints=[_supports_basic_rowwise_tcvt],
+    advanced=True,
+)
+def template_tcvt_ui32_to_ui8(src: pto.Tile, dst: pto.Tile):
+    valid_rows, valid_cols = dst.valid_shape
+    full_mask = pto.make_mask(pto.ui32, pto.PAT.ALL)
+    idx_mask_b8 = pto.pset_b8(pto.PAT.ALL)
+    idx_mask_b16 = pto.pbitcast(idx_mask_b8, pto.mask_b16)
+    lanes_ui32 = pto.get_lanes(pto.ui32)
+    v_idx = pto.vci(pto.i8(0), pto.OrderMode.ASC)
+    v_idx_i16 = pto.vbitcast(v_idx, pto.i16)
+    v_idx_i16 = pto.vmuls(v_idx_i16, pto.i16(4), idx_mask_b16)
+    v_idx_ui8 = pto.vbitcast(v_idx_i16, pto.ui8)
+    for row in range(0, valid_rows, 1):
+        mask_len_tail = valid_cols % lanes_ui32
+        if valid_cols % lanes_ui32 == 0:
+            mask_len_tail = lanes_ui32
+        for col in range(0, valid_cols, lanes_ui32):
+            mask_len = lanes_ui32
+            if col == valid_cols - lanes_ui32:
+                mask_len = mask_len_tail
+            store_mask, _ = pto.make_mask(pto.ui8, mask_len)
+            vec = pto.vlds(src[row, col:])
+            converted = pto.vcvt(
+                vec,
+                pto.ui8,
+                full_mask,
+                sat=pto.VcvtSatMode.NOSAT,
+                part=pto.VcvtPartMode.P0,
+            )
+            result = pto.vselr(converted, v_idx_ui8)
+            pto.mem_bar(pto.BarrierType.VST_VST)
+            pto.vsts(result, dst[row, col:], store_mask, dist=pto.VStoreDist.NORM_B8)
     return
 
 
