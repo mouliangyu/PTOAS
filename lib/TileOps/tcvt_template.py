@@ -723,7 +723,7 @@ def template_tcvt_i32_to_ui8(src: pto.Tile, dst: pto.Tile):
                 vec,
                 pto.ui8,
                 full_mask,
-                sat=pto.VcvtSatMode.NOSAT,
+                sat=pto.VcvtSatMode.SAT,
                 part=pto.VcvtPartMode.P0,
             )
             result = pto.vselr(converted, v_idx_ui8)
@@ -819,7 +819,7 @@ def template_tcvt_ui32_to_ui8(src: pto.Tile, dst: pto.Tile):
                 vec,
                 pto.ui8,
                 full_mask,
-                sat=pto.VcvtSatMode.NOSAT,
+                sat=pto.VcvtSatMode.SAT,
                 part=pto.VcvtPartMode.P0,
             )
             result = pto.vselr(converted, v_idx_ui8)
