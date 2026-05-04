@@ -1,4 +1,4 @@
-// RUN: ptoas --pto-arch=a5 --dump-pto-ir-before-emitc %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=IR
+// RUN: ptoas --pto-arch=a5 --mlir-print-ir-after=pto-materialize-tile-handles %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=IR
 // RUN: ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s --check-prefix=EMITC
 
 module {
@@ -20,7 +20,7 @@ module {
   }
 }
 
-// IR: PTOAS IR before EmitC
+// IR: IR Dump After PTOMaterializeTileHandles
 // IR: arith.addi
 // IR: pto.alloc_tile addr = %{{.*}} : !pto.tile_buf<right, 64x256xf32, valid=64x128, slayout=col_major>
 // IR-NOT: pto.view_semantics
