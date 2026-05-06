@@ -58,6 +58,15 @@ _FLOAT_DTYPE_WIDTHS = {
     "f16": 16,
     "bf16": 16,
     "f32": 32,
+    "f8E4M3": 8,
+    "f8E4M3FN": 8,
+    "f8E4M3FNUZ": 8,
+    "f8E4M3B11FNUZ": 8,
+    "f8E5M2": 8,
+    "f8E5M2FNUZ": 8,
+    "!pto.hif8": 8,
+    "!pto.f4E1M2x2": 8,
+    "!pto.f4E2M1x2": 8,
 }
 
 _DTYPE_BYTE_WIDTHS = {
@@ -711,6 +720,15 @@ ui64 = ScalarType("ui64")
 f16 = ScalarType("f16")
 bf16 = ScalarType("bf16")
 f32 = ScalarType("f32")
+f8E4M3 = ScalarType("f8E4M3")
+f8E4M3FN = ScalarType("f8E4M3FN")
+f8E4M3FNUZ = ScalarType("f8E4M3FNUZ")
+f8E4M3B11FNUZ = ScalarType("f8E4M3B11FNUZ")
+f8E5M2 = ScalarType("f8E5M2")
+f8E5M2FNUZ = ScalarType("f8E5M2FNUZ")
+hif8 = ScalarType("!pto.hif8")
+f4E1M2x2 = ScalarType("!pto.f4E1M2x2")
+f4E2M1x2 = ScalarType("!pto.f4E2M1x2")
 PIPE = Pipe
 EVENT = Event
 PAT = MaskPattern
@@ -865,6 +883,15 @@ __all__ = [
     "f16",
     "bf16",
     "f32",
+    "f8E4M3",
+    "f8E4M3FN",
+    "f8E4M3FNUZ",
+    "f8E4M3B11FNUZ",
+    "f8E5M2",
+    "f8E5M2FNUZ",
+    "hif8",
+    "f4E1M2x2",
+    "f4E2M1x2",
     "AnyFloat",
     "AnyInt",
     "AnyType",

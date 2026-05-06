@@ -51,6 +51,15 @@ def _populate_dtype_map() -> None:
         "f16",
         "bf16",
         "f32",
+        "f8E4M3",
+        "f8E4M3FN",
+        "f8E4M3FNUZ",
+        "f8E4M3B11FNUZ",
+        "f8E5M2",
+        "f8E5M2FNUZ",
+        "hif8",
+        "f4E1M2x2",
+        "f4E2M1x2",
         "i8",
         "si8",
         "ui8",
@@ -67,6 +76,16 @@ def _populate_dtype_map() -> None:
         obj = getattr(_t, name, None)
         if isinstance(obj, ScalarType):
             _DTYPE_MAP[name] = obj
+    # PTO low-precision canonical query spellings.
+    _DTYPE_MAP["f8e4m3"] = _DTYPE_MAP["f8E4M3"]
+    _DTYPE_MAP["f8e4m3fn"] = _DTYPE_MAP["f8E4M3FN"]
+    _DTYPE_MAP["f8e4m3fnuz"] = _DTYPE_MAP["f8E4M3FNUZ"]
+    _DTYPE_MAP["f8e4m3b11fnuz"] = _DTYPE_MAP["f8E4M3B11FNUZ"]
+    _DTYPE_MAP["f8e5m2"] = _DTYPE_MAP["f8E5M2"]
+    _DTYPE_MAP["f8e5m2fnuz"] = _DTYPE_MAP["f8E5M2FNUZ"]
+    _DTYPE_MAP["hif8"] = _DTYPE_MAP["hif8"]
+    _DTYPE_MAP["f4e1m2x2"] = _DTYPE_MAP["f4E1M2x2"]
+    _DTYPE_MAP["f4e2m1x2"] = _DTYPE_MAP["f4E2M1x2"]
 
 
 _populate_dtype_map()

@@ -1,0 +1,32 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// Guards low-precision cube mx lowering to Hivm LLVM intrinsics.
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o - | FileCheck %s
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @low_precision_cube_mx_vpto_llvm() attributes {pto.kernel_kind = #pto.kernel_kind<cube>} {
+    %c0 = arith.constant 0 : i64
+    %c16 = arith.constant 16 : i64
+    %c64 = arith.constant 64 : i64
+    %acc = pto.castptr %c0 : i64 -> !pto.ptr<f32, acc>
+    %src_hif8 = pto.castptr %c0 : i64 -> !pto.ptr<!pto.hif8, mat>
+    %dst_hif8_left = pto.castptr %c0 : i64 -> !pto.ptr<!pto.hif8, left>
+    %rhs_f4 = pto.castptr %c0 : i64 -> !pto.ptr<!pto.f4E1M2x2, right>
+
+    pto.load_cbuf_to_ca %src_hif8, %dst_hif8_left, %c0, %c0, %c16, %c16, %c16, %c16
+      : !pto.ptr<!pto.hif8, mat>, !pto.ptr<!pto.hif8, left>, i64, i64, i64, i64, i64, i64
+    pto.mad_mx %dst_hif8_left, %rhs_f4, %acc, %c64, %c16, %c64
+      : !pto.ptr<!pto.hif8, left>, !pto.ptr<!pto.f4E1M2x2, right>, !pto.ptr<f32, acc>, i64, i64, i64
+    return
+  }
+}
+
+// CHECK-LABEL: define void @low_precision_cube_mx_vpto_llvm()
+// CHECK: call void @llvm.hivm.LOAD.L1.TO.L0A.2Dv2.hif8(
+// CHECK: call void @llvm.hivm.MMAD.MX.hif8e1m2x2(

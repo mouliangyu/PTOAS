@@ -619,6 +619,8 @@ def PTO_LoadCbufToCaOp : PTO_Op<"load_cbuf_to_ca"> {
 
   let results = (outs);
 
+  let hasVerifier = 1;
+
   let assemblyFormat = [{
     $source `,` $destination `,` $m_start `,` $k_start `,` $m_step `,`
     $k_step `,` $src_stride `,` $dst_stride attr-dict `:` type($source) `,`
@@ -667,6 +669,8 @@ def PTO_LoadCbufToCbOp : PTO_Op<"load_cbuf_to_cb"> {
 
   let results = (outs);
 
+  let hasVerifier = 1;
+
   let assemblyFormat = [{
     $source `,` $destination `,` $m_start `,` $k_start `,` $m_step `,`
     $k_step `,` $src_stride `,` $dst_stride attr-dict `:` type($source) `,`
@@ -710,6 +714,8 @@ def PTO_LoadCbufToCaMxOp : PTO_Op<"load_cbuf_to_ca_mx"> {
 
   let results = (outs);
 
+  let hasVerifier = 1;
+
   let assemblyFormat = [{
     $source `,` $destination `,` $m `,` $k attr-dict `:` type($source) `,` type($destination) `,` type($m) `,` type($k)
   }];
@@ -728,6 +734,8 @@ def PTO_LoadCbufToCbMxOp : PTO_Op<"load_cbuf_to_cb_mx"> {
   );
 
   let results = (outs);
+
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     $source `,` $destination `,` $x_start_position `,` $y_start_position `,`

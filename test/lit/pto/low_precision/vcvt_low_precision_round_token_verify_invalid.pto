@@ -6,18 +6,19 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a5 --emit-pto-ir %s 2>&1 | FileCheck %s
+// Guards vcvt rejection of unsupported low-precision round-mode tokens.
+// RUN: not ptoas --pto-arch=a5 --pto-backend=vpto %s 2>&1 | FileCheck %s
 
-module {
-  func.func @low_precision_type_roundtrip(
-      %arg0: !pto.hif8,
-      %arg1: !pto.f4E1M2x2,
-      %arg2: !pto.f4E2M1x2) {
+// CHECK: error: custom op 'pto.vcvt' rnd has unsupported value 'BAD'
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @vcvt_low_precision_rejects_bad_round_token(
+      %src_f32: !pto.vreg<64xf32>)
+      attributes {pto.kernel_kind = #pto.kernel_kind<vector>} {
+    pto.vecscope {
+      %mask_b32 = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+      %bad = pto.vcvt %src_f32, %mask_b32 {rnd = "BAD", sat = "SAT", part = "P0"} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<256x!pto.hif8>
+    }
     return
   }
 }
-
-// CHECK-LABEL: func.func @low_precision_type_roundtrip(
-// CHECK-SAME: %arg0: !pto.hif8
-// CHECK-SAME: %arg1: !pto.f4E1M2x2
-// CHECK-SAME: %arg2: !pto.f4E2M1x2

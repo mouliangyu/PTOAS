@@ -1,0 +1,72 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// Guards low-precision vcvt lowering to Hivm LLVM intrinsics.
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o - | FileCheck %s
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @vcvt_low_precision_hivm(
+      %src_fp8_e4m3: !pto.vreg<256xf8E4M3FN>,
+      %src_fp8_e5m2: !pto.vreg<256xf8E5M2>,
+      %src_hif8: !pto.vreg<256x!pto.hif8>,
+      %src_f16: !pto.vreg<128xf16>,
+      %src_f32: !pto.vreg<64xf32>,
+      %src_bf16: !pto.vreg<128xbf16>,
+      %src_f4_e1m2: !pto.vreg<256x!pto.f4E1M2x2>,
+      %src_f4_e2m1: !pto.vreg<256x!pto.f4E2M1x2>,
+      %dst_f32: !pto.ptr<f32, ub>,
+      %dst_hif8: !pto.ptr<!pto.hif8, ub>,
+      %dst_bf16: !pto.ptr<bf16, ub>,
+      %dst_f4_e1m2: !pto.ptr<!pto.f4E1M2x2, ub>,
+      %dst_f4_e2m1: !pto.ptr<!pto.f4E2M1x2, ub>)
+      attributes {pto.kernel_kind = #pto.kernel_kind<vector>} {
+    %c0 = arith.constant 0 : index
+    pto.vecscope {
+      %mask_b8 = pto.pset_b8 "PAT_ALL" : !pto.mask<b8>
+      %mask_b16 = pto.pset_b16 "PAT_ALL" : !pto.mask<b16>
+      %mask_b32 = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+
+      %0 = pto.vcvt %src_fp8_e4m3, %mask_b8 {part = "P0"} : !pto.vreg<256xf8E4M3FN>, !pto.mask<b8> -> !pto.vreg<64xf32>
+      %1 = pto.vcvt %src_fp8_e5m2, %mask_b8 {part = "P1"} : !pto.vreg<256xf8E5M2>, !pto.mask<b8> -> !pto.vreg<64xf32>
+      %2 = pto.vcvt %src_hif8, %mask_b8 {part = "P2"} : !pto.vreg<256x!pto.hif8>, !pto.mask<b8> -> !pto.vreg<64xf32>
+      %3 = pto.vcvt %src_f16, %mask_b16 {rnd = "A", sat = "SAT", part = "EVEN"} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256x!pto.hif8>
+      %4 = pto.vcvt %src_f32, %mask_b32 {rnd = "H", sat = "NOSAT", part = "P3"} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<256x!pto.hif8>
+      %5 = pto.vcvt %src_f4_e1m2, %mask_b8 {part = "EVEN"} : !pto.vreg<256x!pto.f4E1M2x2>, !pto.mask<b8> -> !pto.vreg<128xbf16>
+      %6 = pto.vcvt %src_f4_e2m1, %mask_b8 {part = "ODD"} : !pto.vreg<256x!pto.f4E2M1x2>, !pto.mask<b8> -> !pto.vreg<128xbf16>
+      %7 = pto.vcvt %src_bf16, %mask_b16 {rnd = "R", part = "EVEN"} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<256x!pto.f4E1M2x2>
+      %8 = pto.vcvt %src_bf16, %mask_b16 {rnd = "R", part = "ODD"} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<256x!pto.f4E2M1x2>
+
+      pto.vsts %0, %dst_f32[%c0], %mask_b32 : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
+      pto.vsts %1, %dst_f32[%c0], %mask_b32 : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
+      pto.vsts %2, %dst_f32[%c0], %mask_b32 : !pto.vreg<64xf32>, !pto.ptr<f32, ub>, !pto.mask<b32>
+      pto.vsts %3, %dst_hif8[%c0], %mask_b8 : !pto.vreg<256x!pto.hif8>, !pto.ptr<!pto.hif8, ub>, !pto.mask<b8>
+      pto.vsts %4, %dst_hif8[%c0], %mask_b8 : !pto.vreg<256x!pto.hif8>, !pto.ptr<!pto.hif8, ub>, !pto.mask<b8>
+      pto.vsts %5, %dst_bf16[%c0], %mask_b16 : !pto.vreg<128xbf16>, !pto.ptr<bf16, ub>, !pto.mask<b16>
+      pto.vsts %6, %dst_bf16[%c0], %mask_b16 : !pto.vreg<128xbf16>, !pto.ptr<bf16, ub>, !pto.mask<b16>
+      pto.vsts %7, %dst_f4_e1m2[%c0], %mask_b8 : !pto.vreg<256x!pto.f4E1M2x2>, !pto.ptr<!pto.f4E1M2x2, ub>, !pto.mask<b8>
+      pto.vsts %8, %dst_f4_e2m1[%c0], %mask_b8 : !pto.vreg<256x!pto.f4E2M1x2>, !pto.ptr<!pto.f4E2M1x2, ub>, !pto.mask<b8>
+    }
+    return
+  }
+}
+
+// CHECK-LABEL: define void @vcvt_low_precision_hivm(
+// CHECK: [[MASK_B8:%[0-9]+]] = call <256 x i1> @llvm.hivm.pset.b8(i32 0)
+// CHECK: [[MASK_B16:%[0-9]+]] = call <256 x i1> @llvm.hivm.pset.b16(i32 0)
+// CHECK: [[MASK_B32:%[0-9]+]] = call <256 x i1> @llvm.hivm.pset.b32(i32 0)
+// CHECK: call <64 x float> @llvm.hivm.vcvtff.f8e4m32f32.x({{.*}}, <256 x i1> [[MASK_B8]], i32 0)
+// CHECK: call <64 x float> @llvm.hivm.vcvtff.f8e5m22f32.x({{.*}}, <256 x i1> [[MASK_B8]], i32 1)
+// CHECK: call <64 x float> @llvm.hivm.vcvtff.hif82f32.x({{.*}}, <256 x i1> [[MASK_B8]], i32 2)
+// CHECK: call <256 x i8> @llvm.hivm.vcvtff.f162hif8.x({{.*}}, <256 x i1> [[MASK_B16]], i32 1, i32 1, i32 0)
+// CHECK: call <256 x i8> @llvm.hivm.vcvtff.f322hif8.x({{.*}}, <256 x i1> [[MASK_B32]], i32 6, i32 0, i32 3)
+// CHECK: call <128 x bfloat> @llvm.hivm.vcvtff2.f4e1m2x22bf16.x({{.*}}, <256 x i1> [[MASK_B8]], i32 0)
+// CHECK: call <128 x bfloat> @llvm.hivm.vcvtff2.f4e2m1x22bf16.x({{.*}}, <256 x i1> [[MASK_B8]], i32 1)
+// CHECK: call <256 x i8> @llvm.hivm.vcvtff2.bf162f4e1m2x2.x({{.*}}, <256 x i1> [[MASK_B16]], i32 0, i32 0)
+// CHECK: call <256 x i8> @llvm.hivm.vcvtff2.bf162f4e2m1x2.x({{.*}}, <256 x i1> [[MASK_B16]], i32 0, i32 1)
+// CHECK-NOT: @llvm.hivm.vcvtii.
+// CHECK-NOT: @llvm.hivm.vcvtif.

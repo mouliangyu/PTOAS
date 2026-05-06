@@ -1,0 +1,35 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// Guards vcvt diagnostics for missing required low-precision attrs.
+// RUN: not ptoas --pto-arch=a5 --pto-backend=vpto %s 2>&1 | FileCheck %s
+
+// CHECK: error: 'pto.vcvt' op requires sat attr for this vcvt type pair
+// CHECK: error: 'pto.vcvt' op requires part attr for this vcvt type pair
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @vcvt_low_precision_missing_sat(
+      %src_f32: !pto.vreg<64xf32>)
+      attributes {pto.kernel_kind = #pto.kernel_kind<vector>} {
+    pto.vecscope {
+      %mask_b32 = pto.pset_b32 "PAT_ALL" : !pto.mask<b32>
+      %bad = pto.vcvt %src_f32, %mask_b32 {rnd = "H", part = "P3"} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<256x!pto.hif8>
+    }
+    return
+  }
+
+  func.func @vcvt_low_precision_missing_part(
+      %src_hif8: !pto.vreg<256x!pto.hif8>)
+      attributes {pto.kernel_kind = #pto.kernel_kind<vector>} {
+    pto.vecscope {
+      %mask_b8 = pto.pset_b8 "PAT_ALL" : !pto.mask<b8>
+      %bad = pto.vcvt %src_hif8, %mask_b8 : !pto.vreg<256x!pto.hif8>, !pto.mask<b8> -> !pto.vreg<64xf32>
+    }
+    return
+  }
+}
