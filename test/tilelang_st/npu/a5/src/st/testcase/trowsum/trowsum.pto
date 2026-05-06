@@ -1090,7 +1090,7 @@ module {
   }
 
   // i16_1x64_overflow: test vcvt NOSAT behavior (1000*64=64000 wraps to -1536 in i16)
-  func.func @TROWSUM_i16_1x64_overflow(%src_ptr: !pto.ptr<i16>, %dst_ptr: !pto.ptr<i16>) {
+  func.func @TROWSUM_i16_1x64_overflow(%src_ptr: !pto.ptr<i16>, %dst_ptr: !pto.ptr<i16>) attributes { pto.entry } {
     %c0   = arith.constant 0    : index
     %c1   = arith.constant 1    : index
     %c64  = arith.constant 64   : index
