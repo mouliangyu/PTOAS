@@ -8,7 +8,7 @@
 
 """TileLang DSL template for pto.tfillpad_inplace
 
-Semantic (based on C++ TFillPad.hpp reference):
+Semantic (based on TFillPad.hpp reference):
   - TFILLPAD_INPLACE: same physical buffer (src == dst), skips copy phase, only fills expansion
   - Inplace mode: src and dst share the same physical UB address
 
@@ -46,10 +46,10 @@ _DTYPE_SIGNATURES = [
 def template_tfillpad_inplace(src: pto.Tile, dst: pto.Tile):
     """tfillpad_inplace: skip copy phase, only fill expansion regions.
 
-Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
+Uses vstus+vstas for unaligned column fill, matching TFillPad.hpp.
 """
     dtype = dst.element_type
-    _, cols = src.shape
+    _, cols = dst.shape
     src_valid_rows, src_valid_cols = src.valid_shape
     _, _ = dst.shape
     dst_valid_rows, dst_valid_cols = dst.valid_shape
@@ -119,8 +119,8 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
             fill_scalar = pto.i8(0)
 
     # Phase 2: Fill cols from src_valid_cols to cols-1 (physical buffer end)
-    # Use vstus+vstas for unaligned starting column, matching C++ TFillPad.hpp
-    pad_cols = cols - src_valid_cols  # Matching C++: TileDataDst::Cols - srcValidCol
+    # Use vstus+vstas for unaligned starting column, matching TFillPad.hpp
+    pad_cols = cols - src_valid_cols  # TileDataDst::Cols - srcValidCol
 
     # Create fill vector once (reused across all rows)
     fill_vec = pto.vdup(fill_scalar, pto.make_mask(dtype, pto.PAT.ALL))
@@ -133,12 +133,12 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
         ureg = pto.init_align()
 
         # Pointer to dst[row, src_valid_cols]: base_ptr + (row * cols + src_valid_cols) * byte_width
-        # Matching C++: dstPtr + i * dstStride + srcValidCol
+        # Matching: dstPtr + i * dstStride + srcValidCol
         row_offset = (row * cols + src_valid_cols) * byte_width
         row_ptr = pto.addptr(base_ptr, row_offset)
 
         # Simple loop: iterate pad_cols times with step lanes
-        # Use vstus + addptr in each branch to simulate C++ POST_UPDATE behavior
+        # Use vstus + addptr in each branch to simulate POST_UPDATE behavior
         # ureg, remaining, row_ptr are all loop-carried, updated in every iteration
         remaining = pad_cols
         for _ in range(0, pad_cols, lanes):
@@ -155,7 +155,7 @@ Uses vstus+vstas for unaligned column fill, matching C++ TFillPad.hpp.
         pto.vstas(ureg, row_ptr, 0)
 
     # Phase 4: Fill rows from src_valid_rows to dst_valid_rows-1
-    # Fill entire physical rows (cols elements), matching C++: padRows * dstStride
+    # Fill entire physical rows (cols elements), matching: padRows * dstStride
     for row in range(src_valid_rows, dst_valid_rows, 1):
         remained = cols
         for col in range(0, cols, lanes):
