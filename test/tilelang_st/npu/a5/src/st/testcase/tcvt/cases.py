@@ -120,38 +120,47 @@ CASES = [
         "round_mode": "RINT",
         "eps": 1e-6,
     },
+    # f32 → f16, bf16, i16, i32, i64, f32
     *_make_cases(np.float32, np.float16),
     *_make_cases(np.float32, bfloat16),
     *_make_cases(np.float32, np.int16),
     *_make_cases(np.float32, np.int32),
     *_make_cases(np.float32, np.int64),
     *_make_cases(np.float32, np.float32),
+    # f16 → f32, i32, i16, si8, ui8
     *_make_cases(np.float16, np.float32),
     *_make_cases(np.float16, np.int32),
     *_make_cases(np.float16, np.int16),
     *_make_cases(np.float16, np.int8),
     *_make_cases(np.float16, np.uint8),
+    # bf16 → f32, f16, i32
     *_make_cases(bfloat16, np.float32),
     *_make_cases(bfloat16, np.float16),
     *_make_cases(bfloat16, np.int32),
+    # ui8 → f16, ui16
     *_make_cases(np.uint8, np.float16),
     *_make_cases(np.uint8, np.uint16),
+    # si8 → f16, si16, i32
     *_make_cases(np.int8, np.float16),
     *_make_cases(np.int8, "si16"),
     *_make_cases(np.int8, np.int32),
+    # i16 → ui8, f16, f32, ui32, i32
     *_make_cases(np.int16, np.uint8),
     *_make_cases(np.int16, np.float16),
     *_make_cases(np.int16, np.float32),
     *_make_cases(np.int16, np.uint32),
     *_make_cases(np.int16, np.int32),
+    # i32 → f32, i16, i64, ui8, ui16
     *_make_cases(np.int32, np.float32),
     *_make_cases(np.int32, np.int16),
     *_make_cases(np.int32, np.int64),
     *_make_cases(np.int32, np.uint8),
     *_make_cases(np.int32, np.uint16),
+    # ui32 → i16, ui16, ui8
     *_make_cases(np.uint32, np.int16),
     *_make_cases(np.uint32, np.uint16),
     *_make_cases(np.uint32, np.uint8),
+    # i64 → f32, i32
     *_make_cases(np.int64, np.float32),
     *_make_cases(np.int64, np.int32),
 ]
