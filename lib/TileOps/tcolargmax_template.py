@@ -112,9 +112,8 @@ def template_tcolargmax_i8_to_i32(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
             output_odd = pto.vcvt(index_output_0, final_cvt_dtype, all_mask_intermediate, part=pto.VcvtPartMode.ODD)
             output_0, output_1 = pto.vintlv(output_even, output_odd)
 
-            if pto.constexpr(src_dtype == pto.ui8):
-                output_0 = pto.vbitcast(output_0, pto.i32)
-                output_1 = pto.vbitcast(output_1, pto.i32)
+            output_0 = pto.vbitcast(output_0, pto.i32)
+            output_1 = pto.vbitcast(output_1, pto.i32)
 
             pto.vsts(output_0, dst[0, col:], mask_i32_0)
             pto.vsts(output_1, dst[0, col + lanes_i32:], mask_i32_1)
@@ -123,9 +122,8 @@ def template_tcolargmax_i8_to_i32(src: pto.Tile, tmp: pto.Tile, dst: pto.Tile):
             output_odd = pto.vcvt(index_output_1, final_cvt_dtype, all_mask_intermediate, part=pto.VcvtPartMode.ODD)
             output_0, output_1 = pto.vintlv(output_even, output_odd)
 
-            if pto.constexpr(src_dtype == pto.ui8):
-                output_0 = pto.vbitcast(output_0, pto.i32)
-                output_1 = pto.vbitcast(output_1, pto.i32)
+            output_0 = pto.vbitcast(output_0, pto.i32)
+            output_1 = pto.vbitcast(output_1, pto.i32)
 
             pto.vsts(output_0, dst[0, col + 2 * lanes_i32:], mask_i32_2)
             pto.vsts(output_1, dst[0, col + 3 * lanes_i32:], mask_i32_3)
