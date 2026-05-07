@@ -417,6 +417,16 @@ static std::optional<OperandTypeInfo> buildOperandTypeInfo(Value value) {
     return info;
   }
 
+  // Vector operand — extract element type for scalar-like handling.
+  if (auto vecTy = dyn_cast<VectorType>(ty)) {
+    OperandTypeInfo info;
+    info.kind = OperandKind::Scalar;
+    info.dtype = getDtypeString(vecTy.getElementType());
+    if (info.dtype.empty())
+      return std::nullopt;
+    return info;
+  }
+
   // Scalar operand — from a scalar element type.
   OperandTypeInfo info;
   info.kind = OperandKind::Scalar;
