@@ -715,7 +715,7 @@ def template_tcvt_i32_to_ui8(src: pto.Tile, dst: pto.Tile):
             mask_len_tail = lanes_i32
         for col in range(0, valid_cols, lanes_i32):
             mask_len = lanes_i32
-            if col == valid_cols - lanes_i32:
+            if valid_cols < lanes_i32 or col == valid_cols - lanes_i32:
                 mask_len = mask_len_tail
             store_mask, _ = pto.make_mask(pto.ui8, mask_len)
             vec = pto.vlds(src[row, col:])
@@ -811,7 +811,7 @@ def template_tcvt_ui32_to_ui8(src: pto.Tile, dst: pto.Tile):
             mask_len_tail = lanes_ui32
         for col in range(0, valid_cols, lanes_ui32):
             mask_len = lanes_ui32
-            if col == valid_cols - lanes_ui32:
+            if valid_cols < lanes_ui32 or col == valid_cols - lanes_ui32:
                 mask_len = mask_len_tail
             store_mask, _ = pto.make_mask(pto.ui8, mask_len)
             vec = pto.vlds(src[row, col:])
