@@ -1079,6 +1079,8 @@ def template_tcvt_f32_to_i16(src: pto.Tile, dst: pto.Tile):
         rnd = pto.VcvtRoundMode.C
     elif pto.constexpr(round_mode == "TRUNC"):
         rnd = pto.VcvtRoundMode.Z
+    elif pto.constexpr(round_mode == "ODD"):
+        rnd = pto.VcvtRoundMode.O
 
     full_mask = pto.make_mask(pto.f32, pto.PAT.ALL)
     for row in range(0, valid_rows, 1):
