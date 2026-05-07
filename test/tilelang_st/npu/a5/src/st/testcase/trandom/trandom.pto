@@ -49,16 +49,13 @@ module {
       : !pto.tensor_view<1x1x1x4x256xui32> -> !pto.partition_tensor_view<1x1x1x4x256xui32>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<loc=vec, dtype=ui32, rows=4, cols=256, v_row=4, v_col=256,
-                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
+      : !pto.tile_buf<vec, 4x256xui32>
 
     // Input 6 scalars are i32 (signless), output tile is ui32
     pto.trandom ins(%key0, %key1, %counter0, %counter1, %counter2, %counter3 : i32, i32, i32, i32, i32, i32)
-                outs(%dst : !pto.tile_buf<loc=vec, dtype=ui32, rows=4, cols=256, v_row=4, v_col=256,
-                                        blayout=row_major, slayout=none_box, fractal=512, pad=0>)
+                outs(%dst : !pto.tile_buf<vec, 4x256xui32>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<loc=vec, dtype=ui32, rows=4, cols=256, v_row=4, v_col=256,
-                                       blayout=row_major, slayout=none_box, fractal=512, pad=0>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 4x256xui32>)
                outs(%output_part : !pto.partition_tensor_view<1x1x1x4x256xui32>)
     return
   }
