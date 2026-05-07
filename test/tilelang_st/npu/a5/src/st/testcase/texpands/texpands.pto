@@ -33,12 +33,12 @@ module {
       : !pto.tensor_view<1x1x1x16x64xf32> -> !pto.partition_tensor_view<1x1x1x16x64xf32>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 16x64xf32>
+      : !pto.tile_buf<vec, 16x64xf32, valid=16x64>
 
     pto.texpands ins(%scalar : f32)
-                 outs(%dst : !pto.tile_buf<vec, 16x64xf32>)
+                 outs(%dst : !pto.tile_buf<vec, 16x64xf32, valid=16x64>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 16x64xf32>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 16x64xf32, valid=16x64>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x16x64xf32>)
     return
   }
@@ -62,12 +62,12 @@ module {
       : !pto.tensor_view<1x1x1x32x32xf32> -> !pto.partition_tensor_view<1x1x1x32x32xf32>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 32x32xf32>
+      : !pto.tile_buf<vec, 32x32xf32, valid=32x32>
 
     pto.texpands ins(%scalar : f32)
-                 outs(%dst : !pto.tile_buf<vec, 32x32xf32>)
+                 outs(%dst : !pto.tile_buf<vec, 32x32xf32, valid=32x32>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 32x32xf32>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 32x32xf32, valid=32x32>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x32x32xf32>)
     return
   }
@@ -91,12 +91,12 @@ module {
       : !pto.tensor_view<1x1x1x64x64xf32> -> !pto.partition_tensor_view<1x1x1x64x64xf32>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 64x64xf32>
+      : !pto.tile_buf<vec, 64x64xf32, valid=64x64>
 
     pto.texpands ins(%scalar : f32)
-                 outs(%dst : !pto.tile_buf<vec, 64x64xf32>)
+                 outs(%dst : !pto.tile_buf<vec, 64x64xf32, valid=64x64>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xf32>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xf32, valid=64x64>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x64x64xf32>)
     return
   }
@@ -185,12 +185,12 @@ module {
       : !pto.tensor_view<1x1x1x64x64xi32> -> !pto.partition_tensor_view<1x1x1x64x64xi32>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 64x64xi32>
+      : !pto.tile_buf<vec, 64x64xi32, valid=64x64>
 
     pto.texpands ins(%scalar : i32)
-                 outs(%dst : !pto.tile_buf<vec, 64x64xi32>)
+                 outs(%dst : !pto.tile_buf<vec, 64x64xi32, valid=64x64>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xi32>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xi32, valid=64x64>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x64x64xi32>)
     return
   }
@@ -247,12 +247,12 @@ module {
       : !pto.tensor_view<1x1x1x64x64xf16> -> !pto.partition_tensor_view<1x1x1x64x64xf16>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 64x64xf16>
+      : !pto.tile_buf<vec, 64x64xf16, valid=64x64>
 
     pto.texpands ins(%scalar : f16)
-                 outs(%dst : !pto.tile_buf<vec, 64x64xf16>)
+                 outs(%dst : !pto.tile_buf<vec, 64x64xf16, valid=64x64>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xf16>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xf16, valid=64x64>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x64x64xf16>)
     return
   }
@@ -309,12 +309,12 @@ module {
       : !pto.tensor_view<1x1x1x64x64xi16> -> !pto.partition_tensor_view<1x1x1x64x64xi16>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 64x64xi16>
+      : !pto.tile_buf<vec, 64x64xi16, valid=64x64>
 
     pto.texpands ins(%scalar : i16)
-                 outs(%dst : !pto.tile_buf<vec, 64x64xi16>)
+                 outs(%dst : !pto.tile_buf<vec, 64x64xi16, valid=64x64>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xi16>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xi16, valid=64x64>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x64x64xi16>)
     return
   }
