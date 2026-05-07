@@ -283,9 +283,9 @@ def template_tcvt_si8_to_f16(src: pto.Tile, dst: pto.Tile):
         remained = valid_cols
         for col in range(0, valid_cols, pto.get_lanes(pto.f16)):
             store_mask, remained = pto.make_mask(pto.f16, remained)
-            vec_si8 = pto.vlds(src[row, col:], dist=pto.VLoadDist.UNPK_B8)
+            vec = pto.vlds(src[row, col:], dist=pto.VLoadDist.UNPK_B8)
             converted = pto.vcvt(
-                vec_si8,
+                vec,
                 pto.f16,
                 full_mask,
                 part=pto.VcvtPartMode.EVEN,
@@ -309,9 +309,9 @@ def template_tcvt_si8_to_si16(src: pto.Tile, dst: pto.Tile):
         remained = valid_cols
         for col in range(0, valid_cols, pto.get_lanes(pto.si16)):
             store_mask, remained = pto.make_mask(pto.si16, remained)
-            vec_si8 = pto.vlds(src[row, col:], dist=pto.VLoadDist.UNPK_B8)
+            vec = pto.vlds(src[row, col:], dist=pto.VLoadDist.UNPK_B8)
             converted = pto.vcvt(
-                vec_si8,
+                vec,
                 pto.si16,
                 full_mask,
                 part=pto.VcvtPartMode.EVEN,
