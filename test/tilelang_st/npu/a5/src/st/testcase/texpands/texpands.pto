@@ -91,12 +91,12 @@ module {
       : !pto.tensor_view<1x1x1x64x64xf32> -> !pto.partition_tensor_view<1x1x1x64x64xf32>
 
     %dst = pto.alloc_tile
-      : !pto.tile_buf<vec, 64x64xf32, valid=64x64>
+      : !pto.tile_buf<vec, 64x64xf32>
 
     pto.texpands ins(%scalar : f32)
-                 outs(%dst : !pto.tile_buf<vec, 64x64xf32, valid=64x64>)
+                 outs(%dst : !pto.tile_buf<vec, 64x64xf32>)
 
-    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xf32, valid=64x64>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 64x64xf32>)
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x64x64xf32>)
     return
   }
