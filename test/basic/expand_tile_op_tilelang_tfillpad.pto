@@ -20,9 +20,9 @@
 // CHECK-NOT: pto.tfillpad ins
 // CHECK: pto.vecscope
 // CHECK: pto.castptr
-// CHECK: pto.vlds
-// CHECK: pto.vsts
-// CHECK: pto.vdup
+// CHECK-DAG: pto.vdup
+// CHECK-DAG: pto.vlds
+// CHECK-DAG: pto.vsts
 // Note: vstus is not supported in TileLang DSL v1, so padding uses vsts instead
 
 module {

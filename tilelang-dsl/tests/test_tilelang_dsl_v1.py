@@ -8,6 +8,9 @@
 
 import tempfile
 import unittest
+import io
+import sys
+from contextlib import redirect_stderr
 from unittest import mock
 from importlib import util
 from pathlib import Path
@@ -25,8 +28,6 @@ from tilelang_dsl.support_matrix import (
     BASIC_TIER,
     BASIC_TILE_INDEXING_SURFACES,
     ADVANCED_VECSCOPE_PTO_CALLS,
-    INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS,
-    INFERRED_VECSCOPE_NEUTRAL_PTO_CALLS,
     SUPPORTED_VECSCOPE_PTO_CALLS,
     get_feature_tier,
     get_surface_group_tier,
@@ -302,6 +303,313 @@ class TileLangDSLPackageTests(unittest.TestCase):
 
 
 class TileLangDSLExpandHelperTests(unittest.TestCase):
+    def test_cross_file_inline_proc_direct_import_materializes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            shared_name = "shared_cross_file_positive_unique"
+            (root / f"{shared_name}.py").write_text(
+                """
+import tilelang_dsl as pto
+
+@pto.inline_proc
+def shared_touch():
+    return
+""",
+                encoding="utf-8",
+            )
+            template_path = root / "cross_file_positive_template_unique.py"
+            template_path.write_text(
+                f"""
+import tilelang_dsl as pto
+from {shared_name} import shared_touch
+
+@pto.vkernel(op="pto.cross_file_positive_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    shared_touch()
+    return
+""",
+                encoding="utf-8",
+            )
+
+            with expand_helper._template_import_context(root):
+                mod = expand_helper._import_py_file(template_path)
+            self.assertIsNotNone(mod)
+            desc = expand_helper._find_descriptors(mod)[0]
+            self.assertIn("shared_touch", desc.inline_procs)
+
+            specialized = desc.specialize(
+                src=pto.TileSpecialization(shape=(1, 64), memory_space=pto.MemorySpace.UB)
+            )
+            frontend = build_frontend_kernel_node(specialized)
+            self.assertIn("shared_touch", {proc.name for proc in frontend.inline_procs})
+
+            text = specialized.mlir_text()
+            self.assertRegex(text, r"func\.call @__tl_inline_shared_touch_")
+            self.assertRegex(text, r"func\.func private @__tl_inline_shared_touch_")
+            self.assertIn("pto.tilelang.inline_proc", text)
+
+    def test_cross_file_inline_proc_package_import_materializes_without_leaking_sys_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            package_root = Path(tmpdir)
+            template_dir = package_root / "TileOps"
+            template_dir.mkdir()
+            (template_dir / "__init__.py").write_text("", encoding="utf-8")
+
+            shared_name = "shared_cross_file_package_unique"
+            (template_dir / f"{shared_name}.py").write_text(
+                """
+import tilelang_dsl as pto
+
+@pto.inline_proc
+def shared_touch():
+    return
+""",
+                encoding="utf-8",
+            )
+            template_path = template_dir / "cross_file_package_template_unique.py"
+            template_path.write_text(
+                f"""
+import tilelang_dsl as pto
+from TileOps.{shared_name} import shared_touch
+
+@pto.vkernel(op="pto.cross_file_package_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    shared_touch()
+    return
+""",
+                encoding="utf-8",
+            )
+
+            before_counts = {
+                str(template_dir): sys.path.count(str(template_dir)),
+                str(package_root): sys.path.count(str(package_root)),
+            }
+            with expand_helper._template_import_context(template_dir):
+                self.assertGreaterEqual(
+                    sys.path.count(str(template_dir)),
+                    before_counts[str(template_dir)] + 1,
+                )
+                self.assertGreaterEqual(
+                    sys.path.count(str(package_root)),
+                    before_counts[str(package_root)] + 1,
+                )
+                mod = expand_helper._import_py_file(template_path)
+            self.assertIsNotNone(mod)
+            self.assertEqual(sys.path.count(str(template_dir)), before_counts[str(template_dir)])
+            self.assertEqual(sys.path.count(str(package_root)), before_counts[str(package_root)])
+
+            desc = expand_helper._find_descriptors(mod)[0]
+            self.assertIn("shared_touch", desc.inline_procs)
+
+            specialized = desc.specialize(
+                src=pto.TileSpecialization(shape=(1, 64), memory_space=pto.MemorySpace.UB)
+            )
+            frontend = build_frontend_kernel_node(specialized)
+            self.assertIn("shared_touch", {proc.name for proc in frontend.inline_procs})
+
+            text = specialized.mlir_text()
+            self.assertRegex(text, r"func\.call @__tl_inline_shared_touch_")
+            self.assertRegex(text, r"func\.func private @__tl_inline_shared_touch_")
+            self.assertIn("pto.tilelang.inline_proc", text)
+
+    def test_cross_file_inline_proc_collects_shared_helper_callees(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            shared_name = "shared_cross_file_nested_unique"
+            (root / f"{shared_name}.py").write_text(
+                """
+import tilelang_dsl as pto
+
+@pto.inline_proc
+def shared_leaf():
+    return
+
+@pto.inline_proc
+def shared_entry():
+    shared_leaf()
+    return
+""",
+                encoding="utf-8",
+            )
+            template_path = root / "cross_file_nested_template_unique.py"
+            template_path.write_text(
+                f"""
+import tilelang_dsl as pto
+from {shared_name} import shared_entry
+
+@pto.vkernel(op="pto.cross_file_nested_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    shared_entry()
+    return
+""",
+                encoding="utf-8",
+            )
+
+            with expand_helper._template_import_context(root):
+                mod = expand_helper._import_py_file(template_path)
+            self.assertIsNotNone(mod)
+            desc = expand_helper._find_descriptors(mod)[0]
+            self.assertIn("shared_entry", desc.inline_procs)
+            self.assertIn("shared_leaf", desc.inline_procs)
+
+            specialized = desc.specialize(
+                src=pto.TileSpecialization(shape=(1, 64), memory_space=pto.MemorySpace.UB)
+            )
+            frontend = build_frontend_kernel_node(specialized)
+            self.assertEqual(
+                {proc.name for proc in frontend.inline_procs},
+                {"shared_entry", "shared_leaf"},
+            )
+
+            text = specialized.mlir_text()
+            self.assertRegex(text, r"func\.call @__tl_inline_shared_entry_")
+            self.assertRegex(text, r"func\.func private @__tl_inline_shared_entry_")
+            self.assertRegex(text, r"func\.func private @__tl_inline_shared_leaf_")
+
+    def test_cross_file_imported_plain_function_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            shared_name = "shared_cross_file_plain_unique"
+            (root / f"{shared_name}.py").write_text(
+                """
+def plain_helper():
+    return
+""",
+                encoding="utf-8",
+            )
+            template_path = root / "cross_file_plain_template_unique.py"
+            template_path.write_text(
+                f"""
+import tilelang_dsl as pto
+from {shared_name} import plain_helper
+
+@pto.vkernel(op="pto.cross_file_plain_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    plain_helper()
+    return
+""",
+                encoding="utf-8",
+            )
+
+            stderr = io.StringIO()
+            with redirect_stderr(stderr), expand_helper._template_import_context(root):
+                mod = expand_helper._import_py_file(template_path)
+
+        self.assertIsNone(mod)
+        self.assertIn(
+            "arbitrary external call `plain_helper` is not supported",
+            stderr.getvalue(),
+        )
+
+    def test_cross_file_inline_proc_negative_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            recursive_name = "shared_cross_file_recursive_unique"
+            (root / f"{recursive_name}.py").write_text(
+                """
+import tilelang_dsl as pto
+
+@pto.inline_proc
+def shared_recur():
+    shared_recur()
+    return
+""",
+                encoding="utf-8",
+            )
+            recursive_template = root / "cross_file_recursive_template_unique.py"
+            recursive_template.write_text(
+                f"""
+import tilelang_dsl as pto
+from {recursive_name} import shared_recur
+
+@pto.vkernel(op="pto.cross_file_recursive_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    shared_recur()
+    return
+""",
+                encoding="utf-8",
+            )
+            with expand_helper._template_import_context(root):
+                recursive_mod = expand_helper._import_py_file(recursive_template)
+            self.assertIsNotNone(recursive_mod)
+            recursive_desc = expand_helper._find_descriptors(recursive_mod)[0]
+            with self.assertRaises(pto.TileLangFrontendError) as recursive_ctx:
+                recursive_desc.specialize(
+                    src=pto.TileSpecialization(shape=(1, 64), memory_space=pto.MemorySpace.UB)
+                ).mlir_text()
+            self.assertIn("recursive inline_proc call `shared_recur`", str(recursive_ctx.exception))
+
+            capture_name = "shared_cross_file_capture_unique"
+            (root / f"{capture_name}.py").write_text(
+                """
+import tilelang_dsl as pto
+
+scale = object()
+
+@pto.inline_proc
+def shared_capture():
+    value = scale
+    return
+""",
+                encoding="utf-8",
+            )
+            capture_template = root / "cross_file_capture_template_unique.py"
+            capture_template.write_text(
+                f"""
+import tilelang_dsl as pto
+from {capture_name} import shared_capture
+
+@pto.vkernel(op="pto.cross_file_capture_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    shared_capture()
+    return
+""",
+                encoding="utf-8",
+            )
+            with expand_helper._template_import_context(root):
+                capture_mod = expand_helper._import_py_file(capture_template)
+            self.assertIsNotNone(capture_mod)
+            capture_desc = expand_helper._find_descriptors(capture_mod)[0]
+            with self.assertRaises(pto.TileLangFrontendError) as capture_ctx:
+                capture_desc.specialize(
+                    src=pto.TileSpecialization(shape=(1, 64), memory_space=pto.MemorySpace.UB)
+                ).mlir_text()
+            self.assertIn("implicit capture of 'scale' is not allowed", str(capture_ctx.exception))
+
+            conflict_name = "shared_cross_file_conflict_unique"
+            (root / f"{conflict_name}.py").write_text(
+                """
+import tilelang_dsl as pto
+
+@pto.inline_proc
+def helper():
+    return
+
+@pto.inline_proc
+def entry():
+    return
+""",
+                encoding="utf-8",
+            )
+            conflict_template = root / "cross_file_conflict_template_unique.py"
+            conflict_template.write_text(
+                f"""
+import tilelang_dsl as pto
+from {conflict_name} import entry as helper
+
+@pto.vkernel(op="pto.cross_file_conflict_unique", dtypes=[(pto.f32,)])
+def kernel(src: pto.Tile):
+    helper()
+    return
+""",
+                encoding="utf-8",
+            )
+            stderr = io.StringIO()
+            with redirect_stderr(stderr), expand_helper._template_import_context(root):
+                conflict_mod = expand_helper._import_py_file(conflict_template)
+            self.assertIsNone(conflict_mod)
+            self.assertIn("ambiguous inline_proc name `helper`", stderr.getvalue())
+
     def test_operand_specs_preserve_tile_valid_shape_and_pad_value(self) -> None:
         source = """
 import tilelang_dsl as pto
@@ -562,22 +870,6 @@ class TileLangDSLSupportMatrixTests(unittest.TestCase):
             get_feature_tier("pto.dma_copy")
         with self.assertRaises(KeyError):
             get_feature_tier("pto.vreduce")
-
-    def test_inferred_vecscope_tables_follow_supported_vecscope_surfaces(self) -> None:
-        self.assertTrue(
-            SUPPORTED_VECSCOPE_PTO_CALLS.issubset(
-                INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS
-            )
-        )
-        self.assertTrue(
-            ADVANCED_VECSCOPE_PTO_CALLS.issubset(
-                INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS
-            )
-        )
-        self.assertIn("vbitcast", INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS)
-        self.assertIn("vselr", INFERRED_VECSCOPE_ACTIVITY_PTO_CALLS)
-        self.assertIn("mem_bar", INFERRED_VECSCOPE_NEUTRAL_PTO_CALLS)
-
 
 class TileLangDSLMatcherEntryTests(unittest.TestCase):
     def test_select_kernel_returns_descriptor_from_default_registry(self) -> None:
@@ -3195,6 +3487,68 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertRegex(text, r"= arith\.mulf %tmp_\d+, %c0_5_f32 : f32")
         self.assertRegex(text, r"= arith\.addf %tmp_\d+, %tmp_\d+ : f32")
 
+    def test_index_and_i32_scalar_binary_ops_bridge_index_literals(self) -> None:
+        @pto.vkernel(
+            op="index_i32_scalar_binary_bridge_unique",
+            dtypes=[(pto.f32, pto.AnyType, pto.f32)],
+            advanced=True,
+        )
+        def kernel(src: pto.Tile, gate: pto.AnyType, dst: pto.Tile):
+            rows = src.shape[0]
+            cols = src.shape[1]
+            with pto.strict_vecscope(
+                src,
+                dst,
+                gate,
+                rows,
+                cols,
+                0,
+                rows,
+                1,
+            ) as (src_tile, dst_tile, in_gate, valid_rows, valid_cols, row_lb, row_ub, row_step):
+                for row in range(row_lb, row_ub, row_step):
+                    if in_gate > 1:
+                        for lane in range(0, valid_cols, 64):
+                            lane_limit = in_gate + 1
+                            mask, _ = pto.make_mask(pto.f32, lane_limit)
+                            vec = pto.vlds(src_tile, lane)
+                            pto.vsts(vec, dst_tile, lane, mask)
+            return None
+
+        selected = pto.select_kernel(
+            "a5",
+            "index_i32_scalar_binary_bridge_unique",
+            (pto.f32, pto.i32, pto.f32),
+        )
+        specialized = selected.specialize(
+            src=pto.TileSpecialization(shape=(8, 64), memory_space=pto.MemorySpace.UB),
+            dst=pto.TileSpecialization(shape=(8, 64), memory_space=pto.MemorySpace.UB),
+        )
+
+        text = specialized.mlir_text()
+        self.assertRegex(text, r"%tmp_\d+ = arith\.index_cast %c1 : index to i32")
+        self.assertRegex(text, r"%tmp_\d+ = arith\.cmpi sgt, %in_gate_\d+, %tmp_\d+ : i32")
+        self.assertRegex(text, r"%\w+_\d+ = arith\.addi %in_gate_\d+, %tmp_\d+ : i32")
+
+    def test_index_and_narrow_or_float_scalar_binary_ops_still_reject(self) -> None:
+        @pto.vkernel(op="index_i16_scalar_binary_reject_unique", dtypes=[(pto.i16,)], advanced=True)
+        def i16_kernel(gate: pto.i16):
+            _ = gate + 1
+            return None
+
+        @pto.vkernel(op="index_f32_scalar_binary_reject_unique", dtypes=[(pto.f32,)], advanced=True)
+        def f32_kernel(gate: pto.f32):
+            _ = gate + 1
+            return None
+
+        with self.assertRaises(TypeError) as i16_ctx:
+            i16_kernel.specialize().mlir_text()
+        self.assertIn("32/64-bit integer scalars", str(i16_ctx.exception))
+
+        with self.assertRaises(TypeError) as f32_ctx:
+            f32_kernel.specialize().mlir_text()
+        self.assertIn("32/64-bit integer scalars", str(f32_ctx.exception))
+
     def test_index_floordiv_lowers_to_divui_instead_of_floordivsi(self) -> None:
         @pto.vkernel(
             op="index_floordiv_lowering_unique",
@@ -3277,7 +3631,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             specialized.mlir_text()
         self.assertIn("mod/floordiv/bitwise/shift for integer", str(ctx.exception))
 
-    def test_stable_mode_infers_vecscope_and_lowers_tile_vector_sugar(self) -> None:
+    def test_stable_mode_lowers_tile_vector_sugar_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="tadd_stable", dtypes=[(pto.f32, pto.f32, pto.f32)])
         def kernel(dst: pto.Tile, src0: pto.Tile, src1: pto.Tile):
             dtype = dst.element_type
@@ -3299,16 +3653,16 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = specialized.mlir_text()
-        self.assertIn("pto.vecscope {", text)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertNotIn("pto.strict_vecscope(", text)
         self.assertRegex(text, r"memref\.subview %tmp_\d+\[%row_\d+, %col_\d+\] \[%c1, %tmp_\d+\] \[%c1, %c1\]")
         self.assertRegex(text, r"pto\.vlds %tmp_\d+\[%c0\]")
         self.assertRegex(text, r"pto\.vsts %summed_\d+, %tmp_\d+\[%c0\], %(?:all_mask|mask)_\d+")
 
-    def test_advanced_mode_infers_vecscope_and_lowers_tile_vector_sugar(self) -> None:
+    def test_advanced_mode_lowers_tile_vector_sugar_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="tadd", dtypes=[(pto.f32, pto.f32, pto.f32)], advanced=True)
         def kernel(dst: pto.Tile, src0: pto.Tile, src1: pto.Tile):
             dtype = dst.element_type
@@ -3332,10 +3686,8 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
-        vecscope = vecscope_stmts[0]
-        self.assertIsInstance(vecscope, SemanticVecscopeStmt)
-        outer_loop = next(stmt for stmt in vecscope.body if isinstance(stmt, SemanticForStmt))
+        self.assertEqual(len(vecscope_stmts), 0)
+        outer_loop = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticForStmt))
         self.assertIsInstance(outer_loop, SemanticForStmt)
         inner_loop = outer_loop.body[0]
         self.assertIsInstance(inner_loop, SemanticForStmt)
@@ -3343,10 +3695,8 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         text = specialized.mlir_text()
         self.assertIn("// tilelang.advanced = True", text)
-        self.assertIn("pto.vecscope {", text)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertNotIn("pto.strict_vecscope(", text)
-        self.assertRegex(text, r"pto\.vecscope \{\n(?:.|\n)*scf\.for %row_")
-        self.assertEqual(text.count("pto.vecscope {"), 1)
         self.assertIn("!pto.tile_buf<loc=vec, dtype=f32, rows=8, cols=64, v_row=8, v_col=64", text)
         self.assertIn("pto.tile_valid_rows %arg0", text)
         self.assertIn("pto.tile_valid_cols %arg0", text)
@@ -3360,13 +3710,11 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertRegex(text, r"pto\.vsts %summed_\d+, %tmp_\d+\[%c0\], %(?:all_mask|mask)_\d+ : !pto\.vreg<64xf32>, memref<\?x\?xf32, strided<\[\?, \?\], offset: \?>, #pto\.address_space<vec>>, !pto\.mask<b32>")
         self.assertNotRegex(text, r"arith\.muli %row_\d+, %c64 : index")
         self.assertNotRegex(text, r"arith\.addi %tmp_\d+, %col_\d+ : index")
-        self.assertLess(text.index("pto.tile_buf_addr %arg1"), text.index("pto.vecscope {"))
-        self.assertLess(text.index("pto.tile_buf_addr %arg2"), text.index("pto.vecscope {"))
-        self.assertLess(text.index("pto.tile_buf_addr %arg0"), text.index("pto.vecscope {"))
-        self.assertLess(text.index("pto.tile_valid_rows %arg0"), text.index("pto.vecscope {"))
-        self.assertLess(text.index("pto.tile_valid_cols %arg0"), text.index("pto.vecscope {"))
-        self.assertLess(text.index("pto.vecscope {"), text.index("scf.for %row_"))
-        self.assertLess(text.rindex("pto.vecscope {"), text.index("return"))
+        self.assertLess(text.index("pto.tile_buf_addr %arg1"), text.index("scf.for %row_"))
+        self.assertLess(text.index("pto.tile_buf_addr %arg2"), text.index("scf.for %row_"))
+        self.assertLess(text.index("pto.tile_buf_addr %arg0"), text.index("scf.for %row_"))
+        self.assertLess(text.index("pto.tile_valid_rows %arg0"), text.index("scf.for %row_"))
+        self.assertLess(text.index("pto.tile_valid_cols %arg0"), text.index("scf.for %row_"))
 
     def test_element_type_valid_shape_and_get_lanes_surface_lower_in_advanced_mode(self) -> None:
         @pto.vkernel(op="tadd", dtypes=[(pto.f32, pto.f32, pto.f32)], advanced=True)
@@ -3449,13 +3797,10 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         )
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(
-            stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)
-        )
-        self.assertIsInstance(vecscope, SemanticVecscopeStmt)
+        self.assertFalse(any(isinstance(stmt, SemanticVecscopeStmt) for stmt in semantic_kernel.body))
         vec_assign = next(
             stmt
-            for stmt in vecscope.body
+            for stmt in _walk_semantic_stmts(semantic_kernel.body)
             if isinstance(stmt, SemanticAssignStmt)
             and stmt.targets[0].name == "vec"
         )
@@ -3691,8 +4036,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         )
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt))
-        store_stmt = next(stmt for stmt in vecscope.body if isinstance(stmt, SemanticVectorStoreStmt))
+        store_stmt = next(stmt for stmt in _walk_semantic_stmts(semantic_kernel.body) if isinstance(stmt, SemanticVectorStoreStmt))
         self.assertIsInstance(store_stmt.mask.type, SemanticMaskType)
         self.assertEqual(store_stmt.mask.type.granularity, "b32")
 
@@ -3856,9 +4200,9 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             r"!pto\.ptr<f32, ub>, !pto\.ptr<f32, ub>, !pto\.ptr<f32, ub>, !pto\.ptr<f32, ub>, !pto\.ptr<f32, ub>, i64, i64",
         )
 
-    def test_vbitsort_helper_stays_outside_inferred_vecscope(self) -> None:
+    def test_vbitsort_helper_lowers_without_frontend_vecscope(self) -> None:
         @pto.vkernel(
-            op="vbitsort_vecscope_boundary_unique",
+            op="vbitsort_no_frontend_vecscope_unique",
             dtypes=[(pto.f32, pto.f32, pto.i32)],
             advanced=True,
         )
@@ -5169,9 +5513,9 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         self.assertIn("exceeds 16-bit width for i16", str(ctx.exception))
 
-    def test_inferred_vecscope_propagates_bindings_to_constexpr_if(self) -> None:
+    def test_vector_bindings_propagate_through_constexpr_if_without_frontend_vecscope(self) -> None:
         @pto.vkernel(
-            op="inferred_vecscope_binding_propagation_unique",
+            op="vector_binding_constexpr_if_unique",
             dtypes=[(pto.f32, pto.f32)],
         )
         def kernel(dst: pto.Tile, src: pto.Tile):
@@ -5263,7 +5607,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertIn("pto.vsort32", text)
         self.assertIn("pto.vmrgsort", text)
 
-    def test_scalar_loop_prologue_does_not_force_vecscope_into_inner_loop(self) -> None:
+    def test_scalar_loop_prologue_lowers_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="tadd_outer_scope_unique", dtypes=[(pto.f32, pto.f32, pto.f32)])
         def kernel(dst: pto.Tile, src0: pto.Tile, src1: pto.Tile):
             dtype = dst.element_type
@@ -5286,16 +5630,15 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
-        outer_loop = vecscope_stmts[0].body[0]
+        self.assertEqual(len(vecscope_stmts), 0)
+        outer_loop = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticForStmt))
         self.assertIsInstance(outer_loop, SemanticForStmt)
         self.assertIsInstance(outer_loop.body[0], SemanticAssignStmt)
         self.assertIsInstance(outer_loop.body[1], SemanticForStmt)
 
         text = specialized.mlir_text()
-        self.assertEqual(text.count("pto.vecscope {"), 1)
-        self.assertRegex(text, r"pto\.vecscope \{\n\s+scf\.for %row_\d+ = %c0 to %valid_rows_\d+ step %c1")
-        self.assertNotRegex(text, r"scf\.for %row_\d+ = [^\n]+\{\n\s+pto\.vecscope \{")
+        self.assertNotIn("pto.vecscope {", text)
+        self.assertRegex(text, r"scf\.for %row_\d+ = %c0 to %valid_rows_\d+ step %c1")
 
     def test_unused_tile_does_not_hoist_tile_buf_addr_or_valid_shape_intrinsics(self) -> None:
         @pto.vkernel(op="tile_usage_scan_unique", dtypes=[(pto.f32, pto.f32, pto.f32)], advanced=True)
@@ -5374,7 +5717,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             text,
         )
         self.assertIn("valid_shape=(?, ?)", text)
-        self.assertIn("pto.vecscope {", text)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertIn("step %c128", text)
         self.assertIn("pto.tile_valid_rows %arg0", text)
         self.assertIn("pto.tile_valid_cols %arg0", text)
@@ -5382,8 +5725,8 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertNotIn("pto.tile_valid_cols %arg1", text)
         self.assertNotIn("pto.tile_valid_rows %arg2", text)
         self.assertNotIn("pto.tile_valid_cols %arg2", text)
-        self.assertLess(text.index("pto.tile_valid_rows %arg0"), text.index("pto.vecscope {"))
-        self.assertLess(text.index("pto.tile_valid_cols %arg0"), text.index("pto.vecscope {"))
+        self.assertLess(text.index("pto.tile_valid_rows %arg0"), text.index("scf.for %row_"))
+        self.assertLess(text.index("pto.tile_valid_cols %arg0"), text.index("scf.for %row_"))
         self.assertRegex(text, r"scf\.for %row_\d+ = %c0 to %valid_rows_\d+ step %c1")
         self.assertRegex(text, r"scf\.for %col_\d+ = %c0 to %valid_cols_\d+ step %c128")
         self.assertRegex(text, r"%tmp_\d+ = arith\.index_cast %valid_cols_\d+ : index to i32")
@@ -5516,7 +5859,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertRegex(cols_dynamic_text, r"scf\.for %row_\d+ = %c0 to %valid_rows_\d+ step %c1")
         self.assertRegex(cols_dynamic_text, r"scf\.for %col_\d+ = %c0 to %valid_cols_\d+ step %c128")
 
-    def test_advanced_mode_scalar_assignments_stay_inside_inferred_vecscope_runs(self) -> None:
+    def test_advanced_mode_scalar_assignments_lowers_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="eltwise", dtypes=[(pto.f32, pto.f32)], advanced=True)
         def kernel(src: pto.Tile, dst: pto.Tile):
             dtype = src.element_type
@@ -5536,14 +5879,13 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = specialized.mlir_text()
-        self.assertEqual(text.count("pto.vecscope {"), 1)
+        self.assertNotIn("pto.vecscope {", text)
         boundary_index = text.index("%boundary_")
         first_vsts = text.index("pto.vsts")
         second_vsts = text.rindex("pto.vsts")
-        self.assertLess(text.index("pto.vecscope {"), boundary_index)
         self.assertLess(first_vsts, boundary_index)
         self.assertLess(boundary_index, second_vsts)
         self.assertLess(boundary_index, text.index("return"))
@@ -5574,7 +5916,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertIn("pto.vlds", text)
         self.assertIn("pto.vsts", text)
 
-    def test_explicit_vecscope_disables_automatic_inference(self) -> None:
+    def test_explicit_vecscope_does_not_trigger_additional_frontend_inference(self) -> None:
         @pto.vkernel(op="explicit_vecscope_disables_infer_unique", dtypes=[(pto.f32, pto.f32)], advanced=True)
         def kernel(src: pto.Tile, dst: pto.Tile):
             mask = pto.make_mask(pto.f32, pto.PAT.ALL)
@@ -5599,7 +5941,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertIn("pto.vlds", text)
         self.assertIn("pto.vsts", text)
 
-    def test_constexpr_if_tail_store_does_not_split_inferred_vecscope(self) -> None:
+    def test_constexpr_if_tail_store_lowers_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="trowsum_like_vecscope_unique", dtypes=[(pto.f32, pto.f32, pto.f32)], advanced=True)
         def kernel(dst: pto.Tile, src: pto.Tile, tmp: pto.Tile):
             src_dtype = src.element_type
@@ -5630,14 +5972,14 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = specialized.mlir_text()
-        self.assertEqual(text.count("pto.vecscope {"), 1)
-        self.assertRegex(text, r"pto\.vecscope \{\n(?:.|\n)*scf\.for %row_\d+")
+        self.assertNotIn("pto.vecscope {", text)
+        self.assertRegex(text, r"scf\.for %row_\d+")
         self.assertIn("pto.vsts", text)
 
-    def test_advanced_mode_control_flow_infers_vecscope_per_branch(self) -> None:
+    def test_advanced_mode_control_flow_lowers_without_frontend_vecscope_per_branch(self) -> None:
         @pto.vkernel(op="eltwise", dtypes=[(pto.f32, pto.f32, pto.i32)], advanced=True)
         def kernel(src: pto.Tile, dst: pto.Tile, flag: pto.i32):
             dtype = src.element_type
@@ -5663,15 +6005,14 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         ])
         if_stmt = semantic_kernel.body[2]
         self.assertIsInstance(if_stmt, SemanticIfStmt)
-        self.assertEqual(len(if_stmt.then_body), 1)
-        self.assertEqual(len(if_stmt.else_body), 1)
-        self.assertIsInstance(if_stmt.then_body[0], SemanticVecscopeStmt)
-        self.assertIsInstance(if_stmt.else_body[0], SemanticVecscopeStmt)
+        self.assertEqual(len(if_stmt.then_body), 2)
+        self.assertEqual(len(if_stmt.else_body), 2)
+        self.assertFalse(any(isinstance(stmt, SemanticVecscopeStmt) for stmt in if_stmt.then_body))
+        self.assertFalse(any(isinstance(stmt, SemanticVecscopeStmt) for stmt in if_stmt.else_body))
 
         text = specialized.mlir_text()
         self.assertIn("scf.if", text)
-        self.assertEqual(text.count("pto.vecscope {"), 2)
-        self.assertLess(text.index("scf.if"), text.index("pto.vecscope {"))
+        self.assertNotIn("pto.vecscope {", text)
         self.assertLess(text.index("scf.if"), text.index("return"))
 
     def test_advanced_mode_keeps_strict_vecscope_as_hard_boundary(self) -> None:
@@ -5694,7 +6035,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         )
 
         text = specialized.mlir_text()
-        self.assertEqual(text.count("pto.vecscope {"), 1)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertEqual(text.count("pto.strict_vecscope("), 1)
 
     def test_advanced_mode_lowers_raw_pointer_and_low_level_dma_surface(self) -> None:
@@ -5737,7 +6078,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertTrue(any(isinstance(stmt, SemanticDmaConfigStmt) for stmt in semantic_kernel.body))
         self.assertTrue(any(isinstance(stmt, SemanticLowLevelCopyStmt) for stmt in semantic_kernel.body))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = kernel.mlir_text()
         self.assertIn(
@@ -5752,7 +6093,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             text,
             r"%ub_dst_\d+ = pto\.addptr %ub_src_\d+, %c64 : !pto\.ptr<f32, ub> -> !pto\.ptr<f32, ub>",
         )
-        self.assertIn("pto.vecscope {", text)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertRegex(
             text,
             r"%vec_\d+ = pto\.vlds %ub_src_\d+\[%c0\] : !pto\.ptr<f32, ub> -> !pto\.vreg<64xf32>",
@@ -6224,10 +6565,10 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = specialized.mlir_text()
-        self.assertIn("pto.vecscope {", text)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertIn('pto.vcmp ', text)
         self.assertIn(', "lt" : !pto.vreg<64xi32>, !pto.vreg<64xi32>, !pto.mask<b32> -> !pto.mask<b32>', text)
         self.assertIn('pto.vcmps ', text)
@@ -6269,7 +6610,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertIn(" = pto.vselrv2 ", text)
         self.assertIn("pto.vsts ", text)
 
-    def test_inferred_vecscope_keeps_vbitcast_and_mem_bar_with_vector_users(self) -> None:
+    def test_vbitcast_and_mem_bar_with_vector_users_lower_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="issue_217_vecscope", dtypes=[(pto.i32, pto.ui8)], advanced=True)
         def kernel(src: pto.Tile, dst: pto.Tile):
             valid_rows, valid_cols = dst.valid_shape
@@ -6304,16 +6645,16 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = specialized.mlir_text()
-        self.assertEqual(text.count("pto.vecscope {"), 1)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertIn("pto.vbitcast", text)
         self.assertIn('pto.mem_bar "VST_VST"', text)
         self.assertIn("pto.vselr", text)
         self.assertIn("pto.vsts", text)
 
-    def test_inferred_vecscope_keeps_scalar_get_lanes_between_vector_def_and_use(self) -> None:
+    def test_scalar_get_lanes_between_vector_def_and_use_lowers_without_frontend_vecscope(self) -> None:
         @pto.vkernel(op="issue_240_vecscope", dtypes=[(pto.si8, pto.i32)], advanced=True)
         def kernel(src: pto.Tile, dst: pto.Tile):
             valid_rows, valid_cols = dst.valid_shape
@@ -6351,10 +6692,10 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
         vecscope_stmts = [stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)]
-        self.assertEqual(len(vecscope_stmts), 1)
+        self.assertEqual(len(vecscope_stmts), 0)
 
         text = specialized.mlir_text()
-        self.assertEqual(text.count("pto.vecscope {"), 1)
+        self.assertNotIn("pto.vecscope {", text)
         self.assertIn(" = arith.constant 64 : index", text)
         self.assertIn(" = arith.constant 128 : index", text)
         self.assertIn(" = pto.vdup ", text)
@@ -6502,6 +6843,50 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         )
         self.assertIn("scf.for %lane_", text)
         self.assertIn("pto.barrier #pto.pipe<PIPE_ALL>", text)
+
+    def test_if_else_with_two_merged_bindings_lowers_to_multi_result_scf_if(self) -> None:
+        @pto.vkernel(op="eltwise", dtypes=[(pto.f32, pto.i32)], advanced=True)
+        def kernel(tile: pto.Tile, flag: pto.i32):
+            step = 64
+            upper = 256
+            if flag:
+                step = 32
+                upper = upper - step
+            else:
+                step = 64
+                upper = 128
+            with pto.strict_vecscope(tile, tile, 0, upper, step) as (src, dst, lb, ub, vec_step):
+                for lane in range(lb, ub, vec_step):
+                    mask = pto.make_mask(pto.f32, pto.PAT.ALL)
+                    vec = pto.vlds(src, lane)
+                    pto.vsts(vec, dst, lane, mask)
+            return None
+
+        specialized = kernel.specialize(
+            tile=pto.TileSpecialization(
+                shape=(16, 16),
+                memory_space=pto.MemorySpace.UB,
+            )
+        )
+
+        semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
+        if_stmt = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticIfStmt))
+        self.assertIsInstance(if_stmt, SemanticIfStmt)
+        self.assertEqual([result.result_binding.name for result in if_stmt.results], ["step", "upper"])
+
+        text = specialized.mlir_text()
+        self.assertRegex(
+            text,
+            r"%step_\d+, %upper_\d+ = scf\.if %tmp_\d+ -> \(index, index\) \{",
+        )
+        self.assertRegex(
+            text,
+            r"scf\.yield %step_\d+, %upper_\d+ : index, index",
+        )
+        self.assertRegex(
+            text,
+            r"pto\.strict_vecscope\(%tmp_\d+, %tmp_\d+, %c0, %upper_\d+, %step_\d+\)",
+        )
 
     def test_extended_sync_buffer_ops_lower_to_authoring_surface(self) -> None:
         Pipe = pto.Pipe
@@ -6681,8 +7066,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             dst=pto.TileSpecialization(shape=(1, 128), memory_space=pto.MemorySpace.UB),
         )
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt))
-        pair_store = next(stmt for stmt in vecscope.body if isinstance(stmt, SemanticVectorPairStoreStmt))
+        pair_store = next(stmt for stmt in _walk_semantic_stmts(semantic_kernel.body) if isinstance(stmt, SemanticVectorPairStoreStmt))
         self.assertIsInstance(pair_store, SemanticVectorPairStoreStmt)
 
         text = specialized.mlir_text()
@@ -6728,8 +7112,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         specialized = kernel.specialize()
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt))
-        scatter_stmt = next(stmt for stmt in vecscope.body if isinstance(stmt, SemanticVScatterStmt))
+        scatter_stmt = next(stmt for stmt in _walk_semantic_stmts(semantic_kernel.body) if isinstance(stmt, SemanticVScatterStmt))
 
         self.assertIsInstance(scatter_stmt, SemanticVScatterStmt)
         self.assertEqual(scatter_stmt.destination.type.memory_space, "ub")
@@ -6765,10 +7148,10 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         specialized = kernel.specialize()
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt))
-        align_store_stmts = [stmt for stmt in vecscope.body if isinstance(stmt, SemanticAlignStoreStmt)]
+        all_stmts = tuple(_walk_semantic_stmts(semantic_kernel.body))
+        align_store_stmts = [stmt for stmt in all_stmts if isinstance(stmt, SemanticAlignStoreStmt)]
 
-        self.assertTrue(any(isinstance(stmt, SemanticAssignStmt) and isinstance(stmt.value.type, SemanticAlignType) for stmt in vecscope.body))
+        self.assertTrue(any(isinstance(stmt, SemanticAssignStmt) and isinstance(stmt.value.type, SemanticAlignType) for stmt in all_stmts))
         self.assertEqual(len(align_store_stmts), 2)
         self.assertEqual([stmt.op_name for stmt in align_store_stmts], ["vstas", "vstar"])
 
@@ -6804,10 +7187,10 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         specialized = kernel.specialize()
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt))
+        all_stmts = tuple(_walk_semantic_stmts(semantic_kernel.body))
 
-        self.assertTrue(any(isinstance(stmt, SemanticPredicateStoreStmt) for stmt in vecscope.body))
-        self.assertTrue(any(isinstance(stmt, SemanticAlignStoreStmt) and stmt.op_name == "vstas" for stmt in vecscope.body))
+        self.assertTrue(any(isinstance(stmt, SemanticPredicateStoreStmt) for stmt in all_stmts))
+        self.assertTrue(any(isinstance(stmt, SemanticAlignStoreStmt) and stmt.op_name == "vstas" for stmt in all_stmts))
 
         text = specialized.mlir_text()
         self.assertIn("pto.psts", text)
@@ -6854,10 +7237,9 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
 
         specialized = kernel.specialize()
         semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(specialized))
-        vecscope = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt))
         load_assign = next(
             stmt
-            for stmt in vecscope.body
+            for stmt in _walk_semantic_stmts(semantic_kernel.body)
             if isinstance(stmt, SemanticAssignStmt)
             and isinstance(stmt.value, SemanticCallExpr)
             and stmt.value.name == "plds"

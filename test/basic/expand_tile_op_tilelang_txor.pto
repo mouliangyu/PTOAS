@@ -32,11 +32,16 @@ module {
     %b = pto.alloc_tile
       : !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
                       blayout=row_major, slayout=none_box, fractal=512, pad=0>
+    %tmp = pto.alloc_tile
+      : !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
+                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
     %tile_buf = pto.alloc_tile
       : !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
                       blayout=row_major, slayout=none_box, fractal=512, pad=0>
 
-    pto.txor ins(%a, %b : !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
+    pto.txor ins(%a, %b, %tmp : !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
+                              blayout=row_major, slayout=none_box, fractal=512, pad=0>,
+                          !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
                               blayout=row_major, slayout=none_box, fractal=512, pad=0>,
                           !pto.tile_buf<loc=vec, dtype=i32, rows=16, cols=64, v_row=16, v_col=64,
                               blayout=row_major, slayout=none_box, fractal=512, pad=0>)

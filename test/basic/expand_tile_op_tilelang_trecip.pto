@@ -19,7 +19,8 @@
 // CHECK: pto.vecscope
 // CHECK: pto.castptr
 // CHECK: pto.vlds
-// CHECK: pto.vrec
+// CHECK: pto.vbr
+// CHECK: pto.vdiv
 // CHECK: pto.vsts
 
 module {

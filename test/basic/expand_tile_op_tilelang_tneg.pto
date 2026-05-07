@@ -19,7 +19,7 @@
 // CHECK: pto.vecscope
 // CHECK: pto.castptr
 // CHECK: pto.vlds
-// CHECK: pto.vmuls
+// CHECK: pto.vneg
 // CHECK: pto.vsts
 
 module {

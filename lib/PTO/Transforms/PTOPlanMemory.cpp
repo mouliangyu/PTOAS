@@ -459,7 +459,8 @@ void MemLivenessAnalysis::RecursionIR(Region *region, Liveness live) {
       OpKillHandle(curOpInfo, live, op->getBlock());
     } else if (isa<pto::TPushOp, pto::TFreeOp, pto::InitializeL2LPipeOp,
                    pto::InitializeL2G2LPipeOp, pto::BuildAsyncSessionOp,
-                   pto::TPutAsyncOp, pto::TGetAsyncOp>(op)) {
+                   pto::TPutAsyncOp, pto::TGetAsyncOp,
+                   pto::CubeLoadFracOp>(op)) {
       UpdateOpGenInfo(curOpInfo, llvm::to_vector(op->getOperands()));
       OpKillHandle(curOpInfo, live, op->getBlock());
     } else if (auto gpuLaunchOp = dyn_cast<gpu::LaunchFuncOp>(op)) {
@@ -682,6 +683,9 @@ SetVector<Value> MemLivenessAnalysis::Union(SetVector<Value> set1,
 }
 
 SetVector<Value> MemLivenessAnalysis::GetAliasBuffers(Value aliasBuffer) {
+  if (!aliasBuffer)
+    return {};
+
   auto trueVar = buffer2AliasVec.find(aliasBuffer);
   if (trueVar != buffer2AliasVec.end()) {
     return trueVar->second;

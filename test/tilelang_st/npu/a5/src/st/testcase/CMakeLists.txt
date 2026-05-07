@@ -140,6 +140,9 @@ set(ALL_TESTCASES
     tand
     tor
     txor
+    tcmp
+    tfmod
+    trem
     tcvt
     tload
     tlrelu
@@ -202,6 +205,9 @@ set(ALL_TESTCASES
     tshrs
     tsubs
     txors
+    trems
+    tfmods
+    tcmps
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))

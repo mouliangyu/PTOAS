@@ -20,7 +20,7 @@
 // CHECK: pto.castptr
 // CHECK: pto.vlds
 // CHECK: pto.vsqrt
-// CHECK: pto.vrec
+// CHECK: pto.vdiv
 // CHECK: pto.vsts
 
 module {

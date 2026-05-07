@@ -19,10 +19,10 @@
 // CHECK: func.func @TROWEXPANDEXPDIF
 // CHECK-NOT: pto.trowexpandexpdif ins
 // CHECK: pto.vecscope
+// CHECK: pto.castptr
 // CHECK: pto.vlds
 // CHECK: pto.vdup
-// CHECK: pto.vsubs
-// CHECK: pto.vexp
+// CHECK: pto.vexpdif
 // CHECK: pto.vsts
 
 module {

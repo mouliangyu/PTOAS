@@ -13,8 +13,7 @@
 // CHECK: pto.vecscope
 // CHECK: pto.castptr
 // CHECK: pto.vlds
-// CHECK: pto.vsub
-// CHECK: pto.vexp
+// CHECK: pto.vexpdif
 // CHECK: pto.vsts
 
 module {

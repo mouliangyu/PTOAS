@@ -2431,40 +2431,56 @@ class _AuthoringRenderer:
             lines.append(self._indent(indent) + "}")
             return lines
 
-        if len(stmt.results) != 1:
-            raise NotImplementedError(
-                "TileLang DSL v1 lowering currently supports at most one merged if/else binding"
-            )
-
-        result = stmt.results[0]
         lines = list(cond_lines)
+        result_names = ", ".join(result.result_binding.ssa_name for result in stmt.results)
+        result_types = ", ".join(
+            self._render_type(result.result_binding.type) for result in stmt.results
+        )
         lines.append(
             self._indent(indent)
-            + f"{result.result_binding.ssa_name} = scf.if {condition.name} -> "
-            + f"({self._render_type(result.result_binding.type)}) {{"
+            + f"{result_names} = scf.if {condition.name} -> ({result_types}) {{"
         )
         lines.extend(self._render_block(stmt.then_body, then_env, indent=indent + 2))
-        then_value = then_env.get(result.result_binding.name, then_env.get(result.then_binding.name))
-        if then_value is None:
-            then_value = _RenderedValue(result.then_binding.ssa_name, result.then_binding.type)
+        then_values = []
+        for result in stmt.results:
+            then_value = then_env.get(
+                result.result_binding.name,
+                then_env.get(result.then_binding.name),
+            )
+            if then_value is None:
+                then_value = _RenderedValue(result.then_binding.ssa_name, result.then_binding.type)
+            then_values.append(then_value)
         lines.append(
             self._indent(indent + 2)
-            + f"scf.yield {then_value.name} : {self._render_type(then_value.type)}"
+            + "scf.yield "
+            + ", ".join(value.name for value in then_values)
+            + " : "
+            + ", ".join(self._render_type(value.type) for value in then_values)
         )
         lines.append(self._indent(indent) + "} else {")
         lines.extend(self._render_block(stmt.else_body, else_env, indent=indent + 2))
-        else_value = else_env.get(result.result_binding.name, else_env.get(result.else_binding.name))
-        if else_value is None:
-            else_value = _RenderedValue(result.else_binding.ssa_name, result.else_binding.type)
+        else_values = []
+        for result in stmt.results:
+            else_value = else_env.get(
+                result.result_binding.name,
+                else_env.get(result.else_binding.name),
+            )
+            if else_value is None:
+                else_value = _RenderedValue(result.else_binding.ssa_name, result.else_binding.type)
+            else_values.append(else_value)
         lines.append(
             self._indent(indent + 2)
-            + f"scf.yield {else_value.name} : {self._render_type(else_value.type)}"
+            + "scf.yield "
+            + ", ".join(value.name for value in else_values)
+            + " : "
+            + ", ".join(self._render_type(value.type) for value in else_values)
         )
         lines.append(self._indent(indent) + "}")
-        env[result.result_binding.name] = _RenderedValue(
-            name=result.result_binding.ssa_name,
-            type=result.result_binding.type,
-        )
+        for result in stmt.results:
+            env[result.result_binding.name] = _RenderedValue(
+                name=result.result_binding.ssa_name,
+                type=result.result_binding.type,
+            )
         return lines
 
     def _lower_condition(
@@ -2552,6 +2568,9 @@ class _AuthoringRenderer:
                     desired_name=desired_name,
                     into=into,
                 )
+            if isinstance(expr.type, SemanticScalarType):
+                lhs = self._coerce_rendered_value(lhs, expr.type, indent=indent, into=into)
+                rhs = self._coerce_rendered_value(rhs, expr.type, indent=indent, into=into)
             result_name = desired_name or self._new_temp()
             into.append(
                 self._indent(indent)
@@ -3194,7 +3213,23 @@ class _AuthoringRenderer:
                 "le": "sle",
             }
             predicate = index_predicates[op]
-        elif isinstance(lhs.type, SemanticScalarType) and lhs.type == rhs.type:
+            cmp_name = "arith.cmpi"
+        elif (
+            isinstance(lhs.type, SemanticIndexType)
+            and isinstance(rhs.type, SemanticScalarType)
+            and is_integer_dtype(rhs.type.dtype)
+            and integer_bitwidth(rhs.type.dtype) in {32, 64}
+        ):
+            lhs = self._coerce_rendered_value(lhs, rhs.type, indent=indent, into=into)
+        elif (
+            isinstance(rhs.type, SemanticIndexType)
+            and isinstance(lhs.type, SemanticScalarType)
+            and is_integer_dtype(lhs.type.dtype)
+            and integer_bitwidth(lhs.type.dtype) in {32, 64}
+        ):
+            rhs = self._coerce_rendered_value(rhs, lhs.type, indent=indent, into=into)
+
+        if isinstance(lhs.type, SemanticScalarType) and lhs.type == rhs.type:
             if lhs.type.dtype.name in {"f16", "bf16", "f32"}:
                 float_predicates = {
                     "eq": "oeq",
@@ -3207,13 +3242,14 @@ class _AuthoringRenderer:
                 predicate = float_predicates[op]
                 cmp_name = "arith.cmpf"
             else:
+                int_sign = integer_signedness(lhs.type.dtype)
                 int_predicates = {
                     "eq": "eq",
                     "ne": "ne",
-                    "gt": "sgt",
-                    "lt": "slt",
-                    "ge": "sge",
-                    "le": "sle",
+                    "gt": "ugt" if int_sign == "unsigned" else "sgt",
+                    "lt": "ult" if int_sign == "unsigned" else "slt",
+                    "ge": "uge" if int_sign == "unsigned" else "sge",
+                    "le": "ule" if int_sign == "unsigned" else "sle",
                 }
                 predicate = int_predicates[op]
                 cmp_name = "arith.cmpi"
@@ -3223,16 +3259,17 @@ class _AuthoringRenderer:
                 f"{self._render_type(lhs.type)}"
             )
             return _RenderedValue(name=result_name, type=_I1_TYPE)
-        else:
-            raise NotImplementedError(
-                f"comparison lowering requires matching scalar types or index operands, got {lhs.type!r} and {rhs.type!r}"
-            )
 
-        into.append(
-            self._indent(indent)
-            + f"{result_name} = arith.cmpi {predicate}, {lhs.name}, {rhs.name} : {self._render_type(lhs.type)}"
+        if isinstance(lhs.type, SemanticIndexType) and isinstance(rhs.type, SemanticIndexType):
+            into.append(
+                self._indent(indent)
+                + f"{result_name} = {cmp_name} {predicate}, {lhs.name}, {rhs.name} : {self._render_type(lhs.type)}"
+            )
+            return _RenderedValue(name=result_name, type=_I1_TYPE)
+
+        raise NotImplementedError(
+            f"comparison lowering requires matching scalar types or index operands, got {lhs.type!r} and {rhs.type!r}"
         )
-        return _RenderedValue(name=result_name, type=_I1_TYPE)
 
     def _lower_bool_expr(
         self,

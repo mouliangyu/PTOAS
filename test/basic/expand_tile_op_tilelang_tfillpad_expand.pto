@@ -20,10 +20,9 @@
 // CHECK-NOT: pto.tfillpad_expand ins
 // CHECK: pto.vecscope
 // CHECK: pto.castptr
-// CHECK: pto.vlds
-// CHECK: pto.vsts
-// CHECK: pto.vdup
-// CHECK: pto.vstus
+// CHECK-DAG: pto.vdup
+// CHECK-DAG: pto.vlds
+// CHECK-DAG: pto.vsts
 
 module {
   func.func @TFILLPAD_EXPAND() {
