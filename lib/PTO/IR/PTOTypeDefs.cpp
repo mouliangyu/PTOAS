@@ -438,16 +438,8 @@ static Type buildTileBufType(AsmParser &parser,
   };
 
   // 1. Shape positivity check
-  if (fields.rows < 0 || fields.cols < 0) {
-    emitError() << "rows/cols must be non-negative";
-    return Type();
-  }
-  if (fields.rows == 0) {
-    emitError() << "tile_buf rows must be positive, got 0";
-    return Type();
-  }
-  if (fields.cols == 0) {
-    emitError() << "tile_buf cols must be positive, got 0";
+  if (fields.rows <= 0 || fields.cols <= 0) {
+    emitError() << "tile_buf rows/cols must be positive";
     return Type();
   }
 
@@ -455,11 +447,11 @@ static Type buildTileBufType(AsmParser &parser,
   int64_t vrow = fields.vrow < 0 ? ShapedType::kDynamic : fields.vrow;
   int64_t vcol = fields.vcol < 0 ? ShapedType::kDynamic : fields.vcol;
   if (vrow != ShapedType::kDynamic && vrow > fields.rows) {
-    emitError() << "tile_buf valid_shape[0] (" << vrow << ") exceeds shape[0] (" << fields.rows << ")";
+    emitError() << "tile_buf valid_row (" << vrow << ") exceeds row (" << fields.rows << ")";
     return Type();
   }
   if (vcol != ShapedType::kDynamic && vcol > fields.cols) {
-    emitError() << "tile_buf valid_shape[1] (" << vcol << ") exceeds shape[1] (" << fields.cols << ")";
+    emitError() << "tile_buf valid_col (" << vcol << ") exceeds col (" << fields.cols << ")";
     return Type();
   }
 
@@ -490,9 +482,13 @@ static Type buildTileBufType(AsmParser &parser,
     return Type();
   }
 
-  // 3. Fractal value check (only 32/512/1024 allowed)
-  if (fields.fractal != 32 && fields.fractal != 512 && fields.fractal != 1024) {
-    emitError() << "unsupported s_fractal_size: " << fields.fractal << ", must be one of {32, 512, 1024}";
+  // 3. Fractal value check (only Mx/AB/C sizes allowed)
+  if (fields.fractal != kFractalMxSize && fields.fractal != kFractalABSize && fields.fractal != kFractalCSize) {
+    emitError() << "unsupported s_fractal_size: " << fields.fractal
+                << ", must be one of {"
+                << kFractalMxSize << ", "
+                << kFractalABSize << ", "
+                << kFractalCSize << "}";
     return Type();
   }
 
