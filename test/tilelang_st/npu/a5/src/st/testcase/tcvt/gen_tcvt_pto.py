@@ -33,11 +33,10 @@ def gen_kernel(case, idx=0):
     
     stride = rows * cols
     
-    tile_src = (f"!pto.tile_buf<loc=vec, dtype={src_dtype}, rows={rows}, cols={cols}, v_row={v_rows}, v_col={v_cols},\n"
-                 "                      blayout=row_major, slayout=none_box, fractal=512, pad=0>")
-    tile_dst = (f"!pto.tile_buf<loc=vec, dtype={dst_dtype}, rows={rows}, cols={cols}, v_row={v_rows}, v_col={v_cols},\n"
-                 "                      blayout=row_major, slayout=none_box, fractal=512, pad=0>")
-    
+    tile_valid = "" if v_rows == rows and v_cols == cols else f", valid={v_rows}x{v_cols}"
+    tile_src = f"!pto.tile_buf<vec, {rows}x{cols}x{src_dtype}{tile_valid}>"
+    tile_dst = f"!pto.tile_buf<vec, {rows}x{cols}x{dst_dtype}{tile_valid}>"
+
     const_vals = sorted(set([0, 1, rows, cols, v_rows, v_cols, stride]))
     longest_const = len(str(const_vals[-1]))
     const_defs = [f"    %c{i:<{longest_const}} = arith.constant {i:<{longest_const}} : index" for i in const_vals]
