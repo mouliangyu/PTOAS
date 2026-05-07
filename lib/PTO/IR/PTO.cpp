@@ -2291,17 +2291,21 @@ bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
       bool isNZ = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
                     sl == static_cast<int32_t>(pto::SLayout::RowMajor));
       auto srcShape = srcTile.getShape();
-      bool isSpecialCase = (srcShape.size() == 2 && (srcShape[0] == 1 || srcShape[1] == 1));
+      if (srcShape.size() != 2)
+        return emitOpError("expects A5 vec tstore src to have 2 dims");
+      int64_t rows = srcShape[0];
+      int64_t cols = srcShape[1];
+      bool isSpecialCase = (rows == 1 || cols == 1);
       if (!isSpecialCase && !isND && !isDN && !isNZ)
         return emitOpError("expects A5 vec tstore src layout to be ND, DN, or NZ (or special case with 1 row/col)");
 
       unsigned elemBytes = getElemByteSize(srcElem);
       if (!isSpecialCase) {
-        if (isND && srcShape[1] != ShapedType::kDynamic &&
-            srcShape[1] * elemBytes % 32 != 0)
+        if (isND && cols != ShapedType::kDynamic &&
+            cols * elemBytes % 32 != 0)
           return emitOpError() << "expects A5 vec tstore ND format Cols*sizeof(dtype) to be divisible by 32";
-        if (isDN && srcShape[0] != ShapedType::kDynamic &&
-            srcShape[0] * elemBytes % 32 != 0)
+        if (isDN && rows != ShapedType::kDynamic &&
+            rows * elemBytes % 32 != 0)
           return emitOpError() << "expects A5 vec tstore DN format Rows*sizeof(dtype) to be divisible by 32";
       }
 
@@ -2791,6 +2795,12 @@ static LogicalResult verifyPartialValidPattern(Operation *op, Type src0Ty,
       return op->emitOpError(
           "expects src0/src1 valid_shape to be less than or equal to dst valid_shape");
   }
+  
+  // At least one src must match dst (TPARTADD/MUL/MAX/MIN rule)
+  if (!equalsKnown(src0Valid, dstValid) && !equalsKnown(src1Valid, dstValid))
+    return op->emitOpError(
+        "expects at least one of src0/src1 valid_shape to match dst valid_shape");
+  
   return success();
 }
 
@@ -5419,7 +5429,7 @@ mlir::LogicalResult mlir::pto::TMinSOp::verify() {
       "expects A2/A3 tmins element type to be i32/i16/f16/f32",
       "expects A5 tmins element type to be i32/i16/i8/f16/bf16/f32",
       /*requireValidRowsEqualOnA2A3=*/true,
-      /*requireValidRowsEqualOnA5=*/false);
+      /*requireValidRowsEqualOnA5=*/true);
 }
 
 mlir::LogicalResult mlir::pto::TMovOp::verify() {
@@ -8886,7 +8896,7 @@ mlir::LogicalResult mlir::pto::TSubSOp::verify() {
       "expects A2/A3 tsubs element type to be i32/i16/f16/f32",
       "expects A5 tsubs element type to be i32/i16/i8/f16/bf16/f32",
       /*requireValidRowsEqualOnA2A3=*/true,
-      /*requireValidRowsEqualOnA5=*/false);
+      /*requireValidRowsEqualOnA5=*/true);
 }
 
 
