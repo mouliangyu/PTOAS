@@ -1957,6 +1957,54 @@ LogicalResult TLoadOp::verify() {
                    sl == static_cast<int32_t>(pto::SLayout::RowMajor));
       if (!isND && !isDN && !isNZ)
         return emitOpError("expects A5 tload vec dst layout to be ND, DN, or NZ");
+
+      // ND布局形状匹配校验（对应ISA: ValidCol == staticShape[4], ValidRow == mergedRows）
+      if (isND) {
+        auto srcShape = srcPart.getShape();
+        auto dstValid = dstTile.getValidShape();
+        if (srcShape.size() != 5 || dstValid.size() != 2)
+          return emitOpError("expects A5 tload ND src to have 5 dims and dst to have 2 valid dims");
+        
+        // ValidCol检查
+        if (dstValid[1] != ShapedType::kDynamic && srcShape[4] != ShapedType::kDynamic) {
+          if (dstValid[1] != srcShape[4])
+            return emitOpError("expects A5 tload ND dst valid_col to match src shape[4]");
+        }
+        
+        // ValidRow检查（合并前4维）
+        if (dstValid[0] != ShapedType::kDynamic &&
+            srcShape[0] != ShapedType::kDynamic && srcShape[1] != ShapedType::kDynamic &&
+            srcShape[2] != ShapedType::kDynamic && srcShape[3] != ShapedType::kDynamic) {
+          int64_t mergedRows = srcShape[0] * srcShape[1] * srcShape[2] * srcShape[3];
+          if (dstValid[0] != mergedRows)
+            return emitOpError("expects A5 tload ND dst valid_row to match src shape[0]*shape[1]*shape[2]*shape[3]");
+        }
+      }
+
+      // NZ布局形状约束（对应ISA: shape[3]==BLOCK_LEN, shape[4]==BLOCK_BYTE_SIZE/sizeof或*2）
+      if (isNZ) {
+        auto srcShape = srcPart.getShape();
+        if (srcShape.size() != 5)
+          return emitOpError("expects A5 tload NZ src to have 5 dims");
+        
+        constexpr int32_t BLOCK_BYTE_SIZE = 32;
+        constexpr int32_t BLOCK_LEN = 16;
+        
+        if (srcShape[4] != ShapedType::kDynamic) {
+          int64_t expectedShape4;
+          if (isPTOFloat4PackedType(dstElem)) {
+            expectedShape4 = BLOCK_BYTE_SIZE * 2;
+          } else {
+            expectedShape4 = BLOCK_BYTE_SIZE / dstBytes;
+          }
+          if (srcShape[4] != expectedShape4)
+            return emitOpError("expects A5 tload NZ src shape[4] to match BLOCK_BYTE_SIZE / elem_size (or *2 for fp4)");
+        }
+        if (srcShape[3] != ShapedType::kDynamic) {
+          if (srcShape[3] != BLOCK_LEN)
+            return emitOpError("expects A5 tload NZ src shape[3] to match BLOCK_LEN");
+        }
+      }
     }
 
     return success();
@@ -2284,7 +2332,7 @@ Type srcElem = srcTile.getElementType();
 
       int32_t bl = srcTile.getBLayoutValueI32();
       int32_t sl = srcTile.getSLayoutValueI32();
-bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
+      bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
                     sl == static_cast<int32_t>(pto::SLayout::NoneBox));
       bool isDN = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
                     sl == static_cast<int32_t>(pto::SLayout::NoneBox));
