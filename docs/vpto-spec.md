@@ -149,7 +149,7 @@ The PTO micro Instruction enforces a strict memory hierarchy. The Unified Buffer
 
 The grouped MTE surface in this specification covers `pto.mte_gm_ub`
 (GM→UB), `pto.mte_ub_gm` (UB→GM), `pto.mte_ub_ub` (UB→UB), and
-`pto.mte_ub_l1` (UB→L1/CBUF). Cube-side load/store bridge wrappers follow the
+`pto.mte_ub_l1` (UB→L1). Cube-side load/store bridge wrappers follow the
 same `pto.mte_<src>_<dst><_mx>` naming convention and use hardware memory
 tokens (`l1`, `l0a`, `l0b`, `l0c`, `bt`) in public op names. Low-level raw copy
 families remain available with separate operand contracts.
@@ -432,7 +432,7 @@ bandwidth cost and higher latency, but serves as a general fallback.
 
 #### Cube Internal Buffer Layout: NZ Fractal Format
 
-All cube unit internal buffers (L1/cbuf, L0A, L0B, L0C) use a **fractal NZ layout** rather than
+All cube unit internal buffers (L1, L0A, L0B, L0C) use a **fractal NZ layout** rather than
 row-major ND. Understanding this layout is essential when authoring cube data-movement ops.
 
 ##### Definition
@@ -455,9 +455,9 @@ Physical layout: K1 x M1 x M0 x K0  (last dimension contiguous)
 
 | Buffer | Logical shape | Physical NZ layout | Notes |
 |--------|--------------|-------------------|-------|
-| L1 (cbuf) - Tensor A | `[M, K]` | `K1 M1 M0 K0` | `pto.copy_gm_to_cbuf_multi_nd2nz` of row-major A |
-| L1 (cbuf) - Tensor B | `[K, N]` | `K1 N1 K0 N0` | `pto.copy_gm_to_cbuf_multi_nd2nz` of row-major B |
-| L0A (left operand)   | -        | `K1 M1 M0 K0` | FRACTAL_NZ (A5) / FRACTAL_ZZ (A3): same NZ order as L1 cbuf |
+| L1 - Tensor A | `[M, K]` | `K1 M1 M0 K0` | `pto.copy_gm_to_cbuf_multi_nd2nz` of row-major A |
+| L1 - Tensor B | `[K, N]` | `K1 N1 K0 N0` | `pto.copy_gm_to_cbuf_multi_nd2nz` of row-major B |
+| L0A (left operand)   | -        | `K1 M1 M0 K0` | FRACTAL_NZ (A5) / FRACTAL_ZZ (A3): same NZ order as L1 |
 | L0B (right operand)  | -        | `K1 N1 N0 K0` | FRACTAL_ZN: row-major outer, col-major inner (K0 innermost) |
 | L0C (accumulator)    | `[M, N]` | `N1 M1 M0 N0` | output of MMAD (FRACTAL_NZ: col-major outer, row-major inner) |
 
@@ -483,7 +483,7 @@ row|   +--------------------+         row|   +--------------------+
   Physical: A[m*K + k]                 Physical: B[k*N + n]
 
 
-STEP 2 - GM -> L1 (cbuf): NDtoNZ fractal repack
+STEP 2 - GM -> L1: NDtoNZ fractal repack
 -------------------------------------------------
  op: pto.copy_gm_to_cbuf_multi_nd2nz  (A and B; use pto.copy_gm_to_cbuf_multi_dn2nz only for pre-transposed B)
 
@@ -516,8 +516,8 @@ STEP 3 - L1 -> L0A / L0B
  ops: pto.load_cbuf_to_ca  (no transpose)
       pto.load_cbuf_to_cb  (transpose via load_2d_v2)
 
- L0A: cbuf K1 M1 M0 K0 -(load_cbuf_to_ca)-> L0A K1 M1 M0 K0  (FRACTAL_NZ on A5)
- L0B: cbuf K1 N1 K0 N0 --(TMOV/ZN)---> L0B K1 N1 N0 K0  (FRACTAL_ZN, K0 innermost)
+ L0A: L1 K1 M1 M0 K0 -(load_cbuf_to_ca)-> L0A K1 M1 M0 K0  (FRACTAL_NZ on A5)
+ L0B: L1 K1 N1 K0 N0 --(TMOV/ZN)---> L0B K1 N1 N0 K0  (FRACTAL_ZN, K0 innermost)
 
  Why transpose at L1->L0B and not at GM->L1?
  --------------------------------------------
@@ -558,7 +558,7 @@ STEP 4 - L0C output layout: N1 M1 M0 N0
 
 Full pipeline summary
 ----------------------
-  GM (ND)          L1/cbuf (NZ)            L0A/B (NZ)          L0C (NZ)    GM (ND)
+  GM (ND)          L1 (NZ)                 L0A/B (NZ)          L0C (NZ)    GM (ND)
 
   A[M,K] -nd2nz(copy_gm_to_cbuf_multi_nd2nz)-> K1 M1 M0 K0 --load_cbuf_to_ca-> K1 M1 M0 K0 -+
                                                                +-MAD-> N1 M1 M0 N0 --> C[M,N]
@@ -1125,7 +1125,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | # | Group | Description | Count | Details |
 |---|-------|-------------|-------|---------|
 | 1 | [Pipeline Sync](isa/micro-isa/01-pipeline-sync.md) | Intra-core pipeline synchronization | 5 | `pto.set_flag`, `pto.wait_flag`, `pto.pipe_barrier`, `pto.get_buf`, `pto.rls_buf` |
-| 2 | [DMA Copy Programming](isa/micro-isa/02-dma-copy.md) | Public MTE transfer interface between GM, UB, L1/CBUF, L0A/L0B/L0C, and BT buffers | 14 | `pto.mte_gm_ub`, `pto.mte_ub_gm`, `pto.mte_ub_ub`, `pto.mte_ub_l1`, `pto.mte_gm_l1`, `pto.mte_l1_ub`, `pto.mte_l1_bt`, `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx`, `pto.mte_l0c_l1`, `pto.mte_l0c_gm`, `pto.mte_l0c_ub` |
+| 2 | [DMA Copy Programming](isa/micro-isa/02-dma-copy.md) | Public MTE transfer interface between GM, UB, L1, L0A/L0B/L0C, and BT buffers | 14 | `pto.mte_gm_ub`, `pto.mte_ub_gm`, `pto.mte_ub_ub`, `pto.mte_ub_l1`, `pto.mte_gm_l1`, `pto.mte_l1_ub`, `pto.mte_l1_bt`, `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx`, `pto.mte_l0c_l1`, `pto.mte_l0c_gm`, `pto.mte_l0c_ub` |
 | 3 | [Vector Load/Store](isa/micro-isa/03-vector-load-store.md) | UB↔vreg data movement with various access patterns | ~20 | `pto.vlds`, `pto.vldsx2`, `pto.vgather2`, `pto.vsts`, `pto.vstsx2`, `pto.vscatter`, etc. |
 | 4 | [Predicate Load/Store](isa/micro-isa/04-predicate-load-store.md) | UB↔mask register movement | 5 | `pto.plds`, `pto.pldi`, `pto.psts`, `pto.psti`, `pto.pstu` |
 | 5 | [Materialization & Predicate Ops](isa/micro-isa/05-materialization-predicate.md) | Scalar broadcast, predicate generation and manipulation | ~17 | `pto.vbr`, `pto.vdup`, `pto.pset_b*`, `pto.pge_b*`, `pto.plt_b*`, `pto.ppack`, `pto.punpack`, `pto.pnot`, `pto.psel`, etc. |

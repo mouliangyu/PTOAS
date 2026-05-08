@@ -8,7 +8,7 @@ DMA transfers move data between Global Memory (GM) and Unified Buffer (UB). The 
 This document describes the public grouped MTE interfaces. Public op names use
 the canonical form `pto.mte_<src>_<dst><_mx>`, where `<src>` and `<dst>` use
 hardware memory tokens: `gm`, `ub`, `l1`, `l0a`, `l0b`, `l0c`, and `bt`.
-The MLIR pointer address-space aliases remain `mat` for L1/CBUF, `left` for
+The MLIR pointer address-space aliases remain `mat` for L1, `left` for
 L0A, `right` for L0B, `acc` for L0C, and `bias` for BT.
 
 - `pto.mte_gm_ub`
@@ -173,7 +173,7 @@ pto.mte_ub_l1 %ub_src, %mat_dst, %len_burst
   nburst(%n_burst, %src_gap, %dst_gap)
   : !pto.ptr<T, ub>, !pto.ptr<T, mat>, i64, i64, i64, i64
 ```
-- **semantics:** Grouped UB→L1 (`cbuf` / `mat`) raw copy.
+- **semantics:** Grouped UB→L1 (`mat`) raw copy.
 
 **Parameter Table:**
 
@@ -202,7 +202,7 @@ pto.mte_ub_l1 %ub_src, %mat_dst, %len32b
 ## Cube Bridge Wrapper Ops
 
 These wrappers move data around the cube matmul memory hierarchy: GM, L1
-(`cbuf` / `mat`), L0A (`left`), L0B (`right`), L0C (`acc`), UB, and BT
+(`mat`), L0A (`left`), L0B (`right`), L0C (`acc`), UB, and BT
 (`bias`) buffers. Cube matrix multiply compute ops remain documented in
 [Cube Matrix Multiply (MAT)](16-cube-matmul.md).
 
@@ -215,7 +215,7 @@ pto.mte_gm_l1 %src, %dst, %len_burst
   [loop(%count_i, %src_stride_i, %dst_stride_i)]*
   : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64
 ```
-- **semantics:** Structured GM-to-L1 (`cbuf`) wrapper.
+- **semantics:** Structured GM-to-L1(`mat`) wrapper.
 
 **Parameter Table:** `%src`, `%dst`, `%len_burst`, `nburst(...)`, optional `loop(...)`.
 
@@ -242,7 +242,7 @@ pto.mte_l1_ub %src, %dst, %len_burst
   [loop(%count_i, %src_stride_i, %dst_stride_i)]*
   : !pto.ptr<T, mat>, !pto.ptr<T, ub>, i64, i64, i64, i64
 ```
-- **semantics:** Structured L1 (`cbuf`) to UB wrapper.
+- **semantics:** Structured L1(`mat`)-to-UB wrapper.
 
 **Parameter Table:** `%src`, `%dst`, `%len_burst`, `nburst(...)`, optional `loop(...)`.
 
@@ -296,7 +296,7 @@ pto.mte_l1_bt %src, %dst, %len_burst
   nburst(%count, %src_gap, %dst_gap)
   : !pto.ptr<T, mat>, !pto.ptr<U, bias>, i64, i64, i64, i64
 ```
-- **semantics:** Structured helper for L1 (`cbuf`) to BT (`bias`) load.
+- **semantics:** Structured helper for L1(`mat`)-to-BT (`bias`) load.
 
 **Parameter Table:**
 
@@ -425,7 +425,7 @@ pto.mte_l1_l0b_mx %l1_b, %l0b, %c64_i64, %c16_i64
 pto.mte_l0c_l1 %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? [loop3(%count, %src_stride3, %dst_stride3)]?
   : !pto.ptr<T, acc>, !pto.ptr<T, mat>, ...
 ```
-- **semantics:** Structured L0C (`acc`) to L1 (`cbuf`) wrapper.
+- **semantics:** Structured L0C (`acc`) to L1(`mat`) wrapper.
 
 **Parameter Table:** `%src`, `%dst`, shape/stride fields, pre/post fields, layout mode (`nz2nd` / `nz2dn` / `nz2nz`), optional `loop3`.
 
