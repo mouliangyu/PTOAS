@@ -1958,30 +1958,10 @@ LogicalResult TLoadOp::verify() {
       if (!isND && !isDN && !isNZ)
         return emitOpError("expects A5 tload vec dst layout to be ND, DN, or NZ");
 
-      // ND布局形状匹配校验（对应ISA: ValidCol == staticShape[4], ValidRow == mergedRows）
-      if (isND) {
-        auto srcShape = srcPart.getShape();
-        auto dstValid = dstTile.getValidShape();
-        
-        // 只在src确实是5维时才进行形状匹配检查
-        // ISA的GlobalData固定为5维（NC1HWC0），AS的partition_tensor_view可以是任意维度
-        if (srcShape.size() == 5 && dstValid.size() == 2) {
-          // ValidCol检查
-          if (dstValid[1] != ShapedType::kDynamic && srcShape[4] != ShapedType::kDynamic) {
-            if (dstValid[1] != srcShape[4])
-              return emitOpError("expects A5 tload ND dst valid_col to match src shape[4]");
-          }
-          
-          // ValidRow检查（合并前4维）
-          if (dstValid[0] != ShapedType::kDynamic &&
-              srcShape[0] != ShapedType::kDynamic && srcShape[1] != ShapedType::kDynamic &&
-              srcShape[2] != ShapedType::kDynamic && srcShape[3] != ShapedType::kDynamic) {
-            int64_t mergedRows = srcShape[0] * srcShape[1] * srcShape[2] * srcShape[3];
-            if (dstValid[0] != mergedRows)
-              return emitOpError("expects A5 tload ND dst valid_row to match src shape[0]*shape[1]*shape[2]*shape[3]");
-          }
-        }
-      }
+      // ND布局：ISA在编译时检查ValidCol==shape[4]，但ValidCol可以小于Cols（部分加载）
+      // AS无法判断何时应该强制相等，因此不添加此校验
+      // 例如trowexpand用例：Cols=8, ValidCol=1（只加载1列）
+      // NZ布局的shape约束保留（格式要求）
 
       // NZ布局形状约束（对应ISA: shape[3]==BLOCK_LEN, shape[4]==BLOCK_BYTE_SIZE/sizeof或*2）
       if (isNZ) {
