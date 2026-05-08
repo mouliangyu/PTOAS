@@ -149,9 +149,10 @@ The PTO micro Instruction enforces a strict memory hierarchy. The Unified Buffer
 
 The grouped MTE surface in this specification covers `pto.mte_gm_ub`
 (GM→UB), `pto.mte_ub_gm` (UB→GM), `pto.mte_ub_ub` (UB→UB), and
-`pto.mte_ub_mat` (UB→CBUF). Cube-side load/store bridge wrappers follow the
-same `pto.mte_<src>_<dst><_mx>` naming convention. Low-level raw copy families
-remain available with separate operand contracts.
+`pto.mte_ub_l1` (UB→L1/CBUF). Cube-side load/store bridge wrappers follow the
+same `pto.mte_<src>_<dst><_mx>` naming convention and use hardware memory
+tokens (`l1`, `l0a`, `l0b`, `l0c`, `bt`) in public op names. Low-level raw copy
+families remain available with separate operand contracts.
 
 **Load/Store Access Patterns**:
 
@@ -1124,7 +1125,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | # | Group | Description | Count | Details |
 |---|-------|-------------|-------|---------|
 | 1 | [Pipeline Sync](isa/micro-isa/01-pipeline-sync.md) | Intra-core pipeline synchronization | 5 | `pto.set_flag`, `pto.wait_flag`, `pto.pipe_barrier`, `pto.get_buf`, `pto.rls_buf` |
-| 2 | [DMA Copy Programming](isa/micro-isa/02-dma-copy.md) | Public MTE transfer interface between GM, UB, MAT/CBUF, L0A/L0B/L0C, and bias buffers | 14 | `pto.mte_gm_ub`, `pto.mte_ub_gm`, `pto.mte_ub_ub`, `pto.mte_ub_mat`, `pto.mte_gm_mat`, `pto.mte_mat_ub`, `pto.mte_mat_bias`, `pto.mte_mat_left`, `pto.mte_mat_right`, `pto.mte_mat_left_mx`, `pto.mte_mat_right_mx`, `pto.mte_acc_mat`, `pto.mte_acc_gm`, `pto.mte_acc_ub` |
+| 2 | [DMA Copy Programming](isa/micro-isa/02-dma-copy.md) | Public MTE transfer interface between GM, UB, L1/CBUF, L0A/L0B/L0C, and BT buffers | 14 | `pto.mte_gm_ub`, `pto.mte_ub_gm`, `pto.mte_ub_ub`, `pto.mte_ub_l1`, `pto.mte_gm_l1`, `pto.mte_l1_ub`, `pto.mte_l1_bt`, `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx`, `pto.mte_l0c_l1`, `pto.mte_l0c_gm`, `pto.mte_l0c_ub` |
 | 3 | [Vector Load/Store](isa/micro-isa/03-vector-load-store.md) | UB↔vreg data movement with various access patterns | ~20 | `pto.vlds`, `pto.vldsx2`, `pto.vgather2`, `pto.vsts`, `pto.vstsx2`, `pto.vscatter`, etc. |
 | 4 | [Predicate Load/Store](isa/micro-isa/04-predicate-load-store.md) | UB↔mask register movement | 5 | `pto.plds`, `pto.pldi`, `pto.psts`, `pto.psti`, `pto.pstu` |
 | 5 | [Materialization & Predicate Ops](isa/micro-isa/05-materialization-predicate.md) | Scalar broadcast, predicate generation and manipulation | ~17 | `pto.vbr`, `pto.vdup`, `pto.pset_b*`, `pto.pge_b*`, `pto.plt_b*`, `pto.ppack`, `pto.punpack`, `pto.pnot`, `pto.psel`, etc. |
@@ -1150,18 +1151,18 @@ This section provides a categorized overview of all PTO micro Instruction operat
 |-----------|-------|-------------|
 | GM→UB MTE | 2 | `pto.mte_gm_ub` |
 | UB→GM MTE | 2 | `pto.mte_ub_gm` |
-| UB→UB / UB→CBUF copy | 2 | `pto.mte_ub_ub`, `pto.mte_ub_mat` |
+| UB→UB / UB→L1 copy | 2 | `pto.mte_ub_ub`, `pto.mte_ub_l1` |
 | GM→L1 | 2 | `pto.copy_gm_to_cbuf` |
 | GM→L1 | 2 | `pto.copy_gm_to_cbuf_multi_nd2nz`, `pto.copy_gm_to_cbuf_multi_dn2nz` |
-| GM→L1 | 2 | `pto.mte_gm_mat` |
-| L1→UB bridge wrapper | 2 | `pto.mte_mat_ub` |
-| L1→BT (bridge wrapper) | 2 | `pto.mte_mat_bias` |
+| GM→L1 | 2 | `pto.mte_gm_l1` |
+| L1→UB bridge wrapper | 2 | `pto.mte_l1_ub` |
+| L1→BT (bridge wrapper) | 2 | `pto.mte_l1_bt` |
 | L1→L0A / L1→L0B | 2 | `pto.load_cbuf_to_ca`, `pto.load_cbuf_to_cb` |
-| L1→L0A / L1→L0B bridge wrapper | 2 | `pto.mte_mat_left`, `pto.mte_mat_right`, `pto.mte_mat_left_mx`, `pto.mte_mat_right_mx` |
+| L1→L0A / L1→L0B bridge wrapper | 2 | `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx` |
 | L0C→GM cube writeback | 2 | `pto.copy_matrix_cc_to_gm` |
-| L0C→L1 bridge wrapper | 2 | `pto.mte_acc_mat` |
-| L0C→GM bridge wrapper | 2 | `pto.mte_acc_gm` |
-| L0C→UB bridge wrapper | 2 | `pto.mte_acc_ub` |
+| L0C→L1 bridge wrapper | 2 | `pto.mte_l0c_l1` |
+| L0C→GM bridge wrapper | 2 | `pto.mte_l0c_gm` |
+| L0C→UB bridge wrapper | 2 | `pto.mte_l0c_ub` |
 | L0C→L1 / L0C→UB | 2 | `pto.copy_matrix_cc_to_cbuf`, `pto.copy_matrix_cc_to_ub` |
 | L1→BT / L1→FB | 2 | `pto.copy_cbuf_to_bt`, `pto.copy_cbuf_to_fbuf` |
 | Contiguous Load | 3 | `pto.vlds` with `NORM` dist |
@@ -1228,7 +1229,7 @@ Group 14 covers the full scalar `arith` surface. The rows below list common PTO 
 ### Verified Op List (Current Batch)
 
 - `pto.copy_cbuf_to_bt`
-- `pto.mte_mat_bias`
+- `pto.mte_l1_bt`
 - `pto.copy_cbuf_to_fbuf`
 - `pto.copy_gm_to_cbuf_multi_dn2nz`
 - `pto.copy_gm_to_cbuf_multi_nd2nz`
