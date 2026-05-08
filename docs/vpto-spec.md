@@ -718,12 +718,17 @@ Typed masks are also the primary legality contract for predicated VPTO code:
 
 ### Address Space Conventions
 
-PTO micro Instruction memory operands use `!pto.ptr<element-type, space>`. This specification models the following memory-space attributes:
+PTO micro Instruction memory operands use `!pto.ptr<element-type, space>`. Public MTE op names use formal hardware memory tokens. In `!pto.ptr<T, space>`, `space` accepts either the formal token or its PTO address-space alias.
 
-| Space | Interpretation |
-|-------|----------------|
-| `gm` | Global Memory (GM), off-chip HBM/DDR storage |
-| `ub` | Unified Buffer (UB), on-chip vector buffer |
+| Formal name | Alias | Interpretation |
+|-------------|-------|----------------|
+| `gm` | `gm` | Global Memory (GM), off-chip HBM/DDR storage |
+| `ub` | `vec` | Unified Buffer (UB), on-chip vector buffer |
+| `l1` | `mat` | L1 matrix buffer for cube data staging |
+| `l0a` | `left` | L0A left-operand matrix buffer |
+| `l0b` | `right` | L0B right-operand matrix buffer |
+| `l0c` | `acc` | L0C accumulator matrix buffer |
+| `bt` | `bias` | Bias-table buffer |
 
 Typical pointer construction and pointer arithmetic follow the same `!pto.ptr<..., space>` form:
 
@@ -737,7 +742,7 @@ Typical pointer construction and pointer arithmetic follow the same `!pto.ptr<..
 `!pto.ptr<T, space>` is the typed pointer form used for explicit memory operands in PTO micro Instruction.
 
 - `T` is the element type associated with the pointed-to storage.
-- `space` is the memory domain, typically `gm` or `ub` in this specification.
+- `space` is the memory domain, written either as a formal name such as `gm`, `ub`, `l1`, `l0a`, `l0b`, `l0c`, or `bt`, or as an alias such as `vec`, `mat`, `left`, `right`, `acc`, or `bias`.
 - A `pto.ptr` value carries an address plus its element-type / memory-space interpretation, but it does not carry tensor shape or stride metadata by itself.
 - Tensor semantics are introduced separately through view-building operations such as `pto.make_tensor_view`.
 - Pointer arithmetic is element-based rather than byte-based.
@@ -746,7 +751,18 @@ Typical examples:
 
 - `!pto.ptr<f32, gm>`
 - `!pto.ptr<f32, ub>`
+- `!pto.ptr<f32, vec>`
 - `!pto.ptr<bf16, gm>`
+- `!pto.ptr<f16, l1>`
+- `!pto.ptr<f16, mat>`
+- `!pto.ptr<f16, l0a>`
+- `!pto.ptr<f16, left>`
+- `!pto.ptr<f16, l0b>`
+- `!pto.ptr<f16, right>`
+- `!pto.ptr<f32, l0c>`
+- `!pto.ptr<f32, acc>`
+- `!pto.ptr<f32, bt>`
+- `!pto.ptr<f32, bias>`
 
 ### Pointer Operations
 
