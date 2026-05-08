@@ -1962,22 +1962,24 @@ LogicalResult TLoadOp::verify() {
       if (isND) {
         auto srcShape = srcPart.getShape();
         auto dstValid = dstTile.getValidShape();
-        if (srcShape.size() != 5 || dstValid.size() != 2)
-          return emitOpError("expects A5 tload ND src to have 5 dims and dst to have 2 valid dims");
         
-        // ValidCol检查
-        if (dstValid[1] != ShapedType::kDynamic && srcShape[4] != ShapedType::kDynamic) {
-          if (dstValid[1] != srcShape[4])
-            return emitOpError("expects A5 tload ND dst valid_col to match src shape[4]");
-        }
-        
-        // ValidRow检查（合并前4维）
-        if (dstValid[0] != ShapedType::kDynamic &&
-            srcShape[0] != ShapedType::kDynamic && srcShape[1] != ShapedType::kDynamic &&
-            srcShape[2] != ShapedType::kDynamic && srcShape[3] != ShapedType::kDynamic) {
-          int64_t mergedRows = srcShape[0] * srcShape[1] * srcShape[2] * srcShape[3];
-          if (dstValid[0] != mergedRows)
-            return emitOpError("expects A5 tload ND dst valid_row to match src shape[0]*shape[1]*shape[2]*shape[3]");
+        // 只在src确实是5维时才进行形状匹配检查
+        // ISA的GlobalData固定为5维（NC1HWC0），AS的partition_tensor_view可以是任意维度
+        if (srcShape.size() == 5 && dstValid.size() == 2) {
+          // ValidCol检查
+          if (dstValid[1] != ShapedType::kDynamic && srcShape[4] != ShapedType::kDynamic) {
+            if (dstValid[1] != srcShape[4])
+              return emitOpError("expects A5 tload ND dst valid_col to match src shape[4]");
+          }
+          
+          // ValidRow检查（合并前4维）
+          if (dstValid[0] != ShapedType::kDynamic &&
+              srcShape[0] != ShapedType::kDynamic && srcShape[1] != ShapedType::kDynamic &&
+              srcShape[2] != ShapedType::kDynamic && srcShape[3] != ShapedType::kDynamic) {
+            int64_t mergedRows = srcShape[0] * srcShape[1] * srcShape[2] * srcShape[3];
+            if (dstValid[0] != mergedRows)
+              return emitOpError("expects A5 tload ND dst valid_row to match src shape[0]*shape[1]*shape[2]*shape[3]");
+          }
         }
       }
 
