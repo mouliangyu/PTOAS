@@ -213,6 +213,7 @@ module {
 
     pto.texp ins(%a : !pto.tile_buf<vec, 64x64xf32>)
               outs(%b : !pto.tile_buf<vec, 64x64xf32>)
+              {precision_mode = #pto<precision_mode HIGH_PRECISION>}
 
     pto.tstore ins(%b : !pto.tile_buf<vec, 64x64xf32>)
                outs(%b_part : !pto.partition_tensor_view<1x1x1x64x64xf32>)
@@ -254,6 +255,7 @@ module {
 
     pto.texp ins(%a : !pto.tile_buf<vec, 64x64xf16>)
               outs(%b : !pto.tile_buf<vec, 64x64xf16>)
+              {precision_mode = #pto<precision_mode HIGH_PRECISION>}
 
     pto.tstore ins(%b : !pto.tile_buf<vec, 64x64xf16>)
                outs(%b_part : !pto.partition_tensor_view<1x1x1x64x64xf16>)
