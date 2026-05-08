@@ -1957,32 +1957,6 @@ LogicalResult TLoadOp::verify() {
                    sl == static_cast<int32_t>(pto::SLayout::RowMajor));
       if (!isND && !isDN && !isNZ)
         return emitOpError("expects A5 tload vec dst layout to be ND, DN, or NZ");
-
-      // ND布局：ISA在编译时检查ValidCol==shape[4]，但ValidCol可以小于Cols（部分加载）
-      // AS无法判断何时应该强制相等，因此不添加此校验
-      // 例如trowexpand用例：Cols=8, ValidCol=1（只加载1列）
-      // NZ布局的shape约束保留（格式要求）
-
-      // NZ布局形状约束（对应ISA: shape[4]==BLOCK_BYTE_SIZE/sizeof或*2）
-      // shape[3]的BLOCK_LEN约束可能在不同场景下有不同要求，AS不强制检查
-      if (isNZ) {
-        auto srcShape = srcPart.getShape();
-        if (srcShape.size() != 5)
-          return emitOpError("expects A5 tload NZ src to have 5 dims");
-        
-        constexpr int32_t BLOCK_BYTE_SIZE = 32;
-        
-        if (srcShape[4] != ShapedType::kDynamic) {
-          int64_t expectedShape4;
-          if (isPTOFloat4PackedType(dstElem)) {
-            expectedShape4 = BLOCK_BYTE_SIZE * 2;
-          } else {
-            expectedShape4 = BLOCK_BYTE_SIZE / dstBytes;
-          }
-          if (srcShape[4] != expectedShape4)
-            return emitOpError("expects A5 tload NZ src shape[4] to match BLOCK_BYTE_SIZE / elem_size (or *2 for fp4)");
-        }
-      }
     }
 
     return success();
@@ -2310,28 +2284,26 @@ Type srcElem = srcTile.getElementType();
 
       int32_t bl = srcTile.getBLayoutValueI32();
       int32_t sl = srcTile.getSLayoutValueI32();
-      bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
+bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
                     sl == static_cast<int32_t>(pto::SLayout::NoneBox));
       bool isDN = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
                     sl == static_cast<int32_t>(pto::SLayout::NoneBox));
       bool isNZ = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
                     sl == static_cast<int32_t>(pto::SLayout::RowMajor));
       auto srcShape = srcTile.getShape();
-      if (srcShape.size() != 2)
-        return emitOpError("expects A5 vec tstore src to have 2 dims");
-      int64_t rows = srcShape[0];
-      int64_t cols = srcShape[1];
-      bool isSpecialCase = (rows == 1 || cols == 1);
+      bool isSpecialCase = (srcShape.size() == 2 && (srcShape[0] == 1 || srcShape[1] == 1));
       if (!isSpecialCase && !isND && !isDN && !isNZ)
         return emitOpError("expects A5 vec tstore src layout to be ND, DN, or NZ (or special case with 1 row/col)");
 
       unsigned elemBytes = getElemByteSize(srcElem);
-      // ISA的static_assert检查编译时模板参数（TileData::Cols是编译时常量）
-      // AS的partition_tensor_view是运行时值，无法像ISA那样精确判断对齐
-      // 多个CI测试证明：各种cols/rows值都是合法的（cols=1,2,7等）
-      // 底层硬件可能有更灵活的对齐处理机制
-      // 因此AS不强制对齐校验，只检查布局类型匹配
-      // NZ布局无特殊要求
+      if (!isSpecialCase) {
+        if (isND && srcShape[1] != ShapedType::kDynamic &&
+            srcShape[1] * elemBytes % 32 != 0)
+          return emitOpError() << "expects A5 vec tstore ND format Cols*sizeof(dtype) to be divisible by 32";
+        if (isDN && srcShape[0] != ShapedType::kDynamic &&
+            srcShape[0] * elemBytes % 32 != 0)
+          return emitOpError() << "expects A5 vec tstore DN format Rows*sizeof(dtype) to be divisible by 32";
+      }
 
       return success();
     }
@@ -2819,8 +2791,6 @@ static LogicalResult verifyPartialValidPattern(Operation *op, Type src0Ty,
       return op->emitOpError(
           "expects src0/src1 valid_shape to be less than or equal to dst valid_shape");
   }
-  
-  // ISA only checks dst >= src0 && dst >= src1, no requirement for src0==dst || src1==dst
   return success();
 }
 
@@ -5449,7 +5419,7 @@ mlir::LogicalResult mlir::pto::TMinSOp::verify() {
       "expects A2/A3 tmins element type to be i32/i16/f16/f32",
       "expects A5 tmins element type to be i32/i16/i8/f16/bf16/f32",
       /*requireValidRowsEqualOnA2A3=*/true,
-      /*requireValidRowsEqualOnA5=*/true);
+      /*requireValidRowsEqualOnA5=*/false);
 }
 
 mlir::LogicalResult mlir::pto::TMovOp::verify() {
@@ -8916,7 +8886,7 @@ mlir::LogicalResult mlir::pto::TSubSOp::verify() {
       "expects A2/A3 tsubs element type to be i32/i16/f16/f32",
       "expects A5 tsubs element type to be i32/i16/i8/f16/bf16/f32",
       /*requireValidRowsEqualOnA2A3=*/true,
-      /*requireValidRowsEqualOnA5=*/true);
+      /*requireValidRowsEqualOnA5=*/false);
 }
 
 
