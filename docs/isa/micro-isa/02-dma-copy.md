@@ -6,8 +6,10 @@
 DMA transfers move data between Global Memory (GM) and Unified Buffer (UB). The MTE engines operate asynchronously from the Vector core, requiring explicit sync (see [Pipeline Sync](01-pipeline-sync.md)).
 
 This document describes the public grouped MTE interfaces. Public op names use
-the canonical form `pto.mte_<src>_<dst><_mx>`, where `<src>` and `<dst>` use
-hardware memory tokens: `gm`, `ub`, `l1`, `l0a`, `l0b`, `l0c`, and `bt`.
+the canonical direction prefix `pto.mte_<src>_<dst>`, where `<src>` and `<dst>`
+use hardware memory tokens: `gm`, `ub`, `l1`, `l0a`, `l0b`, `l0c`, and `bt`.
+Directions with multiple operand contracts add a form suffix such as `_burst`,
+`_fractal`, or `_mx`.
 The MLIR pointer address-space aliases remain `mat` for L1, `left` for
 L0A, `right` for L0B, `acc` for L0C, and `bias` for BT.
 
@@ -15,7 +17,8 @@ L0A, `right` for L0B, `acc` for L0C, and `bias` for BT.
 - `pto.mte_ub_gm`
 - `pto.mte_ub_ub`
 - `pto.mte_ub_l1`
-- `pto.mte_gm_l1`
+- `pto.mte_gm_l1_burst`
+- `pto.mte_gm_l1_fractal`
 - `pto.mte_l1_ub`
 - `pto.mte_l1_bt`
 - `pto.mte_l1_l0a`
@@ -197,20 +200,11 @@ pto.mte_ub_l1 %ub_src, %mat_dst, %len32b
   : !pto.ptr<i16, ub>, !pto.ptr<i16, mat>, i64, i64, i64, i64
 ```
 
----
-
-## Cube Bridge Wrapper Ops
-
-These wrappers move data around the cube matmul memory hierarchy: GM, L1
-(`mat`), L0A (`left`), L0B (`right`), L0C (`acc`), UB, and BT
-(`bias`) buffers. Cube matrix multiply compute ops remain documented in
-[Cube Matrix Multiply (MAT)](16-cube-matmul.md).
-
-### `pto.mte_gm_l1` Burst Form
+### `pto.mte_gm_l1_burst`
 
 - **syntax:**
 ```mlir
-pto.mte_gm_l1 %src, %dst, %len_burst
+pto.mte_gm_l1_burst %src, %dst, %len_burst
   nburst(%count, %src_stride, %dst_stride)
   [loop(%count_i, %src_stride_i, %dst_stride_i)]*
   : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64
@@ -226,9 +220,37 @@ pto.mte_gm_l1 %src, %dst, %len_burst
 **Example:**
 
 ```mlir
-pto.mte_gm_l1 %a_gm, %l1_a, %c16_i64
+pto.mte_gm_l1_burst %a_gm, %l1_a, %c16_i64
   nburst(%c1_i64, %c0_i64, %c0_i64)
   : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, i64, i64, i64, i64
+```
+
+---
+
+### `pto.mte_gm_l1_fractal`
+
+- **syntax:**
+```mlir
+pto.mte_gm_l1_fractal %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_layout(%src_inner_stride[, %src_outer_stride]), dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride), ctrl(%l2_cache_ctrl, %smallc0_en)
+  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, ...
+```
+- **semantics:** Structured fractal-load wrapper for `nd2nz` / `dn2nz`.
+
+**Parameter Table:** source/destination pointers, shape fields, source layout fields, destination group fields, control fields.
+
+**Constraints:**
+
+- Lowers to `set_mte2_nz_para` plus `copy_gm_to_cbuf_multi_*`.
+
+**Example:**
+
+```mlir
+pto.mte_gm_l1_fractal %src, %dst, nd2nz,
+  shape(%n, %d),
+  src_layout(%sis),
+  dst_group(%g, %l2s, %l3s, %l4s),
+  ctrl(%l2, %small)
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, nd2nz, shape i64, i64, src_layout(i64), dst_group i64, i64, i64, i64, ctrl i64, i1
 ```
 
 ---
@@ -256,34 +278,6 @@ pto.mte_l1_ub %src, %dst, %len_burst
 pto.mte_l1_ub %l1_src, %ub_dst, %c16_i64
   nburst(%c1_i64, %c0_i64, %c0_i64)
   : !pto.ptr<f16, mat>, !pto.ptr<f16, ub>, i64, i64, i64, i64
-```
-
----
-
-### `pto.mte_gm_l1` Fractal Form
-
-- **syntax:**
-```mlir
-pto.mte_gm_l1 %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_layout(%src_inner_stride[, %src_outer_stride]), dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride), ctrl(%l2_cache_ctrl, %smallc0_en)
-  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, ...
-```
-- **semantics:** Structured fractal-load wrapper for `nd2nz` / `dn2nz`.
-
-**Parameter Table:** source/destination pointers, shape fields, source layout fields, destination group fields, control fields.
-
-**Constraints:**
-
-- Lowers to `set_mte2_nz_para` plus `copy_gm_to_cbuf_multi_*`.
-
-**Example:**
-
-```mlir
-pto.mte_gm_l1 %src, %dst, nd2nz,
-  shape(%n, %d),
-  src_layout(%sis),
-  dst_group(%g, %l2s, %l3s, %l4s),
-  ctrl(%l2, %small)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, nd2nz, shape i64, i64, src_layout(i64), dst_group i64, i64, i64, i64, ctrl i64, i1
 ```
 
 ---
