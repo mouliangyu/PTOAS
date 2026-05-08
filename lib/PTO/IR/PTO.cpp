@@ -1963,14 +1963,14 @@ LogicalResult TLoadOp::verify() {
       // 例如trowexpand用例：Cols=8, ValidCol=1（只加载1列）
       // NZ布局的shape约束保留（格式要求）
 
-      // NZ布局形状约束（对应ISA: shape[3]==BLOCK_LEN, shape[4]==BLOCK_BYTE_SIZE/sizeof或*2）
+      // NZ布局形状约束（对应ISA: shape[4]==BLOCK_BYTE_SIZE/sizeof或*2）
+      // shape[3]的BLOCK_LEN约束可能在不同场景下有不同要求，AS不强制检查
       if (isNZ) {
         auto srcShape = srcPart.getShape();
         if (srcShape.size() != 5)
           return emitOpError("expects A5 tload NZ src to have 5 dims");
         
         constexpr int32_t BLOCK_BYTE_SIZE = 32;
-        constexpr int32_t BLOCK_LEN = 16;
         
         if (srcShape[4] != ShapedType::kDynamic) {
           int64_t expectedShape4;
@@ -1981,10 +1981,6 @@ LogicalResult TLoadOp::verify() {
           }
           if (srcShape[4] != expectedShape4)
             return emitOpError("expects A5 tload NZ src shape[4] to match BLOCK_BYTE_SIZE / elem_size (or *2 for fp4)");
-        }
-        if (srcShape[3] != ShapedType::kDynamic) {
-          if (srcShape[3] != BLOCK_LEN)
-            return emitOpError("expects A5 tload NZ src shape[3] to match BLOCK_LEN");
         }
       }
     }
@@ -2330,13 +2326,24 @@ Type srcElem = srcTile.getElementType();
         return emitOpError("expects A5 vec tstore src layout to be ND, DN, or NZ (or special case with 1 row/col)");
 
       unsigned elemBytes = getElemByteSize(srcElem);
-      if (!isSpecialCase) {
-        if (isND && cols != ShapedType::kDynamic &&
-            cols * elemBytes % 32 != 0)
-          return emitOpError() << "expects A5 vec tstore ND format Cols*sizeof(dtype) to be divisible by 32";
-        if (isDN && rows != ShapedType::kDynamic &&
-            rows * elemBytes % 32 != 0)
-          return emitOpError() << "expects A5 vec tstore DN format Rows*sizeof(dtype) to be divisible by 32";
+      // ISA对齐要求：
+      // 1. ND: Cols对齐32字节（标准）
+      // 2. DN: Rows对齐32字节（标准）
+      // 3. NZ: 无对齐要求
+      // 4. ND cols==1: Rows对齐32字节（特殊情况）
+      // 5. DN rows==1: Cols对齐32字节（特殊情况）
+      if (isNZ) {
+        // NZ无对齐要求
+      } else if (isND && cols != ShapedType::kDynamic && rows != ShapedType::kDynamic) {
+        bool standardAlign = (cols * elemBytes % 32 == 0);
+        bool specialAlign = (cols == 1) && (rows * elemBytes % 32 == 0);
+        if (!standardAlign && !specialAlign)
+          return emitOpError() << "expects A5 vec tstore ND: Cols*sizeof(dtype) % 32 == 0, or Rows % 32 == 0 when Cols==1";
+      } else if (isDN && cols != ShapedType::kDynamic && rows != ShapedType::kDynamic) {
+        bool standardAlign = (rows * elemBytes % 32 == 0);
+        bool specialAlign = (rows == 1) && (cols * elemBytes % 32 == 0);
+        if (!standardAlign && !specialAlign)
+          return emitOpError() << "expects A5 vec tstore DN: Rows*sizeof(dtype) % 32 == 0, or Cols % 32 == 0 when Rows==1";
       }
 
       return success();
@@ -2826,11 +2833,7 @@ static LogicalResult verifyPartialValidPattern(Operation *op, Type src0Ty,
           "expects src0/src1 valid_shape to be less than or equal to dst valid_shape");
   }
   
-  // At least one src must match dst (TPARTADD/MUL/MAX/MIN rule)
-  if (!equalsKnown(src0Valid, dstValid) && !equalsKnown(src1Valid, dstValid))
-    return op->emitOpError(
-        "expects at least one of src0/src1 valid_shape to match dst valid_shape");
-  
+  // ISA only checks dst >= src0 && dst >= src1, no requirement for src0==dst || src1==dst
   return success();
 }
 
