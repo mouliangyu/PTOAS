@@ -457,8 +457,8 @@ Physical layout: K1 x M1 x M0 x K0  (last dimension contiguous)
 
 | Buffer | Logical shape | Physical NZ layout | Notes |
 |--------|--------------|-------------------|-------|
-| L1 - Tensor A | `[M, K]` | `K1 M1 M0 K0` | `pto.copy_gm_to_cbuf_multi_nd2nz` of row-major A |
-| L1 - Tensor B | `[K, N]` | `K1 N1 K0 N0` | `pto.copy_gm_to_cbuf_multi_nd2nz` of row-major B |
+| L1 - Tensor A | `[M, K]` | `K1 M1 M0 K0` | `pto.mte_gm_l1_fractal` `nd2nz` of row-major A |
+| L1 - Tensor B | `[K, N]` | `K1 N1 K0 N0` | `pto.mte_gm_l1_fractal` `nd2nz` of row-major B |
 | L0A (left operand)   | -        | `K1 M1 M0 K0` | FRACTAL_NZ (A5) / FRACTAL_ZZ (A3): same NZ order as L1 |
 | L0B (right operand)  | -        | `K1 N1 N0 K0` | FRACTAL_ZN: row-major outer, col-major inner (K0 innermost) |
 | L0C (accumulator)    | `[M, N]` | `N1 M1 M0 N0` | output of MMAD (FRACTAL_NZ: col-major outer, row-major inner) |
@@ -487,7 +487,7 @@ row|   +--------------------+         row|   +--------------------+
 
 STEP 2 - GM -> L1: NDtoNZ fractal repack
 -------------------------------------------------
- op: pto.copy_gm_to_cbuf_multi_nd2nz  (A and B; use pto.copy_gm_to_cbuf_multi_dn2nz only for pre-transposed B)
+ op: pto.mte_gm_l1_fractal nd2nz  (A and B; use dn2nz mode only for pre-transposed B)
 
  A in L1: K1 x M1 x M0 x K0          B in L1: K1 x N1 x K0 x N0
  For each outer block (k1, m1):       For each outer block (k1, n1):
@@ -504,8 +504,8 @@ STEP 2 - GM -> L1: NDtoNZ fractal repack
 
 
 
- NOTE: For GEMM (row-major A/B), prefer pto.copy_gm_to_cbuf_multi_nd2nz for both A and B.
-   pto.copy_gm_to_cbuf_multi_dn2nz is intended for NCHW-layout inputs (e.g. convolution)
+ NOTE: For GEMM (row-major A/B), prefer pto.mte_gm_l1_fractal nd2nz for both A and B.
+   pto.mte_gm_l1_fractal dn2nz is intended for NCHW-layout inputs (e.g. convolution)
    where the data is already transposed in GM. Using dn2nz for row-major B forces
    non-contiguous GM access (striding across N to gather K), which hurts burst BW.
    The B fractal transpose for cube compatibility is done at STEP 3 (L1->L0B).
@@ -515,10 +515,10 @@ STEP 2 - GM -> L1: NDtoNZ fractal repack
 
 STEP 3 - L1 -> L0A / L0B
 --------------------------
- ops: pto.load_cbuf_to_ca  (no transpose)
-      pto.load_cbuf_to_cb  (transpose via load_2d_v2)
+ ops: pto.mte_l1_l0a  (no transpose)
+      pto.mte_l1_l0b  (transpose via load_2d_v2)
 
- L0A: L1 K1 M1 M0 K0 -(load_cbuf_to_ca)-> L0A K1 M1 M0 K0  (FRACTAL_NZ on A5)
+ L0A: L1 K1 M1 M0 K0 -(mte_l1_l0a)-> L0A K1 M1 M0 K0  (FRACTAL_NZ on A5)
  L0B: L1 K1 N1 K0 N0 --(TMOV/ZN)---> L0B K1 N1 N0 K0  (FRACTAL_ZN, K0 innermost)
 
  Why transpose at L1->L0B and not at GM->L1?
@@ -552,9 +552,9 @@ STEP 4 - L0C output layout: N1 M1 M0 N0
   +------------------------------+
   Physical: C_nz[n1][m1][m0][n0]  ->  C_nd[m1*M0+m0][n1*N0+n0]
 
-  Writeback: pto.copy_matrix_cc_to_gm   (FRACTAL_NZ -> ND, normal output)
-             pto.copy_matrix_cc_to_cbuf  (stays FRACTAL_NZ, for fused ops)
-             pto.copy_matrix_cc_to_ub    (FRACTAL_NZ -> ND to UB, A5 only;
+  Writeback: pto.mte_l0c_gm  (FRACTAL_NZ -> ND, normal output)
+             pto.mte_l0c_l1  (stays FRACTAL_NZ, for fused ops)
+             pto.mte_l0c_ub  (FRACTAL_NZ -> ND to UB, A5 only;
                                           used in fixed-point (fixp) datapath)
 
 
@@ -562,11 +562,11 @@ Full pipeline summary
 ----------------------
   GM (ND)          L1 (NZ)                 L0A/B (NZ)          L0C (NZ)    GM (ND)
 
-  A[M,K] -nd2nz(copy_gm_to_cbuf_multi_nd2nz)-> K1 M1 M0 K0 --load_cbuf_to_ca-> K1 M1 M0 K0 -+
+  A[M,K] -nd2nz(mte_gm_l1_fractal)-> K1 M1 M0 K0 --mte_l1_l0a-> K1 M1 M0 K0 -+
                                                                +-MAD-> N1 M1 M0 N0 --> C[M,N]
-  B[K,N] -nd2nz(copy_gm_to_cbuf_multi_nd2nz)-> K1 N1 K0 N0 --load_cbuf_to_cb-> K1 N1 N0 K0 -+
+  B[K,N] -nd2nz(mte_gm_l1_fractal)-> K1 N1 K0 N0 --mte_l1_l0b-> K1 N1 N0 K0 -+
                                  ^
-                      transpose at L1->L0B (load_cbuf_to_cb, load_2d_v2)
+                      transpose at L1->L0B (mte_l1_l0b, load_2d_v2)
                       NOT at GM->L1
 ```
 
@@ -1154,19 +1154,18 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | GM→UB MTE | 2 | `pto.mte_gm_ub` |
 | UB→GM MTE | 2 | `pto.mte_ub_gm` |
 | UB→UB / UB→L1 copy | 2 | `pto.mte_ub_ub`, `pto.mte_ub_l1` |
-| GM→L1 | 2 | `pto.copy_gm_to_cbuf` |
-| GM→L1 | 2 | `pto.copy_gm_to_cbuf_multi_nd2nz`, `pto.copy_gm_to_cbuf_multi_dn2nz` |
+| GM→L1 burst copy | 2 | `pto.mte_gm_l1_burst` |
+| GM→L1 fractal copy | 2 | `pto.mte_gm_l1_fractal` |
 | GM→L1 bridge wrapper | 2 | `pto.mte_gm_l1_burst`, `pto.mte_gm_l1_fractal` |
 | L1→UB bridge wrapper | 2 | `pto.mte_l1_ub` |
 | L1→BT (bridge wrapper) | 2 | `pto.mte_l1_bt` |
-| L1→L0A / L1→L0B | 2 | `pto.load_cbuf_to_ca`, `pto.load_cbuf_to_cb` |
+| L1→L0A / L1→L0B | 2 | `pto.mte_l1_l0a`, `pto.mte_l1_l0b` |
 | L1→L0A / L1→L0B bridge wrapper | 2 | `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx` |
-| L0C→GM cube writeback | 2 | `pto.copy_matrix_cc_to_gm` |
+| L0C→GM cube writeback | 2 | `pto.mte_l0c_gm` |
 | L0C→L1 bridge wrapper | 2 | `pto.mte_l0c_l1` |
 | L0C→GM bridge wrapper | 2 | `pto.mte_l0c_gm` |
 | L0C→UB bridge wrapper | 2 | `pto.mte_l0c_ub` |
-| L0C→L1 / L0C→UB | 2 | `pto.copy_matrix_cc_to_cbuf`, `pto.copy_matrix_cc_to_ub` |
-| L1→BT / L1→FB | 2 | `pto.copy_cbuf_to_bt`, `pto.copy_cbuf_to_fbuf` |
+| L0C→L1 / L0C→UB | 2 | `pto.mte_l0c_l1`, `pto.mte_l0c_ub` |
 | Contiguous Load | 3 | `pto.vlds` with `NORM` dist |
 | Broadcast Load | 3 | `pto.vlds` with `BRC` family dist |
 | Gather | 3 | `pto.vgather2`, `pto.vgatherb` |
@@ -1215,51 +1214,6 @@ Group 14 covers the full scalar `arith` surface. The rows below list common PTO 
 | Counted Loops | 15 | `scf.for` |
 | Conditional Regions | 15 | `scf.if`, `scf.yield` |
 | Break-like Structured Loops | 15 | `scf.while`, `scf.condition`, `scf.yield` |
-
-### Recent A5 Additions (Implemented)
-
-- `pto.set_quant_pre` (lowered to `llvm.hivm.SET.QUANT.PRE.v300`)
-- `pto.set_atomic_s32`, `pto.set_atomic_s8` (A5-selectable atomic mode controls)
-- Cube-side movement additions:
-  - `pto.copy_gm_to_cbuf_multi_nd2nz`
-  - `pto.copy_gm_to_cbuf_multi_dn2nz`
-  - `pto.copy_matrix_cc_to_cbuf`
-  - `pto.copy_matrix_cc_to_ub`
-  - `pto.copy_cbuf_to_bt`
-  - `pto.copy_cbuf_to_fbuf`
-
-### Verified Op List (Current Batch)
-
-- `pto.copy_cbuf_to_bt`
-- `pto.mte_l1_bt`
-- `pto.copy_cbuf_to_fbuf`
-- `pto.copy_gm_to_cbuf_multi_dn2nz`
-- `pto.copy_gm_to_cbuf_multi_nd2nz`
-- `pto.mad`
-- `pto.mad_acc`
-- `pto.mad_bias`
-- `pto.mad_mx`
-- `pto.mad_mx_acc`
-- `pto.mad_mx_bias`
-- `pto.copy_matrix_cc_to_cbuf`
-- `pto.copy_matrix_cc_to_ub`
-- `pto.load_cbuf_to_ca_mx`
-- `pto.load_cbuf_to_ca_s4`
-- `pto.load_cbuf_to_cb_mx`
-- `pto.load_cbuf_to_cb_s4`
-- `pto.set_atomic_s32`
-- `pto.set_atomic_s8`
-- `pto.set_channel_para`
-- `pto.set_fpc`
-- `pto.set_loop1_stride_outtol1`
-- `pto.set_loop2_stride_outtol1`
-- `pto.set_loop3_para`
-- `pto.set_loop_size_outtol1`
-- `pto.set_mte2_nz_para`
-- `pto.set_pad_val_outtol1`
-- `pto.set_quant_pre`
-
----
 
 ## Supported Data Types
 
