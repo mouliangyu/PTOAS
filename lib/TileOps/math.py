@@ -582,4 +582,3 @@ def _tl_soft_vdiv(vec, scalar_vec, mask, dtype):
     else:
         result = _tl_soft_vdiv_i32(vec, scalar_vec, mask)
     return result
-
