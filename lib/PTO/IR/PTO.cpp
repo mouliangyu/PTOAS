@@ -2282,7 +2282,7 @@ Type srcElem = srcTile.getElementType();
       if (getElemByteSize(srcElem) != getElemByteSize(dstElem))
         return emitOpError("expects A5 vec tstore src and dst element types to have the same bitwidth");
 
-int32_t bl = srcTile.getBLayoutValueI32();
+      int32_t bl = srcTile.getBLayoutValueI32();
       int32_t sl = srcTile.getSLayoutValueI32();
       bool isND = (bl == static_cast<int32_t>(pto::BLayout::RowMajor) &&
                    sl == static_cast<int32_t>(pto::SLayout::NoneBox));
@@ -2296,14 +2296,6 @@ int32_t bl = srcTile.getBLayoutValueI32();
         return emitOpError("expects A5 vec tstore src layout to be ND, DN, or NZ (or special case with 1 row/col)");
 
       unsigned elemBytes = getElemByteSize(srcElem);
-      if (!isSpecialCase) {
-        if (isND && srcShape[1] != ShapedType::kDynamic &&
-            srcShape[1] * elemBytes % 32 != 0)
-          return emitOpError() << "expects A5 vec tstore ND format Cols*sizeof(dtype) to be divisible by 32";
-        if (isDN && srcShape[0] != ShapedType::kDynamic &&
-            srcShape[0] * elemBytes % 32 != 0)
-          return emitOpError() << "expects A5 vec tstore DN format Rows*sizeof(dtype) to be divisible by 32";
-      }
 
       return success();
     }
