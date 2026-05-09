@@ -17,8 +17,8 @@ L0A, `right` for L0B, `acc` for L0C, and `bias` for BT.
 - `pto.mte_ub_gm`
 - `pto.mte_ub_ub`
 - `pto.mte_ub_l1`
-- `pto.mte_gm_l1_burst`
-- `pto.mte_gm_l1_fractal`
+- `pto.mte_gm_l1`
+- `pto.mte_gm_l1_frac`
 - `pto.mte_l1_ub`
 - `pto.mte_l1_bt`
 - `pto.mte_l1_l0a`
@@ -200,11 +200,11 @@ pto.mte_ub_l1 %ub_src, %mat_dst, %len32b
   : !pto.ptr<i16, ub>, !pto.ptr<i16, mat>, i64, i64, i64, i64
 ```
 
-### `pto.mte_gm_l1_burst`
+### `pto.mte_gm_l1`
 
 - **syntax:**
 ```mlir
-pto.mte_gm_l1_burst %src, %dst, %len_burst
+pto.mte_gm_l1 %src, %dst, %len_burst
   nburst(%count, %src_stride, %dst_stride)
   [loop(%count_i, %src_stride_i, %dst_stride_i)]*
   : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64
@@ -220,18 +220,18 @@ pto.mte_gm_l1_burst %src, %dst, %len_burst
 **Example:**
 
 ```mlir
-pto.mte_gm_l1_burst %a_gm, %l1_a, %c16_i64
+pto.mte_gm_l1 %a_gm, %l1_a, %c16_i64
   nburst(%c1_i64, %c0_i64, %c0_i64)
   : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, i64, i64, i64, i64
 ```
 
 ---
 
-### `pto.mte_gm_l1_fractal`
+### `pto.mte_gm_l1_frac`
 
 - **syntax:**
 ```mlir
-pto.mte_gm_l1_fractal %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_layout(%src_inner_stride[, %src_outer_stride]), dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride), ctrl(%l2_cache_ctrl, %smallc0_en)
+pto.mte_gm_l1_frac %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_layout(%src_inner_stride[, %src_outer_stride]), dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride), ctrl(%l2_cache_ctrl, %smallc0_en)
   : !pto.ptr<T, gm>, !pto.ptr<T, mat>, ...
 ```
 - **semantics:** Structured fractal-load wrapper for `nd2nz` / `dn2nz`.
@@ -245,7 +245,7 @@ pto.mte_gm_l1_fractal %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_la
 **Example:**
 
 ```mlir
-pto.mte_gm_l1_fractal %src, %dst, nd2nz,
+pto.mte_gm_l1_frac %src, %dst, nd2nz,
   shape(%n, %d),
   src_layout(%sis),
   dst_group(%g, %l2s, %l3s, %l4s),

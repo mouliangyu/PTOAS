@@ -457,8 +457,8 @@ Physical layout: K1 x M1 x M0 x K0  (last dimension contiguous)
 
 | Buffer | Logical shape | Physical NZ layout | Notes |
 |--------|--------------|-------------------|-------|
-| L1 - Tensor A | `[M, K]` | `K1 M1 M0 K0` | `pto.mte_gm_l1_fractal` `nd2nz` of row-major A |
-| L1 - Tensor B | `[K, N]` | `K1 N1 K0 N0` | `pto.mte_gm_l1_fractal` `nd2nz` of row-major B |
+| L1 - Tensor A | `[M, K]` | `K1 M1 M0 K0` | `pto.mte_gm_l1_frac` `nd2nz` of row-major A |
+| L1 - Tensor B | `[K, N]` | `K1 N1 K0 N0` | `pto.mte_gm_l1_frac` `nd2nz` of row-major B |
 | L0A (left operand)   | -        | `K1 M1 M0 K0` | FRACTAL_NZ (A5) / FRACTAL_ZZ (A3): same NZ order as L1 |
 | L0B (right operand)  | -        | `K1 N1 N0 K0` | FRACTAL_ZN: row-major outer, col-major inner (K0 innermost) |
 | L0C (accumulator)    | `[M, N]` | `N1 M1 M0 N0` | output of MMAD (FRACTAL_NZ: col-major outer, row-major inner) |
@@ -487,7 +487,7 @@ row|   +--------------------+         row|   +--------------------+
 
 STEP 2 - GM -> L1: NDtoNZ fractal repack
 -------------------------------------------------
- op: pto.mte_gm_l1_fractal nd2nz  (A and B; use dn2nz mode only for pre-transposed B)
+ op: pto.mte_gm_l1_frac nd2nz  (A and B; use dn2nz mode only for pre-transposed B)
 
  A in L1: K1 x M1 x M0 x K0          B in L1: K1 x N1 x K0 x N0
  For each outer block (k1, m1):       For each outer block (k1, n1):
@@ -504,8 +504,8 @@ STEP 2 - GM -> L1: NDtoNZ fractal repack
 
 
 
- NOTE: For GEMM (row-major A/B), prefer pto.mte_gm_l1_fractal nd2nz for both A and B.
-   pto.mte_gm_l1_fractal dn2nz is intended for NCHW-layout inputs (e.g. convolution)
+ NOTE: For GEMM (row-major A/B), prefer pto.mte_gm_l1_frac nd2nz for both A and B.
+   pto.mte_gm_l1_frac dn2nz is intended for NCHW-layout inputs (e.g. convolution)
    where the data is already transposed in GM. Using dn2nz for row-major B forces
    non-contiguous GM access (striding across N to gather K), which hurts burst BW.
    The B fractal transpose for cube compatibility is done at STEP 3 (L1->L0B).
@@ -1143,7 +1143,7 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | # | Group | Description | Count | Details |
 |---|-------|-------------|-------|---------|
 | 1 | [Pipeline Sync](isa/micro-isa/01-pipeline-sync.md) | Intra-core pipeline synchronization | 5 | `pto.set_flag`, `pto.wait_flag`, `pto.pipe_barrier`, `pto.get_buf`, `pto.rls_buf` |
-| 2 | [DMA Copy Programming](isa/micro-isa/02-dma-copy.md) | Public MTE transfer interface between GM, UB, L1, L0A/L0B/L0C, and BT buffers | 15 | `pto.mte_gm_ub`, `pto.mte_ub_gm`, `pto.mte_ub_ub`, `pto.mte_ub_l1`, `pto.mte_gm_l1_burst`, `pto.mte_gm_l1_fractal`, `pto.mte_l1_ub`, `pto.mte_l1_bt`, `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx`, `pto.mte_l0c_l1`, `pto.mte_l0c_gm`, `pto.mte_l0c_ub` |
+| 2 | [DMA Copy Programming](isa/micro-isa/02-dma-copy.md) | Public MTE transfer interface between GM, UB, L1, L0A/L0B/L0C, and BT buffers | 15 | `pto.mte_gm_ub`, `pto.mte_ub_gm`, `pto.mte_ub_ub`, `pto.mte_ub_l1`, `pto.mte_gm_l1`, `pto.mte_gm_l1_frac`, `pto.mte_l1_ub`, `pto.mte_l1_bt`, `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l1_l0a_mx`, `pto.mte_l1_l0b_mx`, `pto.mte_l0c_l1`, `pto.mte_l0c_gm`, `pto.mte_l0c_ub` |
 | 3 | [Vector Load/Store](isa/micro-isa/03-vector-load-store.md) | UB↔vreg data movement with various access patterns | ~20 | `pto.vlds`, `pto.vldsx2`, `pto.vgather2`, `pto.vsts`, `pto.vstsx2`, `pto.vscatter`, etc. |
 | 4 | [Predicate Load/Store](isa/micro-isa/04-predicate-load-store.md) | UB↔mask register movement | 5 | `pto.plds`, `pto.pldi`, `pto.psts`, `pto.psti`, `pto.pstu` |
 | 5 | [Materialization & Predicate Ops](isa/micro-isa/05-materialization-predicate.md) | Scalar broadcast, predicate generation and manipulation | ~17 | `pto.vbr`, `pto.vdup`, `pto.pset_b*`, `pto.pge_b*`, `pto.plt_b*`, `pto.ppack`, `pto.punpack`, `pto.pnot`, `pto.psel`, etc. |
@@ -1170,9 +1170,9 @@ This section provides a categorized overview of all PTO micro Instruction operat
 | GM→UB MTE | 2 | `pto.mte_gm_ub` |
 | UB→GM MTE | 2 | `pto.mte_ub_gm` |
 | UB→UB / UB→L1 copy | 2 | `pto.mte_ub_ub`, `pto.mte_ub_l1` |
-| GM→L1 burst copy | 2 | `pto.mte_gm_l1_burst` |
-| GM→L1 fractal copy | 2 | `pto.mte_gm_l1_fractal` |
-| GM→L1 bridge wrapper | 2 | `pto.mte_gm_l1_burst`, `pto.mte_gm_l1_fractal` |
+| GM→L1 burst copy | 2 | `pto.mte_gm_l1` |
+| GM→L1 fractal copy | 2 | `pto.mte_gm_l1_frac` |
+| GM→L1 bridge wrapper | 2 | `pto.mte_gm_l1`, `pto.mte_gm_l1_frac` |
 | L1→UB bridge wrapper | 2 | `pto.mte_l1_ub` |
 | L1→BT (bridge wrapper) | 2 | `pto.mte_l1_bt` |
 | L1→L0A / L1→L0B | 2 | `pto.mte_l1_l0a`, `pto.mte_l1_l0b` |
