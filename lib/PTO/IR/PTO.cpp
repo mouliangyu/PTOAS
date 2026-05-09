@@ -2290,18 +2290,18 @@ int32_t bl = srcTile.getBLayoutValueI32();
                    sl == static_cast<int32_t>(pto::SLayout::NoneBox));
       bool isNZ = (bl == static_cast<int32_t>(pto::BLayout::ColMajor) &&
                    sl == static_cast<int32_t>(pto::SLayout::RowMajor));
-      auto srcValid = srcTile.getValidShape();
-      bool isSpecialCase = (srcValid.size() == 2 && (srcValid[0] == 1 || srcValid[1] == 1));
+      auto srcShape = srcTile.getShape();
+      bool isSpecialCase = (srcShape.size() == 2 && (srcShape[0] == 1 || srcShape[1] == 1));
       if (!isSpecialCase && !isND && !isDN && !isNZ)
         return emitOpError("expects A5 vec tstore src layout to be ND, DN, or NZ (or special case with 1 row/col)");
 
       unsigned elemBytes = getElemByteSize(srcElem);
       if (!isSpecialCase) {
-        if (isND && srcValid[1] != ShapedType::kDynamic &&
-            srcValid[1] * elemBytes % 32 != 0)
+        if (isND && srcShape[1] != ShapedType::kDynamic &&
+            srcShape[1] * elemBytes % 32 != 0)
           return emitOpError() << "expects A5 vec tstore ND format Cols*sizeof(dtype) to be divisible by 32";
-        if (isDN && srcValid[0] != ShapedType::kDynamic &&
-            srcValid[0] * elemBytes % 32 != 0)
+        if (isDN && srcShape[0] != ShapedType::kDynamic &&
+            srcShape[0] * elemBytes % 32 != 0)
           return emitOpError() << "expects A5 vec tstore DN format Rows*sizeof(dtype) to be divisible by 32";
       }
 
