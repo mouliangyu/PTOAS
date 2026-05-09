@@ -179,6 +179,11 @@ private:
 /// Function attribute that marks an explicit PTO kernel entry.
 inline constexpr llvm::StringLiteral kPTOEntryAttrName = "pto.entry";
 inline constexpr llvm::StringLiteral kLegacyHACCEntryAttrName = "hacc.entry";
+inline constexpr llvm::StringLiteral kPTOSimtEntryAttrName = "pto.simt_entry";
+inline constexpr llvm::StringLiteral kPTOSimtMaxThreadsAttrName =
+    "pto.simt_max_threads";
+inline constexpr llvm::StringLiteral kPTOSimtMaxNRegsAttrName =
+    "pto.simt_max_nregs";
 
 /// Return true if the function carries an explicit entry marker.
 bool hasExplicitPTOEntryAttr(func::FuncOp func);

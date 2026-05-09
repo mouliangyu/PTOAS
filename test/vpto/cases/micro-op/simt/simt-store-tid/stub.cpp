@@ -5,25 +5,12 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
-
-#ifndef MLIR_DIALECT_PTO_TRANSFORMS_VPTOLLVMEMITTERHELPER_H
-#define MLIR_DIALECT_PTO_TRANSFORMS_VPTOLLVMEMITTERHELPER_H
-
-#include "PTO/Transforms/VPTOLLVMEmitter.h"
-
-namespace mlir::pto {
-
-struct SimtEntryConfig {
-  int64_t maxThreads = 1024;
-  int64_t maxNRegs = 32;
-};
-
-struct HivmModuleABI {
-  const char *targetTriple = "hiipu64-hisilicon-cce";
-  const char *dataLayout =
-      "e-i1:8:32-i8:8:32-i16:16:32-i64:64-f16:16:32-v16:16-v32:32-n8:16:32:64-S64";
-};
-
-} // namespace mlir::pto
-
-#endif // MLIR_DIALECT_PTO_TRANSFORMS_VPTOLLVMEMITTERHELPER_H
+#ifndef __global__
+#define __global__
+#endif
+#ifndef __gm__
+#define __gm__
+#endif
+extern "C" __global__ [aicore] void simt_store_tid_kernel(__gm__ int *v1) {
+  (void)v1;
+}

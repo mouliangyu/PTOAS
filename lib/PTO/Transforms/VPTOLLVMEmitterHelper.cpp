@@ -530,12 +530,26 @@ LogicalResult attachAIVectorScopeMetadata(llvm::Module &llvmModule,
   return success();
 }
 
-void attachHIVMKernelAnnotations(llvm::Module &llvmModule) {
+void attachHIVMKernelAnnotations(
+    llvm::Module &llvmModule,
+    const llvm::StringMap<SimtEntryConfig> &simtEntryConfigs) {
   llvm::NamedMDNode *annotations =
       llvmModule.getOrInsertNamedMetadata("hivm.annotations");
   llvm::LLVMContext &ctx = llvmModule.getContext();
   llvm::Type *i32Ty = llvm::Type::getInt32Ty(ctx);
   llvm::Constant *one = llvm::ConstantInt::get(i32Ty, 1);
+
+  auto hasInModuleCaller = [](llvm::Function &function) {
+    for (llvm::User *user : function.users()) {
+      auto *call = llvm::dyn_cast<llvm::CallBase>(user);
+      if (!call)
+        continue;
+      if (call->getCalledFunction() != &function)
+        continue;
+      return true;
+    }
+    return false;
+  };
 
   auto addAnnotation = [&](llvm::Function &function, llvm::StringRef kind) {
     llvm::Metadata *ops[] = {
@@ -545,14 +559,44 @@ void attachHIVMKernelAnnotations(llvm::Module &llvmModule) {
     annotations->addOperand(llvm::MDNode::get(ctx, ops));
   };
 
+  auto addI32Annotation = [&](llvm::Function &function, llvm::StringRef kind,
+                              int64_t value) {
+    llvm::Metadata *ops[] = {
+        llvm::ValueAsMetadata::get(&function),
+        llvm::MDString::get(ctx, kind),
+        llvm::ConstantAsMetadata::get(
+            llvm::ConstantInt::get(i32Ty, static_cast<uint64_t>(value)))};
+    annotations->addOperand(llvm::MDNode::get(ctx, ops));
+  };
+
+  auto attachFunctionAnnotation = [&](llvm::Function &function,
+                                      llvm::StringRef kind, int64_t value) {
+    auto *node = llvm::MDNode::get(
+        ctx, {llvm::MDString::get(ctx, kind),
+              llvm::ConstantAsMetadata::get(
+                  llvm::ConstantInt::get(i32Ty, static_cast<uint64_t>(value)))});
+    function.setMetadata(llvm::LLVMContext::MD_annotation, node);
+  };
+
   for (llvm::Function &function : llvmModule) {
     if (function.isDeclaration())
       continue;
+
+    if (auto it = simtEntryConfigs.find(function.getName());
+        it != simtEntryConfigs.end()) {
+      attachFunctionAnnotation(function, "simt-max-threads",
+                               it->second.maxThreads);
+      addI32Annotation(function, "simt-max-threads", it->second.maxThreads);
+      addI32Annotation(function, "simt-max-registers", it->second.maxNRegs);
+    }
+
     if (function.getLinkage() != llvm::GlobalValue::ExternalLinkage)
       continue;
 
     llvm::StringRef name = function.getName();
     if (name.contains(".extracted") || name.contains(".vector.thread"))
+      continue;
+    if (hasInModuleCaller(function))
       continue;
 
     addAnnotation(function, "kernel");

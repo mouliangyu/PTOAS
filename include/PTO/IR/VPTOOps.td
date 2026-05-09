@@ -42,6 +42,45 @@ def PTO_BufferType : Type<
 def PTO_BufferLikeType : AnyTypeOf<[AnyMemRef, PTO_BufferType],
                                     "memref or pointer-like buffer type">;
 
+def PTOLoadOp : PTO_Op<"load", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let summary = "Load one scalar element from a VPTO pointer-like operand.";
+
+  let arguments = (ins
+    PTO_BufferLikeType:$ptr,
+    Index:$offset
+  );
+
+  let results = (outs AnyType:$value);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $ptr `[` $offset `]` attr-dict `:` type($ptr) `->` type($value)
+  }];
+}
+
+def PTOStoreOp : PTO_Op<"store", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let summary = "Store one scalar element to a VPTO pointer-like operand.";
+
+  let arguments = (ins
+    PTO_BufferLikeType:$ptr,
+    Index:$offset,
+    AnyType:$value
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $value `,` $ptr `[` $offset `]` attr-dict `:` type($ptr) `,` type($value)
+  }];
+}
+
 def TensorViewAddrOp : PTO_Op<"tensor_view_addr", [Pure]> {
   let summary = "Extract address from a tensor view.";
   let description = [{
@@ -183,6 +222,15 @@ class PTO_NullaryI64PureOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
   }];
 }
 
+class PTO_NullaryI32PureOp<string mnemonic> : PTO_Op<mnemonic, [Pure]> {
+  let arguments = (ins);
+  let results = (outs I32:$result);
+
+  let assemblyFormat = [{
+    attr-dict `:` type($result)
+  }];
+}
+
 class PTO_NullaryConfigOp<string mnemonic> : PTO_Op<mnemonic> {
   let arguments = (ins);
   let results = (outs);
@@ -215,12 +263,45 @@ def PTO_SetMte2NzParaOp : PTO_UnaryI64ConfigOp<"set_mte2_nz_para">;
 def PTO_SetPadValOutToL1Op : PTO_UnaryI64ConfigOp<"set_pad_val_outtol1">;
 def PTO_GetCtrlOp : PTO_NullaryI64PureOp<"get_ctrl">;
 def PTO_SetCtrlOp : PTO_UnaryI64ConfigOp<"set_ctrl">;
+def PTO_StoreVfSimtInfoOp : PTO_Op<"store_vfsimt_info"> {
+  let summary = "Configure SIMT VF launch dimensions";
+  let arguments = (ins I32:$dimZ, I32:$dimY, I32:$dimX);
+  let results = (outs);
+  let assemblyFormat = [{
+    $dimZ `,` $dimY `,` $dimX attr-dict `:` type($dimZ) `,` type($dimY) `,` type($dimX)
+  }];
+}
 def PTO_Sbitset0Op : PTO_BinaryI64PureOp<"sbitset0">;
 def PTO_Sbitset1Op : PTO_BinaryI64PureOp<"sbitset1">;
 def PTO_SetQuantPreOp : PTO_UnaryI64ConfigOp<"set_quant_pre">;
 def PTO_SetFpcOp : PTO_UnaryI64ConfigOp<"set_fpc">;
 def PTO_SetAtomicS32Op : PTO_NullaryConfigOp<"set_atomic_s32">;
 def PTO_SetAtomicS8Op : PTO_NullaryConfigOp<"set_atomic_s8">;
+def PTO_GetTidXOp : PTO_NullaryI32PureOp<"get_tid_x">;
+def PTO_GetTidYOp : PTO_NullaryI32PureOp<"get_tid_y">;
+def PTO_GetTidZOp : PTO_NullaryI32PureOp<"get_tid_z">;
+
+def PTO_KeepOp : PTO_Op<"keep"> {
+  let summary = "Preserve one scalar payload across adjacent SIMT VF entries";
+  let arguments = (ins AnyType:$payload, I64Attr:$slot);
+  let results = (outs);
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $payload attr-dict `:` type($payload)
+  }];
+}
+
+def PTO_ResumeOp : PTO_Op<"resume"> {
+  let summary = "Restore one scalar payload preserved by a previous SIMT VF entry";
+  let arguments = (ins I64Attr:$slot);
+  let results = (outs AnyType:$result);
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    attr-dict `:` type($result)
+  }];
+}
 
 def PTO_CopyGmToUbufOp : PTO_Op<"copy_gm_to_ubuf", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
