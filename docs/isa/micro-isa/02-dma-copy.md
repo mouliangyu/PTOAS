@@ -5,26 +5,44 @@
 
 DMA transfers move data between Global Memory (GM) and Unified Buffer (UB). The MTE engines operate asynchronously from the Vector core, requiring explicit sync (see [Pipeline Sync](01-pipeline-sync.md)).
 
-This document describes the public grouped DMA interfaces:
+This document describes the public grouped MTE interfaces. Public op names use
+the canonical direction prefix `pto.mte_<src>_<dst>`, where `<src>` and `<dst>`
+use hardware memory tokens: `gm`, `ub`, `l1`, `l0a`, `l0b`, `l0c`, and `bt`.
+Directions with multiple operand contracts add a form suffix such as `_burst`,
+`_fractal`, or `_mx`.
+The MLIR pointer address-space aliases remain `mat` for L1, `left` for
+L0A, `right` for L0B, `acc` for L0C, and `bias` for BT.
 
-- `pto.dma_load`
-- `pto.dma_store`
-- `pto.dma_copy`
+- `pto.mte_gm_ub`
+- `pto.mte_ub_gm`
+- `pto.mte_ub_ub`
+- `pto.mte_ub_l1`
+- `pto.mte_gm_l1`
+- `pto.mte_gm_l1_frac`
+- `pto.mte_l1_ub`
+- `pto.mte_l1_bt`
+- `pto.mte_l1_l0a`
+- `pto.mte_l1_l0b`
+- `pto.mte_l1_l0a_mx`
+- `pto.mte_l1_l0b_mx`
+- `pto.mte_l0c_l1`
+- `pto.mte_l0c_gm`
+- `pto.mte_l0c_ub`
 
-This chapter covers the public grouped DMA interfaces. The legacy raw copy
-family remains documented separately; in particular, `pto.copy_ubuf_to_ubuf`
-shares the same UB→UB copy contract as `pto.dma_copy` but remains a legacy
-surface op.
+This chapter covers the public grouped MTE interfaces and cube-side load/store
+bridge wrappers. The legacy raw copy family remains documented separately; in
+particular, `pto.copy_ubuf_to_ubuf` shares the same UB→UB copy contract as
+`pto.mte_ub_ub` but remains a legacy surface op.
 
 ---
 
-## DMA Transfer Execution
+## MTE Transfer Execution
 
-### `pto.dma_load`
+### `pto.mte_gm_ub`
 
 - **syntax:**
 ```mlir
-pto.dma_load %gm_src, %ub_dst, %l2_cache_ctl, %len_burst
+pto.mte_gm_ub %gm_src, %ub_dst, %l2_cache_ctl, %len_burst
   nburst(%n_burst, %src_stride, %dst_stride)
   [loop(%loop_count, %loop_src_stride, %loop_dst_stride)]*
   [pad(%pad_value[, %left_padding_count, %right_padding_count])]
@@ -62,7 +80,7 @@ pto.dma_load %gm_src, %ub_dst, %l2_cache_ctl, %len_burst
 **Example:**
 
 ```mlir
-pto.dma_load %gm_in, %ub_out, %cache, %len_burst
+pto.mte_gm_ub %gm_in, %ub_out, %cache, %len_burst
   nburst(%rows, %gm_row_stride, %ub_row_stride)
   loop(%tiles, %gm_tile_stride, %ub_tile_stride)
   pad(%pad)
@@ -72,11 +90,11 @@ pto.dma_load %gm_in, %ub_out, %cache, %len_burst
 
 ---
 
-### `pto.dma_store`
+### `pto.mte_ub_gm`
 
 - **syntax:**
 ```mlir
-pto.dma_store %ub_src, %gm_dst, %len_burst
+pto.mte_ub_gm %ub_src, %gm_dst, %len_burst
   nburst(%n_burst, %src_stride, %dst_stride)
   [loop(%loop_count, %loop_src_stride, %loop_dst_stride)]*
   : !pto.ptr<T, ub>, !pto.ptr<T, gm>, i64, i64, i64, i64,
@@ -106,7 +124,7 @@ pto.dma_store %ub_src, %gm_dst, %len_burst
 **Example:**
 
 ```mlir
-pto.dma_store %ub_in, %gm_out, %len_burst
+pto.mte_ub_gm %ub_in, %gm_out, %len_burst
   nburst(%rows, %ub_row_stride, %gm_row_stride)
   loop(%tiles, %ub_tile_stride, %gm_tile_stride)
   loop(%batches, %ub_batch_stride, %gm_batch_stride)
@@ -116,22 +134,22 @@ pto.dma_store %ub_in, %gm_out, %len_burst
 
 ---
 
-### `pto.dma_copy`
+### `pto.mte_ub_ub`
 
 - **syntax:**
 ```mlir
-pto.dma_copy %ub_src, %dst, %len_burst
+pto.mte_ub_ub %ub_src, %ub_dst, %len_burst
   nburst(%n_burst, %src_gap, %dst_gap)
-  : !pto.ptr<T, ub>, !pto.ptr<T, ub|mat>, i64, i64, i64, i64
+  : !pto.ptr<T, ub>, !pto.ptr<T, ub>, i64, i64, i64, i64
 ```
-- **semantics:** Grouped UB→destination raw copy. When `%dst` is in UB, the transfer is UB→UB. When `%dst` is in MAT/CBUF, the transfer is UB→CBUF.
+- **semantics:** Grouped UB→UB raw copy.
 
 **Parameter Table:**
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
 | `%ub_src` | ptr | UB source pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
-| `%dst` | ptr | Destination pointer (`!pto.ptr<T, ub>` or `!pto.ptr<T, mat>`, 32B-aligned) |
+| `%ub_dst` | ptr | UB destination pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
 | `%len_burst` | 16 bits | Burst length in units of 32 bytes |
 | `nburst(%n_burst, %src_gap, %dst_gap)` | 16 bits / 16 bits / 16 bits | Required copy burst group: count, source gap, destination gap |
 
@@ -143,19 +161,335 @@ pto.dma_copy %ub_src, %dst, %len_burst
 **Example:**
 
 ```mlir
-pto.dma_copy %ub_src, %dst, %len32b
+pto.mte_ub_ub %ub_src, %ub_dst, %len32b
   nburst(%rows, %src_gap, %dst_gap)
-  : !pto.ptr<i16, ub>, !pto.ptr<i16, ub|mat>, i64, i64, i64, i64
+  : !pto.ptr<i16, ub>, !pto.ptr<i16, ub>, i64, i64, i64, i64
 ```
 
 ---
 
-## Grouped DMA Burst / Stride / Pad Model
+### `pto.mte_ub_l1`
 
-This section describes the grouped DMA interfaces in this document:
-`pto.dma_load` and `pto.dma_store`.
+- **syntax:**
+```mlir
+pto.mte_ub_l1 %ub_src, %mat_dst, %len_burst
+  nburst(%n_burst, %src_gap, %dst_gap)
+  : !pto.ptr<T, ub>, !pto.ptr<T, mat>, i64, i64, i64, i64
+```
+- **semantics:** Grouped UB→L1 (`mat`) raw copy.
 
-For these grouped DMA ops, the innermost `nburst(...)` group is
+**Parameter Table:**
+
+| Parameter | Width | Description |
+|-----------|-------|-------------|
+| `%ub_src` | ptr | UB source pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
+| `%mat_dst` | ptr | L1 destination pointer (`!pto.ptr<T, mat>`, 32B-aligned) |
+| `%len_burst` | 16 bits | Burst length in units of 32 bytes |
+| `nburst(%n_burst, %src_gap, %dst_gap)` | 16 bits / 16 bits / 16 bits | Required copy burst group: count, source gap, destination gap |
+
+**Constraints:**
+
+- UB source and L1 destination addresses must be 32B-aligned.
+- `%len_burst`, `%src_gap`, and `%dst_gap` are encoded in units of 32 bytes.
+
+**Example:**
+
+```mlir
+pto.mte_ub_l1 %ub_src, %mat_dst, %len32b
+  nburst(%rows, %src_gap, %dst_gap)
+  : !pto.ptr<i16, ub>, !pto.ptr<i16, mat>, i64, i64, i64, i64
+```
+
+### `pto.mte_gm_l1`
+
+- **syntax:**
+```mlir
+pto.mte_gm_l1 %src, %dst, %len_burst
+  nburst(%count, %src_stride, %dst_stride)
+  [loop(%count_i, %src_stride_i, %dst_stride_i)]*
+  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64
+```
+- **semantics:** Structured GM-to-L1(`mat`) wrapper.
+
+**Parameter Table:** `%src`, `%dst`, `%len_burst`, `nburst(...)`, optional `loop(...)`.
+
+**Constraints:**
+
+- Wrapper lowers to loop/stride setup plus `pto.copy_gm_to_cbuf`.
+
+**Example:**
+
+```mlir
+pto.mte_gm_l1 %a_gm, %l1_a, %c16_i64
+  nburst(%c1_i64, %c0_i64, %c0_i64)
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, i64, i64, i64, i64
+```
+
+---
+
+### `pto.mte_gm_l1_frac`
+
+- **syntax:**
+```mlir
+pto.mte_gm_l1_frac %src, %dst, nd2nz|dn2nz, shape(%n_value, %d_value), src_layout(%src_inner_stride[, %src_outer_stride]), dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride), ctrl(%l2_cache_ctrl, %smallc0_en)
+  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, ...
+```
+- **semantics:** Structured fractal-load wrapper for `nd2nz` / `dn2nz`.
+
+**Parameter Table:** source/destination pointers, shape fields, source layout fields, destination group fields, control fields.
+
+**Constraints:**
+
+- Lowers to `set_mte2_nz_para` plus `copy_gm_to_cbuf_multi_*`.
+
+**Example:**
+
+```mlir
+pto.mte_gm_l1_frac %src, %dst, nd2nz,
+  shape(%n, %d),
+  src_layout(%sis),
+  dst_group(%g, %l2s, %l3s, %l4s),
+  ctrl(%l2, %small)
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, nd2nz, shape i64, i64, src_layout(i64), dst_group i64, i64, i64, i64, ctrl i64, i1
+```
+
+---
+
+### `pto.mte_l1_ub`
+
+- **syntax:**
+```mlir
+pto.mte_l1_ub %src, %dst, %len_burst
+  nburst(%count, %src_stride, %dst_stride)
+  [loop(%count_i, %src_stride_i, %dst_stride_i)]*
+  : !pto.ptr<T, mat>, !pto.ptr<T, ub>, i64, i64, i64, i64
+```
+- **semantics:** Structured L1(`mat`)-to-UB wrapper.
+
+**Parameter Table:** `%src`, `%dst`, `%len_burst`, `nburst(...)`, optional `loop(...)`.
+
+**Constraints:**
+
+- Wrapper lowers to `pto.copy_cbuf_to_ubuf` and optional outer loops.
+
+**Example:**
+
+```mlir
+pto.mte_l1_ub %l1_src, %ub_dst, %c16_i64
+  nburst(%c1_i64, %c0_i64, %c0_i64)
+  : !pto.ptr<f16, mat>, !pto.ptr<f16, ub>, i64, i64, i64, i64
+```
+
+---
+
+### `pto.mte_l1_bt`
+
+- **syntax:**
+```mlir
+pto.mte_l1_bt %src, %dst, %len_burst
+  nburst(%count, %src_gap, %dst_gap)
+  : !pto.ptr<T, mat>, !pto.ptr<U, bias>, i64, i64, i64, i64
+```
+- **semantics:** Structured helper for L1(`mat`)-to-BT (`bias`) load.
+
+**Parameter Table:**
+
+| Parameter | Width | Description |
+|-----------|-------|-------------|
+| `%src` | ptr | L1 source pointer (`!pto.ptr<T, mat>`) |
+| `%dst` | ptr | BT destination pointer (`!pto.ptr<U, bias>`) |
+| `%len_burst` | i64 | Burst length |
+| `%count` | i64 | Burst count |
+| `%src_gap` | i64 | Source gap |
+| `%dst_gap` | i64 | Destination gap |
+
+**Constraints:**
+
+- Supported type pairs: `f32->f32`, `i32->i32`, `f16->f32`, `bf16->f32`.
+
+**Example:**
+
+```mlir
+pto.mte_l1_bt %l1_bias, %bt, %c16_i64 nburst(%c1_i64, %c0_i64, %c0_i64)
+  : !pto.ptr<f16, mat>, !pto.ptr<f32, bias>, i64, i64, i64, i64
+```
+
+---
+
+### `pto.mte_l1_l0a`
+
+- **syntax:**
+```mlir
+pto.mte_l1_l0a %src, %dst, %m, %k
+  : !pto.ptr<T, mat>, !pto.ptr<T, left>, i64, i64
+```
+- **semantics:** Structured L1-to-L0A wrapper.
+
+**Parameter Table:** `%src`, `%dst`, `%m`, `%k`.
+
+**Constraints:**
+
+- Lowers to `pto.load_cbuf_to_ca`.
+
+**Example:**
+
+```mlir
+pto.mte_l1_l0a %l1_a, %l0a, %c16_i64, %c16_i64
+  : !pto.ptr<f16, mat>, !pto.ptr<f16, left>, i64, i64
+```
+
+---
+
+### `pto.mte_l1_l0b`
+
+- **syntax:**
+```mlir
+pto.mte_l1_l0b %src, %dst, %k, %n
+  : !pto.ptr<T, mat>, !pto.ptr<T, right>, i64, i64
+```
+- **semantics:** Structured L1-to-L0B wrapper.
+
+**Parameter Table:** `%src`, `%dst`, `%k`, `%n`.
+
+**Constraints:**
+
+- Lowers to `pto.load_cbuf_to_cb`.
+
+**Example:**
+
+```mlir
+pto.mte_l1_l0b %l1_b, %l0b, %c16_i64, %c16_i64
+  : !pto.ptr<f16, mat>, !pto.ptr<f16, right>, i64, i64
+```
+
+---
+
+### `pto.mte_l1_l0a_mx`
+
+- **syntax:**
+```mlir
+pto.mte_l1_l0a_mx %src, %dst, %m, %k
+  : !pto.ptr<T, mat>, !pto.ptr<T, left>, i64, i64
+```
+- **semantics:** MX-mode L1-to-L0A wrapper.
+
+**Parameter Table:** `%src`, `%dst`, `%m`, `%k`.
+
+**Constraints:**
+
+- Lowers to `pto.load_cbuf_to_ca_mx`.
+
+**Example:**
+
+```mlir
+pto.mte_l1_l0a_mx %l1_a, %l0a, %c16_i64, %c64_i64
+  : !pto.ptr<f8E4M3FN, mat>, !pto.ptr<f8E4M3FN, left>, i64, i64
+```
+
+---
+
+### `pto.mte_l1_l0b_mx`
+
+- **syntax:**
+```mlir
+pto.mte_l1_l0b_mx %src, %dst, %k, %n
+  : !pto.ptr<T, mat>, !pto.ptr<T, right>, i64, i64
+```
+- **semantics:** MX-mode L1-to-L0B wrapper.
+
+**Parameter Table:** `%src`, `%dst`, `%k`, `%n`.
+
+**Constraints:**
+
+- Lowers to `pto.load_cbuf_to_cb_mx`.
+
+**Example:**
+
+```mlir
+pto.mte_l1_l0b_mx %l1_b, %l0b, %c64_i64, %c16_i64
+  : !pto.ptr<f8E4M3FN, mat>, !pto.ptr<f8E4M3FN, right>, i64, i64
+```
+
+---
+
+### `pto.mte_l0c_l1`
+
+- **syntax:**
+```mlir
+pto.mte_l0c_l1 %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? [loop3(%count, %src_stride3, %dst_stride3)]?
+  : !pto.ptr<T, acc>, !pto.ptr<T, mat>, ...
+```
+- **semantics:** Structured L0C (`acc`) to L1(`mat`) wrapper.
+
+**Parameter Table:** `%src`, `%dst`, shape/stride fields, pre/post fields, layout mode (`nz2nd` / `nz2dn` / `nz2nz`), optional `loop3`.
+
+**Constraints:**
+
+- `nz2nz` mode does not accept `loop3(...)`.
+
+**Example:**
+
+```mlir
+pto.mte_l0c_l1 %l0c, %l1_out, %c16_i64, %c16_i64, %c16_i64, %c16_i64, %c0_i64, %c0_i64, %c0_i64, nz2nd
+  : !pto.ptr<f32, acc>, !pto.ptr<f32, mat>, i64, i64, i64, i64, i64, i64, i64, nz2nd
+```
+
+---
+
+### `pto.mte_l0c_gm`
+
+- **syntax:**
+```mlir
+pto.mte_l0c_gm %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, %sid, %l2_cache_ctrl, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%split)? [loop3(%count, %src_stride3, %dst_stride3)]?
+  : !pto.ptr<T, acc>, !pto.ptr<T, gm>, ...
+```
+- **semantics:** Structured L0C (`acc`) to GM wrapper.
+
+**Parameter Table:** same fields as `pto.mte_l0c_l1` plus `%sid` and `%l2_cache_ctrl`.
+
+**Constraints:**
+
+- GM output path controls (`sid`, `l2_cache_ctrl`) must be provided.
+
+**Example:**
+
+```mlir
+pto.mte_l0c_gm %l0c, %c_gm, %c16_i64, %c16_i64, %c16_i64, %c16_i64, %c0_i64, %c0_i64, %c0_i64, %c0_i64, %c0_i64, nz2nd
+  : !pto.ptr<f32, acc>, !pto.ptr<f32, gm>, i64, i64, i64, i64, i64, i64, i64, i64, i64, nz2nd
+```
+
+---
+
+### `pto.mte_l0c_ub`
+
+- **syntax:**
+```mlir
+pto.mte_l0c_ub %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %quant_pre, %relu_pre_mode, %dual_dst_mode, %sub_blockid, nz2nd|nz2dn(%loop0_src_stride)?|nz2nz(%channel_split_en)? [loop3(%count, %src_stride3, %dst_stride3)]?
+  : !pto.ptr<T, acc>, !pto.ptr<T, ub>, ...
+```
+- **semantics:** Structured L0C (`acc`) to UB wrapper.
+
+**Parameter Table:** same fields as `pto.mte_l0c_l1` plus `%dual_dst_mode`, `%sub_blockid`.
+
+**Constraints:**
+
+- `nz2nz` mode does not accept `loop3(...)`.
+
+**Example:**
+
+```mlir
+pto.mte_l0c_ub %l0c, %ub_out, %c16_i64, %c16_i64, %c16_i64, %c16_i64, %c0_i64, %c0_i64, %c0_i64, %c0_i64, %c0_i64, nz2nd
+  : !pto.ptr<f32, acc>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64, i64, i64, i64, i64, nz2nd
+```
+
+---
+
+## Grouped MTE Burst / Stride / Pad Model
+
+This section describes the grouped MTE interfaces in this document:
+`pto.mte_gm_ub` and `pto.mte_ub_gm`.
+
+For these grouped MTE ops, the innermost `nburst(...)` group is
 **stride-based**: the source and destination stride operands are the
 start-to-start byte distance from one burst row to the next row.
 
@@ -170,7 +504,7 @@ pad      = ub_stride - lenBurst, padded to the 32B alignment boundary
 ### Alignment Constraints
 
 - **UB addresses** (both source and destination) must be **32-byte aligned**.
-- **GM→UB padding**: When `pad(...)` is present on `pto.dma_load`, each UB row is padded from `lenBurst` up to the **32B-aligned boundary** of `ub_stride` with `pad_val`. This ensures every UB row starts at a 32B-aligned offset.
+- **GM→UB padding**: When `pad(...)` is present on `pto.mte_gm_ub`, each UB row is padded from `lenBurst` up to the **32B-aligned boundary** of `ub_stride` with `pad_val`. This ensures every UB row starts at a 32B-aligned offset.
 - **UB→GM de-padding**: MTE3 reads `lenBurst` bytes from each 32B-aligned UB row (skipping any padding that was added during load), writing only valid data to GM. This effectively strips padding on store.
 
 ---
@@ -178,9 +512,9 @@ pad      = ub_stride - lenBurst, padded to the 32B alignment boundary
 ## UB Copy Burst / Step Model
 
 This section describes the grouped UB-copy interface in this document:
-`pto.dma_copy`.
+`pto.mte_ub_ub` and `pto.mte_ub_l1`.
 
-For `pto.dma_copy`, each burst copies `len_burst * 32` bytes.
+For these grouped UB-copy ops, each burst copies `len_burst * 32` bytes.
 
 The next burst starts at:
 
@@ -192,7 +526,7 @@ dst_next = dst_curr + (len_burst + dst_gap) * 32 bytes
 So `src_gap` and `dst_gap` are gap fields that advance to the next burst
 after the copied 32B blocks.
 
-### 2D Diagram: GM→UB (`pto.dma_load`)
+### 2D Diagram: GM→UB (`pto.mte_gm_ub`)
 
 ```
 GM (source, `!pto.ptr<T, gm>`):
@@ -222,7 +556,7 @@ pad    = filled with pad_val to 32B boundary (`pad(...)` present)
 [PAD]  = pad_val fill (from `pad(...)`)
 ```
 
-### 2D Diagram: UB→GM (`pto.dma_store` with GM destination)
+### 2D Diagram: UB→GM (`pto.mte_ub_gm` with GM destination)
 
 ```
 UB (source, `!pto.ptr<T, ub>`, 32B-aligned start addr):
@@ -264,7 +598,7 @@ group, the second `loop(...)` wraps the first one, and so on.
 For a form
 
 ```mlir
-pto.dma_load %gm_src, %ub_dst, %l2_cache_ctl, %len_burst
+pto.mte_gm_ub %gm_src, %ub_dst, %l2_cache_ctl, %len_burst
   nburst(%n_burst, %src_stride, %dst_stride)
   loop(%c0, %s0, %d0)
   loop(%c1, %s1, %d1)
@@ -304,7 +638,7 @@ remains.
 For a form
 
 ```mlir
-pto.dma_store %ub_src, %dst, %len_burst
+pto.mte_ub_gm %ub_src, %dst, %len_burst
   nburst(%n_burst, %src_stride, %dst_stride)
   loop(%c0, %s0, %d0)
   loop(%c1, %s1, %d1)
@@ -365,7 +699,7 @@ UB layout (32 × 32 f32, 32B-aligned, contiguous):
 
 ```mlir
 // Simple 2D load — only nburst(...) is needed
-pto.dma_load %arg0, %ub_in, %c0_i64, %c128_i64
+pto.mte_gm_ub %arg0, %ub_in, %c0_i64, %c128_i64
   nburst(%c32_i64, %c128_i64, %c128_i64)
   : !pto.ptr<f32, gm>, !pto.ptr<f32, ub>, i64, i64, i64
 ```
@@ -403,7 +737,7 @@ UB layout (64 × 128 f16, 32B-aligned, contiguous):
 ```
 
 ```mlir
-pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c256_i64
+pto.mte_gm_ub %gm_ptr, %ub_ptr, %c0_i64, %c256_i64
   nburst(%c64_i64, %c1024_i64, %c256_i64)
   : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64
 ```
@@ -441,7 +775,7 @@ UB (128 cols wide, 32B-aligned, padded):
 
 ```mlir
 %pad = arith.constant 0 : i16
-pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c200_i64
+pto.mte_gm_ub %gm_ptr, %ub_ptr, %c0_i64, %c200_i64
   nburst(%c64_i64, %c200_i64, %c256_i64)
   pad(%pad, %c0_i64, %c0_i64)
   : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64, pad i16, i64, i64
@@ -476,7 +810,7 @@ GM (dest, 32 × 32 f32):
 ```
 
 ```mlir
-pto.dma_store %ub_out, %arg1, %c128_i64
+pto.mte_ub_gm %ub_out, %arg1, %c128_i64
   nburst(%c32_i64, %c128_i64, %c128_i64)
   : !pto.ptr<f32, ub>, !pto.ptr<f32, gm>, i64, i64, i64, i64
 ```
@@ -514,7 +848,7 @@ GM (dest, into 1024 × 512 matrix):
 ```
 
 ```mlir
-pto.dma_store %ub_ptr, %gm_ptr, %c256_i64
+pto.mte_ub_gm %ub_ptr, %gm_ptr, %c256_i64
   nburst(%c64_i64, %c256_i64, %c1024_i64)
   : !pto.ptr<f16, ub>, !pto.ptr<f16, gm>, i64, i64, i64, i64
 ```
@@ -539,7 +873,7 @@ GM [4, 8, 128] f16 (contiguous):        UB (4 tiles laid out sequentially):
 
 ```mlir
 // One outer loop group over 4 batches
-pto.dma_load %gm_ptr, %ub_ptr, %c0_i64, %c256_i64
+pto.mte_gm_ub %gm_ptr, %ub_ptr, %c0_i64, %c256_i64
   nburst(%c8_i64, %c256_i64, %c256_i64)
   loop(%c4_i64, %c2048_i64, %c2048_i64)
   : !pto.ptr<f16, gm>, !pto.ptr<f16, ub>, i64, i64, i64, loop i64, i64, i64
