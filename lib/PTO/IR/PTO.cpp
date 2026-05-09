@@ -11474,6 +11474,93 @@ LogicalResult TFreeOp::verify() {
   return verifySplitAttr(getOperation(), getSplit());
 }
 
+static func::FuncOp getParentFunc(Operation *op) {
+  return op ? op->getParentOfType<func::FuncOp>() : func::FuncOp();
+}
+
+static constexpr int64_t kSimtKeepResumeSlotBaseReg = 4;
+static constexpr int64_t kSimtKeepResumeSlotLimit = 123;
+static constexpr int64_t kSimtMaxThreadsDefault = 1024;
+static constexpr int64_t kSimtMaxThreadsLimit = 2048;
+static constexpr int64_t kSimtMaxNRegsDefault = 32;
+static constexpr int64_t kSimtMaxNRegsLimit = 128;
+
+static Operation *getFirstNonConstantLikeOp(Block *block) {
+  if (!block)
+    return nullptr;
+  for (Operation &op : *block) {
+    if (!op.hasTrait<OpTrait::ConstantLike>())
+      return &op;
+  }
+  return nullptr;
+}
+
+static LogicalResult verifySimtKeepResumeCommon(Operation *op, int64_t slot) {
+  func::FuncOp func = getParentFunc(op);
+  if (!func || !func->hasAttr(pto::kPTOSimtEntryAttrName))
+    return op->emitOpError("must appear inside a function marked with '")
+           << pto::kPTOSimtEntryAttrName << "'";
+  if (slot < 0 || slot >= kSimtKeepResumeSlotLimit) {
+    return op->emitOpError("requires slot in range [0, ")
+           << (kSimtKeepResumeSlotLimit - 1) << "] so it can map to R"
+           << kSimtKeepResumeSlotBaseReg << "~R"
+           << (kSimtKeepResumeSlotBaseReg + kSimtKeepResumeSlotLimit - 1);
+  }
+  return success();
+}
+
+static LogicalResult verifySimtFunctionAttrs(func::FuncOp func) {
+  if (!func || !func->hasAttr(pto::kPTOSimtEntryAttrName))
+    return success();
+
+  auto checkBoundedAttr = [&](llvm::StringRef attrName, int64_t upperBound,
+                              llvm::StringRef description) -> LogicalResult {
+    auto attr = func->getAttrOfType<IntegerAttr>(attrName);
+    if (!attr)
+      return success();
+    int64_t value = attr.getInt();
+    if (value < 0 || value > upperBound)
+      return func.emitOpError()
+             << "attribute '" << attrName << "' must be in range [0, "
+             << upperBound << "] for " << description;
+    return success();
+  };
+
+  if (failed(checkBoundedAttr(pto::kPTOSimtMaxThreadsAttrName,
+                              kSimtMaxThreadsLimit, "SIMT max threads")))
+    return failure();
+  if (failed(checkBoundedAttr(pto::kPTOSimtMaxNRegsAttrName,
+                              kSimtMaxNRegsLimit, "SIMT max registers")))
+    return failure();
+  return success();
+}
+
+LogicalResult KeepOp::verify() {
+  if (failed(verifySimtKeepResumeCommon(getOperation(), getSlot())))
+    return failure();
+  if (!getPayload().getType().isSignlessInteger(32))
+    return emitOpError("currently only supports i32 payload");
+  Block *block = getOperation()->getBlock();
+  Operation *terminator = block ? block->getTerminator() : nullptr;
+  if (!terminator || !isa<func::ReturnOp>(terminator))
+    return emitOpError("must be placed immediately before func.return");
+  if (getOperation()->getNextNode() != terminator)
+    return emitOpError("must be placed immediately before func.return");
+  return success();
+}
+
+LogicalResult ResumeOp::verify() {
+  if (failed(verifySimtKeepResumeCommon(getOperation(), getSlot())))
+    return failure();
+  if (!getResult().getType().isSignlessInteger(32))
+    return emitOpError("currently only supports i32 result");
+  Block *block = getOperation()->getBlock();
+  if (getFirstNonConstantLikeOp(block) != getOperation())
+    return emitOpError(
+        "must be the first non-constant operation in its block");
+  return success();
+}
+
 void BuildAsyncSessionOp::getEffects(
     SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
         &effects) {

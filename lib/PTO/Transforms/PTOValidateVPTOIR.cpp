@@ -48,6 +48,16 @@ LogicalResult validateVPTOEmissionIR(ModuleOp module,
 
 namespace detail {
 
+static Operation *getFirstNonConstantLikeOp(Block *block) {
+  if (!block)
+    return nullptr;
+  for (Operation &op : *block) {
+    if (!op.hasTrait<OpTrait::ConstantLike>())
+      return &op;
+  }
+  return nullptr;
+}
+
 constexpr llvm::StringLiteral kAIVectorScopeAttrName =
     "llvm.loop.aivector_scope";
 
@@ -711,9 +721,32 @@ private:
   }
 
   LogicalResult validateAuthoringFunctionSurface() {
+    auto checkSimtBoundedAttr = [&](func::FuncOp func, llvm::StringRef attrName,
+                                    int64_t upperBound,
+                                    llvm::StringRef description) -> LogicalResult {
+      auto attr = func->getAttrOfType<IntegerAttr>(attrName);
+      if (!attr)
+        return success();
+      int64_t value = attr.getInt();
+      if (value < 0 || value > upperBound) {
+        func.emitError() << "attribute '" << attrName
+                         << "' must be in range [0, " << upperBound
+                         << "] for " << description;
+        return failure();
+      }
+      return success();
+    };
+
     for (func::FuncOp func : helper.getFunctions()) {
-      if (!func->hasAttr(pto::kPTOSimtEntryAttrName))
+      bool isSimtEntry = func->hasAttr(pto::kPTOSimtEntryAttrName);
+      if (!isSimtEntry)
         continue;
+
+      if (failed(checkSimtBoundedAttr(func, pto::kPTOSimtMaxThreadsAttrName,
+                                      2048, "SIMT max threads")) ||
+          failed(checkSimtBoundedAttr(func, pto::kPTOSimtMaxNRegsAttrName, 128,
+                                      "SIMT max registers")))
+        return failure();
 
       WalkResult walkResult = func.walk([&](StoreVfSimtInfoOp op) {
         op.emitOpError()
@@ -726,6 +759,40 @@ private:
       if (walkResult.wasInterrupted())
         return failure();
     }
+
+    WalkResult keepResumeWalk = helper.getModule().walk([&](Operation *op) {
+      if (!isa<KeepOp, ResumeOp>(op))
+        return WalkResult::advance();
+      func::FuncOp func = op->getParentOfType<func::FuncOp>();
+      if (!func || !func->hasAttr(pto::kPTOSimtEntryAttrName)) {
+        op->emitOpError()
+            << "must appear inside a function marked with '"
+            << pto::kPTOSimtEntryAttrName << "'";
+        return WalkResult::interrupt();
+      }
+      Block *block = op->getBlock();
+      if (auto resume = dyn_cast<ResumeOp>(op)) {
+        (void)resume;
+        if (getFirstNonConstantLikeOp(block) != op) {
+          op->emitOpError()
+              << "must be the first non-constant operation in its block";
+          return WalkResult::interrupt();
+        }
+      }
+      if (auto keep = dyn_cast<KeepOp>(op)) {
+        (void)keep;
+        Operation *terminator = block ? block->getTerminator() : nullptr;
+        if (!terminator || !isa<func::ReturnOp>(terminator) ||
+            op->getNextNode() != terminator) {
+          op->emitOpError()
+              << "must be placed immediately before func.return";
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (keepResumeWalk.wasInterrupted())
+      return failure();
     return success();
   }
 

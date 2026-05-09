@@ -530,7 +530,9 @@ LogicalResult attachAIVectorScopeMetadata(llvm::Module &llvmModule,
   return success();
 }
 
-void attachHIVMKernelAnnotations(llvm::Module &llvmModule) {
+void attachHIVMKernelAnnotations(
+    llvm::Module &llvmModule,
+    const llvm::StringMap<SimtEntryConfig> &simtEntryConfigs) {
   llvm::NamedMDNode *annotations =
       llvmModule.getOrInsertNamedMetadata("hivm.annotations");
   llvm::LLVMContext &ctx = llvmModule.getContext();
@@ -557,9 +559,37 @@ void attachHIVMKernelAnnotations(llvm::Module &llvmModule) {
     annotations->addOperand(llvm::MDNode::get(ctx, ops));
   };
 
+  auto addI32Annotation = [&](llvm::Function &function, llvm::StringRef kind,
+                              int64_t value) {
+    llvm::Metadata *ops[] = {
+        llvm::ValueAsMetadata::get(&function),
+        llvm::MDString::get(ctx, kind),
+        llvm::ConstantAsMetadata::get(
+            llvm::ConstantInt::get(i32Ty, static_cast<uint64_t>(value)))};
+    annotations->addOperand(llvm::MDNode::get(ctx, ops));
+  };
+
+  auto attachFunctionAnnotation = [&](llvm::Function &function,
+                                      llvm::StringRef kind, int64_t value) {
+    auto *node = llvm::MDNode::get(
+        ctx, {llvm::MDString::get(ctx, kind),
+              llvm::ConstantAsMetadata::get(
+                  llvm::ConstantInt::get(i32Ty, static_cast<uint64_t>(value)))});
+    function.setMetadata(llvm::LLVMContext::MD_annotation, node);
+  };
+
   for (llvm::Function &function : llvmModule) {
     if (function.isDeclaration())
       continue;
+
+    if (auto it = simtEntryConfigs.find(function.getName());
+        it != simtEntryConfigs.end()) {
+      attachFunctionAnnotation(function, "simt-max-threads",
+                               it->second.maxThreads);
+      addI32Annotation(function, "simt-max-threads", it->second.maxThreads);
+      addI32Annotation(function, "simt-max-registers", it->second.maxNRegs);
+    }
+
     if (function.getLinkage() != llvm::GlobalValue::ExternalLinkage)
       continue;
 

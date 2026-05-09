@@ -281,6 +281,28 @@ def PTO_GetTidXOp : PTO_NullaryI32PureOp<"get_tid_x">;
 def PTO_GetTidYOp : PTO_NullaryI32PureOp<"get_tid_y">;
 def PTO_GetTidZOp : PTO_NullaryI32PureOp<"get_tid_z">;
 
+def PTO_KeepOp : PTO_Op<"keep"> {
+  let summary = "Preserve one scalar payload across adjacent SIMT VF entries";
+  let arguments = (ins AnyType:$payload, I64Attr:$slot);
+  let results = (outs);
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    $payload attr-dict `:` type($payload)
+  }];
+}
+
+def PTO_ResumeOp : PTO_Op<"resume"> {
+  let summary = "Restore one scalar payload preserved by a previous SIMT VF entry";
+  let arguments = (ins I64Attr:$slot);
+  let results = (outs AnyType:$result);
+  let hasVerifier = 1;
+
+  let assemblyFormat = [{
+    attr-dict `:` type($result)
+  }];
+}
+
 def PTO_CopyGmToUbufOp : PTO_Op<"copy_gm_to_ubuf", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {

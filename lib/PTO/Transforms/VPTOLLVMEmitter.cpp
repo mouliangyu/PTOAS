@@ -11,6 +11,7 @@
 #include "PTO/IR/PTO.h"
 #include "PTO/IR/PTOSyncUtils.h"
 #include "PTO/Transforms/Passes.h"
+#include "PTO/Transforms/VPTOLLVMEmitterHelper.h"
 
 #include "mlir/Conversion/Passes.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
@@ -30,6 +31,7 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/Function.h"
@@ -45,7 +47,9 @@ LogicalResult applyQueriedTargetAttrs(ModuleOp module,
                                       llvm::raw_ostream &diagOS);
 LogicalResult attachAIVectorScopeMetadata(llvm::Module &llvmModule,
                                           llvm::raw_ostream &diagOS);
-void attachHIVMKernelAnnotations(llvm::Module &llvmModule);
+void attachHIVMKernelAnnotations(
+    llvm::Module &llvmModule,
+    const llvm::StringMap<SimtEntryConfig> &simtEntryConfigs);
 
 namespace {
 
@@ -6842,6 +6846,65 @@ private:
   LoweringState &state;
 };
 
+class LowerKeepOpPattern final : public OpConversionPattern<pto::KeepOp> {
+public:
+  explicit LowerKeepOpPattern(TypeConverter &typeConverter, MLIRContext *context,
+                              LoweringState &state)
+      : OpConversionPattern<pto::KeepOp>(typeConverter, context), state(state) {}
+
+  LogicalResult
+  matchAndRewrite(pto::KeepOp op, pto::KeepOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    if (!adaptor.getPayload().getType().isSignlessInteger(32))
+      return rewriter.notifyMatchFailure(op, "expected converted i32 payload");
+    int64_t slot = op.getSlot();
+    if (slot < 0 || slot >= 123)
+      return rewriter.notifyMatchFailure(op, "slot must map to SIMT R4~R126");
+    std::string asmString = "MOV R" + std::to_string(slot + 4) +
+                            ", $0 wait:0b0000000 stall:1";
+    rewriter.create<LLVM::InlineAsmOp>(
+        op.getLoc(), TypeRange{}, ValueRange{adaptor.getPayload()}, asmString,
+        "R", true, false,
+        LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
+        ArrayAttr{});
+    rewriter.eraseOp(op);
+    return success();
+  }
+
+private:
+  LoweringState &state;
+};
+
+class LowerResumeOpPattern final : public OpConversionPattern<pto::ResumeOp> {
+public:
+  explicit LowerResumeOpPattern(TypeConverter &typeConverter,
+                                MLIRContext *context, LoweringState &state)
+      : OpConversionPattern<pto::ResumeOp>(typeConverter, context), state(state) {}
+
+  LogicalResult
+  matchAndRewrite(pto::ResumeOp op, pto::ResumeOp::Adaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    (void)adaptor;
+    if (!op.getResult().getType().isSignlessInteger(32))
+      return rewriter.notifyMatchFailure(op, "expected i32 result");
+    int64_t slot = op.getSlot();
+    if (slot < 0 || slot >= 123)
+      return rewriter.notifyMatchFailure(op, "slot must map to SIMT R4~R126");
+    std::string asmString = "MOV $0, R" + std::to_string(slot + 4) +
+                            " wait:0b0000000 stall:1";
+    auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
+        op.getLoc(), TypeRange{rewriter.getI32Type()}, ValueRange{}, asmString,
+        "=R", true, false,
+        LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
+        ArrayAttr{});
+    rewriter.replaceOp(op, asmOp.getRes());
+    return success();
+  }
+
+private:
+  LoweringState &state;
+};
+
 template <typename ConfigOp>
 class LowerNullaryConfigOpPattern final : public OpConversionPattern<ConfigOp> {
 public:
@@ -7503,6 +7566,7 @@ static void populateVPTOOpLoweringPatterns(VPTOTypeConverter &typeConverter,
                LowerRuntimeQueryOpPattern<pto::GetTidXOp>,
                LowerRuntimeQueryOpPattern<pto::GetTidYOp>,
                LowerRuntimeQueryOpPattern<pto::GetTidZOp>,
+               LowerKeepOpPattern, LowerResumeOpPattern,
                LowerBinaryI64PureOpPattern<pto::Sbitset0Op>,
                LowerBinaryI64PureOpPattern<pto::Sbitset1Op>,
                LowerSetLoopConfigOpPattern<pto::SetLoop2StrideOutToUbOp>,
@@ -7583,6 +7647,7 @@ static void configureVPTOOpLoweringTarget(ConversionTarget &target,
   (void)typeConverter;
   target.addLegalOp<ModuleOp>();
   target.addLegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
+                         LLVM::LLVMDialect,
                          func::FuncDialect, scf::SCFDialect>();
   target.addLegalOp<UnrealizedConversionCastOp>();
   target.addIllegalOp<pto::SetFlagOp, pto::WaitFlagOp, pto::SyncSetOp,
@@ -7591,7 +7656,7 @@ static void configureVPTOOpLoweringTarget(ConversionTarget &target,
   target.addIllegalOp<pto::GetBlockIdxOp, pto::GetSubBlockIdxOp,
                       pto::GetBlockNumOp, pto::GetSubBlockNumOp,
                       pto::GetCtrlOp, pto::GetTidXOp, pto::GetTidYOp,
-                      pto::GetTidZOp>();
+                      pto::GetTidZOp, pto::KeepOp, pto::ResumeOp>();
   target.addIllegalOp<pto::SetLoop2StrideOutToUbOp, pto::SetLoop1StrideOutToUbOp,
                       pto::SetLoopSizeOutToUbOp, pto::SetLoop2StrideUbToOutOp,
                       pto::SetLoop1StrideUbToOutOp, pto::SetLoopSizeUbToOutOp,
@@ -7814,21 +7879,32 @@ static void forceV300CtrlModeForVPTOFuncs(ModuleOp module) {
   }
 }
 
-static llvm::StringSet<> collectSimtEntryFunctionNames(ModuleOp module) {
-  llvm::StringSet<> simtEntries;
+static llvm::StringMap<SimtEntryConfig>
+collectSimtEntryFunctionConfigs(ModuleOp module) {
+  llvm::StringMap<SimtEntryConfig> simtEntries;
   for (func::FuncOp funcOp : module.getOps<func::FuncOp>()) {
-    if (funcOp->hasAttr(pto::kPTOSimtEntryAttrName))
-      simtEntries.insert(funcOp.getSymName());
+    if (!funcOp->hasAttr(pto::kPTOSimtEntryAttrName))
+      continue;
+
+    SimtEntryConfig config;
+    if (auto maxThreadsAttr =
+            funcOp->getAttrOfType<IntegerAttr>(pto::kPTOSimtMaxThreadsAttrName))
+      config.maxThreads = maxThreadsAttr.getInt();
+    if (auto maxNRegsAttr =
+            funcOp->getAttrOfType<IntegerAttr>(pto::kPTOSimtMaxNRegsAttrName))
+      config.maxNRegs = maxNRegsAttr.getInt();
+    simtEntries[funcOp.getSymName()] = config;
   }
   return simtEntries;
 }
 
 static void applySimtEntryCallingConvention(
-    llvm::Module &llvmModule, const llvm::StringSet<> &simtEntryNames) {
+    llvm::Module &llvmModule,
+    const llvm::StringMap<SimtEntryConfig> &simtEntryConfigs) {
   constexpr unsigned kSimtEntryCallingConv = 109;
 
   for (llvm::Function &function : llvmModule) {
-    if (simtEntryNames.contains(function.getName())) {
+    if (simtEntryConfigs.contains(function.getName())) {
       function.setCallingConv(kSimtEntryCallingConv);
       function.addFnAttr(llvm::Attribute::NoInline);
     }
@@ -7841,7 +7917,7 @@ static void applySimtEntryCallingConvention(
         if (!call)
           continue;
         auto *callee = call->getCalledFunction();
-        if (!callee || !simtEntryNames.contains(callee->getName()))
+        if (!callee || !simtEntryConfigs.contains(callee->getName()))
           continue;
         call->setCallingConv(kSimtEntryCallingConv);
       }
@@ -7855,7 +7931,8 @@ static LogicalResult runPipeline(ModuleOp module, llvm::raw_ostream &diagOS,
                                  EmitFn &&emit) {
   OwningOpRef<Operation *> clonedOp(module->clone());
   ModuleOp clonedModule = cast<ModuleOp>(*clonedOp);
-  llvm::StringSet<> simtEntryNames = collectSimtEntryFunctionNames(clonedModule);
+  llvm::StringMap<SimtEntryConfig> simtEntryConfigs =
+      collectSimtEntryFunctionConfigs(clonedModule);
 
   if (failed(validateVPTOAuthoringIR(clonedModule, &diagOS))) {
     diagOS << "VPTO LLVM emission failed: authoring-stage VPTO legality "
@@ -7910,10 +7987,13 @@ static LogicalResult runPipeline(ModuleOp module, llvm::raw_ostream &diagOS,
     return failure();
   }
 
-  applySimtEntryCallingConvention(*llvmModule, simtEntryNames);
+  applySimtEntryCallingConvention(*llvmModule, simtEntryConfigs);
   if (failed(attachAIVectorScopeMetadata(*llvmModule, diagOS)))
     return failure();
-  attachHIVMKernelAnnotations(*llvmModule);
+  attachHIVMKernelAnnotations(*llvmModule, simtEntryConfigs);
+  HivmModuleABI hivmABI;
+  llvmModule->setTargetTriple(hivmABI.targetTriple);
+  llvmModule->setDataLayout(hivmABI.dataLayout);
   llvmModule->setModuleIdentifier("ptoas.hivm.official");
   llvmModule->setSourceFileName("ptoas.hivm.official");
   return emit(*llvmModule);
