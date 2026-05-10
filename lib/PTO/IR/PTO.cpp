@@ -2783,6 +2783,9 @@ static LogicalResult verifyPartialValidPattern(Operation *op, Type src0Ty,
       return op->emitOpError(
           "expects src0/src1 valid_shape to be less than or equal to dst valid_shape");
   }
+  if (!equalsKnown(src0Valid, dstValid) && !equalsKnown(src1Valid, dstValid))
+    return op->emitOpError(
+        "expects at least one of src0/src1 valid_shape to match dst valid_shape");
   return success();
 }
 
