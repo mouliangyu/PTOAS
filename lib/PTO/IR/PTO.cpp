@@ -2789,6 +2789,27 @@ static LogicalResult verifyPartialValidPattern(Operation *op, Type src0Ty,
   return success();
 }
 
+static LogicalResult verifyPartialValidPatternLoose(Operation *op, Type src0Ty,
+                                                    Type src1Ty, Type dstTy) {
+  auto src0Valid = getValidShapeVec(src0Ty);
+  auto src1Valid = getValidShapeVec(src1Ty);
+  auto dstValid = getValidShapeVec(dstTy);
+  if (src0Valid.size() != 2 || src1Valid.size() != 2 || dstValid.size() != 2)
+    return op->emitOpError("expects src0, src1, and dst to have rank-2 valid_shape");
+
+  auto lessEqualKnown = [](int64_t lhs, int64_t rhs) {
+    return lhs == ShapedType::kDynamic || rhs == ShapedType::kDynamic || lhs <= rhs;
+  };
+
+  for (unsigned i = 0; i < 2; ++i) {
+    if (!lessEqualKnown(src0Valid[i], dstValid[i]) ||
+        !lessEqualKnown(src1Valid[i], dstValid[i]))
+      return op->emitOpError(
+          "expects src0/src1 valid_shape to be less than or equal to dst valid_shape");
+  }
+  return success();
+}
+
 static bool hasKnownZeroValidRegion(Type ty) {
   auto valid = getValidShapeVec(ty);
   if (valid.size() != 2)
@@ -6953,7 +6974,7 @@ mlir::LogicalResult mlir::pto::TPartAddOp::verify() {
     auto d = getShapeVec(dstTy);
     if (s0.size() != 2 || s1.size() != 2 || d.size() != 2)
       return emitOpError() << "expects src0/src1/dst to be rank-2 (tile-shaped)";
-    if (failed(verifyPartialValidPattern(*this, src0Ty, src1Ty, dstTy)))
+    if (failed(verifyPartialValidPatternLoose(*this, src0Ty, src1Ty, dstTy)))
       return failure();
     return mlir::success();
   };
@@ -6988,7 +7009,7 @@ mlir::LogicalResult mlir::pto::TPartMaxOp::verify() {
     if (!(e0.isInteger(32) || e0.isInteger(16) || e0.isInteger(8) ||
           e0.isF16() || e0.isBF16() || e0.isF32()))
       return emitOpError("expects A5 tpartmax element type to be i32/i16/i8/f16/bf16/f32");
-    if (failed(verifyPartialValidPattern(*this, t0, t1, td)))
+    if (failed(verifyPartialValidPatternLoose(*this, t0, t1, td)))
       return failure();
     return mlir::success();
   };
@@ -7023,7 +7044,7 @@ mlir::LogicalResult mlir::pto::TPartMinOp::verify() {
     if (!(e0.isInteger(32) || e0.isInteger(16) || e0.isInteger(8) ||
           e0.isF16() || e0.isBF16() || e0.isF32()))
       return emitOpError("expects A5 tpartmin element type to be i32/i16/i8/f16/bf16/f32");
-    if (failed(verifyPartialValidPattern(*this, t0, t1, td)))
+    if (failed(verifyPartialValidPatternLoose(*this, t0, t1, td)))
       return failure();
     return mlir::success();
   };
@@ -7079,7 +7100,7 @@ mlir::LogicalResult mlir::pto::TPartMulOp::verify() {
     if (s0.size() != 2 || s1.size() != 2 || d.size() != 2)
       return emitOpError()
              << "expects src0/src1/dst to be rank-2 (tile-shaped)";
-    if (failed(verifyPartialValidPattern(*this, src0Ty, src1Ty, dstTy)))
+    if (failed(verifyPartialValidPatternLoose(*this, src0Ty, src1Ty, dstTy)))
       return failure();
     return mlir::success();
   };
