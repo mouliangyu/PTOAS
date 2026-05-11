@@ -12,14 +12,14 @@
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto --mlir-print-ir-before=pto-vpto-expand-bridge-ops %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROUNDTRIP
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto --mlir-print-ir-after=pto-vpto-expand-bridge-ops %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=EXPAND
 
-module attributes {"pto.target_arch" = "a5"} {
+module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
   func.func @cube_bridge_load_buffer_like(
       %src_mat: memref<?xf16, #pto.address_space<mat>>,
       %dst_left: memref<?xf16, #pto.address_space<left>>,
       %dst_right: memref<?xf16, #pto.address_space<right>>,
       %dst_left_mx: memref<?xf16, #pto.address_space<left>>,
       %dst_right_mx: memref<?xf16, #pto.address_space<right>>,
-      %dst_bias: memref<?xf32, #pto.address_space<bias>>) {
+      %dst_bias: memref<?xf32, #pto.address_space<bias>>) attributes {pto.aicore} {
     %c0_i64 = arith.constant 0 : i64
     %c2_i64 = arith.constant 2 : i64
     %c4_i64 = arith.constant 4 : i64
@@ -40,7 +40,8 @@ module attributes {"pto.target_arch" = "a5"} {
   }
 }
 
-// ROUNDTRIP-LABEL: func.func @cube_bridge_load_buffer_like(%{{.*}}: !pto.ptr<f16, mat>, %{{.*}}: !pto.ptr<f16, left>, %{{.*}}: !pto.ptr<f16, right>, %{{.*}}: !pto.ptr<f16, left>, %{{.*}}: !pto.ptr<f16, right>, %{{.*}}: !pto.ptr<f32, bias>) {
+// ROUNDTRIP-LABEL: func.func @cube_bridge_load_buffer_like(
+// ROUNDTRIP-SAME: %{{.*}}: !pto.ptr<f16, mat>, %{{.*}}: !pto.ptr<f16, left>, %{{.*}}: !pto.ptr<f16, right>, %{{.*}}: !pto.ptr<f16, left>, %{{.*}}: !pto.ptr<f16, right>, %{{.*}}: !pto.ptr<f32, bias>) attributes {pto.aicore} {
 // ROUNDTRIP: pto.left_load %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}
 // ROUNDTRIP: pto.right_load %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}} {transpose = true}
 // ROUNDTRIP: pto.left_load_mx %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}
