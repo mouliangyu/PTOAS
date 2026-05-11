@@ -138,6 +138,43 @@ static Value materializeFpcValue(Value fpc, PatternRewriter &rewriter,
   return {};
 }
 
+static Value materializeI64Attr(Operation *op, StringRef name,
+                                PatternRewriter &rewriter, Location loc) {
+  auto attr = op->getAttrOfType<IntegerAttr>(name);
+  if (!attr)
+    return {};
+  return rewriter.create<arith::ConstantIntOp>(
+      loc, attr.getValue().getSExtValue(), 64);
+}
+
+static Value materializeI64AttrOrZero(Operation *op, StringRef name,
+                                      PatternRewriter &rewriter,
+                                      Location loc) {
+  if (Value value = materializeI64Attr(op, name, rewriter, loc))
+    return value;
+  return rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
+}
+
+template <typename SetOp>
+static void emitSetConfigFromAttr(Operation *op, StringRef name,
+                                  PatternRewriter &rewriter, Location loc) {
+  if (Value value = materializeI64Attr(op, name, rewriter, loc))
+    rewriter.create<SetOp>(loc, value);
+}
+
+static void emitAccStoreAdvancedFixpipeConfig(Operation *op,
+                                              PatternRewriter &rewriter,
+                                              Location loc) {
+  emitSetConfigFromAttr<pto::SetQuantPostOp>(op, "quant_post", rewriter, loc);
+  emitSetConfigFromAttr<pto::SetFixClipReluOp>(op, "fix_clip_relu", rewriter,
+                                               loc);
+  emitSetConfigFromAttr<pto::SetEltSrcParaOp>(op, "elt_src_para", rewriter,
+                                              loc);
+  emitSetConfigFromAttr<pto::SetEltAntiqParaOp>(op, "elt_antiq_para", rewriter,
+                                                loc);
+  emitSetConfigFromAttr<pto::SetReluAlphaOp>(op, "relu_alpha", rewriter, loc);
+}
+
 static Value buildAccumulatedByteOffset(Location loc, Value baseOffset,
                                         Value indexI64, Value stride,
                                         PatternRewriter &rewriter) {
@@ -194,7 +231,10 @@ static Value packCopyMatrixCcToGmXm(Location loc, Value sid, Value nSize,
 
 static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
                                     Value unitFlagCtrl, Value quantPre,
-                                    Value reluPreMode, Value l2CacheCtrl,
+                                    Value reluPreMode, Value quantPostCtrl,
+                                    Value reluPostMode, Value clipReluPost,
+                                    Value eltwiseOp, Value eltwiseAntiqEn,
+                                    Value mBroadcastCtrl, Value l2CacheCtrl,
                                     Value nz2ndEn, Value channelSplitEn,
                                     Value nz2dnEn,
                                     PatternRewriter &rewriter) {
@@ -204,6 +244,15 @@ static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
       rewriter.create<arith::ConstantIntOp>(loc, 29, 64);
   Value quantFieldShift34 = rewriter.create<arith::ConstantIntOp>(loc, 34, 64);
   Value reluShift39 = rewriter.create<arith::ConstantIntOp>(loc, 39, 64);
+  Value quantPostShift44 = rewriter.create<arith::ConstantIntOp>(loc, 44, 64);
+  Value reluPostShift49 = rewriter.create<arith::ConstantIntOp>(loc, 49, 64);
+  Value clipReluPostShift52 =
+      rewriter.create<arith::ConstantIntOp>(loc, 52, 64);
+  Value eltwiseShift54 = rewriter.create<arith::ConstantIntOp>(loc, 54, 64);
+  Value eltwiseAntiqShift57 =
+      rewriter.create<arith::ConstantIntOp>(loc, 57, 64);
+  Value mBroadcastShift61 =
+      rewriter.create<arith::ConstantIntOp>(loc, 61, 64);
   Value channelSplitShift42 =
       rewriter.create<arith::ConstantIntOp>(loc, 42, 64);
   Value nz2ndShift43 = rewriter.create<arith::ConstantIntOp>(loc, 43, 64);
@@ -215,6 +264,9 @@ static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
   Value l2CacheMask = rewriter.create<arith::ConstantIntOp>(loc, 0xf, 64);
   Value unitFlagMask = rewriter.create<arith::ConstantIntOp>(loc, 0x3, 64);
   Value reluMask = rewriter.create<arith::ConstantIntOp>(loc, 0x7, 64);
+  Value quantPostMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1f, 64);
+  Value clipReluMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1, 64);
+  Value eltwiseMask = rewriter.create<arith::ConstantIntOp>(loc, 0x7, 64);
 
   Value l2CacheBits = rewriter.create<arith::AndIOp>(loc, l2CacheCtrl, l2CacheMask);
   l2CacheBits =
@@ -237,6 +289,35 @@ static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
   Value reluBits = rewriter.create<arith::AndIOp>(loc, reluPreMode, reluMask);
   reluBits = rewriter.create<arith::ShLIOp>(loc, reluBits, reluShift39);
 
+  Value quantPostBits =
+      rewriter.create<arith::AndIOp>(loc, quantPostCtrl, quantPostMask);
+  quantPostBits =
+      rewriter.create<arith::ShLIOp>(loc, quantPostBits, quantPostShift44);
+
+  Value reluPostBits =
+      rewriter.create<arith::AndIOp>(loc, reluPostMode, reluMask);
+  reluPostBits =
+      rewriter.create<arith::ShLIOp>(loc, reluPostBits, reluPostShift49);
+
+  Value clipReluPostBits =
+      rewriter.create<arith::AndIOp>(loc, clipReluPost, clipReluMask);
+  clipReluPostBits = rewriter.create<arith::ShLIOp>(loc, clipReluPostBits,
+                                                    clipReluPostShift52);
+
+  Value eltwiseBits = rewriter.create<arith::AndIOp>(loc, eltwiseOp, eltwiseMask);
+  eltwiseBits =
+      rewriter.create<arith::ShLIOp>(loc, eltwiseBits, eltwiseShift54);
+
+  Value eltwiseAntiqBits =
+      rewriter.create<arith::AndIOp>(loc, eltwiseAntiqEn, quantBitMask);
+  eltwiseAntiqBits = rewriter.create<arith::ShLIOp>(loc, eltwiseAntiqBits,
+                                                    eltwiseAntiqShift57);
+
+  Value mBroadcastBits =
+      rewriter.create<arith::AndIOp>(loc, mBroadcastCtrl, quantBitMask);
+  mBroadcastBits = rewriter.create<arith::ShLIOp>(loc, mBroadcastBits,
+                                                   mBroadcastShift61);
+
   Value channelSplitBits =
       rewriter.create<arith::AndIOp>(loc, channelSplitEn, quantBitMask);
   channelSplitBits = rewriter.create<arith::ShLIOp>(loc, channelSplitBits,
@@ -255,6 +336,12 @@ static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
   xt = rewriter.create<arith::OrIOp>(loc, xt, quantBlockBit);
   xt = rewriter.create<arith::OrIOp>(loc, xt, quantField);
   xt = rewriter.create<arith::OrIOp>(loc, xt, reluBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, quantPostBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, reluPostBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, clipReluPostBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, eltwiseBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, eltwiseAntiqBits);
+  xt = rewriter.create<arith::OrIOp>(loc, xt, mBroadcastBits);
   xt = rewriter.create<arith::OrIOp>(loc, xt, channelSplitBits);
   xt = rewriter.create<arith::OrIOp>(loc, xt, nz2ndBits);
   return rewriter.create<arith::OrIOp>(loc, xt, nz2dnBits);
@@ -263,7 +350,10 @@ static Value packCopyMatrixCcToGmXt(Location loc, Value srcStride,
 static Value packCopyMatrixCcToUbConfig1(Location loc, Value srcStride,
                                          Value dualDstMode, Value subBlockId,
                                          Value unitFlagCtrl, Value quantPre,
-                                         Value reluPreMode, Value nz2ndEn,
+                                         Value reluPreMode, Value quantPostCtrl,
+                                         Value reluPostMode, Value clipReluPost,
+                                         Value eltwiseOp, Value eltwiseAntiqEn,
+                                         Value mBroadcastCtrl, Value nz2ndEn,
                                          Value channelSplitEn, Value nz2dnEn,
                                          PatternRewriter &rewriter) {
   Value dualDstShift16 = rewriter.create<arith::ConstantIntOp>(loc, 16, 64);
@@ -273,6 +363,15 @@ static Value packCopyMatrixCcToUbConfig1(Location loc, Value srcStride,
       rewriter.create<arith::ConstantIntOp>(loc, 29, 64);
   Value quantFieldShift34 = rewriter.create<arith::ConstantIntOp>(loc, 34, 64);
   Value reluShift39 = rewriter.create<arith::ConstantIntOp>(loc, 39, 64);
+  Value quantPostShift44 = rewriter.create<arith::ConstantIntOp>(loc, 44, 64);
+  Value reluPostShift49 = rewriter.create<arith::ConstantIntOp>(loc, 49, 64);
+  Value clipReluPostShift52 =
+      rewriter.create<arith::ConstantIntOp>(loc, 52, 64);
+  Value eltwiseShift54 = rewriter.create<arith::ConstantIntOp>(loc, 54, 64);
+  Value eltwiseAntiqShift57 =
+      rewriter.create<arith::ConstantIntOp>(loc, 57, 64);
+  Value mBroadcastShift61 =
+      rewriter.create<arith::ConstantIntOp>(loc, 61, 64);
   Value channelSplitShift42 =
       rewriter.create<arith::ConstantIntOp>(loc, 42, 64);
   Value nz2ndShift43 = rewriter.create<arith::ConstantIntOp>(loc, 43, 64);
@@ -285,6 +384,9 @@ static Value packCopyMatrixCcToUbConfig1(Location loc, Value srcStride,
   Value quantBitMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1, 64);
   Value unitFlagMask = rewriter.create<arith::ConstantIntOp>(loc, 0x3, 64);
   Value reluMask = rewriter.create<arith::ConstantIntOp>(loc, 0x7, 64);
+  Value quantPostMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1f, 64);
+  Value clipReluMask = rewriter.create<arith::ConstantIntOp>(loc, 0x1, 64);
+  Value eltwiseMask = rewriter.create<arith::ConstantIntOp>(loc, 0x7, 64);
 
   Value dualDstBits = rewriter.create<arith::AndIOp>(loc, dualDstMode, dualDstMask);
   dualDstBits =
@@ -311,6 +413,35 @@ static Value packCopyMatrixCcToUbConfig1(Location loc, Value srcStride,
   Value reluBits = rewriter.create<arith::AndIOp>(loc, reluPreMode, reluMask);
   reluBits = rewriter.create<arith::ShLIOp>(loc, reluBits, reluShift39);
 
+  Value quantPostBits =
+      rewriter.create<arith::AndIOp>(loc, quantPostCtrl, quantPostMask);
+  quantPostBits =
+      rewriter.create<arith::ShLIOp>(loc, quantPostBits, quantPostShift44);
+
+  Value reluPostBits =
+      rewriter.create<arith::AndIOp>(loc, reluPostMode, reluMask);
+  reluPostBits =
+      rewriter.create<arith::ShLIOp>(loc, reluPostBits, reluPostShift49);
+
+  Value clipReluPostBits =
+      rewriter.create<arith::AndIOp>(loc, clipReluPost, clipReluMask);
+  clipReluPostBits = rewriter.create<arith::ShLIOp>(loc, clipReluPostBits,
+                                                    clipReluPostShift52);
+
+  Value eltwiseBits = rewriter.create<arith::AndIOp>(loc, eltwiseOp, eltwiseMask);
+  eltwiseBits =
+      rewriter.create<arith::ShLIOp>(loc, eltwiseBits, eltwiseShift54);
+
+  Value eltwiseAntiqBits =
+      rewriter.create<arith::AndIOp>(loc, eltwiseAntiqEn, quantBitMask);
+  eltwiseAntiqBits = rewriter.create<arith::ShLIOp>(loc, eltwiseAntiqBits,
+                                                    eltwiseAntiqShift57);
+
+  Value mBroadcastBits =
+      rewriter.create<arith::AndIOp>(loc, mBroadcastCtrl, quantBitMask);
+  mBroadcastBits = rewriter.create<arith::ShLIOp>(loc, mBroadcastBits,
+                                                   mBroadcastShift61);
+
   Value channelSplitBits =
       rewriter.create<arith::AndIOp>(loc, channelSplitEn, quantBitMask);
   channelSplitBits = rewriter.create<arith::ShLIOp>(loc, channelSplitBits,
@@ -330,6 +461,12 @@ static Value packCopyMatrixCcToUbConfig1(Location loc, Value srcStride,
   config1 = rewriter.create<arith::OrIOp>(loc, config1, quantBlockBit);
   config1 = rewriter.create<arith::OrIOp>(loc, config1, quantField);
   config1 = rewriter.create<arith::OrIOp>(loc, config1, reluBits);
+  config1 = rewriter.create<arith::OrIOp>(loc, config1, quantPostBits);
+  config1 = rewriter.create<arith::OrIOp>(loc, config1, reluPostBits);
+  config1 = rewriter.create<arith::OrIOp>(loc, config1, clipReluPostBits);
+  config1 = rewriter.create<arith::OrIOp>(loc, config1, eltwiseBits);
+  config1 = rewriter.create<arith::OrIOp>(loc, config1, eltwiseAntiqBits);
+  config1 = rewriter.create<arith::OrIOp>(loc, config1, mBroadcastBits);
   config1 = rewriter.create<arith::OrIOp>(loc, config1, channelSplitBits);
   config1 = rewriter.create<arith::OrIOp>(loc, config1, nz2ndBits);
   return rewriter.create<arith::OrIOp>(loc, config1, nz2dnBits);
@@ -925,6 +1062,7 @@ struct ExpandAccStorePattern : public OpRewritePattern<pto::AccStoreOp> {
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
     if (Value fpc = materializeFpcValue(op.getFpc(), rewriter, loc))
       rewriter.create<pto::SetFpcOp>(loc, fpc);
+    emitAccStoreAdvancedFixpipeConfig(op.getOperation(), rewriter, loc);
     pto::DmaLoopConfig hwLoop{one, zero, zero};
     if (Value loop3Count = op.getLoop3Count()) {
       hwLoop = {loop3Count, op.getLoop3SrcStride(), op.getLoop3DstStride()};
@@ -934,6 +1072,23 @@ struct ExpandAccStorePattern : public OpRewritePattern<pto::AccStoreOp> {
     Value nz2ndEn = zero;
     Value channelSplitEn = zero;
     Value nz2dnEn = zero;
+    Value quantPostCtrl =
+        materializeI64AttrOrZero(op.getOperation(), "quant_post_ctrl",
+                                 rewriter, loc);
+    Value reluPostMode =
+        materializeI64AttrOrZero(op.getOperation(), "relu_post_mode",
+                                 rewriter, loc);
+    Value clipReluPost =
+        materializeI64AttrOrZero(op.getOperation(), "clip_relu_post",
+                                 rewriter, loc);
+    Value eltwiseOp = materializeI64AttrOrZero(op.getOperation(), "eltwise_op",
+                                               rewriter, loc);
+    Value eltwiseAntiqEn =
+        materializeI64AttrOrZero(op.getOperation(), "eltwise_antiq_en",
+                                 rewriter, loc);
+    Value mBroadcastCtrl =
+        materializeI64AttrOrZero(op.getOperation(), "m_broadcast_ctrl",
+                                 rewriter, loc);
     switch (op.getMode()) {
     case pto::AccStoreMode::Nz2nd:
       nz2ndEn = one;
@@ -962,8 +1117,9 @@ struct ExpandAccStorePattern : public OpRewritePattern<pto::AccStoreOp> {
                                op.getDstStride(), rewriter);
     Value xt = packCopyMatrixCcToGmXt(
         loc, op.getSrcStride(), op.getUnitFlagCtrl(), op.getQuantPre(),
-        op.getReluPreMode(), zero, nz2ndEn, channelSplitEn, nz2dnEn,
-        rewriter);
+        op.getReluPreMode(), quantPostCtrl, reluPostMode, clipReluPost,
+        eltwiseOp, eltwiseAntiqEn, mBroadcastCtrl, zero, nz2ndEn,
+        channelSplitEn, nz2dnEn, rewriter);
     rewriter.create<pto::CopyMatrixCcToCbufOp>(loc, op.getSource(),
                                                op.getDestination(), xm, xt);
     rewriter.eraseOp(op);
@@ -981,6 +1137,7 @@ struct ExpandAccStoreGmPattern : public OpRewritePattern<pto::AccStoreGmOp> {
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
     if (Value fpc = materializeFpcValue(op.getFpc(), rewriter, loc))
       rewriter.create<pto::SetFpcOp>(loc, fpc);
+    emitAccStoreAdvancedFixpipeConfig(op.getOperation(), rewriter, loc);
     pto::DmaLoopConfig hwLoop{one, zero, zero};
     if (Value loop3Count = op.getLoop3Count()) {
       hwLoop = {loop3Count, op.getLoop3SrcStride(), op.getLoop3DstStride()};
@@ -990,6 +1147,23 @@ struct ExpandAccStoreGmPattern : public OpRewritePattern<pto::AccStoreGmOp> {
     Value nz2ndEn = zero;
     Value channelSplitEn = zero;
     Value nz2dnEn = zero;
+    Value quantPostCtrl =
+        materializeI64AttrOrZero(op.getOperation(), "quant_post_ctrl",
+                                 rewriter, loc);
+    Value reluPostMode =
+        materializeI64AttrOrZero(op.getOperation(), "relu_post_mode",
+                                 rewriter, loc);
+    Value clipReluPost =
+        materializeI64AttrOrZero(op.getOperation(), "clip_relu_post",
+                                 rewriter, loc);
+    Value eltwiseOp = materializeI64AttrOrZero(op.getOperation(), "eltwise_op",
+                                               rewriter, loc);
+    Value eltwiseAntiqEn =
+        materializeI64AttrOrZero(op.getOperation(), "eltwise_antiq_en",
+                                 rewriter, loc);
+    Value mBroadcastCtrl =
+        materializeI64AttrOrZero(op.getOperation(), "m_broadcast_ctrl",
+                                 rewriter, loc);
     switch (op.getMode()) {
     case pto::AccStoreMode::Nz2nd:
       nz2ndEn = one;
@@ -1017,8 +1191,9 @@ struct ExpandAccStoreGmPattern : public OpRewritePattern<pto::AccStoreGmOp> {
                                       op.getDstStride(), rewriter);
     Value xt = packCopyMatrixCcToGmXt(
         loc, op.getSrcStride(), op.getUnitFlagCtrl(), op.getQuantPre(),
-        op.getReluPreMode(), op.getL2CacheCtrl(), nz2ndEn, channelSplitEn,
-        nz2dnEn, rewriter);
+        op.getReluPreMode(), quantPostCtrl, reluPostMode, clipReluPost,
+        eltwiseOp, eltwiseAntiqEn, mBroadcastCtrl, op.getL2CacheCtrl(),
+        nz2ndEn, channelSplitEn, nz2dnEn, rewriter);
     rewriter.create<pto::CopyMatrixCcToGmOp>(loc, op.getSource(),
                                              op.getDestination(), xm, xt);
     rewriter.eraseOp(op);
@@ -1036,6 +1211,7 @@ struct ExpandAccStoreUbPattern : public OpRewritePattern<pto::AccStoreUbOp> {
     Value one = rewriter.create<arith::ConstantIntOp>(loc, 1, 64);
     if (Value fpc = materializeFpcValue(op.getFpc(), rewriter, loc))
       rewriter.create<pto::SetFpcOp>(loc, fpc);
+    emitAccStoreAdvancedFixpipeConfig(op.getOperation(), rewriter, loc);
     pto::DmaLoopConfig hwLoop{one, zero, zero};
     if (Value loop3Count = op.getLoop3Count()) {
       hwLoop = {loop3Count, op.getLoop3SrcStride(), op.getLoop3DstStride()};
@@ -1045,6 +1221,23 @@ struct ExpandAccStoreUbPattern : public OpRewritePattern<pto::AccStoreUbOp> {
     Value nz2ndEn = zero;
     Value channelSplitEn = zero;
     Value nz2dnEn = zero;
+    Value quantPostCtrl =
+        materializeI64AttrOrZero(op.getOperation(), "quant_post_ctrl",
+                                 rewriter, loc);
+    Value reluPostMode =
+        materializeI64AttrOrZero(op.getOperation(), "relu_post_mode",
+                                 rewriter, loc);
+    Value clipReluPost =
+        materializeI64AttrOrZero(op.getOperation(), "clip_relu_post",
+                                 rewriter, loc);
+    Value eltwiseOp = materializeI64AttrOrZero(op.getOperation(), "eltwise_op",
+                                               rewriter, loc);
+    Value eltwiseAntiqEn =
+        materializeI64AttrOrZero(op.getOperation(), "eltwise_antiq_en",
+                                 rewriter, loc);
+    Value mBroadcastCtrl =
+        materializeI64AttrOrZero(op.getOperation(), "m_broadcast_ctrl",
+                                 rewriter, loc);
     switch (op.getMode()) {
     case pto::AccStoreMode::Nz2nd:
       nz2ndEn = one;
@@ -1073,8 +1266,9 @@ struct ExpandAccStoreUbPattern : public OpRewritePattern<pto::AccStoreUbOp> {
                                            op.getDstStride(), rewriter);
     Value config1 = packCopyMatrixCcToUbConfig1(
         loc, op.getSrcStride(), op.getDualDstMode(), op.getSubBlockid(),
-        op.getUnitFlagCtrl(), op.getQuantPre(), op.getReluPreMode(), nz2ndEn,
-        channelSplitEn, nz2dnEn, rewriter);
+        op.getUnitFlagCtrl(), op.getQuantPre(), op.getReluPreMode(),
+        quantPostCtrl, reluPostMode, clipReluPost, eltwiseOp, eltwiseAntiqEn,
+        mBroadcastCtrl, nz2ndEn, channelSplitEn, nz2dnEn, rewriter);
     rewriter.create<pto::CopyMatrixCcToUbOp>(loc, op.getSource(),
                                              op.getDestination(), config0,
                                              config1);

@@ -1,0 +1,40 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-march=dav-c310-cube --vpto-emit-hivm-llvm %s -o - | FileCheck %s
+
+module attributes {"pto.target_arch" = "a5"} {
+  func.func @acc_store_advanced_fixpipe_probe(%src: !pto.ptr<f32, acc>,
+                                              %dst: !pto.ptr<f32, ub>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>} {
+    %c0_i64 = arith.constant 0 : i64
+    %c1_i64 = arith.constant 1 : i64
+    %c2_i64 = arith.constant 2 : i64
+    %c3_i64 = arith.constant 3 : i64
+    %c16_i64 = arith.constant 16 : i64
+
+    pto.acc_store_ub %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
+      %c0_i64, %c0_i64, %c0_i64, %c0_i64, %c0_i64, nz2nd
+        {elt_antiq_para = 5 : i64, elt_src_para = 4 : i64,
+         eltwise_antiq_en = 1 : i64, eltwise_op = 3 : i64,
+         fix_clip_relu = 7 : i64, m_broadcast_ctrl = 1 : i64,
+         quant_post = 6 : i64, quant_post_ctrl = 1 : i64,
+         relu_alpha = 8 : i64, relu_post_mode = 2 : i64,
+         clip_relu_post = 1 : i64}
+      : !pto.ptr<f32, acc>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64, i64,
+        i64, i64, i64, nz2nd
+
+    return
+  }
+}
+
+// CHECK: call void @llvm.hivm.SET.QUANT.POST(i64 6)
+// CHECK: call void @llvm.hivm.SET.FIX.CLIP.RELU(i64 7)
+// CHECK: call void @llvm.hivm.SET.ELT.SRC.PARA(i64 4)
+// CHECK: call void @llvm.hivm.SET.ELT.ANTIQ.PARA(i64 5)
+// CHECK: call void @llvm.hivm.SET.RELU.ALPHA(i64 8)
+// CHECK: call void @llvm.hivm.FIX.L0C.TO.UB.f32.EXT({{.*}}i64 68720525328, i64 2509657280631275536)

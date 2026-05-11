@@ -31,6 +31,17 @@ pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride,
 - `unit_flag_ctrl`
 - `quant_pre`
 - `relu_pre_mode`
+- `quant_post_ctrl`
+- `relu_post_mode`
+- `clip_relu_post`
+- `eltwise_op`
+- `eltwise_antiq_en`
+- `m_broadcast_ctrl`
+- `quant_post`
+- `fix_clip_relu`
+- `elt_src_para`
+- `elt_antiq_para`
+- `relu_alpha`
 - `nz2nd / nz2dn / nz2nz(split)`
 - `loop3(count, src_stride, dst_stride)`
 - `nz2dn` 下的 `loop0_src_stride`
@@ -43,9 +54,16 @@ pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride,
 统一 `pto.acc_store` 的 bridge expand 逻辑：
 
 - 总是先 lower 为
+  - `pto.set_fpc`（如果提供了 `fpc(...)`）
+  - `pto.set_quant_post` / `pto.set_fix_clip_relu` / `pto.set_elt_src_para`
+    / `pto.set_elt_antiq_para` / `pto.set_relu_alpha`（如果提供了对应属性）
   - `pto.set_loop3_para`
   - `pto.set_channel_para`
 - 然后根据 `%dst` 地址空间分流
+
+`quant_post_ctrl`、`relu_post_mode`、`clip_relu_post`、`eltwise_op`、
+`eltwise_antiq_en`、`m_broadcast_ctrl` 打包进终端 FIX 指令的 `X_t`
+配置字段；未提供时按 `0` 处理，保持 pre-only 路径的兼容行为。
 
 ### 3.1 `dst : !pto.ptr<..., gm>`
 

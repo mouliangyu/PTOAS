@@ -542,6 +542,25 @@ pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, %qu
 | `split(%split)` | optional i64 | Extra mode parameter used by `nz2nz` |
 | `loop3(%count, %src_stride3, %dst_stride3)` | optional i64 triple | Optional loop3 hardware control tuple |
 
+**Advanced Fixpipe Attributes:**
+
+`acc_store*` accepts optional integer attributes for the common `FIX_L0C_TO_*`
+post-stage and element-wise fields. Missing attributes default to `0`.
+
+| Attribute | Target | Description |
+|-----------|--------|-------------|
+| `quant_post_ctrl` | `X_t[48:44]` | Quant-Activation Post quantization mode |
+| `relu_post_mode` | `X_t[51:49]` | Quant-Activation Post ReLU mode |
+| `clip_relu_post` | `X_t[52]` | Quant-Activation Post Clip ReLU enable |
+| `eltwise_op` | `X_t[56:54]` | Element-wise operation selector |
+| `eltwise_antiq_en` | `X_t[57]` | Element-wise anti-quantization enable |
+| `m_broadcast_ctrl` | `X_t[61]` | M-dimension broadcast enable for element-wise source 2 |
+| `quant_post` | `SPR.QUANT_POST` | Emits `pto.set_quant_post` before the copy |
+| `fix_clip_relu` | `SPR.FIX_CLIP_RELU` | Emits `pto.set_fix_clip_relu` before the copy |
+| `elt_src_para` | `SPR.ELT_SRC_PARA` | Emits `pto.set_elt_src_para` before the copy |
+| `elt_antiq_para` | `SPR.ELT_ANTIQ_PARA` | Emits `pto.set_elt_antiq_para` before the copy |
+| `relu_alpha` | `SPR.RELU_ALPHA` | Emits `pto.set_relu_alpha` before the copy |
+
 **Constraints:**
 
 - `nz2nz` mode does not accept `loop3(...)`.
@@ -585,6 +604,8 @@ pto.acc_store_gm %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, 
 | `split(%split)` | optional i64 | Extra mode parameter used by `nz2nz` |
 | `loop3(%count, %src_stride3, %dst_stride3)` | optional i64 triple | Optional loop3 hardware control tuple |
 
+The advanced Fixpipe attributes listed for `pto.acc_store` are also accepted.
+
 **Constraints:**
 
 - GM output path controls (`sid`, `l2_cache_ctrl`) must be provided.
@@ -627,6 +648,8 @@ pto.acc_store_ub %src, %dst, %m, %n, %src_stride, %dst_stride, %unit_flag_ctrl, 
 | `loop0_src_stride(%loop0_src_stride)` | optional i64 | Extra mode parameter used by `nz2dn` |
 | `split(%split)` | optional i64 | Extra mode parameter used by `nz2nz` |
 | `loop3(%count, %src_stride3, %dst_stride3)` | optional i64 triple | Optional loop3 hardware control tuple |
+
+The advanced Fixpipe attributes listed for `pto.acc_store` are also accepted.
 
 **Constraints:**
 

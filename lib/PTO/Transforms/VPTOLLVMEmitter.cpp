@@ -2751,8 +2751,33 @@ StringRef buildUnaryConfigCallee<pto::SetMovPadValOp>(MLIRContext *context) {
 }
 
 template <>
+StringRef buildUnaryConfigCallee<pto::SetQuantPostOp>(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.SET.QUANT.POST").getValue();
+}
+
+template <>
 StringRef buildUnaryConfigCallee<pto::SetQuantPreOp>(MLIRContext *context) {
   return StringAttr::get(context, "llvm.hivm.SET.QUANT.PRE.v300").getValue();
+}
+
+template <>
+StringRef buildUnaryConfigCallee<pto::SetFixClipReluOp>(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.SET.FIX.CLIP.RELU").getValue();
+}
+
+template <>
+StringRef buildUnaryConfigCallee<pto::SetEltSrcParaOp>(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.SET.ELT.SRC.PARA").getValue();
+}
+
+template <>
+StringRef buildUnaryConfigCallee<pto::SetEltAntiqParaOp>(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.SET.ELT.ANTIQ.PARA").getValue();
+}
+
+template <>
+StringRef buildUnaryConfigCallee<pto::SetReluAlphaOp>(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.SET.RELU.ALPHA").getValue();
 }
 
 template <>
@@ -7342,7 +7367,12 @@ static void populateVPTOOpLoweringPatterns(VPTOTypeConverter &typeConverter,
                LowerSetLoopConfigOpPattern<pto::SetChannelParaOp>,
                LowerUnaryI64ConfigOpPattern<pto::SetCtrlOp>,
                LowerUnaryConfigOpPattern<pto::SetMovPadValOp>,
+               LowerUnaryI64ConfigOpPattern<pto::SetQuantPostOp>,
                LowerUnaryI64ConfigOpPattern<pto::SetQuantPreOp>,
+               LowerUnaryI64ConfigOpPattern<pto::SetFixClipReluOp>,
+               LowerUnaryI64ConfigOpPattern<pto::SetEltSrcParaOp>,
+               LowerUnaryI64ConfigOpPattern<pto::SetEltAntiqParaOp>,
+               LowerUnaryI64ConfigOpPattern<pto::SetReluAlphaOp>,
                LowerUnaryI64ConfigOpPattern<pto::SetLoop2StrideOutToL1Op>,
                LowerUnaryI64ConfigOpPattern<pto::SetLoop1StrideOutToL1Op>,
                LowerUnaryI64ConfigOpPattern<pto::SetLoopSizeOutToL1Op>,
@@ -7423,9 +7453,12 @@ static void configureVPTOOpLoweringTarget(ConversionTarget &target,
                       pto::SetLoop3ParaOp, pto::SetChannelParaOp,
                       pto::SetLoop2StrideOutToL1Op, pto::SetLoop1StrideOutToL1Op,
                       pto::SetLoopSizeOutToL1Op, pto::SetMte2NzParaOp,
-                      pto::SetPadValOutToL1Op, pto::SetFpcOp,
+                      pto::SetPadValOutToL1Op, pto::SetQuantPostOp,
+                      pto::SetQuantPreOp, pto::SetFixClipReluOp,
+                      pto::SetEltSrcParaOp, pto::SetEltAntiqParaOp,
+                      pto::SetReluAlphaOp, pto::SetFpcOp,
                       pto::SetAtomicS32Op, pto::SetAtomicS8Op, pto::SetCtrlOp,
-                      pto::SetMovPadValOp, pto::SetQuantPreOp>();
+                      pto::SetMovPadValOp>();
   target.addIllegalOp<pto::Sbitset0Op, pto::Sbitset1Op>();
   target.addIllegalOp<pto::VldsOp, pto::VldsPostOp, pto::Vldsx2Op,
                       pto::VsldbOp, pto::VldasOp, pto::InitAlignOp,

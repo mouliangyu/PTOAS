@@ -19,6 +19,12 @@ module attributes {"pto.target_arch" = "a5"} {
 
     pto.acc_store_ub %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c32_i64,
       %c0_i64, %c0_i64, %c0_i64, %c2_i64, %c0_i64, nz2nz, split(%c1_i64)
+        {elt_antiq_para = 5 : i64, elt_src_para = 4 : i64,
+         eltwise_antiq_en = 1 : i64, eltwise_op = 3 : i64,
+         fix_clip_relu = 7 : i64, m_broadcast_ctrl = 1 : i64,
+         quant_post = 6 : i64, quant_post_ctrl = 1 : i64,
+         relu_alpha = 8 : i64, relu_post_mode = 2 : i64,
+         clip_relu_post = 1 : i64}
       : !pto.ptr<f32, acc>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64, i64,
         i64, i64, i64, nz2nz, split(i64)
 
@@ -36,4 +42,9 @@ module attributes {"pto.target_arch" = "a5"} {
 // EXPAND: pto.set_loop3_para
 // EXPAND: pto.set_channel_para
 // EXPAND: pto.copy_matrix_cc_to_ub
+// EXPAND: pto.set_quant_post
+// EXPAND: pto.set_fix_clip_relu
+// EXPAND: pto.set_elt_src_para
+// EXPAND: pto.set_elt_antiq_para
+// EXPAND: pto.set_relu_alpha
 // EXPAND: pto.copy_matrix_cc_to_ub

@@ -20,6 +20,8 @@ module attributes {"pto.target_arch" = "a5"} {
 
     pto.acc_store_gm %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c32_i64,
       %c0_i64, %c0_i64, %c0_i64, %c3_i64, %c5_i64, nz2dn, loop0_src_stride(%c1_i64)
+        {eltwise_op = 1 : i64, quant_post_ctrl = 3 : i64,
+         relu_post_mode = 1 : i64}
       : !pto.ptr<f32, acc>, !pto.ptr<f32, gm>, i64, i64, i64, i64, i64, i64,
         i64, i64, i64, nz2dn, loop0_src_stride(i64)
 
