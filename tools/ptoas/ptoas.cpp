@@ -367,18 +367,6 @@ static llvm::cl::opt<std::string> ptoSeamIRFile(
     llvm::cl::value_desc("path"),
     llvm::cl::init(""));
 
-static llvm::cl::opt<std::string> vptoMarch(
-    "vpto-march",
-    llvm::cl::desc("Bisheng -march for VPTO HIVM LLVM emission (default: "
-                    "dav-c310-vec). Use dav-c310-cube for cube MAT kernels."),
-    llvm::cl::value_desc("march"), llvm::cl::init(""));
-
-static llvm::cl::opt<std::string> vptoCceAicoreArch(
-    "vpto-cce-aicore-arch",
-    llvm::cl::desc("Bisheng --cce-aicore-arch for VPTO HIVM target-attribute "
-                    "queries (default: same as --vpto-march)."),
-    llvm::cl::value_desc("arch"), llvm::cl::init(""));
-
 enum class PTOBuildLevel {
   Level1,
   Level2,
@@ -1184,32 +1172,6 @@ static pto::VPTOEmissionOptions buildVPTOEmissionOptions() {
   pto::VPTOEmissionOptions options;
   options.dumpVPTOIR = false;
   options.targetTriple = "hiipu64-hisilicon-cce";
-
-  const std::string kVecMarch = "dav-c310-vec";
-  const std::string kCubeMarch = "dav-c310-cube";
-  std::string march = vptoMarch.empty() ? kVecMarch : std::string(vptoMarch);
-  std::string aicore =
-      vptoCceAicoreArch.empty() ? march : std::string(vptoCceAicoreArch);
-  options.march = march;
-  options.aicoreArch = aicore;
-
-  // When bisheng target-attribute probing fails (e.g. ptoas subprocess without
-  // CANN in PATH), LLVMFuncOp attrs fall back to these defaults. They must
-  // match the HIVM intrinsics (vec vs cube) or bisheng will CannotSelect.
-  if (aicore.find("cube") != std::string::npos ||
-      march.find("cube") != std::string::npos) {
-    options.defaultTargetCPU = kCubeMarch;
-    options.defaultTargetFeatures =
-        "+ATOMIC,+ArchV130,+AregRedefinable,+ArithmeticBf16,+AtomicForB8 ,"
-        "+F8e4m3,+F8e5m2,+F8e8m0,+FFTSBlk,+Fp4e1m2x2,+Fp4e2m1x2,+LDExtRefine,"
-        "+MOVX8,+SPR7bits,+SyncV,+dav-c310-cube";
-  } else {
-    options.defaultTargetCPU = kVecMarch;
-    options.defaultTargetFeatures =
-        "+ATOMIC,+ArchV130,+AregRedefinable,+ArithmeticBf16,+AtomicForB8 ,"
-        "+F8e4m3,+F8e5m2,+F8e8m0,+FFTSBlk,+Fp4e1m2x2,+Fp4e2m1x2,+LDExtRefine,"
-        "+MOVX8,+SPR7bits,+SyncV,+dav-c310-vec";
-  }
   return options;
 }
 

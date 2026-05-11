@@ -7653,14 +7653,24 @@ static VPTOEmissionOptions
 makeDeviceEmissionOptions(const VPTOEmissionOptions &baseOptions,
                           FunctionKernelKind kind) {
   VPTOEmissionOptions options = baseOptions;
+  constexpr llvm::StringLiteral kVecTargetFeatures =
+      "+ATOMIC,+ArchV130,+AregRedefinable,+ArithmeticBf16,+AtomicForB8 ,"
+      "+F8e4m3,+F8e5m2,+F8e8m0,+FFTSBlk,+Fp4e1m2x2,+Fp4e2m1x2,+LDExtRefine,"
+      "+MOVX8,+SPR7bits,+SyncV,+dav-c310-vec";
+  constexpr llvm::StringLiteral kCubeTargetFeatures =
+      "+ATOMIC,+ArchV130,+AregRedefinable,+ArithmeticBf16,+AtomicForB8 ,"
+      "+F8e4m3,+F8e5m2,+F8e8m0,+FFTSBlk,+Fp4e1m2x2,+Fp4e2m1x2,+LDExtRefine,"
+      "+MOVX8,+SPR7bits,+SyncV,+dav-c310-cube";
   if (kind == FunctionKernelKind::Vector) {
     options.march = "dav-c310-vec";
     options.aicoreArch = "dav-c310-vec";
     options.defaultTargetCPU = "dav-c310-vec";
+    options.defaultTargetFeatures = kVecTargetFeatures.str();
   } else if (kind == FunctionKernelKind::Cube) {
     options.march = "dav-c310-cube";
     options.aicoreArch = "dav-c310-cube";
     options.defaultTargetCPU = "dav-c310-cube";
+    options.defaultTargetFeatures = kCubeTargetFeatures.str();
   }
   return options;
 }

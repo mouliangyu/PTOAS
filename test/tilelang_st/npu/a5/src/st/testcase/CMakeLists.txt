@@ -19,7 +19,7 @@ set(PTO_TILELANG_ST_TESTCASE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 function(pto_tilelang_st NAME)
     set(options DISABLE_INSERT_SYNC)
-    set(oneValueArgs PTO_LEVEL PTOAS_VPTO_MARCH AICORE_ARCH)
+    set(oneValueArgs PTO_LEVEL AICORE_ARCH)
     cmake_parse_arguments(PTO_TILELANG_ST "${options}" "${oneValueArgs}" "" ${ARGN})
 
     set(PTOAS_ENABLE_INSERT_SYNC ON)
@@ -30,11 +30,6 @@ function(pto_tilelang_st NAME)
     set(PTOAS_PTO_LEVEL "")
     if(DEFINED PTO_TILELANG_ST_PTO_LEVEL)
         set(PTOAS_PTO_LEVEL "${PTO_TILELANG_ST_PTO_LEVEL}")
-    endif()
-
-    set(PTOAS_VPTO_MARCH "dav-c310-vec")
-    if(DEFINED PTO_TILELANG_ST_PTOAS_VPTO_MARCH)
-        set(PTOAS_VPTO_MARCH "${PTO_TILELANG_ST_PTOAS_VPTO_MARCH}")
     endif()
 
     set(AICORE_ARCH "dav-c310-vec")
@@ -55,7 +50,6 @@ function(pto_tilelang_st NAME)
             -DKERNEL_FATOBJ=${KERNEL_FATOBJ}
             -DPTOAS_ENABLE_INSERT_SYNC=${PTOAS_ENABLE_INSERT_SYNC}
             -DPTOAS_PTO_LEVEL=${PTOAS_PTO_LEVEL}
-            -DPTOAS_VPTO_MARCH=${PTOAS_VPTO_MARCH}
             -P ${PTOAS_CAPTURE_SCRIPT}
         DEPENDS ${PTO_SRC} ${PTOAS_CAPTURE_SCRIPT}
         COMMENT "ptoas: ${NAME}.pto -> ${NAME}_kernel.o"
@@ -98,7 +92,6 @@ endfunction()
 function(pto_tilelang_vec_st NAME)
     pto_tilelang_st(
         ${NAME}
-        PTOAS_VPTO_MARCH dav-c310-vec
         AICORE_ARCH dav-c310-vec
         ${ARGN}
     )
@@ -107,7 +100,6 @@ endfunction()
 function(pto_tilelang_cube_st NAME)
     pto_tilelang_st(
         ${NAME}
-        PTOAS_VPTO_MARCH dav-c310-cube
         AICORE_ARCH dav-c310-cube
         ${ARGN}
     )

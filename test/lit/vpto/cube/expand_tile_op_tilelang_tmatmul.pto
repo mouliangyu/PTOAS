@@ -9,14 +9,14 @@
 // Guard: TileLang cube tmatmul expansion on the dav-c310-cube VPTO path must
 // inline the template body and lower the tile op to cube MAD instructions.
 //
-// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-march=dav-c310-cube --enable-tile-op-expand %s -o - 2>/dev/null | FileCheck %s
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand --emit-vpto %s -o - 2>/dev/null | FileCheck %s
 
 // CHECK-LABEL: func.func @TMATMUL
 // CHECK-NOT: pto.tmatmul ins
 // CHECK: pto.mad
 
-module {
-  func.func @TMATMUL() {
+module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
+  func.func @TMATMUL() attributes {pto.aicore} {
     %lhs = pto.alloc_tile
       : !pto.tile_buf<loc=left, dtype=f16, rows=16, cols=16, v_row=16, v_col=16,
                       blayout=col_major, slayout=row_major, fractal=512, pad=0>
