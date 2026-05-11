@@ -63,7 +63,7 @@ CASES = [
         "dtype": np.float32,
         "shape": (64, 64),
         "valid_shape": (64, 64),
-        "eps": 1e-6,
+        "eps": 1e-7,
         "high_precision": True,
     },
     {
@@ -71,7 +71,7 @@ CASES = [
         "dtype": np.float16,
         "shape": (64, 64),
         "valid_shape": (64, 64),
-        "eps": 1e-3,
+        "eps": 1e-7,
         "high_precision": True,
     },
 ]
