@@ -86,6 +86,39 @@ def compare_multilist(case):
     return vals_ok and indices_ok
 
 
+def compare_topk(case):
+    """Compare TopK output.
+    
+    For TopK format:
+    - Read input0.bin (unsorted raw data)
+    - Read output.bin (top-k sorted data)
+    - Compare with golden.bin
+    """
+    dtype = case["dtype"]
+    valid_shape = case["valid_shape"]
+    valid_rows, valid_cols = valid_shape
+    topk = case["topk"]
+    
+    # Total structures in input
+    total_structures = valid_cols // 2
+    
+    # Read golden output
+    golden_vals, golden_indices = read_value_index_pairs(
+        os.path.join(case["name"], "golden.bin"), dtype, total_structures
+    )
+    
+    # Read actual output
+    output_vals, output_indices = read_value_index_pairs(
+        os.path.join(case["name"], "output.bin"), dtype, topk
+    )
+    
+    # Compare top-k elements
+    vals_ok = result_cmp(golden_vals[:topk], output_vals[:topk], case["eps"])
+    indices_ok = np.allclose(golden_indices[:topk], output_indices[:topk], atol=0, rtol=0)
+    
+    return vals_ok and indices_ok
+
+
 def main():
     case_filter = sys.argv[1] if len(sys.argv) > 1 else None
 
@@ -125,6 +158,14 @@ def main():
         
         elif format_type == "multi":
             ok = compare_multilist(case)
+            if ok:
+                print(style_pass(f"[INFO] {case['name']}: compare passed"))
+            else:
+                print(style_fail(f"[ERROR] {case['name']}: values or indices mismatch"))
+                all_passed = False
+        
+        elif format_type == "topk":
+            ok = compare_topk(case)
             if ok:
                 print(style_pass(f"[INFO] {case['name']}: compare passed"))
             else:

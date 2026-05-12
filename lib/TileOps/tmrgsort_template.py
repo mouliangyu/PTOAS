@@ -226,13 +226,26 @@ def tmrgsort_4list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile
     advanced=True,
 )
 def template_tmrgsort_1list(src: pto.Tile, block_len: pto.AnyInt, dst: pto.Tile):
+    """Format1 template: single list internal block sorting.
+
+    Standard Format1: single vmrgsort4 for block sorting.
+    TopK variant is handled by ST kernel via iterative tmrgsort + tmov calls.
+    """
     dtype = src.element_type
+    bw = pto.bytewidth(dtype)
     src_valid_col = src.valid_shape[1]
 
-    # num_structures = block_len
-    num_structures = block_len * pto.bytewidth(dtype) // STRUCT_SIZE
+    # Structure count calculation
+    elem_per_struct = STRUCT_SIZE // bw
+
+    # Block length in structures
+    block_len_structs = block_len // elem_per_struct
+
+    # Repeat times: how many groups of 4 blocks need merging
     repeat_times = src_valid_col // (block_len * BLOCK_NUM)
-    tmrgsort_1list_instr(dst, src, num_structures, repeat_times)
+
+    # Standard Format1: single merge operation
+    tmrgsort_1list_instr(dst, src, block_len_structs, repeat_times)
 
     return None
 

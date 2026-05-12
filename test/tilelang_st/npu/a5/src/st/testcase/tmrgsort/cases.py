@@ -279,5 +279,76 @@ CASES = [
         "topk": 224,  # structures (total=224, output all)
         "exhausted": False,
         "eps": 1e-6,
+    },
+    
+    # Format5: TopK (full sorting with top-k output)
+    # Following pto-isa case_topk1-6
+    # Input: unsorted raw data (value-index interleaved)
+    # Output: top-k sorted elements
+    {
+        "name": "f32_topk_2048_1024",
+        "dtype": np.float32,
+        "format": "topk",
+        "src_shape": (1, 2048),  # 2048 f32 elements = 1024 structs (input unsorted)
+        "dst_shape": (1, 1024),  # 1024 f32 elements = 512 structs (output topk)
+        "valid_shape": (1, 2048),  # full input cols
+        "topk": 512,  # output structures count
+        "block_len": 64,  # initial block length in elements
+        "eps": 1e-6,
+    },
+    {
+        "name": "f32_topk_2048_2048",
+        "dtype": np.float32,
+        "format": "topk",
+        "src_shape": (1, 2048),  # 2048 f32 elements = 1024 structs
+        "dst_shape": (1, 2048),  # 2048 f32 elements = 1024 structs (output all)
+        "valid_shape": (1, 2048),
+        "topk": 1024,  # output all structures
+        "block_len": 64,
+        "eps": 1e-6,
+    },
+    {
+        "name": "f32_topk_1280_512",
+        "dtype": np.float32,
+        "format": "topk",
+        "src_shape": (1, 1280),  # 1280 f32 elements = 640 structs
+        "dst_shape": (1, 512),  # 512 f32 elements = 256 structs
+        "valid_shape": (1, 1280),
+        "topk": 256,  # output 256 structures
+        "block_len": 64,
+        "eps": 1e-6,
+    },
+    {
+        "name": "f16_topk_2048_1024",
+        "dtype": np.float16,
+        "format": "topk",
+        "src_shape": (1, 2048),  # 2048 f16 elements = 512 structs
+        "dst_shape": (1, 1024),  # 1024 f16 elements = 256 structs
+        "valid_shape": (1, 2048),
+        "topk": 256,  # output 256 structures
+        "block_len": 64,
+        "eps": 1e-3,
+    },
+    {
+        "name": "f16_topk_2048_2048",
+        "dtype": np.float16,
+        "format": "topk",
+        "src_shape": (1, 2048),  # 2048 f16 elements = 512 structs
+        "dst_shape": (1, 2048),  # output all
+        "valid_shape": (1, 2048),
+        "topk": 512,  # output all structures
+        "block_len": 64,
+        "eps": 1e-3,
+    },
+    {
+        "name": "f16_topk_1280_512",
+        "dtype": np.float16,
+        "format": "topk",
+        "src_shape": (1, 1280),  # 1280 f16 elements = 320 structs
+        "dst_shape": (1, 512),  # 512 f16 elements = 128 structs
+        "valid_shape": (1, 1280),
+        "topk": 128,  # output 128 structures
+        "block_len": 64,
+        "eps": 1e-3,
     }
 ]

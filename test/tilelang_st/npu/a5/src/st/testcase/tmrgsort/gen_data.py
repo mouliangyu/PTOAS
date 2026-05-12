@@ -240,6 +240,114 @@ def gen_golden_multilist(case):
           f"src_cols={src_cols} total_structures={total_structures} topk={topk} exhausted={exhausted}")
 
 
+def gen_golden_topk(case):
+    """Generate golden data for TopK (full iterative merge).
+
+    Following pto-isa RunTMrgsortTopk logic:
+    1. Generate unsorted raw data -> input0.bin
+    2. Initial: sort each block internally
+    3. Iterative merge loop: blockLen *= 4
+       - Each iteration: Format1 merge (4 blocks -> 1)
+       - Copy result back for next iteration
+    4. Final: take top-k from globally sorted data -> golden.bin
+
+    This matches the full TopK template implementation.
+    """
+    dtype = case["dtype"]
+    src_shape = _to_tuple(case["src_shape"])
+    dst_shape = _to_tuple(case["dst_shape"])
+    valid_shape = _to_tuple(case["valid_shape"])
+    topk = case["topk"]  # output structures count
+    block_len = case["block_len"]
+
+    src_rows, src_cols = src_shape
+    valid_rows, valid_cols = valid_shape
+
+    # Get element divisor based on dtype
+    elem_divisor = get_elem_divisor(dtype)
+
+    # Structure units (following pto-isa)
+    cols = valid_cols // elem_divisor  # total structures
+    list_col = block_len // elem_divisor  # structures per block
+
+    # Generate unsorted raw data
+    input_arr = np.random.uniform(low=0.0, high=1.0, size=(1, cols)).astype(dtype)
+    idx_arr = np.arange(cols, dtype=np.uint32)
+
+    # Step 1: Sort each block internally (Format1 preparation)
+    input_reshaped = input_arr.reshape(-1, list_col)
+    idx_reshaped = idx_arr.reshape(-1, list_col)
+
+    sorted_indices = np.argsort(-input_reshaped, kind='stable', axis=1)
+    sorted_input = np.take_along_axis(input_reshaped, sorted_indices, axis=1)
+    sorted_idx = np.take_along_axis(idx_reshaped, sorted_indices, axis=1)
+
+    # Flatten -> input0.bin (block-wise sorted)
+    flat_input = sorted_input.flatten()
+    flat_idx = sorted_idx.flatten()
+
+    # Step 2: Iterative merge (blockLen *= 4 loop)
+    current_data = flat_input.copy()
+    current_idx = flat_idx.copy()
+    current_block_len = list_col  # structures per block
+
+    iteration = 1
+    while current_block_len * 4 <= cols:
+        # Format1 merge at this block length
+        # Merge groups of 4 blocks into 1
+        block_lens = current_block_len * 4  # structures per merge group
+        num_groups = cols // block_lens
+
+        # Process each group
+        for g in range(num_groups):
+            start = g * block_lens
+            end = start + block_lens
+            group_vals = current_data[start:end]
+            group_idx = current_idx[start:end]
+
+            # Sort this group descending
+            sort_indices = np.argsort(-group_vals, kind='stable')
+            current_data[start:end] = group_vals[sort_indices]
+            current_idx[start:end] = group_idx[sort_indices]
+
+        # Update block length for next iteration
+        current_block_len = current_block_len * 4
+        iteration += 1
+
+    # Step 3: Handle tail blocks (if current_block_len < cols)
+    # Simplified: just globally sort the remaining data
+    if current_block_len < cols:
+        # Global sort for tail handling
+        sort_indices = np.argsort(-current_data, kind='stable')
+        current_data = current_data[sort_indices]
+        current_idx = current_idx[sort_indices]
+
+    # Step 4: Take top-k
+    golden_values = current_data[:topk]
+    golden_indices = current_idx[:topk]
+
+    # Write files
+    os.makedirs(case["name"], exist_ok=True)
+    with open(os.path.join(case["name"], "input0.bin"), 'wb') as f:
+        for val, idx in zip(flat_input, flat_idx):
+            write_value_index_pair(f, val, idx, dtype)
+
+    # Pad zeros if needed (to match dst capacity)
+    dst_structures = dst_shape[1] // elem_divisor
+    zeros_values = np.zeros(dst_structures - topk, dtype=golden_values.dtype)
+    zeros_indices = np.zeros(dst_structures - topk, dtype=np.uint32)
+    golden_values_padded = np.concatenate((golden_values, zeros_values))
+    golden_indices_padded = np.concatenate((golden_indices, zeros_indices))
+
+    with open(os.path.join(case["name"], "golden.bin"), 'wb') as f:
+        for val, idx in zip(golden_values_padded, golden_indices_padded):
+            write_value_index_pair(f, val, idx, dtype)
+
+    print(f"[INFO] gen_data: {case['name']} src_cols={src_cols} valid_cols={valid_cols} "
+          f"cols={cols} structures topk={topk} structures block_len={block_len} "
+          f"iterations={iteration}")
+
+
 def gen_golden_data():
     """Generate golden data for all cases."""
     for case in CASES:
@@ -250,6 +358,8 @@ def gen_golden_data():
             gen_golden_single(case)
         elif format_type == "multi":
             gen_golden_multilist(case)
+        elif format_type == "topk":
+            gen_golden_topk(case)
         else:
             print(f"[WARN] Unsupported format: {format_type} for case {case['name']}")
 

@@ -42,6 +42,14 @@ void LaunchTMRGSORT_f32_4list_b32_basic(float *src0, float *src1, float *src2, f
 void LaunchTMRGSORT_f32_4list_non_uniform(float *src0, float *src1, float *src2, float *src3, float *dst, void *stream);
 void LaunchTMRGSORT_f16_4list_b64_basic(uint16_t *src0, uint16_t *src1, uint16_t *src2, uint16_t *src3, uint16_t *dst, void *stream);
 
+// TopK launch wrappers
+void LaunchTMRGSORT_f32_topk_2048_1024(float *src, float *dst, void *stream);
+void LaunchTMRGSORT_f32_topk_2048_2048(float *src, float *dst, void *stream);
+void LaunchTMRGSORT_f32_topk_1280_512(float *src, float *dst, void *stream);
+void LaunchTMRGSORT_f16_topk_2048_1024(uint16_t *src, uint16_t *dst, void *stream);
+void LaunchTMRGSORT_f16_topk_2048_2048(uint16_t *src, uint16_t *dst, void *stream);
+void LaunchTMRGSORT_f16_topk_1280_512(uint16_t *src, uint16_t *dst, void *stream);
+
 using LaunchFn = void (*)(void *, void *, void *);
 using LaunchFn2 = void (*)(void *, void *, void *, void *);
 using LaunchFn3 = void (*)(void *, void *, void *, void *, void *);
@@ -91,6 +99,14 @@ static const TestCase kCases[] = {
     {"f32_4list_b32_basic",        4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f32_4list_b32_basic),  1, 0,  64,  64,  64,  64, 1,  256, sizeof(float),    8},
     {"f32_4list_non_uniform",      4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f32_4list_non_uniform), 1, 0, 128, 128, 128,  64, 1,  448, sizeof(float),    8},
     {"f16_4list_b64_basic",        4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f16_4list_b64_basic),  1, 0, 256, 256, 256, 256, 1, 1024, sizeof(uint16_t), 8},
+    
+    // TopK cases (Format5)
+    {"f32_topk_2048_1024",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_2048_1024),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 1024, sizeof(float),    8},
+    {"f32_topk_2048_2048",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_2048_2048),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(float),    8},
+    {"f32_topk_1280_512",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_1280_512),   nullptr, nullptr, nullptr, 1, 1280, 0, 0, 0, 0, 1,  512, sizeof(float),    8},
+    {"f16_topk_2048_1024",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_2048_1024),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 1024, sizeof(uint16_t), 8},
+    {"f16_topk_2048_2048",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_2048_2048),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(uint16_t), 8},
+    {"f16_topk_1280_512",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_1280_512),   nullptr, nullptr, nullptr, 1, 1280, 0, 0, 0, 0, 1,  512, sizeof(uint16_t), 8},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

@@ -126,3 +126,45 @@ extern "C" __global__ AICORE void TMRGSORT_f32_4list_non_uniform(__gm__ float *s
 void LaunchTMRGSORT_f32_4list_non_uniform(float *src0, float *src1, float *src2, float *src3, float *dst, void *stream) {
     TMRGSORT_f32_4list_non_uniform<<<1, nullptr, stream>>>((__gm__ float *)src0, (__gm__ float *)src1, (__gm__ float *)src2, (__gm__ float *)src3, (__gm__ float *)dst);
 }
+
+// TopK cases: f32_topk_2048_1024
+extern "C" __global__ AICORE void TMRGSORT_f32_topk_2048_1024(__gm__ float *src, __gm__ float *dst);
+
+void LaunchTMRGSORT_f32_topk_2048_1024(float *src, float *dst, void *stream) {
+    TMRGSORT_f32_topk_2048_1024<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
+}
+
+// TopK cases: f32_topk_2048_2048
+extern "C" __global__ AICORE void TMRGSORT_f32_topk_2048_2048(__gm__ float *src, __gm__ float *dst);
+
+void LaunchTMRGSORT_f32_topk_2048_2048(float *src, float *dst, void *stream) {
+    TMRGSORT_f32_topk_2048_2048<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
+}
+
+// TopK cases: f32_topk_1280_512
+extern "C" __global__ AICORE void TMRGSORT_f32_topk_1280_512(__gm__ float *src, __gm__ float *dst);
+
+void LaunchTMRGSORT_f32_topk_1280_512(float *src, float *dst, void *stream) {
+    TMRGSORT_f32_topk_1280_512<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
+}
+
+// TopK cases: f16_topk_2048_1024
+extern "C" __global__ AICORE void TMRGSORT_f16_topk_2048_1024(__gm__ half *src, __gm__ half *dst);
+
+void LaunchTMRGSORT_f16_topk_2048_1024(uint16_t *src, uint16_t *dst, void *stream) {
+    TMRGSORT_f16_topk_2048_1024<<<1, nullptr, stream>>>((__gm__ half *)src, (__gm__ half *)dst);
+}
+
+// TopK cases: f16_topk_2048_2048
+extern "C" __global__ AICORE void TMRGSORT_f16_topk_2048_2048(__gm__ half *src, __gm__ half *dst);
+
+void LaunchTMRGSORT_f16_topk_2048_2048(uint16_t *src, uint16_t *dst, void *stream) {
+    TMRGSORT_f16_topk_2048_2048<<<1, nullptr, stream>>>((__gm__ half *)src, (__gm__ half *)dst);
+}
+
+// TopK cases: f16_topk_1280_512
+extern "C" __global__ AICORE void TMRGSORT_f16_topk_1280_512(__gm__ half *src, __gm__ half *dst);
+
+void LaunchTMRGSORT_f16_topk_1280_512(uint16_t *src, uint16_t *dst, void *stream) {
+    TMRGSORT_f16_topk_1280_512<<<1, nullptr, stream>>>((__gm__ half *)src, (__gm__ half *)dst);
+}
