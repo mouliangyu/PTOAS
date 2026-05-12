@@ -6,6 +6,9 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
+// https://discourse.llvm.org/t/matchandrewrite-hiding-virtual-functions/84933/8
+#pragma GCC diagnostic ignored "-Woverloaded-virtual"
+
 #include "PTO/Transforms/VPTOLLVMEmitter.h"
 
 #include "PTO/IR/PTO.h"
@@ -161,7 +164,8 @@ static Value getI32Constant(OpBuilder &builder, Location loc, uint64_t value) {
       .getResult();
 }
 
-static Value getI1Constant(OpBuilder &builder, Location loc, bool value) {
+[[maybe_unused]] static Value getI1Constant(OpBuilder &builder, Location loc,
+                                            bool value) {
   return builder
       .create<arith::ConstantOp>(
           loc, builder.getIntegerAttr(builder.getI1Type(), value ? 1 : 0))
@@ -1081,12 +1085,10 @@ packCopyGmToUbConfig1(Operation *anchor, ValueRange operands) {
   return packLoopPair(anchor, operands[9], operands[10]);
 }
 
-static FailureOr<Value> packCopyGmToUbConfig0(Operation *anchor, Value sid,
-                                              Value nBurst, Value lenBurst,
-                                              Value leftPadding,
-                                              Value rightPadding,
-                                              Value dataSelect,
-                                              Value cacheCtl) {
+[[maybe_unused]] static FailureOr<Value>
+packCopyGmToUbConfig0(Operation *anchor, Value sid, Value nBurst,
+                      Value lenBurst, Value leftPadding, Value rightPadding,
+                      Value dataSelect, Value cacheCtl) {
   SmallVector<Value, 11> operands(11);
   operands[2] = sid;
   operands[3] = nBurst;
@@ -1140,9 +1142,9 @@ packCopyUbToGmConfig1(Operation *anchor, ValueRange operands) {
   return packLoopPair(anchor, operands[6], operands[7]);
 }
 
-static FailureOr<Value> packCopyUbToGmConfig0(Operation *anchor, Value sid,
-                                              Value nBurst, Value lenBurst,
-                                              Value reserved) {
+[[maybe_unused]] static FailureOr<Value>
+packCopyUbToGmConfig0(Operation *anchor, Value sid, Value nBurst,
+                      Value lenBurst, Value reserved) {
   SmallVector<Value, 8> operands(8);
   operands[2] = sid;
   operands[3] = nBurst;
@@ -1665,11 +1667,10 @@ static FailureOr<Value> convertElementOffsetToBytes(Operation *anchor, Value off
       .getResult();
 }
 
-static FailureOr<Value> materializeDynamicPltMask(ConversionPatternRewriter &rewriter,
-                                                  LoweringState &state,
-                                                  Location loc,
-                                                  Value laneCount,
-                                                  Type vectorElemType) {
+[[maybe_unused]] static FailureOr<Value>
+materializeDynamicPltMask(ConversionPatternRewriter &rewriter,
+                          LoweringState &state, Location loc, Value laneCount,
+                          Type vectorElemType) {
   Type i32Type = rewriter.getI32Type();
   Value laneCountI32 = laneCount;
   if (laneCountI32.getType() != i32Type) {
@@ -2178,7 +2179,8 @@ static StringRef buildLoadCbufToCaMxCallee(MLIRContext *context) {
       .getValue();
 }
 
-static StringRef buildLoadCbufToCbMxCallee(MLIRContext *context) {
+[[maybe_unused]] static StringRef buildLoadCbufToCbMxCallee(
+    MLIRContext *context) {
   return StringAttr::get(context, "llvm.hivm.LOAD.L1.TO.L0B.MX.2Dv2.v")
       .getValue();
 }

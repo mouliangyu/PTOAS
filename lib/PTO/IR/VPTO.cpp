@@ -94,16 +94,6 @@ static bool isMaskGranularityAdjacentWidening(StringRef inputGranularity,
          (inputGranularity == "b16" && resultGranularity == "b32");
 }
 
-static LogicalResult verifyEnclosingLoopLike(Operation *op,
-                                             StringRef opNameForDiag) {
-  if (!op->getParentOfType<LoopLikeOpInterface>()) {
-    return op->emitOpError()
-           << "requires enclosing loop structure for " << opNameForDiag
-           << " lowering";
-  }
-  return success();
-}
-
 static LogicalResult verifyNotNestedInVecScope(Operation *op,
                                                StringRef opNameForDiag) {
   if (op->getParentOfType<VecScopeOp>() ||
@@ -666,12 +656,6 @@ static bool isSupportedPredicateStoreDist(StringRef dist) {
   return dist == "NORM" || dist == "PK";
 }
 
-static bool isSupportedStrideToken(StringRef stride) {
-  return stride == "STRIDE_S3_B16" || stride == "STRIDE_S4_B64" ||
-         stride == "STRIDE_S8_B32" || stride == "STRIDE_S2_B64" ||
-         stride == "STRIDE_VSST_S8_B16";
-}
-
 static bool isSupportedPartToken(StringRef part) {
   return part == "LOWER" || part == "HIGHER";
 }
@@ -973,11 +957,6 @@ static std::optional<unsigned> getDistElementWidth(Type type) {
   if (type.isF64())
     return 64;
   return std::nullopt;
-}
-
-static bool matchesWidthFamily(StringRef dist, unsigned width,
-                               ArrayRef<unsigned> allowedWidths) {
-  return llvm::is_contained(allowedWidths, width);
 }
 
 static bool isSupportedVldx2DistToken(StringRef dist) {
