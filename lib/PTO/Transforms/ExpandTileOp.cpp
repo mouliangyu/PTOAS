@@ -342,7 +342,7 @@ static StringRef getPrecisionTypeString(pto::SqrtPrecision precision) {
 // high_precision code path would silence the warning while preserving default
 // behavior.
 static const llvm::StringSet<> &highPrecisionImplementedOps() {
-  static const llvm::StringSet<> kImplementedOps{};
+  static const llvm::StringSet<> kImplementedOps{"pto.tlog"};
   return kImplementedOps;
 }
 
