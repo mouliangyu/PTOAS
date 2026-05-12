@@ -10,13 +10,19 @@
 // expands pto.tcmp via the default TileLang Python DSL template
 // lib/TileOps/tcmp_template.py.
 //
-// Pipeline: MemrefToTileBuf -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
+// Pipeline: PTOMaterializeTileHandles -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
 //
-// RUN: not ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>&1 | FileCheck %s
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>/dev/null | FileCheck %s
 
-// TCMP currently has no registered TileLang kernel on the A5 tile-op-expand path.
-// CHECK: expand_helper found no registered kernel
-// CHECK: error: ExpandTileOp: failed to instantiate tilelang template for tcmp
+// TCMP now expands through the registered TileLang kernel on the A5 path.
+// CHECK: func.func @TCMP
+// CHECK-NOT: pto.tcmp ins
+// CHECK: pto.vecscope
+// CHECK: pto.castptr
+// CHECK: pto.vcmp
+// CHECK: pto.pbitcast
+// CHECK: pto.pdintlv_b8
+// CHECK: pto.psts
 
 module {
   func.func @TCMP() {

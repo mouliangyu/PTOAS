@@ -10,13 +10,21 @@
 // expands pto.trem via the default TileLang Python DSL template
 // lib/TileOps/trem_template.py.
 //
-// Pipeline: MemrefToTileBuf -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
+// Pipeline: PTOMaterializeTileHandles -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
 //
-// RUN: not ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>&1 | FileCheck %s
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>/dev/null | FileCheck %s
 
-// TREM currently has no registered TileLang kernel on the A5 tile-op-expand path.
-// CHECK: expand_helper found no registered kernel
-// CHECK: error: ExpandTileOp: failed to instantiate tilelang template for trem
+// TREM now expands through the registered TileLang kernel on the A5 path.
+// CHECK: func.func @TREM
+// CHECK-NOT: pto.trem ins
+// CHECK: pto.vecscope
+// CHECK: pto.castptr
+// CHECK: pto.vdiv
+// CHECK: pto.vtrc {{.*}} "F"
+// CHECK: pto.vcmps
+// CHECK: pto.vadd
+// CHECK: pto.vsel
+// CHECK: pto.vsts
 
 module {
   func.func @TREM() {

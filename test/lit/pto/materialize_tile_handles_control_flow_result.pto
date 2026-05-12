@@ -1,6 +1,9 @@
 // RUN: ptoas --pto-arch=a3 --mlir-print-ir-after=pto-materialize-tile-handles %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=IR
 // RUN: ptoas --pto-arch=a3 %s -o - 2>&1 | FileCheck %s --check-prefix=EMITC
 
+// Shared pipeline check: control-flow-carried tile results stay in tile-native
+// form across PTOMaterializeTileHandles and do not regress to a memref bridge.
+
 module {
   func.func @control_flow_result_tile_materialization(%cond: i1) {
     %src = pto.alloc_tile : !pto.tile_buf<vec, 16x16xf16>

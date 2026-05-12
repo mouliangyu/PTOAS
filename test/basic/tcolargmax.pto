@@ -10,7 +10,7 @@
 // expands pto.tcolargmax via the TileLang Python DSL template
 // lib/TileOps/tcolargmax_template.py.
 //
-// Pipeline: MemrefToTileBuf -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
+// Pipeline: PTOMaterializeTileHandles -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
 //
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>/dev/null | FileCheck %s
 
@@ -18,12 +18,13 @@
 // pto.tcolargmax should be lowered to vector-style VPTO IR.
 // CHECK: func.func @TCOLARGMAX
 // CHECK-NOT: pto.tcolargmax ins
-// CHECK: pto.vecscope
 // CHECK: pto.castptr
-// CHECK: pto.vlds
+// CHECK: pto.vecscope
 // CHECK: pto.vdup
+// CHECK: pto.vlds
 // CHECK: pto.vcmp
 // CHECK: pto.vsel
+// CHECK: pto.vmax
 // CHECK: pto.vsts
 
 module {

@@ -10,16 +10,22 @@
 // expands pto.tadd via the default TileLang Python DSL template
 // lib/TileOps/tadd_template.py.
 //
-// Pipeline: MemrefToTileBuf -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
+// Pipeline: PTOMaterializeTileHandles -> ExpandTileOp -> InlineLibCall ->
+// FoldTileBufIntrinsics
 //
 // RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>/dev/null | FileCheck %s
 
 // After the full tile-op-expand path on the VPTO backend, the original
 // pto.tadd should be lowered to vector-style VPTO IR.
+// Dead alloc cleanup after FoldTileBufIntrinsics is covered by
+// fold_tile_buf_intrinsics.pto; this test checks the final emitted VPTO form.
 // CHECK: func.func @TADD
 // CHECK-NOT: pto.tadd ins
+// CHECK-NOT: pto.bind_tile
 // CHECK: pto.vecscope
 // CHECK: pto.castptr
+// CHECK: scf.for
+// CHECK: pto.addptr
 // CHECK: pto.vlds
 // CHECK: pto.vadd
 // CHECK: pto.vsts

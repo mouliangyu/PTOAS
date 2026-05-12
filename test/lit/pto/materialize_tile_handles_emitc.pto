@@ -1,6 +1,9 @@
 // RUN: ptoas --pto-arch=a3 --mlir-print-ir-after=pto-materialize-tile-handles %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=IR
 // RUN: ptoas --pto-arch=a3 %s -o - 2>&1 | FileCheck %s --check-prefix=EMITC
 
+// Shared pipeline check: PTOMaterializeTileHandles should normalize the active
+// seam IR to pto.alloc_tile handles and leave no transient pto.materialize_tile.
+
 module {
   func.func @materialize_tile_handles_emitc() {
     %scale = arith.constant 2.0 : f16

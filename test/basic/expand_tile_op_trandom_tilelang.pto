@@ -6,29 +6,39 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// Test template for pto.trandom operator
-// 
-// NOTE: pto.trandom uses Philox random number generation.
-// It requires special operations (vci, vmull, vbr) that may not be 
-// fully supported in current TileLang DSL without extension.
+// Test that ExpandTileOp + InlineLibCall + FoldTileBufIntrinsics pipeline
+// expands pto.trandom via the TileLang Python DSL template.
 //
-// This test file demonstrates expected IR structure.
+// Pipeline: PTOMaterializeTileHandles -> ExpandTileOp -> InlineLibCall -> FoldTileBufIntrinsics
+//
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand %s -o - 2>/dev/null | FileCheck %s
+
+// TRANDOM lowers to Philox-style vector code on the A5 tile-op-expand path.
+// CHECK: func.func @TRandom_test
+// CHECK-NOT: pto.trandom ins
+// CHECK: pto.vecscope
+// CHECK: pto.castptr
+// CHECK: pto.vci
+// CHECK: pto.vmull
+// CHECK: pto.vxor
+// CHECK: pto.vintlv
+// CHECK: pto.vsts
 
 module {
   func.func @TRandom_test() {
+    %k0 = arith.constant 305419896 : i32
+    %k1 = arith.constant -1698898192 : i32
+    %c0 = arith.constant 0 : i32
+    %c1 = arith.constant 1 : i32
+    %c2 = arith.constant 2 : i32
+    %c3 = arith.constant 3 : i32
     %dst = pto.alloc_tile
-      : !pto.tile_buf<loc=vec, dtype=ui32, rows=16, cols=64, v_row=16, v_col=64,
-                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
-    %seed = pto.alloc_tile
-      : !pto.tile_buf<loc=vec, dtype=ui32, rows=1, cols=2, v_row=1, v_col=2,
-                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
-    %counter = pto.alloc_tile
-      : !pto.tile_buf<loc=vec, dtype=ui32, rows=1, cols=4, v_row=1, v_col=4,
+      : !pto.tile_buf<loc=vec, dtype=ui32, rows=4, cols=256, v_row=4, v_col=256,
                       blayout=row_major, slayout=none_box, fractal=512, pad=0>
 
-    // Note: pto.trandom may not be defined in current PTO IR
-    // This shows expected usage pattern when available
-    
+    pto.trandom ins(%k0, %k1, %c0, %c1, %c2, %c3 : i32, i32, i32, i32, i32, i32)
+                outs(%dst : !pto.tile_buf<loc=vec, dtype=ui32, rows=4, cols=256, v_row=4, v_col=256,
+                                         blayout=row_major, slayout=none_box, fractal=512, pad=0>)
     return
   }
 }
