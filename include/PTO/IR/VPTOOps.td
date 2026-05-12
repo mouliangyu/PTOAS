@@ -39,6 +39,11 @@ def PTO_AlignTypeConstraint : Type<CPred<"::llvm::isa<::mlir::pto::AlignType>($_
 def PTO_BufferType : Type<
   CPred<"::llvm::isa<::mlir::pto::PtrType>($_self)">,
   "pointer-like buffer type">;
+def PTO_ScalingPtrType : Type<
+  CPred<"::llvm::isa<::mlir::pto::PtrType>($_self) && "
+        "::llvm::cast<::mlir::pto::PtrType>($_self).getElementType().isUnsignedInteger(64) && "
+        "::llvm::cast<::mlir::pto::PtrType>($_self).getMemorySpace().getAddressSpace() == ::mlir::pto::AddressSpace::SCALING">,
+  "scaling !pto.ptr<ui64> type">;
 def PTO_BufferLikeType : AnyTypeOf<[AnyMemRef, PTO_BufferType],
                                     "memref or pointer-like buffer type">;
 
@@ -1791,8 +1796,8 @@ def PTO_CubeLoadOp : PTO_Op<"cube_load", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$len_burst,
     I64:$n_burst,
     I64:$nburst_src_stride,
@@ -1831,8 +1836,8 @@ def PTO_CubeStoreOp : PTO_Op<"cube_store", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$len_burst,
     I64:$n_burst,
     I64:$nburst_src_stride,
@@ -1870,8 +1875,35 @@ def PTO_BiasLoadOp : PTO_Op<"bias_load", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
+    I64:$len_burst,
+    I64:$n_burst,
+    I64:$nburst_src_gap,
+    I64:$nburst_dst_gap
+  );
+
+  let results = (outs);
+
+  let hasVerifier = 1;
+  let hasCustomAssemblyFormat = 1;
+
+  let builders = [
+    OpBuilder<(ins
+      "::mlir::Value":$source,
+      "::mlir::Value":$destination,
+      "::mlir::Value":$lenBurst,
+      "::mlir::pto::DmaLoopConfig":$nburst
+    )>
+  ];
+}
+
+def PTO_FpLoadOp : PTO_Op<"fp_load", [
+    DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
+  ]> {
+  let arguments = (ins
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$len_burst,
     I64:$n_burst,
     I64:$nburst_src_gap,
@@ -1934,14 +1966,16 @@ def PTO_LeftLoadOp : PTO_Op<"left_load", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$m,
     I64:$k,
     DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
+
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     $source `,` $destination `,` $m `,` $k attr-dict `:` type($source) `,`
@@ -1953,14 +1987,16 @@ def PTO_RightLoadOp : PTO_Op<"right_load", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$k,
     I64:$n,
     DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
+
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     $source `,` $destination `,` $k `,` $n attr-dict `:` type($source) `,`
@@ -1972,13 +2008,15 @@ def PTO_LeftLoadMxOp : PTO_Op<"left_load_mx", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$m,
     I64:$k
   );
 
   let results = (outs);
+
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     $source `,` $destination `,` $m `,` $k attr-dict `:` type($source) `,`
@@ -1990,13 +2028,15 @@ def PTO_RightLoadMxOp : PTO_Op<"right_load_mx", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$k,
     I64:$n
   );
 
   let results = (outs);
+
+  let hasVerifier = 1;
 
   let assemblyFormat = [{
     $source `,` $destination `,` $k `,` $n attr-dict `:` type($source) `,`
@@ -2009,8 +2049,8 @@ def PTO_AccStoreOp : PTO_Op<"acc_store", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$m,
     I64:$n,
     I64:$src_stride,
@@ -2018,6 +2058,7 @@ def PTO_AccStoreOp : PTO_Op<"acc_store", [
     I64:$unit_flag_ctrl,
     I64:$quant_pre,
     I64:$relu_pre_mode,
+    Optional<PTO_ScalingPtrType>:$fpc,
     Optional<I64>:$split,
     Optional<I64>:$loop0_src_stride,
     Optional<I64>:$loop3_count,
@@ -2042,6 +2083,7 @@ def PTO_AccStoreOp : PTO_Op<"acc_store", [
       "::mlir::Value":$unitFlagCtrl,
       "::mlir::Value":$quantPre,
       "::mlir::Value":$reluPreMode,
+      "::std::optional<::mlir::Value>":$fpc,
       "::mlir::pto::AccStoreModeConfig":$modeConfig,
       "::std::optional<::mlir::pto::DmaLoopConfig>":$loop3
     )>
@@ -2053,8 +2095,8 @@ def PTO_AccStoreGmOp : PTO_Op<"acc_store_gm", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$m,
     I64:$n,
     I64:$src_stride,
@@ -2064,6 +2106,7 @@ def PTO_AccStoreGmOp : PTO_Op<"acc_store_gm", [
     I64:$relu_pre_mode,
     I64:$sid,
     I64:$l2_cache_ctrl,
+    Optional<PTO_ScalingPtrType>:$fpc,
     Optional<I64>:$split,
     Optional<I64>:$loop0_src_stride,
     Optional<I64>:$loop3_count,
@@ -2083,8 +2126,8 @@ def PTO_AccStoreUbOp : PTO_Op<"acc_store_ub", [
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
-    PTO_BufferType:$source,
-    PTO_BufferType:$destination,
+    PTO_BufferLikeType:$source,
+    PTO_BufferLikeType:$destination,
     I64:$m,
     I64:$n,
     I64:$src_stride,
@@ -2092,6 +2135,7 @@ def PTO_AccStoreUbOp : PTO_Op<"acc_store_ub", [
     I64:$unit_flag_ctrl,
     I64:$quant_pre,
     I64:$relu_pre_mode,
+    Optional<PTO_ScalingPtrType>:$fpc,
     I64:$dual_dst_mode,
     I64:$sub_blockid,
     Optional<I64>:$split,

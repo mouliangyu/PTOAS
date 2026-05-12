@@ -9,6 +9,7 @@
 #ifndef MLIR_DIALECT_PTO_TRANSFORMS_VPTOLLVMEMITTER_H
 #define MLIR_DIALECT_PTO_TRANSFORMS_VPTOLLVMEMITTER_H
 
+#include <memory>
 #include <string>
 
 #include "mlir/IR/BuiltinOps.h"
@@ -19,6 +20,8 @@ class ModuleOp;
 }
 
 namespace llvm {
+class LLVMContext;
+class Module;
 class raw_ostream;
 }
 
@@ -33,15 +36,15 @@ struct VPTOEmissionOptions {
   std::string defaultTargetFeatures;
 };
 
-LogicalResult
-translateVPTOModuleToLLVMText(ModuleOp module, llvm::raw_ostream &os,
-                              const VPTOEmissionOptions &options,
-                              llvm::raw_ostream &diagOS);
+struct EmittedLLVMModule {
+  std::unique_ptr<llvm::LLVMContext> context;
+  std::unique_ptr<llvm::Module> module;
+};
 
-LogicalResult
-translateVPTOModuleToLLVMBitcode(ModuleOp module, llvm::raw_ostream &os,
-                                 const VPTOEmissionOptions &options,
-                                 llvm::raw_ostream &diagOS);
+LogicalResult lowerVPTOModuleToLLVMModules(
+    ModuleOp module, const VPTOEmissionOptions &options,
+    EmittedLLVMModule &cubeModule, EmittedLLVMModule &vectorModule,
+    llvm::raw_ostream &diagOS);
 
 } // namespace mlir::pto
 

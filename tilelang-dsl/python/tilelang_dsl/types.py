@@ -97,6 +97,15 @@ class VRegType:
 
 
 @dataclass(frozen=True)
+class VectorType:
+    element_dtype: ScalarType
+    shape: tuple[int, ...]
+
+    def __repr__(self) -> str:
+        return f"vector({self.element_dtype!r}, {self.shape!r})"
+
+
+@dataclass(frozen=True)
 class MaskType:
     granularity: str
 
@@ -128,6 +137,11 @@ class TypeVariable:
 
 class MemorySpace(str, Enum):
     GM = "gm"
+    MAT = "mat"
+    LEFT = "left"
+    RIGHT = "right"
+    ACC = "acc"
+    BIAS = "bias"
     UB = "ub"
 
 
@@ -506,6 +520,14 @@ class PostUpdateMode(str, Enum):
     NO_POST_UPDATE = "NO_POST_UPDATE"
 
 
+class FractalMode(str, Enum):
+    ND2NZ = "nd2nz"
+    DN2NZ = "dn2nz"
+    NZ2ND = "nz2nd"
+    NZ2DN = "nz2dn"
+    NZ2NZ = "nz2nz"
+
+
 @dataclass(frozen=True)
 class TileConfig:
     fields: tuple[tuple[str, Any], ...] = ()
@@ -622,6 +644,48 @@ class TileConfig:
         value = dict(self.fields).get("pad_value", PadValue.NULL)
         return self._normalize_pad_value(value)
 
+    @classmethod
+    def for_memory_space(cls, memory_space: MemorySpace) -> "TileConfig":
+        if not isinstance(memory_space, MemorySpace):
+            raise TypeError("TileConfig.for_memory_space expects a TileLang MemorySpace")
+        defaults: dict[str, Any]
+        if memory_space in {MemorySpace.MAT, MemorySpace.LEFT}:
+            defaults = {
+                "b_layout": BLayout.COL_MAJOR,
+                "s_layout": SLayout.ROW_MAJOR,
+                "s_fractal_size": 512,
+                "pad_value": PadValue.NULL,
+            }
+        elif memory_space == MemorySpace.RIGHT:
+            defaults = {
+                "b_layout": BLayout.ROW_MAJOR,
+                "s_layout": SLayout.COL_MAJOR,
+                "s_fractal_size": 512,
+                "pad_value": PadValue.NULL,
+            }
+        elif memory_space == MemorySpace.ACC:
+            defaults = {
+                "b_layout": BLayout.COL_MAJOR,
+                "s_layout": SLayout.ROW_MAJOR,
+                "s_fractal_size": 1024,
+                "pad_value": PadValue.NULL,
+            }
+        elif memory_space == MemorySpace.BIAS:
+            defaults = {
+                "b_layout": BLayout.ROW_MAJOR,
+                "s_layout": SLayout.NONE_BOX,
+                "s_fractal_size": 512,
+                "pad_value": PadValue.NULL,
+            }
+        else:
+            defaults = {
+                "b_layout": BLayout.ROW_MAJOR,
+                "s_layout": SLayout.NONE_BOX,
+                "s_fractal_size": 512,
+                "pad_value": PadValue.NULL,
+            }
+        return cls(tuple(sorted(defaults.items())))
+
 
 @dataclass(frozen=True)
 class TileSpecialization:
@@ -678,6 +742,25 @@ def vreg(dtype: ScalarType) -> VRegType:
     if not isinstance(dtype, ScalarType):
         raise TypeError("vreg() expects a TileLang scalar dtype")
     return VRegType(element_dtype=dtype, lanes=get_lanes(dtype))
+
+
+def vector(dtype: ScalarType, shape: tuple[int, ...] | list[int] | int) -> VectorType:
+    if not isinstance(dtype, ScalarType):
+        raise TypeError("vector() expects a TileLang scalar dtype")
+    if isinstance(shape, int) and not isinstance(shape, bool):
+        normalized_shape = (shape,)
+    elif isinstance(shape, (list, tuple)):
+        normalized_shape = tuple(shape)
+    else:
+        raise TypeError("vector() expects a shape integer or a non-empty sequence of integers")
+    if not normalized_shape:
+        raise TypeError("vector() expects a non-empty shape")
+    for dim in normalized_shape:
+        if not isinstance(dim, int) or isinstance(dim, bool):
+            raise TypeError("vector() shape entries must be integers")
+        if dim <= 0:
+            raise TypeError("vector() shape entries must be positive")
+    return VectorType(element_dtype=dtype, shape=normalized_shape)
 
 
 def integer_bitwidth(dtype: ScalarType) -> int | None:
@@ -737,9 +820,11 @@ __all__ = [
     "Tile",
     "PointerType",
     "VRegType",
+    "VectorType",
     "MaskType",
     "ptr",
     "vreg",
+    "vector",
     "MemorySpace",
     "Pipe",
     "Event",
