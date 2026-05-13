@@ -503,7 +503,7 @@ pto.mte_gm_l1_frac %src, %dst,
     src_layout(%src_inner_stride[, %src_outer_stride]),
     dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride),
     ctrl(%l2_cache_ctrl, %smallc0_en)
-  : !pto.ptr<..., gm>, !pto.ptr<..., mat>,
+  : !pto.ptr<..., gm>, !pto.ptr<..., l1>,
     nd2nz | dn2nz,
     shape i64, i64,
     src_layout(i64[, i64]),

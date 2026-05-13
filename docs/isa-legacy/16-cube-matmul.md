@@ -23,7 +23,7 @@ If you are writing user-facing VPTO kernels, prefer wrapper ops such as
 - **syntax:**
 ```mlir
 pto.copy_gm_to_cbuf %src, %dst, %n_burst, %len_burst, %src_stride, %dst_stride
-  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64
+  : !pto.ptr<T, gm>, !pto.ptr<T, l1>, i64, i64, i64, i64
 ```
 - **semantics:** Copy matrix tile data from GM to L1 (`cbuf`).
 
@@ -32,7 +32,7 @@ pto.copy_gm_to_cbuf %src, %dst, %n_burst, %len_burst, %src_stride, %dst_stride
 - **syntax:**
 ```mlir
 pto.load_cbuf_to_ca %src, %dst, %m_start, %k_start, %m_step, %k_step, %src_stride, %dst_stride
-  : !pto.ptr<T, mat>, !pto.ptr<T, left>, i64, i64, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0a>, i64, i64, i64, i64, i64, i64
 ```
 - **semantics:** Load L1 (`cbuf`) tile to L0A.
 
@@ -41,7 +41,7 @@ pto.load_cbuf_to_ca %src, %dst, %m_start, %k_start, %m_step, %k_step, %src_strid
 - **syntax:**
 ```mlir
 pto.load_cbuf_to_cb %src, %dst, %m_start, %k_start, %m_step, %k_step, %src_stride, %dst_stride
-  : !pto.ptr<T, mat>, !pto.ptr<T, right>, i64, i64, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0b>, i64, i64, i64, i64, i64, i64
 ```
 - **semantics:** Load L1 (`cbuf`) tile to L0B.
 
@@ -50,7 +50,7 @@ pto.load_cbuf_to_cb %src, %dst, %m_start, %k_start, %m_step, %k_step, %src_strid
 - **syntax:**
 ```mlir
 pto.load_cbuf_to_ca_mx %src, %dst, %m, %k
-  : !pto.ptr<T, mat>, !pto.ptr<T, left>, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0a>, i64, i64
 ```
 - **semantics:** Load L1 (`cbuf`) tile to L0A using MX path.
 
@@ -59,7 +59,7 @@ pto.load_cbuf_to_ca_mx %src, %dst, %m, %k
 - **syntax:**
 ```mlir
 pto.load_cbuf_to_cb_mx %src, %dst, %x_start_position, %y_start_position, %x_step, %y_step, %src_stride, %dst_stride
-  : !pto.ptr<T, mat>, !pto.ptr<T, right>, i64, i64, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0b>, i64, i64, i64, i64, i64, i64
 ```
 - **semantics:** Load L1 (`cbuf`) tile to L0B using MX path with explicit hardware control fields.
 
@@ -72,7 +72,7 @@ pto.load_cbuf_to_cb_mx %src, %dst, %x_start_position, %y_start_position, %x_step
 - **syntax:**
 ```mlir
 pto.copy_matrix_cc_to_gm %src, %dst, %xm, %xt
-  : !pto.ptr<T, acc>, !pto.ptr<T, gm>, i64, i64
+  : !pto.ptr<T, l0c>, !pto.ptr<T, gm>, i64, i64
 ```
 - **semantics:** Write L0C (`acc`) tile back to GM.
 
@@ -81,7 +81,7 @@ pto.copy_matrix_cc_to_gm %src, %dst, %xm, %xt
 - **syntax:**
 ```mlir
 pto.copy_matrix_cc_to_cbuf %src, %dst, %config0, %config1
-  : !pto.ptr<T, acc>, !pto.ptr<T, mat>, i64, i64
+  : !pto.ptr<T, l0c>, !pto.ptr<T, l1>, i64, i64
 ```
 - **semantics:** Move L0C (`acc`) tile to L1 (`cbuf`).
 
@@ -90,7 +90,7 @@ pto.copy_matrix_cc_to_cbuf %src, %dst, %config0, %config1
 - **syntax:**
 ```mlir
 pto.copy_matrix_cc_to_ub %src, %dst, %config0, %config1
-  : !pto.ptr<T, acc>, !pto.ptr<T, ub>, i64, i64
+  : !pto.ptr<T, l0c>, !pto.ptr<T, ub>, i64, i64
 ```
 - **semantics:** Move L0C (`acc`) tile to UB.
 
@@ -103,7 +103,7 @@ pto.copy_matrix_cc_to_ub %src, %dst, %config0, %config1
 - **syntax:**
 ```mlir
 pto.copy_cbuf_to_bt %src, %dst, %len_burst, %n_burst, %src_gap, %dst_gap
-  : !pto.ptr<T, mat>, !pto.ptr<U, bias>, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<U, bt>, i64, i64, i64, i64
 ```
 - **semantics:** Move L1 (`cbuf`) data to BT buffer.
 
@@ -112,7 +112,7 @@ pto.copy_cbuf_to_bt %src, %dst, %len_burst, %n_burst, %src_gap, %dst_gap
 - **syntax:**
 ```mlir
 pto.copy_cbuf_to_fbuf %src, %dst, %n_burst, %len_burst, %src_gap, %dst_gap
-  : !pto.ptr<T, mat>, !pto.ptr<T, ub>, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, ub>, i64, i64, i64, i64
 ```
 - **semantics:** Move L1 (`cbuf`) data to FB-related destination path.
 
@@ -121,7 +121,7 @@ pto.copy_cbuf_to_fbuf %src, %dst, %n_burst, %len_burst, %src_gap, %dst_gap
 - **syntax:**
 ```mlir
 pto.copy_gm_to_cbuf_multi_nd2nz %src, %dst, %sid, %loop1_src_stride, %l2_cache_ctrl, %n_value, %d_value, %loop4_src_stride, %smallc0_en
-  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64, i64, i64, i1
+  : !pto.ptr<T, gm>, !pto.ptr<T, l1>, i64, i64, i64, i64, i64, i64, i1
 ```
 - **semantics:** Multi-fractal `ND2NZ` staging from GM to L1 (`cbuf`).
 
@@ -130,7 +130,7 @@ pto.copy_gm_to_cbuf_multi_nd2nz %src, %dst, %sid, %loop1_src_stride, %l2_cache_c
 - **syntax:**
 ```mlir
 pto.copy_gm_to_cbuf_multi_dn2nz %src, %dst, %sid, %loop1_src_stride, %l2_cache_ctrl, %n_value, %d_value, %loop4_src_stride, %smallc0_en
-  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64, i64, i64, i1
+  : !pto.ptr<T, gm>, !pto.ptr<T, l1>, i64, i64, i64, i64, i64, i64, i1
 ```
 - **semantics:** Multi-fractal `DN2NZ` staging from GM to L1 (`cbuf`).
 

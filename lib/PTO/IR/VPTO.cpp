@@ -2950,7 +2950,7 @@ static LogicalResult verifyMadPointerKinds(Operation *op, Type lhsTy, Type rhsTy
       lhsAS == pto::AddressSpace::LEFT && rhsAS == pto::AddressSpace::RIGHT &&
       dstAS == pto::AddressSpace::ACC;
   if (!isStrongCube)
-    return op->emitOpError("requires left/right/acc-typed lhs/rhs/dst pointers");
+    return op->emitOpError("requires l0a/l0b/l0c-typed lhs/rhs/dst pointers");
 
   if (!biasTy)
     return success();
@@ -2959,7 +2959,7 @@ static LogicalResult verifyMadPointerKinds(Operation *op, Type lhsTy, Type rhsTy
   if (!biasType)
     return op->emitOpError("requires typed !pto.ptr bias operand");
   if (biasType.getMemorySpace().getAddressSpace() != pto::AddressSpace::BIAS) {
-    return op->emitOpError("requires bias pointer in !pto.ptr<..., bias>");
+    return op->emitOpError("requires bias pointer in !pto.ptr<..., bt>");
   }
   if (biasType.getElementType() != dstType.getElementType()) {
     return op->emitOpError("requires bias element type to match dst element type");
@@ -3003,7 +3003,7 @@ static LogicalResult verifyMadMxCommon(Operation *op, Type lhsTy, Type rhsTy,
       lhsAS == pto::AddressSpace::LEFT && rhsAS == pto::AddressSpace::RIGHT &&
       dstAS == pto::AddressSpace::ACC;
   if (!isStrongCube)
-    return op->emitOpError("requires left/right/acc-typed lhs/rhs/dst pointers");
+    return op->emitOpError("requires l0a/l0b/l0c-typed lhs/rhs/dst pointers");
 
   if (!isMxElementType(lhsType.getElementType()) ||
       !isMxElementType(rhsType.getElementType())) {

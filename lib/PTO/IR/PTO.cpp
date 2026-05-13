@@ -405,19 +405,19 @@ static StringRef printPtrAddressSpaceKeyword(pto::AddressSpace space) {
   case pto::AddressSpace::Zero:
     return "gm";
   case pto::AddressSpace::MAT:
-    return "mat";
+    return "l1";
   case pto::AddressSpace::LEFT:
-    return "left";
+    return "l0a";
   case pto::AddressSpace::RIGHT:
-    return "right";
+    return "l0b";
   case pto::AddressSpace::ACC:
-    return "acc";
+    return "l0c";
   case pto::AddressSpace::VEC:
     return "ub";
   case pto::AddressSpace::BIAS:
-    return "bias";
+    return "bt";
   case pto::AddressSpace::SCALING:
-    return "scaling";
+    return "fb";
   default:
     return {};
   }

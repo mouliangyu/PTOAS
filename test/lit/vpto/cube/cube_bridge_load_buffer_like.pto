@@ -41,7 +41,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 }
 
 // ROUNDTRIP-LABEL: func.func @cube_bridge_load_buffer_like(
-// ROUNDTRIP-SAME: %{{.*}}: !pto.ptr<f16, mat>, %{{.*}}: !pto.ptr<f16, left>, %{{.*}}: !pto.ptr<f16, right>, %{{.*}}: !pto.ptr<f16, left>, %{{.*}}: !pto.ptr<f16, right>, %{{.*}}: !pto.ptr<f32, bias>) attributes {pto.aicore} {
+// ROUNDTRIP-SAME: %{{.*}}: !pto.ptr<f16, l1>, %{{.*}}: !pto.ptr<f16, l0a>, %{{.*}}: !pto.ptr<f16, l0b>, %{{.*}}: !pto.ptr<f16, l0a>, %{{.*}}: !pto.ptr<f16, l0b>, %{{.*}}: !pto.ptr<f32, bt>) attributes {pto.aicore} {
 // ROUNDTRIP: pto.mte_l1_l0a %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}
 // ROUNDTRIP: pto.mte_l1_l0b %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}} {transpose = true}
 // ROUNDTRIP: pto.mte_l1_l0a_mx %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}

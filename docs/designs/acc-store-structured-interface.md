@@ -16,8 +16,8 @@ pto.mte_l0c_l1 %src, %dst, %m, %n, %src_stride, %dst_stride,
 
 其中：
 
-- `%src` 必须是 `!pto.ptr<..., acc>`
-- `%dst` 允许是 `!pto.ptr<..., gm>` `!pto.ptr<..., vec>`或 `!pto.ptr<..., mat>`
+- `%src` 必须是 `!pto.ptr<..., l0c>`
+- `%dst` 允许是 `!pto.ptr<..., gm>` `!pto.ptr<..., vec>`或 `!pto.ptr<..., l1>`
 - 这些扩展字段全部是可选的，未出现就表示不启用
 - `nz2nd / nz2dn / nz2nz` 和 `loop3` 是并列的 layout 相关参数
 

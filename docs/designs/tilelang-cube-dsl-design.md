@@ -143,11 +143,11 @@ PartitionTensorView (GM, 写回)
 | 地址空间 | 枚举值 | 说明 | 对应 IR 类型 |
 |----------|--------|------|-------------|
 | `GM` | `MemorySpace.GM` | 全局内存 | `!pto.ptr<T, gm>` |
-| `MAT` | `MemorySpace.MAT` | L1 缓冲区 (cbuf) | `!pto.ptr<T, mat>` |
-| `LEFT` | `MemorySpace.LEFT` | L0A 矩阵左乘数缓冲区 | `!pto.ptr<T, left>` |
-| `RIGHT` | `MemorySpace.RIGHT` | L0B 矩阵右乘数缓冲区 | `!pto.ptr<T, right>` |
-| `ACC` | `MemorySpace.ACC` | L0C 累加器缓冲区 | `!pto.ptr<T, acc>` |
-| `BIAS` | `MemorySpace.BIAS` | Bias 表 | `!pto.ptr<T, bias>` |
+| `MAT` | `MemorySpace.MAT` | L1 缓冲区 (cbuf) | `!pto.ptr<T, l1>` |
+| `LEFT` | `MemorySpace.LEFT` | L0A 矩阵左乘数缓冲区 | `!pto.ptr<T, l0a>` |
+| `RIGHT` | `MemorySpace.RIGHT` | L0B 矩阵右乘数缓冲区 | `!pto.ptr<T, l0b>` |
+| `ACC` | `MemorySpace.ACC` | L0C 累加器缓冲区 | `!pto.ptr<T, l0c>` |
+| `BIAS` | `MemorySpace.BIAS` | Bias 表 | `!pto.ptr<T, bt>` |
 | `UB` | `MemorySpace.UB` | 统一缓冲区 (Vector 侧) | `!pto.ptr<T, ub>` |
 
 ### 3.3 缓冲区分配接口

@@ -118,7 +118,7 @@ pto.mad %lhs, %rhs, %dst, %m, %n, %k
   (sat | nosat)?
   tf32_mode(round_even | round_away)?
   n_dir?
-  : !pto.ptr<A, left>, !pto.ptr<B, right>, !pto.ptr<C, acc>, i64, i64, i64
+  : !pto.ptr<A, l0a>, !pto.ptr<B, l0b>, !pto.ptr<C, l0c>, i64, i64, i64
 ```
 - **semantics:** Zero-init matrix multiply, `dst[m, n] = sum_k(lhs[m, k] * rhs[k, n])`.
 
@@ -148,7 +148,7 @@ pto.mad %lhs, %rhs, %dst, %m, %n, %k
 
 ```mlir
 pto.mad %l0a, %l0b, %l0c, %c16_i64, %c16_i64, %c32_i64
-  : !pto.ptr<f16, left>, !pto.ptr<f16, right>, !pto.ptr<f32, acc>, i64, i64, i64
+  : !pto.ptr<f16, l0a>, !pto.ptr<f16, l0b>, !pto.ptr<f32, l0c>, i64, i64, i64
 ```
 
 ---
@@ -163,7 +163,7 @@ pto.mad_acc %lhs, %rhs, %dst, %m, %n, %k
   (sat | nosat)?
   tf32_mode(round_even | round_away)?
   n_dir?
-  : !pto.ptr<A, left>, !pto.ptr<B, right>, !pto.ptr<C, acc>, i64, i64, i64
+  : !pto.ptr<A, l0a>, !pto.ptr<B, l0b>, !pto.ptr<C, l0c>, i64, i64, i64
 ```
 - **semantics:** Accumulating matrix multiply,
   `dst[m, n] = dst[m, n] + sum_k(lhs[m, k] * rhs[k, n])`.
@@ -176,7 +176,7 @@ pto.mad_acc %lhs, %rhs, %dst, %m, %n, %k
 
 ```mlir
 pto.mad_acc %l0a, %l0b, %l0c, %c16_i64, %c16_i64, %c32_i64 unit_flag(check_only)
-  : !pto.ptr<f16, left>, !pto.ptr<f16, right>, !pto.ptr<f32, acc>, i64, i64, i64
+  : !pto.ptr<f16, l0a>, !pto.ptr<f16, l0b>, !pto.ptr<f32, l0c>, i64, i64, i64
 ```
 
 ---
@@ -191,7 +191,7 @@ pto.mad_bias %lhs, %rhs, %dst, %bias, %m, %n, %k
   (sat | nosat)?
   tf32_mode(round_even | round_away)?
   n_dir?
-  : !pto.ptr<A, left>, !pto.ptr<B, right>, !pto.ptr<C, acc>, !pto.ptr<C, bias>, i64, i64, i64
+  : !pto.ptr<A, l0a>, !pto.ptr<B, l0b>, !pto.ptr<C, l0c>, !pto.ptr<C, bt>, i64, i64, i64
 ```
 - **semantics:** Bias-init matrix multiply,
   `dst[m, n] = sum_k(lhs[m, k] * rhs[k, n]) + bias[n]`.
@@ -215,7 +215,7 @@ pto.mad_bias %lhs, %rhs, %dst, %bias, %m, %n, %k
 
 ```mlir
 pto.mad_bias %l0a, %l0b, %l0c, %bt, %c16_i64, %c16_i64, %c32_i64
-  : !pto.ptr<f16, left>, !pto.ptr<f16, right>, !pto.ptr<f32, acc>, !pto.ptr<f32, bias>, i64, i64, i64
+  : !pto.ptr<f16, l0a>, !pto.ptr<f16, l0b>, !pto.ptr<f32, l0c>, !pto.ptr<f32, bt>, i64, i64, i64
 ```
 
 ---
@@ -229,7 +229,7 @@ pto.mad_mx %lhs, %rhs, %dst, %m, %n, %k
   disable_gemv?
   (sat | nosat)?
   n_dir?
-  : !pto.ptr<A, left>, !pto.ptr<B, right>, !pto.ptr<C, acc>, i64, i64, i64
+  : !pto.ptr<A, l0a>, !pto.ptr<B, l0b>, !pto.ptr<C, l0c>, i64, i64, i64
 ```
 - **semantics:** Zero-init MX matrix multiply, `dst[m, n] = mx_product[m, n]`.
 
@@ -247,7 +247,7 @@ MX scale payloads prepared by the MX load ops.
 
 ```mlir
 pto.mad_mx %l0a, %l0b, %l0c, %c16_i64, %c16_i64, %c64_i64
-  : !pto.ptr<f8E4M3FN, left>, !pto.ptr<f8E4M3FN, right>, !pto.ptr<f32, acc>, i64, i64, i64
+  : !pto.ptr<f8E4M3FN, l0a>, !pto.ptr<f8E4M3FN, l0b>, !pto.ptr<f32, l0c>, i64, i64, i64
 ```
 
 ---
@@ -261,7 +261,7 @@ pto.mad_mx_acc %lhs, %rhs, %dst, %m, %n, %k
   disable_gemv?
   (sat | nosat)?
   n_dir?
-  : !pto.ptr<A, left>, !pto.ptr<B, right>, !pto.ptr<C, acc>, i64, i64, i64
+  : !pto.ptr<A, l0a>, !pto.ptr<B, l0b>, !pto.ptr<C, l0c>, i64, i64, i64
 ```
 - **semantics:** Accumulating MX matrix multiply,
   `dst[m, n] = dst[m, n] + mx_product[m, n]`.
@@ -274,7 +274,7 @@ pto.mad_mx_acc %lhs, %rhs, %dst, %m, %n, %k
 
 ```mlir
 pto.mad_mx_acc %l0a, %l0b, %l0c, %c16_i64, %c16_i64, %c64_i64
-  : !pto.ptr<f8E4M3FN, left>, !pto.ptr<f8E4M3FN, right>, !pto.ptr<f32, acc>, i64, i64, i64
+  : !pto.ptr<f8E4M3FN, l0a>, !pto.ptr<f8E4M3FN, l0b>, !pto.ptr<f32, l0c>, i64, i64, i64
 ```
 
 ---
@@ -288,7 +288,7 @@ pto.mad_mx_bias %lhs, %rhs, %dst, %bias, %m, %n, %k
   disable_gemv?
   (sat | nosat)?
   n_dir?
-  : !pto.ptr<A, left>, !pto.ptr<B, right>, !pto.ptr<C, acc>, !pto.ptr<C, bias>, i64, i64, i64
+  : !pto.ptr<A, l0a>, !pto.ptr<B, l0b>, !pto.ptr<C, l0c>, !pto.ptr<C, bt>, i64, i64, i64
 ```
 - **semantics:** Bias-init MX matrix multiply,
   `dst[m, n] = mx_product[m, n] + bias[n]`.
@@ -302,7 +302,7 @@ payload requirements from `pto.mad_mx`.
 
 ```mlir
 pto.mad_mx_bias %l0a, %l0b, %l0c, %bt, %c16_i64, %c16_i64, %c64_i64
-  : !pto.ptr<f8E4M3FN, left>, !pto.ptr<f8E4M3FN, right>, !pto.ptr<f32, acc>, !pto.ptr<f32, bias>, i64, i64, i64
+  : !pto.ptr<f8E4M3FN, l0a>, !pto.ptr<f8E4M3FN, l0b>, !pto.ptr<f32, l0c>, !pto.ptr<f32, bt>, i64, i64, i64
 ```
 
 ---
@@ -332,7 +332,7 @@ are bytes.
 pto.mte_gm_l1 %src, %dst, %len_burst
   nburst(%count, %src_stride, %dst_stride)
   [loop(%count_i, %src_stride_i, %dst_stride_i)]*
-  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, i64, i64, i64, i64
+  : !pto.ptr<T, gm>, !pto.ptr<T, l1>, i64, i64, i64, i64
 ```
 - **semantics:** Structured GM-to-L1 copy. The op copies grouped byte ranges
   from `%src` in `gm` to `%dst` in `mat`.
@@ -358,7 +358,7 @@ pto.mte_gm_l1 %src, %dst, %len_burst
 ```mlir
 pto.mte_gm_l1 %bias_gm, %l1_bias, %c32_i64
   nburst(%c4_i64, %c64_i64, %c32_i64)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, i64, i64, i64, i64
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, i64, i64, i64, i64
 ```
 
 ---
@@ -370,7 +370,7 @@ pto.mte_gm_l1 %bias_gm, %l1_bias, %c32_i64
 pto.mte_l1_ub %src, %dst, %len_burst
   nburst(%count, %src_stride, %dst_stride)
   [loop(%count_i, %src_stride_i, %dst_stride_i)]*
-  : !pto.ptr<T, mat>, !pto.ptr<T, ub>, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, ub>, i64, i64, i64, i64
 ```
 - **semantics:** Structured L1-to-UB copy. The grouped byte ranges are read
   from `%src` in `mat` and written to `%dst` in `ub`.
@@ -389,7 +389,7 @@ and destination address spaces reversed to `mat -> ub`.
 ```mlir
 pto.mte_l1_ub %l1_src, %ub_dst, %c64_i64
   nburst(%c2_i64, %c128_i64, %c64_i64)
-  : !pto.ptr<f16, mat>, !pto.ptr<f16, ub>, i64, i64, i64, i64
+  : !pto.ptr<f16, l1>, !pto.ptr<f16, ub>, i64, i64, i64, i64
 ```
 
 ---
@@ -403,7 +403,7 @@ pto.mte_gm_l1_frac %src, %dst, nd2nz|dn2nz,
   src_layout(%src_inner_stride[, %src_outer_stride]),
   dst_group(%group_count, %dst_loop2_stride, %dst_loop3_stride, %dst_loop4_stride),
   ctrl(%l2_cache_ctrl, %smallc0_en)
-  : !pto.ptr<T, gm>, !pto.ptr<T, mat>, ...
+  : !pto.ptr<T, gm>, !pto.ptr<T, l1>, ...
 ```
 - **semantics:** Load a logical 2-D GM region and write one or more L1 NZ
   matrix groups. `nd2nz` reads a logical `src[n, d]` matrix. `dn2nz` reads a
@@ -479,7 +479,7 @@ pto.mte_gm_l1_frac %src, %dst, nd2nz,
   src_layout(%c32_i64, %c1024_i64),
   dst_group(%c2_i64, %c1_i64, %c16_i64, %c64_i64),
   ctrl(%c0_i64, %false)
-  : !pto.ptr<f16, gm>, !pto.ptr<f16, mat>, nd2nz, shape i64, i64,
+  : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64,
     src_layout(i64, i64), dst_group i64, i64, i64, i64, ctrl i64, i1
 ```
 
@@ -491,7 +491,7 @@ pto.mte_gm_l1_frac %src, %dst, nd2nz,
 ```mlir
 pto.mte_l1_bt %src, %dst, %len_burst
   nburst(%count, %src_gap, %dst_gap)
-  : !pto.ptr<T, mat>, !pto.ptr<U, bias>, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<U, bt>, i64, i64, i64, i64
 ```
 - **semantics:** Load an L1 bias payload into the `bias` address space for
   later `pto.mad_bias` / `pto.mad_mx_bias` consumption. The consumer interprets
@@ -526,7 +526,7 @@ advance by the burst length plus the corresponding gap.
 
 ```mlir
 pto.mte_l1_bt %l1_bias, %bt, %c1_i64 nburst(%c4_i64, %c0_i64, %c0_i64)
-  : !pto.ptr<f16, mat>, !pto.ptr<f32, bias>, i64, i64, i64, i64
+  : !pto.ptr<f16, l1>, !pto.ptr<f32, bt>, i64, i64, i64, i64
 ```
 
 ---
@@ -537,7 +537,7 @@ pto.mte_l1_bt %l1_bias, %bt, %c1_i64 nburst(%c4_i64, %c0_i64, %c0_i64)
 ```mlir
 pto.mte_l1_fb %src, %dst, %len_burst
   nburst(%count, %src_gap, %dst_gap)
-  : !pto.ptr<T, mat>, !pto.ptr<U, scaling>, i64, i64, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<U, fb>, i64, i64, i64, i64
 ```
 - **semantics:** Load FIXPIPE parameter payloads from L1 into `scaling`.
   Vector `pre_quant(...)` and `pre_relu(...)` clauses in `pto.mte_l0c_l1*`
@@ -574,7 +574,7 @@ store.
 
 ```mlir
 pto.mte_l1_fb %l1_fp, %fb_fp, %c2_i64 nburst(%c4_i64, %c0_i64, %c0_i64)
-  : !pto.ptr<f32, mat>, !pto.ptr<f32, scaling>, i64, i64, i64, i64
+  : !pto.ptr<f32, l1>, !pto.ptr<f32, fb>, i64, i64, i64, i64
 ```
 
 ---
@@ -595,7 +595,7 @@ is placed in the destination operand domain. Omitting the attribute means
 - **syntax:**
 ```mlir
 pto.mte_l1_l0a %src, %dst, %m, %k
-  : !pto.ptr<T, mat>, !pto.ptr<T, left>, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0a>, i64, i64
 ```
 - **semantics:** Load a logical `%m x %k` left tile from L1 `mat` into `left`.
 
@@ -620,7 +620,7 @@ pto.mte_l1_l0a %src, %dst, %m, %k
 
 ```mlir
 pto.mte_l1_l0a %l1_a, %l0a, %c16_i64, %c32_i64
-  : !pto.ptr<f16, mat>, !pto.ptr<f16, left>, i64, i64
+  : !pto.ptr<f16, l1>, !pto.ptr<f16, l0a>, i64, i64
 ```
 
 ---
@@ -630,7 +630,7 @@ pto.mte_l1_l0a %l1_a, %l0a, %c16_i64, %c32_i64
 - **syntax:**
 ```mlir
 pto.mte_l1_l0b %src, %dst, %k, %n
-  : !pto.ptr<T, mat>, !pto.ptr<T, right>, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0b>, i64, i64
 ```
 - **semantics:** Load a logical `%k x %n` right tile from L1 `mat` into
   `right`.
@@ -656,7 +656,7 @@ pto.mte_l1_l0b %src, %dst, %k, %n
 
 ```mlir
 pto.mte_l1_l0b %l1_b, %l0b, %c32_i64, %c16_i64
-  : !pto.ptr<f16, mat>, !pto.ptr<f16, right>, i64, i64
+  : !pto.ptr<f16, l1>, !pto.ptr<f16, l0b>, i64, i64
 ```
 
 ---
@@ -676,7 +676,7 @@ entry applies to one 32-element K group.
 - **syntax:**
 ```mlir
 pto.mte_l1_l0a_mx %src, %dst, %m, %k
-  : !pto.ptr<T, mat>, !pto.ptr<T, left>, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0a>, i64, i64
 ```
 - **semantics:** Load left-side MX scale fragments for a logical `%m x %k`
   left data tile.
@@ -699,7 +699,7 @@ pto.mte_l1_l0a_mx %src, %dst, %m, %k
 
 ```mlir
 pto.mte_l1_l0a_mx %l1_a_scale, %l0a_scale, %c16_i64, %c64_i64
-  : !pto.ptr<f8E4M3FN, mat>, !pto.ptr<f8E4M3FN, left>, i64, i64
+  : !pto.ptr<f8E4M3FN, l1>, !pto.ptr<f8E4M3FN, l0a>, i64, i64
 ```
 
 ---
@@ -709,7 +709,7 @@ pto.mte_l1_l0a_mx %l1_a_scale, %l0a_scale, %c16_i64, %c64_i64
 - **syntax:**
 ```mlir
 pto.mte_l1_l0b_mx %src, %dst, %k, %n
-  : !pto.ptr<T, mat>, !pto.ptr<T, right>, i64, i64
+  : !pto.ptr<T, l1>, !pto.ptr<T, l0b>, i64, i64
 ```
 - **semantics:** Load right-side MX scale fragments for a logical `%k x %n`
   right data tile.
@@ -732,7 +732,7 @@ pto.mte_l1_l0b_mx %src, %dst, %k, %n
 
 ```mlir
 pto.mte_l1_l0b_mx %l1_b_scale, %l0b_scale, %c64_i64, %c16_i64
-  : !pto.ptr<f8E4M3FN, mat>, !pto.ptr<f8E4M3FN, right>, i64, i64
+  : !pto.ptr<f8E4M3FN, l1>, !pto.ptr<f8E4M3FN, l0b>, i64, i64
 ```
 
 ---
@@ -794,7 +794,7 @@ qs322bf16_pre_vec, qs322bf16_pre_scalar
 `_scalar` modes take one floating scalar payload (`f16`, `bf16`, or `f32`)
 broadcast to the whole logical output tile. `f16` and `bf16` scalar payloads
 are first interpreted as numeric values and widened to `f32`; `f32` payloads
-are used directly. `_vec` modes take a `!pto.ptr<f16|bf16|f32, scaling>`
+are used directly. `_vec` modes take a `!pto.ptr<f16|bf16|f32, fb>`
 payload pointer. The pointer element type is the logical parameter element
 type, not a packed transport carrier. The pointer names the first parameter
 row for this store; later rows
@@ -849,7 +849,7 @@ vector_relu:  y = x >= 0 ? x : alpha[channel] * x
 
 `scalar_relu` takes a floating scalar payload (`f16`, `bf16`, or `f32`) and
 broadcasts it to all negative values in the logical tile. `vector_relu` takes
-a `!pto.ptr<f16|bf16|f32, scaling>` pointer whose elements are per-channel
+a `!pto.ptr<f16|bf16|f32, fb>` pointer whose elements are per-channel
 alpha values and whose 64B rows follow the same channel/NZ order as the store.
 `no_relu` and `normal_relu` do not take a payload. If
 `clip = %clip` is present:
@@ -997,7 +997,7 @@ pto.mte_l0c_l1 %l0c, %l1_out, %c16_i64, %c32_i64, %c16_i64, %c32_i64,
   pre_relu(%c025_f32, mode = scalar_relu),
   nz2nd,
   sat
-  : !pto.ptr<f32, acc>, !pto.ptr<f16, mat>, i64, i64, i64, i64, f32, f32
+  : !pto.ptr<f32, l0c>, !pto.ptr<f16, l1>, i64, i64, i64, i64, f32, f32
 ```
 
 ---
@@ -1061,7 +1061,7 @@ pto.mte_l0c_gm %l0c, %out, %c16_i64, %c32_i64, %c16_i64, %c32_i64,
   pre_quant(%c1_f32, mode = qf322f16_pre_scalar),
   nz2nd,
   atomic(type = f16, op = add)
-  : !pto.ptr<f32, acc>, !pto.ptr<f16, gm>, i64, i64, i64, i64, i64, i64, f32
+  : !pto.ptr<f32, l0c>, !pto.ptr<f16, gm>, i64, i64, i64, i64, i64, i64, f32
 ```
 
 ---
@@ -1135,7 +1135,7 @@ has shape `m x (n / 2)`.
 pto.mte_l0c_ub %l0c, %ub_out, %c16_i64, %c32_i64, %c16_i64, %c32_i64,
   dst_mode(%c1_i64),
   nz2nd
-  : !pto.ptr<f32, acc>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64
+  : !pto.ptr<f32, l0c>, !pto.ptr<f32, ub>, i64, i64, i64, i64, i64
 ```
 
 ---

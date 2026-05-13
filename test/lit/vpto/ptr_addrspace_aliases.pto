@@ -10,12 +10,29 @@ module {
       %fb: !pto.ptr<ui64, fb>) attributes {pto.aicore} {
     return
   }
+
+  func.func @ptr_addrspace_legacy_aliases(
+      %mat: !pto.ptr<f16, mat>,
+      %left: !pto.ptr<f16, left>,
+      %right: !pto.ptr<f16, right>,
+      %acc: !pto.ptr<f32, acc>,
+      %bias: !pto.ptr<f32, bias>,
+      %scaling: !pto.ptr<ui64, scaling>) attributes {pto.aicore} {
+    return
+  }
 }
 
 // CHECK-LABEL: func.func @ptr_addrspace_aliases(
-// CHECK-SAME: !pto.ptr<f16, mat>
-// CHECK-SAME: !pto.ptr<f16, left>
-// CHECK-SAME: !pto.ptr<f16, right>
-// CHECK-SAME: !pto.ptr<f32, acc>
-// CHECK-SAME: !pto.ptr<f32, bias>
-// CHECK-SAME: !pto.ptr<ui64, scaling>
+// CHECK-SAME: !pto.ptr<f16, l1>
+// CHECK-SAME: !pto.ptr<f16, l0a>
+// CHECK-SAME: !pto.ptr<f16, l0b>
+// CHECK-SAME: !pto.ptr<f32, l0c>
+// CHECK-SAME: !pto.ptr<f32, bt>
+// CHECK-SAME: !pto.ptr<ui64, fb>
+// CHECK-LABEL: func.func @ptr_addrspace_legacy_aliases(
+// CHECK-SAME: !pto.ptr<f16, l1>
+// CHECK-SAME: !pto.ptr<f16, l0a>
+// CHECK-SAME: !pto.ptr<f16, l0b>
+// CHECK-SAME: !pto.ptr<f32, l0c>
+// CHECK-SAME: !pto.ptr<f32, bt>
+// CHECK-SAME: !pto.ptr<ui64, fb>

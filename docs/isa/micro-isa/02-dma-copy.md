@@ -152,7 +152,7 @@ pto.mte_ub_ub %ub_src, %ub_dst, %len32b
 ```mlir
 pto.mte_ub_l1 %ub_src, %l1_dst, %len_burst
   nburst(%n_burst, %src_gap, %dst_gap)
-  : !pto.ptr<T, ub>, !pto.ptr<T, mat>, i64, i64, i64, i64
+  : !pto.ptr<T, ub>, !pto.ptr<T, l1>, i64, i64, i64, i64
 ```
 - **semantics:** Grouped UB→L1/CBUF copy.
 
@@ -161,7 +161,7 @@ pto.mte_ub_l1 %ub_src, %l1_dst, %len_burst
 | Parameter | Width | Description |
 |-----------|-------|-------------|
 | `%ub_src` | ptr | UB source pointer (`!pto.ptr<T, ub>`, 32B-aligned) |
-| `%l1_dst` | ptr | L1 destination pointer (`!pto.ptr<T, mat>`, 32B-aligned) |
+| `%l1_dst` | ptr | L1 destination pointer (`!pto.ptr<T, l1>`, 32B-aligned) |
 | `%len_burst` | 16 bits | Burst length in units of 32 bytes |
 | `nburst(%n_burst, %src_gap, %dst_gap)` | 16 bits / 16 bits / 16 bits | Required copy burst group: count, source gap, destination gap |
 
@@ -175,7 +175,7 @@ pto.mte_ub_l1 %ub_src, %l1_dst, %len_burst
 ```mlir
 pto.mte_ub_l1 %ub_src, %l1_dst, %len32b
   nburst(%rows, %src_gap, %dst_gap)
-  : !pto.ptr<i16, ub>, !pto.ptr<i16, mat>, i64, i64, i64, i64
+  : !pto.ptr<i16, ub>, !pto.ptr<i16, l1>, i64, i64, i64, i64
 ```
 
 ---

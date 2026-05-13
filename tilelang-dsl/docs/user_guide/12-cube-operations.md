@@ -12,11 +12,11 @@ Cube operations use the following address spaces via the `MemorySpace` enum:
 | Address Space | Enum Value | Description | IR Type |
 |--------------|------------|-------------|---------|
 | `GM` | `MemorySpace.GM` | Global memory | `!pto.ptr<T, gm>` |
-| `MAT` | `MemorySpace.MAT` | L1 buffer (cbuf) | `!pto.ptr<T, mat>` |
-| `LEFT` | `MemorySpace.LEFT` | L0A left-operand buffer | `!pto.ptr<T, left>` |
-| `RIGHT` | `MemorySpace.RIGHT` | L0B right-operand buffer | `!pto.ptr<T, right>` |
-| `ACC` | `MemorySpace.ACC` | L0C accumulator buffer | `!pto.ptr<T, acc>` |
-| `BIAS` | `MemorySpace.BIAS` | Bias table | `!pto.ptr<T, bias>` |
+| `MAT` | `MemorySpace.MAT` | L1 buffer (cbuf) | `!pto.ptr<T, l1>` |
+| `LEFT` | `MemorySpace.LEFT` | L0A left-operand buffer | `!pto.ptr<T, l0a>` |
+| `RIGHT` | `MemorySpace.RIGHT` | L0B right-operand buffer | `!pto.ptr<T, l0b>` |
+| `ACC` | `MemorySpace.ACC` | L0C accumulator buffer | `!pto.ptr<T, l0c>` |
+| `BIAS` | `MemorySpace.BIAS` | Bias table | `!pto.ptr<T, bt>` |
 | `UB` | `MemorySpace.UB` | Unified buffer (Vector side) | `!pto.ptr<T, ub>` |
 
 ## Shared Infrastructure
