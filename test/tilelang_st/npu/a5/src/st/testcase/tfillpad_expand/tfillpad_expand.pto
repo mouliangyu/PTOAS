@@ -8,7 +8,7 @@
 
 // TileLang ST kernels for pto.tfillpad_expand: copy src to dst and fill padding.
 // Matches C++ test cases: case 8, 9
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 //
 // PadValue encoding: 0=Null, 1=Zero, 2=Max, 3=Min
 // Case 8: uint16, LoadPad=Min(pad=3), FillPad=Max(pad=2)

@@ -8,7 +8,7 @@
 
 // TileLang ST kernels for pto.tfillpad (non-inplace mode).
 // Matches C++ reference test cases: Cases 1, 2, 3, 4, 6, 7, 10, 11, 12, 13
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 //
 // PadValue encoding: 0=Null, 1=Zero, 2=Max, 3=Min
 // Cases 12/13 use Custom(-1.0f) which cannot be encoded in PTO IR,

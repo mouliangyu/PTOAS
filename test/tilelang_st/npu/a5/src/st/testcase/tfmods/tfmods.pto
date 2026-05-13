@@ -9,7 +9,7 @@
 // TileLang ST kernels for pto.tfmods: tload(src) + tfmods(src, scalar)->dst + tstore(dst).
 // Floating-point modulo: dst = src - trunc(src/scalar) * scalar.
 // Only f32 and f16 types.
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 // to produce a fatobj object.
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {

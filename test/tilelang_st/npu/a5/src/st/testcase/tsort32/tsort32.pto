@@ -8,7 +8,7 @@
 
 // TileLang ST kernels for pto.tsort32: sort 32-element blocks with interleaved output.
 // Multiple cases with different shapes and shared/broadcast index patterns.
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 // to produce a fatobj object.
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {

@@ -8,7 +8,7 @@
 
 // TileLang ST kernels for pto.texpands: broadcast a scalar to a tile.
 // Multiple cases with different shapes, data types, and scalar values.
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {
   // ========== float32 cases ==========

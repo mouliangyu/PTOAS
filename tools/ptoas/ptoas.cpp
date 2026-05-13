@@ -332,7 +332,7 @@ static llvm::cl::opt<std::string> ptoBuildLevel(
 
 static llvm::cl::opt<std::string> ptoBackend(
     "pto-backend",
-    llvm::cl::desc("Final PTOAS backend: emitc or vpto (default: emitc)"),
+    llvm::cl::desc("Final PTOAS backend: emitc or vpto (default: vpto)"),
     llvm::cl::value_desc("emitc|vpto"), llvm::cl::init("vpto"));
 
 static llvm::cl::opt<bool> emitVPTO(

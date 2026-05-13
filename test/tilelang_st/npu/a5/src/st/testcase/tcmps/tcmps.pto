@@ -9,7 +9,7 @@
 // TileLang ST kernels for pto.tcmps: tload(src) + tcmps(src, scalar {cmpMode=lt})->dst + tstore(dst).
 // Packed mask of (src < scalar), output stored as packed predicate mask (uint8).
 // Supports 32-bit source types: f32, i32.
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 // to produce a fatobj object.
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {

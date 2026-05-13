@@ -26,8 +26,6 @@ if(DEFINED PTOAS_PTO_LEVEL AND NOT PTOAS_PTO_LEVEL STREQUAL "")
     list(APPEND PTOAS_COMMAND "--pto-level=${PTOAS_PTO_LEVEL}")
 endif()
 
-list(APPEND PTOAS_COMMAND --pto-backend=vpto)
-
 if(PTOAS_ENABLE_INSERT_SYNC)
     list(APPEND PTOAS_COMMAND --enable-insert-sync)
 endif()

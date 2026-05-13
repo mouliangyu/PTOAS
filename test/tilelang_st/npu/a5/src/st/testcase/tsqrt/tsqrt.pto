@@ -8,7 +8,7 @@
 
 // TileLang ST kernels for pto.tsqrt: tload(a) + tsqrt(a)->b + tstore(b).
 // Multiple cases with different shapes in a single module.
-// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand
 // to produce a fatobj object.
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {
