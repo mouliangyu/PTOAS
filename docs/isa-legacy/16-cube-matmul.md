@@ -11,8 +11,8 @@ This document lists the raw cube matmul ops used by wrapper interfaces in
 `16-cube-matmul.md`.
 
 If you are writing user-facing VPTO kernels, prefer wrapper ops such as
-`pto.cube_load`, `pto.left_load`, `pto.right_load`, `pto.acc_store*`, and
-`pto.cube_load_frac`.
+`pto.mte_gm_l1`, `pto.mte_l1_l0a`, `pto.mte_l1_l0b`, `pto.mte_l0c_*`, and
+`pto.mte_gm_l1_frac`.
 
 ---
 
@@ -140,14 +140,13 @@ pto.copy_gm_to_cbuf_multi_dn2nz %src, %dst, %sid, %loop1_src_stride, %l2_cache_c
 
 | Wrapper op | Typical raw op(s) |
 |---|---|
-| `pto.cube_load` | `pto.copy_gm_to_cbuf` + loop setup |
-| `pto.left_load` | `pto.load_cbuf_to_ca` |
-| `pto.right_load` | `pto.load_cbuf_to_cb` |
-| `pto.left_load_mx` | `pto.load_cbuf_to_ca_mx` |
-| `pto.right_load_mx` | `pto.load_cbuf_to_cb_mx` |
-| `pto.cube_load_frac` | `pto.copy_gm_to_cbuf_multi_nd2nz` / `pto.copy_gm_to_cbuf_multi_dn2nz` + config setup |
-| `pto.bias_load` | `pto.copy_cbuf_to_bt` |
-| `pto.acc_store` | `pto.copy_matrix_cc_to_cbuf` (+ related config) |
-| `pto.acc_store_gm` | `pto.copy_matrix_cc_to_gm` (+ related config) |
-| `pto.acc_store_ub` | `pto.copy_matrix_cc_to_ub` (+ related config) |
-
+| `pto.mte_gm_l1` | `pto.copy_gm_to_cbuf` + loop setup |
+| `pto.mte_l1_l0a` | `pto.load_cbuf_to_ca` |
+| `pto.mte_l1_l0b` | `pto.load_cbuf_to_cb` |
+| `pto.mte_l1_l0a_mx` | `pto.load_cbuf_to_ca_mx` |
+| `pto.mte_l1_l0b_mx` | `pto.load_cbuf_to_cb_mx` |
+| `pto.mte_gm_l1_frac` | `pto.copy_gm_to_cbuf_multi_nd2nz` / `pto.copy_gm_to_cbuf_multi_dn2nz` + config setup |
+| `pto.mte_l1_bt` | `pto.copy_cbuf_to_bt` |
+| `pto.mte_l0c_l1` | `pto.copy_matrix_cc_to_cbuf` (+ related config) |
+| `pto.mte_l0c_gm` | `pto.copy_matrix_cc_to_gm` (+ related config) |
+| `pto.mte_l0c_ub` | `pto.copy_matrix_cc_to_ub` (+ related config) |

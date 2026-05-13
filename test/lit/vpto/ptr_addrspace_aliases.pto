@@ -1,0 +1,21 @@
+// RUN: ptoas --pto-arch=a5 --mlir-print-ir-after-all %s -o /dev/null 2>&1 | FileCheck %s
+
+module {
+  func.func @ptr_addrspace_aliases(
+      %l1: !pto.ptr<f16, l1>,
+      %l0a: !pto.ptr<f16, l0a>,
+      %l0b: !pto.ptr<f16, l0b>,
+      %l0c: !pto.ptr<f32, l0c>,
+      %bt: !pto.ptr<f32, bt>,
+      %fb: !pto.ptr<ui64, fb>) attributes {pto.aicore} {
+    return
+  }
+}
+
+// CHECK-LABEL: func.func @ptr_addrspace_aliases(
+// CHECK-SAME: !pto.ptr<f16, mat>
+// CHECK-SAME: !pto.ptr<f16, left>
+// CHECK-SAME: !pto.ptr<f16, right>
+// CHECK-SAME: !pto.ptr<f32, acc>
+// CHECK-SAME: !pto.ptr<f32, bias>
+// CHECK-SAME: !pto.ptr<ui64, scaling>

@@ -497,7 +497,7 @@ cube_load_frac(
 如果直接写成接近 VPTO 的 syntax 草案，可以是：
 
 ```text
-pto.cube_load_frac %src, %dst,
+pto.mte_gm_l1_frac %src, %dst,
     nd2nz | dn2nz,
     shape(%n_value, %d_value),
     src_layout(%src_inner_stride[, %src_outer_stride]),

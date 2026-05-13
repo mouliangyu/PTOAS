@@ -11,12 +11,12 @@ module attributes {"pto.target_arch" = "a5", pto.kernel_kind = #pto.kernel_kind<
     %c32_i64 = arith.constant 32 : i64
     %c64_i64 = arith.constant 64 : i64
 
-    pto.cube_store %src_mat, %dst_ub, %c16_i64
+    pto.mte_l1_ub %src_mat, %dst_ub, %c16_i64
       nburst(%c1_i64, %c32_i64, %c64_i64)
       loop(%c1_i64, %c64_i64, %c32_i64)
       : !pto.ptr<f16, mat>, !pto.ptr<f16, vec>, i64, i64, i64, i64, loop i64, i64, i64
 
-    pto.dma_copy %src_ub, %dst_mat, %c16_i64
+    pto.mte_ub_l1 %src_ub, %dst_mat, %c16_i64
       nburst(%c1_i64, %c32_i64, %c64_i64)
       : !pto.ptr<f16, vec>, !pto.ptr<f16, mat>, i64, i64, i64, i64
 
@@ -25,8 +25,8 @@ module attributes {"pto.target_arch" = "a5", pto.kernel_kind = #pto.kernel_kind<
 }
 
 // ROUNDTRIP-LABEL: func.func @cube_store_dma_copy_probe(
-// ROUNDTRIP: pto.cube_store {{.*}} nburst({{.*}}) loop({{.*}})
-// ROUNDTRIP: pto.dma_copy {{.*}} nburst({{.*}})
+// ROUNDTRIP: pto.mte_l1_ub {{.*}} nburst({{.*}}) loop({{.*}})
+// ROUNDTRIP: pto.mte_ub_l1 {{.*}} nburst({{.*}})
 
 // EXPAND-LABEL: func.func @cube_store_dma_copy_probe(
 // EXPAND: scf.for

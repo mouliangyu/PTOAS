@@ -16,17 +16,17 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %c1_i64 = arith.constant 1 : i64
     %c16_i64 = arith.constant 16 : i64
 
-    pto.acc_store %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
+    pto.mte_l0c_l1 %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
       nz2nd,
       loop3(%c1_i64, %c0_i64, %c16_i64),
       sat
       : !pto.ptr<f32, acc>, !pto.ptr<f32, mat>, i64, i64, i64, i64, i64, i64, i64
-    pto.acc_store %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
+    pto.mte_l0c_l1 %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
       nz2nd,
       loop3(%c1_i64, %c0_i64, %c16_i64),
       sat(preserve_nan)
       : !pto.ptr<f32, acc>, !pto.ptr<f32, mat>, i64, i64, i64, i64, i64, i64, i64
-    pto.acc_store %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
+    pto.mte_l0c_l1 %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
       nz2nd,
       loop3(%c1_i64, %c0_i64, %c16_i64),
       nosat
@@ -37,9 +37,9 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 }
 
 // ROUNDTRIP-LABEL: func.func @acc_store_sat_probe(
-// ROUNDTRIP: pto.acc_store %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}}), sat
-// ROUNDTRIP: pto.acc_store %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}}), sat(preserve_nan)
-// ROUNDTRIP: pto.acc_store %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}}), nosat
+// ROUNDTRIP: pto.mte_l0c_l1 %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}}), sat
+// ROUNDTRIP: pto.mte_l0c_l1 %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}}), sat(preserve_nan)
+// ROUNDTRIP: pto.mte_l0c_l1 %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}}), nosat
 
 // EXPAND-LABEL: func.func @acc_store_sat_probe(
 // EXPAND: pto.get_ctrl

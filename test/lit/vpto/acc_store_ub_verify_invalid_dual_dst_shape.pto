@@ -16,7 +16,7 @@ module attributes {"pto.target_arch" = "a5"} {
     %c15_i64 = arith.constant 15 : i64
     %c16_i64 = arith.constant 16 : i64
 
-    pto.acc_store_ub %src, %dst, %c15_i64, %c16_i64, %c16_i64, %c16_i64, dst_mode(split_m),
+    pto.mte_l0c_ub %src, %dst, %c15_i64, %c16_i64, %c16_i64, %c16_i64, dst_mode(split_m),
       sat
       : !pto.ptr<f32, acc>, !pto.ptr<f32, ub>, i64, i64, i64, i64
 

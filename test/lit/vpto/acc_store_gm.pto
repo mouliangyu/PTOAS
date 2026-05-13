@@ -13,7 +13,7 @@ module attributes {"pto.target_arch" = "a5", pto.kernel_kind = #pto.kernel_kind<
     %c16_i64 = arith.constant 16 : i64
     %c32_i64 = arith.constant 32 : i64
 
-    pto.acc_store_gm %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c32_i64,
+    pto.mte_l0c_gm %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c32_i64,
       %c3_i64, %c5_i64,
       unit_flag(check_and_clear),
       pre_quant(%qfb, mode = qf322f16_pre_vec),
@@ -28,7 +28,7 @@ module attributes {"pto.target_arch" = "a5", pto.kernel_kind = #pto.kernel_kind<
 }
 
 // ROUNDTRIP-LABEL: func.func @acc_store_gm_probe(
-// ROUNDTRIP: pto.acc_store_gm %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, unit_flag(check_and_clear), pre_quant(%{{.*}}, mode = qf322f16_pre_vec), pre_relu(%{{.*}}, mode = vector_relu), nz2dn(%{{.*}}), atomic(type = f32, op = max)
+// ROUNDTRIP: pto.mte_l0c_gm %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, unit_flag(check_and_clear), pre_quant(%{{.*}}, mode = qf322f16_pre_vec), pre_relu(%{{.*}}, mode = vector_relu), nz2dn(%{{.*}}), atomic(type = f32, op = max)
 
 // EXPAND-LABEL: func.func @acc_store_gm_probe(
 // EXPAND: %[[QFB:.*]] = pto.castptr %{{.*}} : !pto.ptr<f32, scaling> -> i64

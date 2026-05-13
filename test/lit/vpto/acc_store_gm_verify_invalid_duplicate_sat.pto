@@ -14,7 +14,7 @@ module attributes {"pto.target_arch" = "a5"} {
     %c0_i64 = arith.constant 0 : i64
     %c16_i64 = arith.constant 16 : i64
 
-    pto.acc_store_gm %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64, %c0_i64, %c0_i64,
+    pto.mte_l0c_gm %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64, %c0_i64, %c0_i64,
       nz2nd,
       sat,
       nosat

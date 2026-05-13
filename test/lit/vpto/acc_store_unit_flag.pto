@@ -16,7 +16,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %c1_i64 = arith.constant 1 : i64
     %c16_i64 = arith.constant 16 : i64
 
-    pto.acc_store %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
+    pto.mte_l0c_l1 %src, %dst, %c16_i64, %c16_i64, %c16_i64, %c16_i64,
       unit_flag(check_only),
       nz2nd,
       loop3(%c1_i64, %c0_i64, %c16_i64)
@@ -27,7 +27,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 }
 
 // ROUNDTRIP-LABEL: func.func @acc_store_unit_flag_probe(
-// ROUNDTRIP: pto.acc_store %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, unit_flag(check_only), nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}})
+// ROUNDTRIP: pto.mte_l0c_l1 %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, unit_flag(check_only), nz2nd, loop3(%{{.*}}, %{{.*}}, %{{.*}})
 
 // EXPAND-LABEL: func.func @acc_store_unit_flag_probe(
 // EXPAND: %[[XT:.*]] = arith.constant 8804682956816 : i64

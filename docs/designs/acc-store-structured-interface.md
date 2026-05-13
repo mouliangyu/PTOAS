@@ -5,7 +5,7 @@
 `acc_store` 的目标接口只保留 `target_profile` 可用的 `L0C -> OUT` 结构化语义：
 
 ```mlir
-pto.acc_store %src, %dst, %m, %n, %src_stride, %dst_stride,
+pto.mte_l0c_l1 %src, %dst, %m, %n, %src_stride, %dst_stride,
               unit_flag(check_only | check_and_clear)?,
               pre_quant(%scalar_or_fb_addr, mode = ...)?,
               pre_relu(%alpha_or_fb_addr, mode = ..., clip = %clip_value ?)?,
