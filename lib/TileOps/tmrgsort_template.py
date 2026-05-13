@@ -16,69 +16,33 @@ BLOCK_NUM = 4
 
 
 @pto.inline_proc
-def tmrgsort_1list_instr(dst: pto.Tile, src: pto.Tile,
+def tmrgsort_single_list_instr(dst: pto.Tile, src: pto.Tile,
                          num_structures, repeat_times):
-    dtype = dst.element_type
-    bw = pto.bytewidth(dtype)  # index type
-
-    offset = num_structures * STRUCT_SIZE // bw
+    dst_ptr = dst.as_ptr()
+    src_ptr = src.as_ptr()
 
     count = pto.i64(num_structures)
     count = count | (pto.i64(num_structures) << pto.i64(16))
     count = count | (pto.i64(num_structures) << pto.i64(32))
     count = count | (pto.i64(num_structures) << pto.i64(48))
 
-    config = pto.i64(repeat_times)
-    config = config | (pto.i64(0b1111) << pto.i64(8))
-    config = config | (pto.i64(0b0) << pto.i64(12))
-
-    # Get pointers from tiles
-    dst_ptr = dst.as_ptr()
-    src_ptr = src.as_ptr()
-
-    # Compute offset pointers for the 4 source blocks (offset is index type)
+    offset = num_structures * STRUCT_SIZE // pto.bytewidth(dst.element_type)
     src0 = src_ptr
     src1 = pto.addptr(src_ptr, offset)
     src2 = pto.addptr(src_ptr, offset * 2)
     src3 = pto.addptr(src_ptr, offset * 3)
 
-    # Execute vmrgsort4 with pointers
-    # pto.vmrgsort4(dst_ptr, src0, src1, src2, src3, count, config)
+    config = pto.i64(repeat_times)
+    config = config | (pto.i64(0b1111) << pto.i64(8))
+    config = config | (pto.i64(0b0) << pto.i64(12))
+
     pto.vmrgsort4(dst_ptr, src0, src1, src2, src3, pto.i64(count), pto.i64(config))
     return
 
 
 @pto.inline_proc
-def tmrgsort_2list_instr_normal(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile,
-                                  src0_structures: int, src1_structures: int):
-    dtype = tmp.element_type
-    
-    tmp_ptr = tmp.as_ptr()
-    src0_ptr = src0.as_ptr()
-    src1_ptr = src1.as_ptr()
-    
-    count = pto.i64(src0_structures)
-    count = count | (pto.i64(src1_structures) << pto.i64(16))
-    
-    repeat_time = 1
-    list_mask = 0b0011
-    exhausted_bit = 0
-    
-    config = pto.i64(repeat_time)
-    config = config | (pto.i64(list_mask) << pto.i64(8))
-    config = config | (pto.i64(exhausted_bit) << pto.i64(12))
-    
-    pto.vmrgsort4(tmp_ptr, src0_ptr, src1_ptr, src0_ptr, src0_ptr,
-                   count, config)
-    
-    return
-
-
-@pto.inline_proc
-def tmrgsort_2list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile,
+def tmrgsort_multi_list2_instr(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile,
                                     src0_structures: int, src1_structures: int):
-    dtype = tmp.element_type
-    
     tmp_ptr = tmp.as_ptr()
     src0_ptr = src0.as_ptr()
     src1_ptr = src1.as_ptr()
@@ -88,8 +52,12 @@ def tmrgsort_2list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile
     
     repeat_time = 1
     list_mask = 0b0011
-    exhausted_bit = 1
+    exhausted_bit = 0
     
+    exhausted_str = pto.get_op_attr("exhausted", "0")
+    if pto.constexpr(exhausted_str == "1"):
+        exhausted_bit = 1
+
     config = pto.i64(repeat_time)
     config = config | (pto.i64(list_mask) << pto.i64(8))
     config = config | (pto.i64(exhausted_bit) << pto.i64(12))
@@ -101,10 +69,8 @@ def tmrgsort_2list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile
 
 
 @pto.inline_proc
-def tmrgsort_3list_instr_normal(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
-                                 src0_structures: int, src1_structures: int, src2_structures: int):
-    dtype = tmp.element_type
-    
+def tmrgsort_multi_list3_instr(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
+                                   src0_structures: int, src1_structures: int, src2_structures: int):
     tmp_ptr = tmp.as_ptr()
     src0_ptr = src0.as_ptr()
     src1_ptr = src1.as_ptr()
@@ -118,6 +84,10 @@ def tmrgsort_3list_instr_normal(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, s
     list_mask = 0b0111
     exhausted_bit = 0
     
+    exhausted_str = pto.get_op_attr("exhausted", "0")
+    if pto.constexpr(exhausted_str == "1"):
+        exhausted_bit = 1
+
     config = pto.i64(repeat_time)
     config = config | (pto.i64(list_mask) << pto.i64(8))
     config = config | (pto.i64(exhausted_bit) << pto.i64(12))
@@ -129,35 +99,7 @@ def tmrgsort_3list_instr_normal(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, s
 
 
 @pto.inline_proc
-def tmrgsort_3list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
-                                   src0_structures: int, src1_structures: int, src2_structures: int):
-    dtype = tmp.element_type
-    
-    tmp_ptr = tmp.as_ptr()
-    src0_ptr = src0.as_ptr()
-    src1_ptr = src1.as_ptr()
-    src2_ptr = src2.as_ptr()
-    
-    count = pto.i64(src0_structures)
-    count = count | (pto.i64(src1_structures) << pto.i64(16))
-    count = count | (pto.i64(src2_structures) << pto.i64(32))
-    
-    repeat_time = 1
-    list_mask = 0b0111
-    exhausted_bit = 1
-    
-    config = pto.i64(repeat_time)
-    config = config | (pto.i64(list_mask) << pto.i64(8))
-    config = config | (pto.i64(exhausted_bit) << pto.i64(12))
-    
-    pto.vmrgsort4(tmp_ptr, src0_ptr, src1_ptr, src2_ptr, src0_ptr,
-                   count, config)
-    
-    return
-
-
-@pto.inline_proc
-def tmrgsort_4list_instr_normal(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, 
+def tmrgsort_multi_list4_instr(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile, 
                                  src2: pto.Tile, src3: pto.Tile,
                                  src0_structures: int, src1_structures: int, 
                                  src2_structures: int, src3_structures: int):
@@ -177,39 +119,11 @@ def tmrgsort_4list_instr_normal(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile,
     repeat_time = 1
     list_mask = 0b1111
     exhausted_bit = 0
-    
-    config = pto.i64(repeat_time)
-    config = config | (pto.i64(list_mask) << pto.i64(8))
-    config = config | (pto.i64(exhausted_bit) << pto.i64(12))
-    
-    pto.vmrgsort4(tmp_ptr, src0_ptr, src1_ptr, src2_ptr, src3_ptr,
-                   count, config)
-    
-    return
 
+    exhausted_str = pto.get_op_attr("exhausted", "0")
+    if pto.constexpr(exhausted_str == "1"):
+        exhausted_bit = 1
 
-@pto.inline_proc
-def tmrgsort_4list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile,
-                                    src2: pto.Tile, src3: pto.Tile,
-                                    src0_structures: int, src1_structures: int,
-                                    src2_structures: int, src3_structures: int):
-    dtype = tmp.element_type
-    
-    tmp_ptr = tmp.as_ptr()
-    src0_ptr = src0.as_ptr()
-    src1_ptr = src1.as_ptr()
-    src2_ptr = src2.as_ptr()
-    src3_ptr = src3.as_ptr()
-    
-    count = pto.i64(src0_structures)
-    count = count | (pto.i64(src1_structures) << pto.i64(16))
-    count = count | (pto.i64(src2_structures) << pto.i64(32))
-    count = count | (pto.i64(src3_structures) << pto.i64(48))
-    
-    repeat_time = 1
-    list_mask = 0b1111
-    exhausted_bit = 1
-    
     config = pto.i64(repeat_time)
     config = config | (pto.i64(list_mask) << pto.i64(8))
     config = config | (pto.i64(exhausted_bit) << pto.i64(12))
@@ -225,27 +139,22 @@ def tmrgsort_4list_instr_exhausted(tmp: pto.Tile, src0: pto.Tile, src1: pto.Tile
     op="pto.tmrgsort",
     advanced=True,
 )
-def template_tmrgsort_1list(src: pto.Tile, block_len: pto.AnyInt, dst: pto.Tile):
+def template_tmrgsort_single_list(src: pto.Tile, block_len: pto.AnyInt, dst: pto.Tile):
     """Format1 template: single list internal block sorting.
 
     Standard Format1: single vmrgsort4 for block sorting.
     TopK variant is handled by ST kernel via iterative tmrgsort + tmov calls.
     """
-    dtype = src.element_type
-    bw = pto.bytewidth(dtype)
     src_valid_col = src.valid_shape[1]
 
-    # Structure count calculation
-    elem_per_struct = STRUCT_SIZE // bw
-
     # Block length in structures
-    block_len_structs = block_len // elem_per_struct
+    num_structures = block_len * pto.bytewidth(src.element_type) >> STRUCT_SIZE_SHIFT
 
     # Repeat times: how many groups of 4 blocks need merging
     repeat_times = src_valid_col // (block_len * BLOCK_NUM)
 
     # Standard Format1: single merge operation
-    tmrgsort_1list_instr(dst, src, block_len_structs, repeat_times)
+    tmrgsort_single_list_instr(dst, src, num_structures, repeat_times)
 
     return None
 
@@ -255,7 +164,7 @@ def template_tmrgsort_1list(src: pto.Tile, block_len: pto.AnyInt, dst: pto.Tile)
     op="pto.tmrgsort",
     advanced=True,
 )
-def template_tmrgsort_2list(src0: pto.Tile, src1: pto.Tile, 
+def template_tmrgsort_multi_list2(src0: pto.Tile, src1: pto.Tile, 
                             tmp: pto.Tile, dst: pto.Tile, ex_vec: pto.AnyInt):
     dtype = dst.element_type
     bw = pto.bytewidth(dtype)
@@ -273,14 +182,7 @@ def template_tmrgsort_2list(src0: pto.Tile, src1: pto.Tile,
     
     dst_elements = dst_valid_col
     
-    exhausted_str = pto.get_op_attr("exhausted", "0")
-    
-    if pto.constexpr(exhausted_str == "1"):
-        tmrgsort_2list_instr_exhausted(tmp, src0, src1,
-                                        src0_structures, src1_structures)
-    else:
-        tmrgsort_2list_instr_normal(tmp, src0, src1,
-                                     src0_structures, src1_structures)
+    tmrgsort_multi_list2_instr(tmp, src0, src1, src0_structures, src1_structures)
     
     lanes = pto.get_lanes(dtype)
     for col in range(0, dst_elements, lanes):
@@ -297,7 +199,7 @@ def template_tmrgsort_2list(src0: pto.Tile, src1: pto.Tile,
     op="pto.tmrgsort",
     advanced=True,
 )
-def template_tmrgsort_3list(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
+def template_tmrgsort_multi_list3(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
                             tmp: pto.Tile, dst: pto.Tile, ex_vec: pto.AnyInt):
     dtype = dst.element_type
     bw = pto.bytewidth(dtype)
@@ -318,14 +220,7 @@ def template_tmrgsort_3list(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
     
     dst_elements = dst_valid_col
     
-    exhausted_str = pto.get_op_attr("exhausted", "0")
-    
-    if pto.constexpr(exhausted_str == "1"):
-        tmrgsort_3list_instr_exhausted(tmp, src0, src1, src2,
-                                        src0_structures, src1_structures, src2_structures)
-    else:
-        tmrgsort_3list_instr_normal(tmp, src0, src1, src2,
-                                     src0_structures, src1_structures, src2_structures)
+    tmrgsort_multi_list3_instr(tmp, src0, src1, src2, src0_structures, src1_structures, src2_structures)
     
     lanes = pto.get_lanes(dtype)
     for col in range(0, dst_elements, lanes):
@@ -342,7 +237,7 @@ def template_tmrgsort_3list(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile,
     op="pto.tmrgsort",
     advanced=True,
 )
-def template_tmrgsort_4list(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile, src3: pto.Tile,
+def template_tmrgsort_multi_list4(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile, src3: pto.Tile,
                              tmp: pto.Tile, dst: pto.Tile, ex_vec: pto.AnyInt):
     dtype = dst.element_type
     bw = pto.bytewidth(dtype)
@@ -366,16 +261,7 @@ def template_tmrgsort_4list(src0: pto.Tile, src1: pto.Tile, src2: pto.Tile, src3
     
     dst_elements = dst_valid_col
     
-    exhausted_str = pto.get_op_attr("exhausted", "0")
-    
-    if pto.constexpr(exhausted_str == "1"):
-        tmrgsort_4list_instr_exhausted(tmp, src0, src1, src2, src3,
-                                        src0_structures, src1_structures,
-                                        src2_structures, src3_structures)
-    else:
-        tmrgsort_4list_instr_normal(tmp, src0, src1, src2, src3,
-                                      src0_structures, src1_structures,
-                                      src2_structures, src3_structures)
+    tmrgsort_multi_list4_instr(tmp, src0, src1, src2, src3, src0_structures, src1_structures, src2_structures, src3_structures)
     
     lanes = pto.get_lanes(dtype)
     for col in range(0, dst_elements, lanes):
