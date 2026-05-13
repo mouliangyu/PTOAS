@@ -14,14 +14,14 @@ Use this skill when the task is specifically about:
 
 When PTO-Gym is run from this repo, do not rely on the default PTOAS backend.
 
-Always pass PTOAS flags that force the VPTO LLVM path.
-The current `ptoas` CLI spellings in this repo are `--pto-backend=vpto` and
-`--vpto-emit-hivm-llvm`; do not shorten `--pto-backend` to `--backend`.
+Always pass PTOAS flags that force the VPTO path.
+The current `ptoas` CLI spelling in this repo is `--pto-backend=vpto`; do not
+shorten `--pto-backend` to `--backend`.
 
 Use:
 
 ```bash
-PTOAS_FLAGS='--pto-backend=vpto --vpto-emit-hivm-llvm --pto-arch a5'
+PTOAS_FLAGS='--pto-backend=vpto --pto-arch a5'
 ```
 
 If the caller already provides `PTOAS_FLAGS`, make sure these options are still
@@ -44,7 +44,7 @@ Typical simulator environment:
 source /home/mouliangyu/.local/ascend/beta.2/cann-9.0.0-beta.2/set_env.sh
 export ASCEND_HOME_PATH=/home/mouliangyu/.local/ascend/beta.2/cann-9.0.0-beta.2
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
-export PTOAS_FLAGS='--pto-backend=vpto --vpto-emit-hivm-llvm --pto-arch a5'
+export PTOAS_FLAGS='--pto-backend=vpto --pto-arch a5'
 ```
 
 ## Canonical Commands
