@@ -25,6 +25,37 @@ BLOCK_NUM = 4
 STRUCT_SIZE = 8  # bytes per structure (value + index)
 
 
+def find_and_zero(arr, tar):
+    for item in arr:
+        if not isinstance(item, (np.floating)):
+            return -1
+    if not all(isinstance(x, (np.floating)) for x in arr):
+        raise ValueError("The input must be a list of numbers.")
+    if not isinstance(tar, (np.floating)):
+        return -1
+    
+    n = len(arr)
+    for i in range(n - 1, -1, -1):
+        if arr[i] == tar:
+            for j in range(i + 1, n):
+                arr[j] = 0
+            return i
+    return -1
+
+
+def zero_after_index(arr, i):
+    if i < 0 or i >= len(arr):
+        return
+    for j in range(i + 1, len(arr)):
+        arr[j] = 0
+
+
+def handle_exhausted_list(input_num, topk_sorted_output_global, topk_sorted_idx_global, last_data):
+    for i in range(input_num):
+        zero_index = find_and_zero(topk_sorted_output_global, last_data[i])
+        zero_after_index(topk_sorted_idx_global, zero_index)
+
+
 def _to_tuple(shape):
     """Convert shape to tuple if needed."""
     if isinstance(shape, tuple):
@@ -65,8 +96,8 @@ def gen_golden_single(case):
     """Generate golden data for Format1 (single list internal block sorting).
 
     Following pto-isa gen_data.py logic exactly:
-    - cols = valid_cols // 2 (STRUCTURE count)
-    - list_col = block_len // 2 (STRUCTURES per block)
+    - cols = src_cols // elem_divisor (STRUCTURE count, using full src_cols not valid_cols)
+    - list_col = block_len // elem_divisor (STRUCTURES per block)
     - block_lens = list_col * 4 (STRUCTURES per vmrgsort4 call)
     - block_lens_floats = block_len * 4 (FLOATS per vmrgsort4 call)
 
@@ -76,6 +107,8 @@ def gen_golden_single(case):
     3. Sort each block internally -> input0.bin
     4. Reshape into groups (each block_lens structures)
     5. Globally sort each group -> golden.bin
+
+    For cases where src_cols > valid_cols (padding), generate full src_cols with zeros padding.
     """
     dtype = case["dtype"]
     src_shape = _to_tuple(case["src_shape"])
@@ -86,17 +119,21 @@ def gen_golden_single(case):
     src_rows, src_cols = src_shape
     valid_rows, valid_cols = valid_shape
     
-    # Structure units (following pto-isa)
-    cols = valid_cols // 2  # total structures
-    list_col = block_len // 2  # structures per block
+    # Get element divisor based on dtype (2 for f32, 4 for f16)
+    elem_divisor = get_elem_divisor(dtype)
+    
+    # Use FULL src_cols for file size (matching pto-isa kGCols)
+    cols = src_cols // elem_divisor  # total structures in file
+    valid_structs = valid_cols // elem_divisor  # valid structures for computation
+    list_col = block_len // elem_divisor  # structures per block
     block_lens = list_col * 4  # structures per vmrgsort4 call
     block_lens_floats = block_len * 4  # floats per vmrgsort4 call
     
-    repeat_times = cols // block_lens  # vmrgsort4 call times
+    repeat_times = valid_structs // block_lens  # vmrgsort4 call times (use valid_structs)
 
-    # Generate random data (1D array of structures)
-    input_arr = np.random.uniform(low=0.0, high=1.0, size=(1, cols)).astype(dtype)
-    idx_arr = np.arange(cols, dtype=np.uint32)
+    # Generate random data only for valid portion (matching pto-isa which uses kTCols for computation)
+    input_arr = np.random.uniform(low=0.0, high=1.0, size=(1, valid_structs)).astype(dtype)
+    idx_arr = np.arange(valid_structs, dtype=np.uint32)
 
     # Step 1: Sort each block internally
     # Reshape to (total_blocks, list_col)
@@ -108,14 +145,21 @@ def gen_golden_single(case):
     sorted_input = np.take_along_axis(input_reshaped, sorted_indices, axis=1)
     sorted_idx = np.take_along_axis(idx_reshaped, sorted_indices, axis=1)
 
-    # Flatten back -> input0.bin
+    # Flatten back -> input0.bin (needs padding if cols > valid_structs)
     flat_input = sorted_input.flatten()
     flat_idx = sorted_idx.flatten()
+    
+    # Pad input with zeros if needed (for src_cols > valid_cols cases)
+    if cols > valid_structs:
+        pad_input = np.zeros(cols - valid_structs, dtype=dtype)
+        pad_idx = np.zeros(cols - valid_structs, dtype=np.uint32)
+        flat_input = np.concatenate((flat_input, pad_input))
+        flat_idx = np.concatenate((flat_idx, pad_idx))
 
-    # Step 2: Generate golden (globally sort each group)
-    # Take complete groups
-    input_group = flat_input[:cols // block_lens * block_lens]
-    idx_group = flat_idx[:cols // block_lens * block_lens]
+    # Step 2: Generate golden (globally sort each group, using valid_structs)
+    # Take complete groups from valid portion
+    input_group = flat_input[:valid_structs // block_lens * block_lens]
+    idx_group = flat_idx[:valid_structs // block_lens * block_lens]
     
     # Reshape to (repeat_times, block_lens)
     single_output_reshape = input_group.reshape(-1, block_lens)
@@ -126,12 +170,19 @@ def gen_golden_single(case):
     golden_values = np.take_along_axis(single_output_reshape, single_sorted_indices, axis=1).flatten()
     golden_indices = np.take_along_axis(single_idx_reshape, single_sorted_indices, axis=1).flatten()
 
-    # Handle remaining elements
-    if cols % block_lens != 0:
-        zeros_output = np.zeros(cols % block_lens, dtype=golden_values.dtype)
-        zeros_index = np.zeros(cols % block_lens, dtype=np.uint32)
+    # Handle remaining elements from valid portion
+    if valid_structs % block_lens != 0:
+        zeros_output = np.zeros(valid_structs % block_lens, dtype=golden_values.dtype)
+        zeros_index = np.zeros(valid_structs % block_lens, dtype=np.uint32)
         golden_values = np.concatenate((golden_values, zeros_output))
         golden_indices = np.concatenate((golden_indices, zeros_index))
+
+    # Pad golden with zeros for full file size (cols > valid_structs)
+    if cols > valid_structs:
+        pad_output = np.zeros(cols - valid_structs, dtype=golden_values.dtype)
+        pad_index = np.zeros(cols - valid_structs, dtype=np.uint32)
+        golden_values = np.concatenate((golden_values, pad_output))
+        golden_indices = np.concatenate((golden_indices, pad_index))
 
     os.makedirs(case["name"], exist_ok=True)
     with open(os.path.join(case["name"], "input0.bin"), 'wb') as f:
@@ -219,9 +270,8 @@ def gen_golden_multilist(case):
     topk_sorted_output_global = np.concatenate((topk_sorted_output, zeros_output))
     topk_sorted_idx_global = np.concatenate((topk_sorted_idx, zeros_index))
     
-    # NOTE: pto-isa的handle_exhausted_list逻辑是错误的测试预期
-    # exhausted=true允许提前终止，但不是强制置零实际merge结果
-    # 正确的exhausted测试应该模拟list耗尽场景，而不是强制置零
+    if exhausted:
+        handle_exhausted_list(list_num, topk_sorted_output_global, topk_sorted_idx_global, last_data)
     
     # Write input files (input0.bin, input1.bin, etc.)
     os.makedirs(case["name"], exist_ok=True)

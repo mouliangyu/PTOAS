@@ -46,6 +46,27 @@ def read_value_index_pairs(filepath, dtype, count):
     return np.array(values, dtype=dtype), np.array(indices, dtype=np.uint32)
 
 
+def handle_output_data(golden_vals, golden_idx, output_vals, output_idx):
+    """Handle exhausted case: zero output values and indices where golden values are 0.
+    
+    Following pto-isa HandleOutputData logic:
+    - Scan from end, find first non-zero golden value
+    - Zero output values where golden values are 0
+    
+    Also zero output indices where golden indices are 0 (matching gen_data.py behavior).
+    """
+    size = len(golden_vals)
+    i = size - 1
+    while i > 0:
+        if golden_vals[i] == 0.0:
+            output_vals[i] = 0.0
+            if golden_idx[i] == 0:
+                output_idx[i] = 0
+            i -= 1
+        else:
+            return
+
+
 def compare_multilist(case):
     """Compare multi-list merge sort output.
     
@@ -79,6 +100,9 @@ def compare_multilist(case):
         os.path.join(case["name"], "output.bin"), dtype, total_structures
     )
     
+    if exhausted:
+        handle_output_data(golden_vals, golden_indices, output_vals, output_indices)
+    
     # Compare top-k elements (only compare the valid output)
     vals_ok = result_cmp(golden_vals[:topk], output_vals[:topk], case["eps"])
     indices_ok = np.allclose(golden_indices[:topk], output_indices[:topk], atol=0, rtol=0)
@@ -99,8 +123,14 @@ def compare_topk(case):
     valid_rows, valid_cols = valid_shape
     topk = case["topk"]
     
+    # Get element divisor based on dtype
+    if dtype == np.float16:
+        elem_divisor = 4
+    else:
+        elem_divisor = 2
+    
     # Total structures in input
-    total_structures = valid_cols // 2
+    total_structures = valid_cols // elem_divisor
     
     # Read golden output
     golden_vals, golden_indices = read_value_index_pairs(
@@ -134,8 +164,14 @@ def main():
             valid_shape = case["valid_shape"]
             valid_rows, valid_cols = valid_shape
             block_len = case["block_len"]
+            
+            # Get element divisor based on dtype
+            if dtype == np.float16:
+                elem_divisor = 4
+            else:
+                elem_divisor = 2
 
-            cols = valid_cols // 2
+            cols = valid_cols // elem_divisor
 
             golden_vals, golden_indices = read_value_index_pairs(
                 os.path.join(case["name"], "golden.bin"), dtype, cols

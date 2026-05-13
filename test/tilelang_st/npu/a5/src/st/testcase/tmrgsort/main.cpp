@@ -41,6 +41,7 @@ void LaunchTMRGSORT_f16_3list_exhausted(uint16_t *src0, uint16_t *src1, uint16_t
 void LaunchTMRGSORT_f32_4list_b32_basic(float *src0, float *src1, float *src2, float *src3, float *dst, void *stream);
 void LaunchTMRGSORT_f32_4list_non_uniform(float *src0, float *src1, float *src2, float *src3, float *dst, void *stream);
 void LaunchTMRGSORT_f16_4list_b64_basic(uint16_t *src0, uint16_t *src1, uint16_t *src2, uint16_t *src3, uint16_t *dst, void *stream);
+void LaunchTMRGSORT_f16_4list_basic(uint16_t *src0, uint16_t *src1, uint16_t *src2, uint16_t *src3, uint16_t *dst, void *stream);
 
 // TopK launch wrappers
 void LaunchTMRGSORT_f32_topk_2048_1024(float *src, float *dst, void *stream);
@@ -63,50 +64,52 @@ struct TestCase {
     LaunchFn3   launch3;    // for 3-list
     LaunchFn4   launch4;    // for 4-list
     size_t      srcRows;
-    size_t      srcCols;    // for single-list
-    size_t      srcCols0;   // for multi-list: src0 cols
-    size_t      srcCols1;   // for multi-list: src1 cols
-    size_t      srcCols2;   // for multi-list: src2 cols (for 3/4-list)
-    size_t      srcCols3;   // for multi-list: src3 cols (for 4-list)
+    size_t      srcCols;    // for single-list: element count
+    size_t      srcCols0;   // for multi-list: src0 element count
+    size_t      srcCols1;   // for multi-list: src1 element count
+    size_t      srcCols2;   // for multi-list: src2 element count (for 3/4-list)
+    size_t      srcCols3;   // for multi-list: src3 element count (for 4-list)
     size_t      dstRows;
-    size_t      dstCols;
-    size_t      elemSize;    // bytes per element
+    size_t      dstCols;    // element count
+    size_t      elemSize;    // bytes per element (4 for f32, 2 for f16)
     size_t      structSize;  // 8 bytes per (value, index) pair
+    size_t      elemsPerStruct; // structSize / elemSize (2 for f32, 4 for f16)
 };
 
 static const TestCase kCases[] = {
     // Single-list cases (Format1)
-    {"f32_single_1x256_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x256_b64),   nullptr, nullptr, nullptr, 1, 256,  0, 0, 0, 0, 1, 256,  sizeof(float),    8},
-    {"f32_single_1x320_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x320_b64),   nullptr, nullptr, nullptr, 1, 320,  0, 0, 0, 0, 1, 320,  sizeof(float),    8},
-    {"f32_single_1x512_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x512_b64),   nullptr, nullptr, nullptr, 1, 512,  0, 0, 0, 0, 1, 512,  sizeof(float),    8},
-    {"f32_single_1x640_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x640_b64),   nullptr, nullptr, nullptr, 1, 640,  0, 0, 0, 0, 1, 640,  sizeof(float),    8},
-    {"f16_single_1x256_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x256_b64),   nullptr, nullptr, nullptr, 1, 256,  0, 0, 0, 0, 1, 256,  sizeof(uint16_t), 8},
-    {"f16_single_1x320_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x320_b64),   nullptr, nullptr, nullptr, 1, 320,  0, 0, 0, 0, 1, 320,  sizeof(uint16_t), 8},
-    {"f16_single_1x512_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x512_b64),   nullptr, nullptr, nullptr, 1, 512,  0, 0, 0, 0, 1, 512,  sizeof(uint16_t), 8},
-    {"f16_single_1x1024_b256", 1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x1024_b256), nullptr, nullptr, nullptr, 1, 1024, 0, 0, 0, 0, 1, 1024, sizeof(uint16_t), 8},
+    {"f32_single_1x256_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x256_b64),   nullptr, nullptr, nullptr, 1, 256,  0, 0, 0, 0, 1, 256,  sizeof(float),    8, 2},
+    {"f32_single_1x320_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x320_b64),   nullptr, nullptr, nullptr, 1, 320,  0, 0, 0, 0, 1, 320,  sizeof(float),    8, 2},
+    {"f32_single_1x512_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x512_b64),   nullptr, nullptr, nullptr, 1, 512,  0, 0, 0, 0, 1, 512,  sizeof(float),    8, 2},
+    {"f32_single_1x640_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_single_1x640_b64),   nullptr, nullptr, nullptr, 1, 640,  0, 0, 0, 0, 1, 640,  sizeof(float),    8, 2},
+    {"f16_single_1x256_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x256_b64),   nullptr, nullptr, nullptr, 1, 512,  0, 0, 0, 0, 1, 512,  sizeof(uint16_t), 8, 4},
+    {"f16_single_1x320_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x320_b64),   nullptr, nullptr, nullptr, 1, 640,  0, 0, 0, 0, 1, 640,  sizeof(uint16_t), 8, 4},
+    {"f16_single_1x512_b64",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x512_b64),   nullptr, nullptr, nullptr, 1, 1024, 0, 0, 0, 0, 1, 1024, sizeof(uint16_t), 8, 4},
+    {"f16_single_1x1024_b256", 1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_single_1x1024_b256), nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(uint16_t), 8, 4},
     
     // Multi-list cases (Format2)
-    {"f32_2list_b64_basic",    2, nullptr, reinterpret_cast<LaunchFn2>(LaunchTMRGSORT_f32_2list_b64_basic), nullptr, nullptr,  1, 0,   256, 256, 0, 0, 1, 256, sizeof(float),    8},
-    {"f16_2list_b64_basic",    2, nullptr, reinterpret_cast<LaunchFn2>(LaunchTMRGSORT_f16_2list_b64_basic), nullptr, nullptr,  1, 0,   256, 256, 0, 0, 1, 256, sizeof(uint16_t), 8},
+    {"f32_2list_b64_basic",    2, nullptr, reinterpret_cast<LaunchFn2>(LaunchTMRGSORT_f32_2list_b64_basic), nullptr, nullptr,  1, 0,   256, 256, 0, 0, 1, 256, sizeof(float),    8, 2},
+    {"f16_2list_b64_basic",    2, nullptr, reinterpret_cast<LaunchFn2>(LaunchTMRGSORT_f16_2list_b64_basic), nullptr, nullptr,  1, 0,   256, 256, 0, 0, 1, 256, sizeof(uint16_t), 8, 4},
     
-    // Exhausted cases
-    {"f32_2list_exhausted",    2, nullptr, reinterpret_cast<LaunchFn2>(LaunchTMRGSORT_f32_2list_exhausted), nullptr, nullptr,    1, 0,   128, 128, 0, 0, 1, 128, sizeof(float),    8},
+    // Exhausted cases (aligned with pto-isa case_exhausted1: kGCols_=64)
+    {"f32_2list_exhausted",    2, nullptr, reinterpret_cast<LaunchFn2>(LaunchTMRGSORT_f32_2list_exhausted), nullptr, nullptr,    1, 0,   64, 64, 0, 0, 1, 128, sizeof(float),    8, 2},
     
     // 3-list and 4-list cases
-    {"f32_3list_b64_basic",        3, nullptr, nullptr, reinterpret_cast<LaunchFn3>(LaunchTMRGSORT_f32_3list_b64_basic), nullptr,   1, 0, 128, 128, 128,   0, 1,  256, sizeof(float),    8},
-    {"f32_3list_non_uniform",      3, nullptr, nullptr, reinterpret_cast<LaunchFn3>(LaunchTMRGSORT_f32_3list_non_uniform), nullptr, 1, 0, 128, 128,  64,   0, 1,  128, sizeof(float),    8},
-    {"f16_3list_exhausted",        3, nullptr, nullptr, reinterpret_cast<LaunchFn3>(LaunchTMRGSORT_f16_3list_exhausted), nullptr,  1, 0, 340, 340, 340,   0, 1, 680, sizeof(uint16_t), 8},
-    {"f32_4list_b32_basic",        4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f32_4list_b32_basic),  1, 0,  64,  64,  64,  64, 1,  256, sizeof(float),    8},
-    {"f32_4list_non_uniform",      4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f32_4list_non_uniform), 1, 0, 128, 128, 128,  64, 1,  448, sizeof(float),    8},
-    {"f16_4list_b64_basic",        4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f16_4list_b64_basic),  1, 0, 256, 256, 256, 256, 1, 1024, sizeof(uint16_t), 8},
+    {"f32_3list_b64_basic",        3, nullptr, nullptr, reinterpret_cast<LaunchFn3>(LaunchTMRGSORT_f32_3list_b64_basic), nullptr,   1, 0, 128, 128, 128,   0, 1,  256, sizeof(float),    8, 2},
+    {"f32_3list_non_uniform",      3, nullptr, nullptr, reinterpret_cast<LaunchFn3>(LaunchTMRGSORT_f32_3list_non_uniform), nullptr, 1, 0, 128, 128,  64,   0, 1,  128, sizeof(float),    8, 2},
+    {"f16_3list_exhausted",        3, nullptr, nullptr, reinterpret_cast<LaunchFn3>(LaunchTMRGSORT_f16_3list_exhausted), nullptr,  1, 0, 512, 512, 512,   0, 1, 1536, sizeof(uint16_t), 8, 4},
+    {"f32_4list_b32_basic",        4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f32_4list_b32_basic),  1, 0, 128, 128, 128, 128, 1, 512, sizeof(float),    8, 2},
+    {"f32_4list_non_uniform",      4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f32_4list_non_uniform), 1, 0, 128, 128, 128,  64, 1,  448, sizeof(float),    8, 2},
+    {"f16_4list_b64_basic",        4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f16_4list_b64_basic),  1, 0, 256, 256, 256, 256, 1, 1024, sizeof(uint16_t), 8, 4},
+    {"f16_4list_basic",            4, nullptr, nullptr, nullptr, reinterpret_cast<LaunchFn4>(LaunchTMRGSORT_f16_4list_basic),    1, 0, 256, 256, 256, 256, 1, 1024, sizeof(uint16_t), 8, 4},
     
     // TopK cases (Format5)
-    {"f32_topk_2048_1024",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_2048_1024),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 1024, sizeof(float),    8},
-    {"f32_topk_2048_2048",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_2048_2048),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(float),    8},
-    {"f32_topk_1280_512",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_1280_512),   nullptr, nullptr, nullptr, 1, 1280, 0, 0, 0, 0, 1,  512, sizeof(float),    8},
-    {"f16_topk_2048_1024",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_2048_1024),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 1024, sizeof(uint16_t), 8},
-    {"f16_topk_2048_2048",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_2048_2048),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(uint16_t), 8},
-    {"f16_topk_1280_512",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_1280_512),   nullptr, nullptr, nullptr, 1, 1280, 0, 0, 0, 0, 1,  512, sizeof(uint16_t), 8},
+    {"f32_topk_2048_1024",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_2048_1024),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 1024, sizeof(float),    8, 2},
+    {"f32_topk_2048_2048",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_2048_2048),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(float),    8, 2},
+    {"f32_topk_1280_512",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f32_topk_1280_512),   nullptr, nullptr, nullptr, 1, 1280, 0, 0, 0, 0, 1,  512, sizeof(float),    8, 2},
+    {"f16_topk_2048_1024",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_2048_1024),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 1024, sizeof(uint16_t), 8, 4},
+    {"f16_topk_2048_2048",  1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_2048_2048),  nullptr, nullptr, nullptr, 1, 2048, 0, 0, 0, 0, 1, 2048, sizeof(uint16_t), 8, 4},
+    {"f16_topk_1280_512",   1, reinterpret_cast<LaunchFn>(LaunchTMRGSORT_f16_topk_1280_512),   nullptr, nullptr, nullptr, 1, 1280, 0, 0, 0, 0, 1,  512, sizeof(uint16_t), 8, 4},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
@@ -116,10 +119,10 @@ static int RunCase(const TestCase &tc, aclrtStream stream) {
     
     // Single-list case (Format1)
     if (tc.listNum == 1) {
-        // srcCols/dstCols are in FLOAT ELEMENTS, need to convert to STRUCTURE count
-        // Each structure = (value, index) pair = 2 float elements
-        size_t srcStructs = tc.srcCols / 2;
-        size_t dstStructs = tc.dstCols / 2;
+        // srcCols/dstCols are in ELEMENTS, need to convert to STRUCTURE count
+        // elemsPerStruct = structSize / elemSize (2 for f32, 4 for f16)
+        size_t srcStructs = tc.srcCols / tc.elemsPerStruct;
+        size_t dstStructs = tc.dstCols / tc.elemsPerStruct;
         
         // File sizes in bytes
         size_t srcFileSize = tc.srcRows * srcStructs * tc.structSize;
@@ -173,9 +176,10 @@ static int RunCase(const TestCase &tc, aclrtStream stream) {
     else if (tc.listNum == 2) {
         // For 2-list: src0, src1, dst
         // srcCols0, srcCols1 are in ELEMENTS, dstCols in ELEMENTS
-        size_t src0Structs = tc.srcCols0 / 2;
-        size_t src1Structs = tc.srcCols1 / 2;
-        size_t dstStructs = tc.dstCols / 2;
+        // elemsPerStruct = structSize / elemSize (2 for f32, 4 for f16)
+        size_t src0Structs = tc.srcCols0 / tc.elemsPerStruct;
+        size_t src1Structs = tc.srcCols1 / tc.elemsPerStruct;
+        size_t dstStructs = tc.dstCols / tc.elemsPerStruct;
         
         size_t src0FileSize = tc.srcRows * src0Structs * tc.structSize;
         size_t src1FileSize = tc.srcRows * src1Structs * tc.structSize;
@@ -233,10 +237,10 @@ static int RunCase(const TestCase &tc, aclrtStream stream) {
     
     // 3-list case (Format3)
     else if (tc.listNum == 3) {
-        size_t src0Structs = tc.srcCols0 / 2;
-        size_t src1Structs = tc.srcCols1 / 2;
-        size_t src2Structs = tc.srcCols2 / 2;
-        size_t dstStructs = tc.dstCols / 2;
+        size_t src0Structs = tc.srcCols0 / tc.elemsPerStruct;
+        size_t src1Structs = tc.srcCols1 / tc.elemsPerStruct;
+        size_t src2Structs = tc.srcCols2 / tc.elemsPerStruct;
+        size_t dstStructs = tc.dstCols / tc.elemsPerStruct;
         
         size_t src0FileSize = tc.srcRows * src0Structs * tc.structSize;
         size_t src1FileSize = tc.srcRows * src1Structs * tc.structSize;
@@ -304,11 +308,11 @@ static int RunCase(const TestCase &tc, aclrtStream stream) {
     
     // 4-list case (Format4)
     else if (tc.listNum == 4) {
-        size_t src0Structs = tc.srcCols0 / 2;
-        size_t src1Structs = tc.srcCols1 / 2;
-        size_t src2Structs = tc.srcCols2 / 2;
-        size_t src3Structs = tc.srcCols3 / 2;
-        size_t dstStructs = tc.dstCols / 2;
+        size_t src0Structs = tc.srcCols0 / tc.elemsPerStruct;
+        size_t src1Structs = tc.srcCols1 / tc.elemsPerStruct;
+        size_t src2Structs = tc.srcCols2 / tc.elemsPerStruct;
+        size_t src3Structs = tc.srcCols3 / tc.elemsPerStruct;
+        size_t dstStructs = tc.dstCols / tc.elemsPerStruct;
         
         size_t src0FileSize = tc.srcRows * src0Structs * tc.structSize;
         size_t src1FileSize = tc.srcRows * src1Structs * tc.structSize;

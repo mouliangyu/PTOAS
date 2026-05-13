@@ -99,59 +99,57 @@ CASES = [
     },
     # Transplanted from pto-isa case_single5: TMrgsortSingle<uint16_t, 1, 256, 1, 256, 64>
     # uint16_t maps to float16 (half) in Ascend C
-    # cols=256 float16 elements = 128 structures
-    # block_len=64 float16 elements = 32 structures/block, 4 blocks total
+    # TYPE_COEF=2: kGCols*2=512, kTCols*2=512, blockLen*2=128 (kernel internal)
+    # src_shape uses TYPE_COEF-adjusted counts: 512 f16 elements = 128 structures
+    # block_len=64 template units → 128 f16 elements in kernel = 32 structures/block
     {
         "name": "f16_single_1x256_b64",
         "dtype": np.float16,
         "format": "single",
-        "src_shape": (1, 256),  # kGCols=256 float16 elements
-        "dst_shape": (1, 256),  # kGCols=256 float16 elements
-        "valid_shape": (1, 256),
-        "block_len": 64,        # float16 elements (=32 structures)
+        "src_shape": (1, 512),  # kGCols*TYPE_COEF=512 f16 elements = 128 structures
+        "dst_shape": (1, 512),  # kGCols*TYPE_COEF=512 f16 elements
+        "valid_shape": (1, 512),
+        "block_len": 128,       # block_len*TYPE_COEF=128 f16 elements = 32 structures
         "eps": 1e-3,            # f16 has lower precision
     },
     # Transplanted from pto-isa case_single6: TMrgsortSingle<uint16_t, 1, 320, 1, 256, 64>
     # TYPE_COEF=2: kGCols*2=640, kTCols*2=512, blockLen*2=128 (kernel internal)
     # kGCols=320 > kTCols=256, global memory has padding
-    # src_cols=320 float16 elements (global), valid_cols=256 float16 elements (tile)
-    # block_len=64 float16 elements = 32 structures/block
+    # src_shape uses TYPE_COEF-adjusted: 640 f16 elements (global), 512 f16 (valid)
     {
         "name": "f16_single_1x320_b64",
         "dtype": np.float16,
         "format": "single",
-        "src_shape": (1, 320),  # kGCols=320 float16 elements (global)
-        "dst_shape": (1, 320),  # kGCols=320 float16 elements (global)
-        "valid_shape": (1, 256),  # kTCols=256 (effective tile region)
-        "block_len": 64,        # float16 elements (=32 structures)
+        "src_shape": (1, 640),  # kGCols*TYPE_COEF=640 f16 elements (global)
+        "dst_shape": (1, 640),  # kGCols*TYPE_COEF=640 f16 elements (global)
+        "valid_shape": (1, 512),  # kTCols*TYPE_COEF=512 (effective tile region)
+        "block_len": 128,       # block_len*TYPE_COEF=128 f16 elements = 32 structures
         "eps": 1e-3,
     },
     # Transplanted from pto-isa case_single7: TMrgsortSingle<uint16_t, 1, 512, 1, 512, 64>
     # TYPE_COEF=2: kGCols*2=1024, kTCols*2=1024, blockLen*2=128 (kernel internal)
-    # cols=1024 half elements = 256 structures
-    # block_len=128 half elements = 32 structures/block, repeat_times=2
+    # src_shape uses TYPE_COEF-adjusted: 1024 f16 elements = 256 structures
     {
         "name": "f16_single_1x512_b64",
         "dtype": np.float16,
         "format": "single",
-        "src_shape": (1, 512),  # kGCols=512 float16 elements
-        "dst_shape": (1, 512),  # kGCols=512 float16 elements
-        "valid_shape": (1, 512),
-        "block_len": 64,        # float16 elements (=32 structures)
+        "src_shape": (1, 1024),  # kGCols*TYPE_COEF=1024 f16 elements = 256 structures
+        "dst_shape": (1, 1024),  # kGCols*TYPE_COEF=1024 f16 elements
+        "valid_shape": (1, 1024),
+        "block_len": 128,        # block_len*TYPE_COEF=128 f16 elements = 32 structures
         "eps": 1e-3,
     },
     # Transplanted from pto-isa case_single8: TMrgsortSingle<uint16_t, 1, 1024, 1, 1024, 256>
     # TYPE_COEF=2: kGCols*2=2048, kTCols*2=2048, blockLen*2=512 (kernel internal)
-    # cols=2048 half elements = 512 structures
-    # block_len=512 half elements = 128 structures/block, repeat_times=1
+    # src_shape uses TYPE_COEF-adjusted: 2048 f16 elements = 512 structures
     {
         "name": "f16_single_1x1024_b256",
         "dtype": np.float16,
         "format": "single",
-        "src_shape": (1, 1024),  # kGCols=1024 float16 elements
-        "dst_shape": (1, 1024),  # kGCols=1024 float16 elements
-        "valid_shape": (1, 1024),
-        "block_len": 256,       # float16 elements (=128 structures, larger block)
+        "src_shape": (1, 2048),  # kGCols*TYPE_COEF=2048 f16 elements = 512 structures
+        "dst_shape": (1, 2048),  # kGCols*TYPE_COEF=2048 f16 elements
+        "valid_shape": (1, 2048),
+        "block_len": 512,        # block_len*TYPE_COEF=512 f16 elements = 128 structures
         "eps": 1e-3,
     },
     # Format2: multi-list merge (2-list merge)
@@ -181,17 +179,19 @@ CASES = [
         "exhausted": False,
         "eps": 1e-3,
     },
-    # Format2: exhausted=true cases
+    # Format2: exhausted=true cases (aligned with pto-isa case_exhausted1)
+    # pto-isa template: kGCols_=64 (elements) → 32 structures per list
+    # TOPK=128 (elements) → 64 structures output
     {
         "name": "f32_2list_exhausted",
         "dtype": np.float32,
         "format": "multi",
         "list_num": 2,
-        "src_cols": [32, 32],  # 32 structures per list
-        "src_shape": [(1, 128), (1, 128)],  # 128 f32 elements = 32 structures
-        "dst_shape": (1, 128),  # 128 f32 elements = 64 structures (match topk)
-        "valid_shape": (1, 128),  # ← 必须匹配dst_shape
-        "topk": 64,  # topk in structures (=dst capacity)
+        "src_cols": [32, 32],  # 32 structures per list (64 elements / 2)
+        "src_shape": [(1, 64), (1, 64)],  # 64 f32 elements = 32 structures
+        "dst_shape": (1, 128),  # 128 f32 elements = 64 structures (=TOPK)
+        "valid_shape": (1, 128),  # match dst_shape
+        "topk": 64,  # topk in structures (=64 structures)
         "exhausted": True,
         "eps": 1e-6,
     },
@@ -215,11 +215,11 @@ CASES = [
         "dtype": np.float32,
         "format": "multi",
         "list_num": 4,
-        "src_cols": [32, 32, 32, 32],  # 32 structures per list
-        "src_shape": [(1, 64), (1, 64), (1, 64), (1, 64)],  # 64 f32 elements = 32 structures each
-        "dst_shape": (1, 256),  # 256 f32 elements = 128 structures
-        "valid_shape": (1, 256),
-        "topk": 128,  # topk structures (128 available, output 128)
+        "src_cols": [64, 64, 64, 64],
+        "src_shape": [(1, 128), (1, 128), (1, 128), (1, 128)],
+        "dst_shape": (1, 512),
+        "valid_shape": (1, 512),
+        "topk": 256,
         "exhausted": False,
         "eps": 1e-6,
     },
@@ -250,19 +250,36 @@ CASES = [
         "exhausted": False,
         "eps": 1e-6,
     },
-    # Format3 variants: f16 exhausted (adjusted to fit tmp capacity)
+    # Format3 variants: f16 4-list basic
     # tmp tile cols=512 can hold max 256 structures for f16 (512/2=256)
     # src_cols in STRUCTURES, srcShape in ELEMENTS (f16: 4 elems/struct)
+    {
+        "name": "f16_4list_basic",
+        "dtype": np.float16,
+        "format": "multi",
+        "list_num": 4,
+        "src_cols": [64, 64, 64, 64],
+        "src_shape": [(1, 256), (1, 256), (1, 256), (1, 256)],
+        "dst_shape": (1, 1024),
+        "valid_shape": (1, 1024),
+        "topk": 256,
+        "exhausted": False,
+        "eps": 1e-3,
+    },
+    # Format3 variants: f16 exhausted (aligned with pto-isa case_exhausted2)
+    # pto-isa template: kGCols_=256 (DataType=float sized), TOPK=768 (float sized)
+    # In f16 units: 256 float-sized * 4 / 2 = 512 f16 elements per input = 128 structures
+    # TOPK: 768 float-sized * 4 / 2 = 1536 f16 elements output = 384 structures
     {
         "name": "f16_3list_exhausted",
         "dtype": np.float16,
         "format": "multi",
         "list_num": 3,
-        "src_cols": [85, 85, 85],  # 85 structures per list, total=255 < 256 (tmp capacity)
-        "src_shape": [(1, 340), (1, 340), (1, 340)],  # 340 f16 elements = 85 structures each (85*4)
-        "dst_shape": (1, 680),  # 680 f16 elements = 170 structures (topk=170, 170*4)
-        "valid_shape": (1, 680),
-        "topk": 170,  # structures (total=255 available, output topk=170)
+        "src_cols": [128, 128, 128],  # 128 structures per list (512 f16 elements)
+        "src_shape": [(1, 512), (1, 512), (1, 512)],  # 512 f16 elements = 128 structures
+        "dst_shape": (1, 1536),  # 1536 f16 elements = 384 structures (=TOPK)
+        "valid_shape": (1, 1536),
+        "topk": 384,  # structures (=384)
         "exhausted": True,
         "eps": 1e-3,
     },

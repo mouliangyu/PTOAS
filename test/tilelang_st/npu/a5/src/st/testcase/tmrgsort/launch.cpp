@@ -106,6 +106,13 @@ void LaunchTMRGSORT_f16_4list_b64_basic(uint16_t *src0, uint16_t *src1, uint16_t
     TMRGSORT_f16_4list_b64_basic<<<1, nullptr, stream>>>((__gm__ half *)src0, (__gm__ half *)src1, (__gm__ half *)src2, (__gm__ half *)src3, (__gm__ half *)dst);
 }
 
+// 4-list case: f16_4list_basic (pto-isa case_multi2)
+extern "C" __global__ AICORE void TMRGSORT_f16_4list_basic(__gm__ half *src0, __gm__ half *src1, __gm__ half *src2, __gm__ half *src3, __gm__ half *dst);
+
+void LaunchTMRGSORT_f16_4list_basic(uint16_t *src0, uint16_t *src1, uint16_t *src2, uint16_t *src3, uint16_t *dst, void *stream) {
+    TMRGSORT_f16_4list_basic<<<1, nullptr, stream>>>((__gm__ half *)src0, (__gm__ half *)src1, (__gm__ half *)src2, (__gm__ half *)src3, (__gm__ half *)dst);
+}
+
 // 3-list non-uniform: f32_3list_non_uniform
 extern "C" __global__ AICORE void TMRGSORT_f32_3list_non_uniform(__gm__ float *src0, __gm__ float *src1, __gm__ float *src2, __gm__ float *dst);
 
