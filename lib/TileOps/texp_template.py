@@ -9,7 +9,7 @@
 """TileLang DSL template for pto.texp"""
 
 import tilelang_dsl as pto
-from custom import _tl_exp_precision
+from exp_hp import _tl_exp_precision
 
 @pto.inline_proc
 def template_texp_hp_impl(src: pto.Tile, dst: pto.Tile):
