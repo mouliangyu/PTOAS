@@ -1,6 +1,6 @@
 ---
 name: pto-gym-vpto-validation
-description: Run PTO-Gym validation from this PTOAS repo. Use when the user asks to run PTO-Gym SIM or board validation from the current source tree. Always force PTOAS onto the VPTO LLVM path instead of relying on the repo default backend.
+description: Run PTO-Gym validation from this PTOAS repo. Use when the user asks to run PTO-Gym SIM or board validation from the current source tree.
 ---
 
 # PTO-Gym VPTO Validation
@@ -12,20 +12,17 @@ Use this skill when the task is specifically about:
 
 ## Required Rule
 
-When PTO-Gym is run from this repo, do not rely on the default PTOAS backend.
-
-Always pass PTOAS flags that force the VPTO path.
-The current `ptoas` CLI spelling in this repo is `--pto-backend=vpto`; do not
-shorten `--pto-backend` to `--backend`.
+The current repo default backend is VPTO. Do not add `--pto-backend=vpto` in
+PTO-Gym scripts or validation examples just to select the default path.
 
 Use:
 
 ```bash
-PTOAS_FLAGS='--pto-backend=vpto --pto-arch a5'
+PTOAS_FLAGS='--pto-arch a5'
 ```
 
-If the caller already provides `PTOAS_FLAGS`, make sure these options are still
-present. Do not silently fall back to the repo default backend.
+If the caller already provides `PTOAS_FLAGS`, preserve it and only add options
+that are required for the scenario being validated.
 
 ## Canonical Environment
 
@@ -44,7 +41,7 @@ Typical simulator environment:
 source /home/mouliangyu/.local/ascend/beta.2/cann-9.0.0-beta.2/set_env.sh
 export ASCEND_HOME_PATH=/home/mouliangyu/.local/ascend/beta.2/cann-9.0.0-beta.2
 export PTOAS_BIN=$PWD/build/tools/ptoas/ptoas
-export PTOAS_FLAGS='--pto-backend=vpto --pto-arch a5'
+export PTOAS_FLAGS='--pto-arch a5'
 ```
 
 ## Canonical Commands
