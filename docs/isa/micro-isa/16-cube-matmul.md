@@ -1,4 +1,4 @@
-# 16. Cube Matrix Multiply (MAT)
+# 16. Cube Matrix Multiply
 
 > **Category:** Cube unit ops — staged load/store, matrix multiply, and
 > FIXPIPE MTE writeback
@@ -11,18 +11,21 @@ effects from the user's point of view.
 
 ## Common Cube Operand Model
 
-Cube ops use typed PTO pointers to name logical storage domains:
+Cube ops use typed PTO pointers to name logical storage domains. The canonical
+`!pto.ptr` address-space names are the hardware-domain names below. The legacy
+names are accepted only as parser aliases and are printed back as canonical
+names.
 
-| Address space | Logical role |
-|---------------|--------------|
-| `gm` | Global memory |
-| `mat` | L1 matrix staging buffer |
-| `left` | Left matrix operand tile for Cube compute |
-| `right` | Right matrix operand tile for Cube compute |
-| `acc` | Accumulator/result tile produced by Cube compute |
-| `bias` | Bias vector payload consumed by bias matmul forms |
-| `scaling` | FIXPIPE parameter payloads consumed by vector quant/ReLU clauses |
-| `ub` | Unified Buffer destination/source for vector-side use |
+| Canonical address space | Legacy alias | Logical role |
+|-------------------------|--------------|--------------|
+| `gm` | - | Global memory |
+| `l1` | `mat` | L1 matrix staging buffer |
+| `l0a` | `left` | Left matrix operand tile for Cube compute |
+| `l0b` | `right` | Right matrix operand tile for Cube compute |
+| `l0c` | `acc` | Accumulator/result tile produced by Cube compute |
+| `bt` | `bias` | Bias vector payload consumed by bias matmul forms |
+| `fb` | `scaling` | FIXPIPE parameter payloads consumed by vector quant/ReLU clauses |
+| `ub` | `vec` | Unified Buffer destination/source for vector-side use |
 
 Unless an op says otherwise:
 
@@ -43,7 +46,7 @@ Unless an op says otherwise:
 ## Cube Compute Ops
 
 The `pto.mad*` family computes logical matrix multiplication over tiles already
-prepared in `left` and `right`:
+prepared in `l0a` and `l0b`:
 
 ```text
 lhs: M x K
@@ -56,8 +59,8 @@ element types. There is no separate type selector. Unsupported type
 combinations are invalid programs.
 
 The current VPTO surface enforces the Cube storage roles through pointer
-address spaces: `%lhs` is `left`, `%rhs` is `right`, and `%dst` is `acc`.
-Bias forms additionally require `%bias` in the `bias` address space with the
+address spaces: `%lhs` is `l0a`, `%rhs` is `l0b`, and `%dst` is `l0c`.
+Bias forms additionally require `%bias` in the `bt` address space with the
 same element type as `%dst`. MX forms require MX element types on both `%lhs`
 and `%rhs`; the current target-profile MX data type is `f8E4M3FN`.
 
@@ -83,7 +86,7 @@ pto.mad_bias: dst[m, n] = product[m, n] + bias[n]
 ```
 
 For integer forms, the op multiplies the typed values already present in
-`left` and `right`. Per-input offset correction for quantized integer
+`l0a` and `l0b`. Per-input offset correction for quantized integer
 algorithms is not an operand of `pto.mad*`; apply such correction before
 loading the Cube operands when the algorithm needs it.
 
@@ -126,9 +129,9 @@ pto.mad %lhs, %rhs, %dst, %m, %n, %k
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%lhs` | ptr | Left operand tile in `left`, interpreted as logical `M x K` |
-| `%rhs` | ptr | Right operand tile in `right`, interpreted as logical `K x N` |
-| `%dst` | ptr | Accumulator destination tile in `acc`, interpreted as logical `M x N` |
+| `%lhs` | ptr | Left operand tile in `l0a`, interpreted as logical `M x K` |
+| `%rhs` | ptr | Right operand tile in `l0b`, interpreted as logical `K x N` |
+| `%dst` | ptr | Accumulator destination tile in `l0c`, interpreted as logical `M x N` |
 | `%m` | i64 | Logical M element count |
 | `%n` | i64 | Logical N element count |
 | `%k` | i64 | Logical K element count |
@@ -136,7 +139,7 @@ pto.mad %lhs, %rhs, %dst, %m, %n, %k
 
 **Constraints:**
 
-- `%lhs`, `%rhs`, and `%dst` must be in `left`, `right`, and `acc`.
+- `%lhs`, `%rhs`, and `%dst` must be in `l0a`, `l0b`, and `l0c`.
 - `%m`, `%n`, and `%k` must be positive and satisfy the target shape limits
   for the selected element-type combination.
 - `tf32_mode(...)` requires `f32` lhs, rhs, and dst element types.
@@ -201,12 +204,12 @@ pto.mad_bias %lhs, %rhs, %dst, %bias, %m, %n, %k
 | Parameter | Width | Description |
 |-----------|-------|-------------|
 | `%lhs`, `%rhs`, `%dst`, `%m`, `%n`, `%k` | - | Same as `pto.mad` |
-| `%bias` | ptr | Bias vector in `bias`, interpreted as `N` values and broadcast across M |
+| `%bias` | ptr | Bias vector in `bt`, interpreted as `N` values and broadcast across M |
 | optional clauses | - | See [MAD Common Clauses](#mad-common-clauses) |
 
 **Constraints:**
 
-- `%bias` must be in `bias` address space.
+- `%bias` must be in `bt` address space.
 - `%bias` element type must match `%dst` element type.
 - Only `N` bias values are consumed; `%bias` is not an `M x N` matrix.
 - Other constraints match `pto.mad`.
@@ -335,14 +338,14 @@ pto.mte_gm_l1 %src, %dst, %len_burst
   : !pto.ptr<T, gm>, !pto.ptr<T, l1>, i64, i64, i64, i64
 ```
 - **semantics:** Structured GM-to-L1 copy. The op copies grouped byte ranges
-  from `%src` in `gm` to `%dst` in `mat`.
+  from `%src` in `gm` to `%dst` in `l1`.
 
 **Parameter Table:**
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
 | `%src` | ptr | GM source base pointer |
-| `%dst` | ptr | L1 matrix destination base pointer in `mat` |
+| `%dst` | ptr | L1 matrix destination base pointer in `l1` |
 | `%len_burst` | i64 | Bytes copied per burst row |
 | `nburst(%count, %src_stride, %dst_stride)` | i64 triple | Innermost burst count and byte strides between row starts |
 | `loop(%count_i, %src_stride_i, %dst_stride_i)` | i64 triple | Optional outer repetition; strides are byte advances between enclosed patterns |
@@ -373,14 +376,14 @@ pto.mte_l1_ub %src, %dst, %len_burst
   : !pto.ptr<T, l1>, !pto.ptr<T, ub>, i64, i64, i64, i64
 ```
 - **semantics:** Structured L1-to-UB copy. The grouped byte ranges are read
-  from `%src` in `mat` and written to `%dst` in `ub`.
+  from `%src` in `l1` and written to `%dst` in `ub`.
 
 **Parameter Table:** same grouped byte model as `pto.mte_gm_l1`, with source
-and destination address spaces reversed to `mat -> ub`.
+and destination address spaces reversed to `l1 -> ub`.
 
 **Constraints:**
 
-- `%src` must be in `mat`, `%dst` must be in `ub`.
+- `%src` must be in `l1`, `%dst` must be in `ub`.
 - `nburst(...)` is required.
 - Each `loop(...)` group must provide all three operands.
 
@@ -415,7 +418,7 @@ pto.mte_gm_l1_frac %src, %dst, nd2nz|dn2nz,
 | Parameter | Width | Description |
 |-----------|-------|-------------|
 | `%src` | ptr | GM source base pointer |
-| `%dst` | ptr | L1 NZ destination base pointer in `mat` |
+| `%dst` | ptr | L1 NZ destination base pointer in `l1` |
 | `nd2nz` / `dn2nz` | keyword | Source logical layout mode |
 | `shape(%n_value, %d_value)` | i64 pair | Logical output shape before NZ packing |
 | `src_layout(%src_inner_stride[, %src_outer_stride])` | i64 / optional i64 | Source row/matrix byte strides |
@@ -493,7 +496,7 @@ pto.mte_l1_bt %src, %dst, %len_burst
   nburst(%count, %src_gap, %dst_gap)
   : !pto.ptr<T, l1>, !pto.ptr<U, bt>, i64, i64, i64, i64
 ```
-- **semantics:** Load an L1 bias payload into the `bias` address space for
+- **semantics:** Load an L1 bias payload into the `bt` address space for
   later `pto.mad_bias` / `pto.mad_mx_bias` consumption. The consumer interprets
   the result as an `N`-element bias vector `bias[n]`.
 
@@ -501,8 +504,8 @@ pto.mte_l1_bt %src, %dst, %len_burst
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | ptr | L1 source pointer in `mat` |
-| `%dst` | ptr | Bias destination pointer in `bias` |
+| `%src` | ptr | L1 source pointer in `l1` |
+| `%dst` | ptr | Bias destination pointer in `bt` |
 | `%len_burst` | i64 | Number of bias-load units per burst |
 | `%count` | i64 | Burst count |
 | `%src_gap` | i64 | Source gap between bursts, in bias-load units |
@@ -539,16 +542,16 @@ pto.mte_l1_fb %src, %dst, %len_burst
   nburst(%count, %src_gap, %dst_gap)
   : !pto.ptr<T, l1>, !pto.ptr<U, fb>, i64, i64, i64, i64
 ```
-- **semantics:** Load FIXPIPE parameter payloads from L1 into `scaling`.
+- **semantics:** Load FIXPIPE parameter payloads from L1 into `fb`.
   Vector `pre_quant(...)` and `pre_relu(...)` clauses in `pto.mte_l0c_l1*`
-  later consume these payloads through `scaling` pointers.
+  later consume these payloads through `fb` pointers.
 
 **Parameter Table:**
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | ptr | L1 source pointer in `mat` |
-| `%dst` | ptr | Scaling destination pointer in `scaling` |
+| `%src` | ptr | L1 source pointer in `l1` |
+| `%dst` | ptr | Scaling destination pointer in `fb` |
 | `%len_burst` | i64 | Number of parameter-load units per burst |
 | `%count` | i64 | Burst count |
 | `%src_gap` | i64 | Source gap between bursts, in parameter-load units |
@@ -558,7 +561,7 @@ The copy unit of `pto.mte_l1_fb` is the parameter-load unit of this op. It is
 separate from the row size consumed by `mte_l0c_*` vector payloads.
 `%len_burst` and the `nburst(...)` gaps are counted in these load units, not
 in bytes and not in destination elements. After `pto.mte_l1_fb` materializes the
-payload in `scaling`, vector pre-ReLU consumers read it as 64B parameter rows
+payload in `fb`, vector pre-ReLU consumers read it as 64B parameter rows
 and vector pre-quant consumers read it as 128B parameter rows. The payload
 pointer passed to `mte_l0c_*` must point at the first row for the logical
 output tile, and rows must follow the same channel/NZ order consumed by that
@@ -566,7 +569,7 @@ store.
 
 **Constraints:**
 
-- `%src` must be in `mat`, `%dst` must be in `scaling`.
+- `%src` must be in `l1`, `%dst` must be in `fb`.
 - Vector `pre_quant` and `pre_relu` consumers require parameter data prepared
   in the row order documented by [FIXPIPE MTE Ops](#fixpipe-mte-ops).
 
@@ -597,21 +600,21 @@ is placed in the destination operand domain. Omitting the attribute means
 pto.mte_l1_l0a %src, %dst, %m, %k
   : !pto.ptr<T, l1>, !pto.ptr<T, l0a>, i64, i64
 ```
-- **semantics:** Load a logical `%m x %k` left tile from L1 `mat` into `left`.
+- **semantics:** Load a logical `%m x %k` left tile from L1 `l1` into `l0a`.
 
 **Parameter Table:**
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | ptr | L1 cube-fractal source tile in `mat` |
-| `%dst` | ptr | Left operand destination in `left` |
+| `%src` | ptr | L1 cube-fractal source tile in `l1` |
+| `%dst` | ptr | Left operand destination in `l0a` |
 | `%m` | i64 | Logical M extent |
 | `%k` | i64 | Logical K extent |
 | `transpose` | attr | Optional boolean source-tile transpose before destination placement |
 
 **Constraints:**
 
-- `%src` must be in `mat`, `%dst` must be in `left`.
+- `%src` must be in `l1`, `%dst` must be in `l0a`.
 - `%src` and `%dst` must satisfy the target alignment for Cube tile loads.
 - `transpose = true` requires a tile shape supported by the element-type
   transpose granularity.
@@ -632,22 +635,22 @@ pto.mte_l1_l0a %l1_a, %l0a, %c16_i64, %c32_i64
 pto.mte_l1_l0b %src, %dst, %k, %n
   : !pto.ptr<T, l1>, !pto.ptr<T, l0b>, i64, i64
 ```
-- **semantics:** Load a logical `%k x %n` right tile from L1 `mat` into
-  `right`.
+- **semantics:** Load a logical `%k x %n` right tile from L1 `l1` into
+  `l0b`.
 
 **Parameter Table:**
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | ptr | L1 cube-fractal source tile in `mat` |
-| `%dst` | ptr | Right operand destination in `right` |
+| `%src` | ptr | L1 cube-fractal source tile in `l1` |
+| `%dst` | ptr | Right operand destination in `l0b` |
 | `%k` | i64 | Logical K extent |
 | `%n` | i64 | Logical N extent |
 | `transpose` | attr | Optional boolean source-tile transpose before destination placement |
 
 **Constraints:**
 
-- `%src` must be in `mat`, `%dst` must be in `right`.
+- `%src` must be in `l1`, `%dst` must be in `l0b`.
 - `%src` and `%dst` must satisfy the target alignment for Cube tile loads.
 - `transpose = true` requires a tile shape supported by the element-type
   transpose granularity.
@@ -685,14 +688,14 @@ pto.mte_l1_l0a_mx %src, %dst, %m, %k
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | ptr | L1 MX scale source in `mat` |
-| `%dst` | ptr | Left-side MX payload destination associated with `left` |
+| `%src` | ptr | L1 MX scale source in `l1` |
+| `%dst` | ptr | Left-side MX payload destination associated with `l0a` |
 | `%m` | i64 | M extent of the associated left data tile |
 | `%k` | i64 | K extent; scale grouping is by 32 K elements |
 
 **Constraints:**
 
-- `%src` must be in `mat`, `%dst` must be in `left`.
+- `%src` must be in `l1`, `%dst` must be in `l0a`.
 - `%src` and `%dst` must satisfy 32B MX scale-fragment alignment.
 
 **Example:**
@@ -718,14 +721,14 @@ pto.mte_l1_l0b_mx %src, %dst, %k, %n
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | ptr | L1 MX scale source in `mat` |
-| `%dst` | ptr | Right-side MX payload destination associated with `right` |
+| `%src` | ptr | L1 MX scale source in `l1` |
+| `%dst` | ptr | Right-side MX payload destination associated with `l0b` |
 | `%k` | i64 | K extent; scale grouping is by 32 K elements |
 | `%n` | i64 | N extent of the associated right data tile |
 
 **Constraints:**
 
-- `%src` must be in `mat`, `%dst` must be in `right`.
+- `%src` must be in `l1`, `%dst` must be in `l0b`.
 - `%src` and `%dst` must satisfy 32B MX scale-fragment alignment.
 
 **Example:**
@@ -739,7 +742,7 @@ pto.mte_l1_l0b_mx %l1_b_scale, %l0b_scale, %c64_i64, %c16_i64
 
 ## FIXPIPE MTE Ops
 
-`pto.mte_l0c_l1*` writes logical accumulator results from `acc` to `mat`, `gm`,
+`pto.mte_l0c_l1*` writes logical accumulator results from `l0c` to `l1`, `gm`,
 or `ub`. The family shares this pipeline order:
 
 ```text
@@ -753,7 +756,7 @@ or `ub`. The family shares this pipeline order:
 ```
 
 Only the clauses documented here affect `pto.mte_l0c_l1*`. Other transforms
-must be represented by separate PTO ops before producing `acc` or after the
+must be represented by separate PTO ops before producing `l0c` or after the
 writeback destination is materialized.
 
 ### FIXPIPE Common Clauses
@@ -950,14 +953,14 @@ pto.mte_l0c_l1 %src, %dst, %m, %n, %src_stride, %dst_stride
     [, sat | sat(preserve_nan) | nosat]?
   : ...
 ```
-- **semantics:** FIXPIPE writeback from `acc` to L1 `mat`.
+- **semantics:** FIXPIPE writeback from `l0c` to L1 `l1`.
 
 **Parameter Table:**
 
 | Parameter | Width | Description |
 |-----------|-------|-------------|
-| `%src` | buffer-like | Accumulator source in `acc` |
-| `%dst` | buffer-like | L1 destination in `mat` |
+| `%src` | buffer-like | Accumulator source in `l0c` |
+| `%dst` | buffer-like | L1 destination in `l1` |
 | `%m` | i64 | Logical M element count |
 | `%n` | i64 | Logical N element count |
 | `%src_stride` | i64 | Source stride in C0-size units |
@@ -969,14 +972,14 @@ pto.mte_l0c_l1 %src, %dst, %m, %n, %src_stride, %dst_stride
 - Clauses must appear in canonical order:
   `unit_flag` -> `pre_quant` -> `pre_relu` -> layout -> `loop3` -> `sat`/`nosat`.
 - `pre_quant` requires payload and mode together.
-- Vector `pre_quant` modes require a `scaling` pointer with `f16`, `bf16`, or
+- Vector `pre_quant` modes require a `fb` pointer with `f16`, `bf16`, or
   `f32` element type.
 - Scalar `pre_quant` modes require an `f16`, `bf16`, or `f32` scalar payload.
 - `pre_quant` source element type must be `f32` or `i32`, and the selected
   mode must be compatible with the source and destination element types.
 - `no_relu` and `normal_relu` do not accept a payload.
 - `scalar_relu` requires an `f16`, `bf16`, or `f32` scalar payload.
-- `vector_relu` requires a `scaling` pointer with `f16`, `bf16`, or `f32`
+- `vector_relu` requires a `fb` pointer with `f16`, `bf16`, or `f32`
   element type.
 - `clip` can appear only inside `pre_relu(...)`.
 - `clip` is supported for destination `f16`, `ui8`, and signed/signless
@@ -1016,7 +1019,7 @@ pto.mte_l0c_gm %src, %dst, %m, %n, %src_stride, %dst_stride, %sid, %l2_cache_ctr
     [, atomic(type = <atomic_type>, op = <atomic_op>)]?
   : ...
 ```
-- **semantics:** FIXPIPE writeback from `acc` to GM. The data transform clauses
+- **semantics:** FIXPIPE writeback from `l0c` to GM. The data transform clauses
   match `pto.mte_l0c_l1`; GM-specific operands select the GM write path and
   optional atomic update behavior.
 
@@ -1080,7 +1083,7 @@ pto.mte_l0c_ub %src, %dst, %m, %n, %src_stride, %dst_stride,
     [, sat | sat(preserve_nan) | nosat]?
   : ...
 ```
-- **semantics:** FIXPIPE writeback from `acc` to UB. The data transform clauses
+- **semantics:** FIXPIPE writeback from `l0c` to UB. The data transform clauses
   match `pto.mte_l0c_l1`; UB-specific operands select single or dual destination
   behavior.
 
@@ -1146,9 +1149,9 @@ A common Cube matmul flow is:
 
 ```text
 GM row/column-major data
-  -> pto.mte_gm_l1_frac or pto.mte_gm_l1 into L1 mat
-  -> pto.mte_l1_l0a / pto.mte_l1_l0b into left/right tiles
-  -> pto.mad* produces acc tile
+  -> pto.mte_gm_l1_frac or pto.mte_gm_l1 into L1 `l1`
+  -> pto.mte_l1_l0a / pto.mte_l1_l0b into `l0a`/`l0b` tiles
+  -> pto.mad* produces `l0c` tile
   -> pto.mte_l0c_l1* writes L1, GM, or UB with optional FIXPIPE transforms
 ```
 
@@ -1161,5 +1164,5 @@ right data tile + right scale payload
   -> pto.mad_mx*
 ```
 
-For bias matmul, prepare the `bias[N]` vector with `pto.mte_l1_bt` before the
+For bias matmul, prepare the bias vector in `bt` with `pto.mte_l1_bt` before the
 `pto.mad_bias` / `pto.mad_mx_bias` consumer.
