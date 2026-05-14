@@ -294,7 +294,11 @@ static StringRef getPrecisionModeString(pto::PrecisionMode mode) {
 static const llvm::StringSet<> &highPrecisionImplementedOps() {
   static const llvm::StringSet<> kImplementedOps{
     "pto.tlog",
-    "pto.tdiv"
+    "pto.tdiv",
+    "pto.tdivs",
+    "pto.trecip",
+    "pto.trowexpanddiv",
+    "pto.tcolexpanddiv",
   };
   return kImplementedOps;
 }
