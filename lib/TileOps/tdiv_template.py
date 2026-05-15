@@ -35,10 +35,8 @@ def template_tdiv(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
                 rhs = pto.vlds(src1[row, col:])
                 if pto.constexpr(dtype == pto.f32):
                     divided = _div_ieee754_f32_impl(lhs, rhs, mask)
-                elif pto.constexpr(dtype == pto.f16):
+                else:  # dtype == pto.f16 (guaranteed by MLIR validation)
                     divided = _div_ieee754_f16_impl(lhs, rhs, mask)
-                else:
-                    divided = pto.vdiv(lhs, rhs, mask)
                 pto.vsts(divided, dst[row, col:], mask)
     else:
         for row in range(0, valid_rows, 1):

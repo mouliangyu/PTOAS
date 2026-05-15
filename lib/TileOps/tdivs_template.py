@@ -43,10 +43,8 @@ def template_tdivs_tile_scalar(src: pto.Tile, scalar: pto.AnyType, dst: pto.Tile
                 scalar_vec = pto.vbr(scalar)
                 if pto.constexpr(dtype == pto.f32):
                     result = _div_ieee754_f32_impl(vec, scalar_vec, mask)
-                elif pto.constexpr(dtype == pto.f16):
+                else:  # dtype == pto.f16 (guaranteed by MLIR validation)
                     result = _div_ieee754_f16_impl(vec, scalar_vec, mask)
-                else:
-                    result = pto.vdiv(vec, scalar_vec, mask)
                 pto.vsts(result, dst[row, col:], mask)
     else:
         for row in range(0, valid_rows, 1):
@@ -79,10 +77,8 @@ def template_tdivs_scalar_tile(scalar: pto.AnyType, src: pto.Tile, dst: pto.Tile
                 scalar_vec = pto.vbr(scalar)
                 if pto.constexpr(dtype == pto.f32):
                     result = _div_ieee754_f32_impl(scalar_vec, vec, mask)
-                elif pto.constexpr(dtype == pto.f16):
+                else:  # dtype == pto.f16 (guaranteed by MLIR validation)
                     result = _div_ieee754_f16_impl(scalar_vec, vec, mask)
-                else:
-                    result = pto.vdiv(scalar_vec, vec, mask)
                 pto.vsts(result, dst[row, col:], mask)
     else:
         for row in range(0, valid_rows, 1):

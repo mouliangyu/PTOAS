@@ -42,10 +42,8 @@ def template_trecip(src: pto.Tile, dst: pto.Tile):
                 one = pto.vbr(one_scalar)
                 if pto.constexpr(dtype == pto.f32):
                     result = _div_ieee754_f32_impl(one, vinput, mask)
-                elif pto.constexpr(dtype == pto.f16):
+                else:  # dtype == pto.f16 (guaranteed by MLIR validation)
                     result = _div_ieee754_f16_impl(one, vinput, mask)
-                else:
-                    result = pto.vdiv(one, vinput, mask)
                 pto.vsts(result, dst[row, col:], mask)
     else:
         for row in range(0, valid_rows, 1):

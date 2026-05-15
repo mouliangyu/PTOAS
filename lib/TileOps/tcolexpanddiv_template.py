@@ -39,10 +39,8 @@ def template_tcolexpanddiv(src0: pto.Tile, src1: pto.Tile, dst: pto.Tile):
                 rhs = pto.vlds(src1[0, col:])
                 if pto.constexpr(dtype == pto.f32):
                     result = _div_ieee754_f32_impl(lhs, rhs, mask)
-                elif pto.constexpr(dtype == pto.f16):
+                else:  # dtype == pto.f16 (guaranteed by MLIR validation)
                     result = _div_ieee754_f16_impl(lhs, rhs, mask)
-                else:
-                    result = pto.vdiv(lhs, rhs, mask)
                 pto.vsts(result, dst[row, col:], mask)
     else:
         for row in range(0, valid_rows, 1):
