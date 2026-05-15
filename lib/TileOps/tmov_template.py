@@ -17,18 +17,29 @@ import tilelang_dsl as pto
     advanced=True,
 )
 def template_tmov_basic(src: pto.Tile, dst: pto.Tile):
-    """Basic tile-to-tile data movement using vlds/vsts."""
+    """Basic tile-to-tile data movement using vlds/vsts.
+
+    Based on TMovVecToVec in TMov.hpp (lines 378-405):
+    - Iterate over valid_row rows
+    - Each row processed in chunks of nRepeatElem elements
+    - Use predicate mask for partial chunks
+
+    Args:
+        src: Source tile (Vec location)
+        dst: Destination tile (Vec location)
+    """
     dtype = dst.element_type
     lanes = pto.get_lanes(dtype)
 
-    # Use dst.valid_shape[1] as the copy count
+    # Use dst.valid_shape as the copy dimensions
     # The dst tile defines how many elements to write
-    copy_elements = dst.valid_shape[1]
+    valid_rows, valid_cols = dst.valid_shape
 
-    for col in range(0, copy_elements, lanes):
-        remained = copy_elements - col
-        mask, remained = pto.make_mask(dtype, remained)
-        data = pto.vlds(src[0, col:])
-        pto.vsts(data, dst[0, col:], mask)
+    for row in range(0, valid_rows, 1):
+        remained = valid_cols
+        for col in range(0, valid_cols, lanes):
+            mask, remained = pto.make_mask(dtype, remained)
+            data = pto.vlds(src[row, col:])
+            pto.vsts(data, dst[row, col:], mask)
 
     return None
