@@ -157,7 +157,7 @@ jobs:
         with:
           path: |
             llvm-project/llvm/build-shared
-          key: llvm-${{ runner.os }}-${{ env.LLVM_SOURCE_SHA }}-shared-mlirpy-hardening-v2
+          key: llvm-${{ runner.os }}-${{ env.LLVM_SOURCE_SHA }}-shared-mlirpy-assertions-v2
 
       - name: Prepare LLVM source (no rebuild)
         run: |
@@ -183,10 +183,17 @@ jobs:
             -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
             -DPython3_EXECUTABLE=python3 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_TARGETS_TO_BUILD="host"
 
           ninja -C llvm/build-shared
-         
+
+      - name: Verify LLVM assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^set(LLVM_ENABLE_ASSERTIONS ON)' \
+            "${LLVM_DIR}/lib/cmake/llvm/LLVMConfig.cmake"
 
       # LLVM build 完成后立即保存缓存，避免后续测试影响缓存内容
       - name: Save LLVM build cache
@@ -195,7 +202,7 @@ jobs:
         with:
           path: |
             llvm-project/llvm/build-shared
-          key: llvm-${{ runner.os }}-${{ env.LLVM_SOURCE_SHA }}-shared-mlirpy-hardening-v2
+          key: llvm-${{ runner.os }}-${{ env.LLVM_SOURCE_SHA }}-shared-mlirpy-assertions-v2
 
       - name: Build PTOAS
         run: |
@@ -209,7 +216,13 @@ jobs:
             -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
             -DMLIR_PYTHON_PACKAGE_DIR="${LLVM_DIR}/tools/mlir/python_packages/mlir_core" \
             -DCMAKE_INSTALL_PREFIX="${PTO_INSTALL_DIR}" \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS_RELEASE="-O3" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3"
+          if grep -E '^CMAKE_(C|CXX)_FLAGS_RELEASE:.*-DNDEBUG' build/CMakeCache.txt; then
+            echo "ERROR: PTOAS Release flags still define NDEBUG; assertions are disabled" >&2
+            exit 1
+          fi
           ninja -C build ptoas
           ninja -C build ptobc
           ninja -C build install
@@ -389,9 +402,17 @@ jobs:
             -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
             -DPython3_EXECUTABLE=python3 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=ON \
             -DLLVM_TARGETS_TO_BUILD="host"
 
           ninja -C llvm/build-shared
+
+      - name: Verify LLVM assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '^set(LLVM_ENABLE_ASSERTIONS ON)' \
+            "${LLVM_DIR}/lib/cmake/llvm/LLVMConfig.cmake"
 
       - name: Build PTOAS
         shell: bash
@@ -406,7 +427,13 @@ jobs:
             -Dpybind11_DIR="${PYBIND11_CMAKE_DIR}" \
             -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
             -DMLIR_PYTHON_PACKAGE_DIR="${LLVM_DIR}/tools/mlir/python_packages/mlir_core" \
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS_RELEASE="-O3" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O3"
+          if grep -E '^CMAKE_(C|CXX)_FLAGS_RELEASE:.*-DNDEBUG' build/CMakeCache.txt; then
+            echo "ERROR: PTOAS Release flags still define NDEBUG; assertions are disabled" >&2
+            exit 1
+          fi
           ninja -C build ptoas
 
       - name: Resolve simulator environment

@@ -4068,11 +4068,10 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/ca pointer spaces");
 
     Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
-    unsigned elemBitWidth = sourceElemType.getIntOrFloatBitWidth();
-    if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+    unsigned elemBytes = pto::getPTOStorageElemByteSize(sourceElemType);
+    if (elemBytes == 0)
       return rewriter.notifyMatchFailure(op,
                                          "unsupported load_cbuf_to_ca_mx element type");
-    uint64_t elemBytes = elemBitWidth / 8;
     Location loc = op.getLoc();
     auto constant = [&](uint64_t value) -> Value {
       return rewriter.create<arith::ConstantIntOp>(loc, value, 64);
@@ -4146,8 +4145,7 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/cb pointer spaces");
 
     Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
-    unsigned elemBitWidth = sourceElemType.getIntOrFloatBitWidth();
-    if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
+    if (pto::getPTOStorageElemByteSize(sourceElemType) == 0)
       return rewriter.notifyMatchFailure(op,
                                          "unsupported load_cbuf_to_cb_mx element type");
     FailureOr<Value> config0 =
