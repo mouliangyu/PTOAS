@@ -787,6 +787,10 @@ func::FuncOp ExpandState::invokeTilelangDaemon(const SpecKey &key,
     }
     renamedSymbols[fn.getSymName()] = newName;
     cloned.setName(newName);
+    
+    // Set visibility to Private for template functions (required for inline pass)
+    cloned.setVisibility(SymbolTable::Visibility::Private);
+    
     clonedFuncs.push_back(cloned);
   }
 
