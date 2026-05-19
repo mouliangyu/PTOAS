@@ -13,9 +13,9 @@ The stable key must include all fields that affect kernel selection, not just
 those that affect code generation.
 
 Key design principle (from expert review):
-"cache key 的设计原则不能只看'哪些字段影响最终代码生成'，
-还必须看'哪些字段会影响选中哪个 kernel / descriptor'。
-只要会影响选择结果，就必须进入 key。"
+The cache key must include all fields that affect kernel selection,
+not just those that affect code generation. Any field that affects
+the selection result must be included in the key.
 
 Therefore, for View operands, shape/strides/memory_space must all enter the key,
 even though they may not affect the generated MLIR code directly. They can
@@ -78,7 +78,7 @@ class OperandStableKey:
     pad: int | None = None
 
     # === View fields (ENHANCED: all enter key) ===
-    # Reason: may affect constraint evaluation → kernel selection
+    # Reason: may affect constraint evaluation -> kernel selection
     view_shape: tuple[int | None, ...] | None = None
     view_strides: tuple[int | None, ...] | None = None
     view_memory_space: str | None = None
