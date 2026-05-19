@@ -767,6 +767,7 @@ func::FuncOp ExpandState::invokeTilelangDaemon(const SpecKey &key,
 
   DenseMap<StringRef, StringRef> renamedSymbols;
   SmallVector<func::FuncOp, 4> clonedFuncs;
+  std::vector<std::string> newNameStorage;
 
   SymbolTable targetSymTable(mod);
   for (func::FuncOp fn : parsedFuncs) {
@@ -785,8 +786,9 @@ func::FuncOp ExpandState::invokeTilelangDaemon(const SpecKey &key,
       } while (targetSymTable.lookup(uniqueName));
       newName = uniqueName;  // Fixed: just use uniqueName, not double concatenation
     }
-    renamedSymbols[fn.getSymName()] = newName;
-    cloned.setName(newName);
+    newNameStorage.push_back(newName);
+    renamedSymbols[fn.getSymName()] = newNameStorage.back();
+    cloned.setName(newNameStorage.back());
     
     // Set visibility to Private for template functions (required for inline pass)
     cloned.setVisibility(SymbolTable::Visibility::Private);
@@ -999,6 +1001,7 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
     return cast<func::FuncOp>(existingFunc);
   }
 
+  std::vector<std::string> newNameStorage;
   for (auto [index, fn] : llvm::enumerate(parsedFuncs)) {
     IRMapping mapping;
     auto cloned = cast<func::FuncOp>(builder.clone(*fn, mapping));
@@ -1009,8 +1012,9 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
     } else {
       newName = uniqueName + "__" + std::string(fn.getSymName());
     }
-    renamedSymbols[fn.getSymName()] = newName;
-    cloned.setName(newName);
+    newNameStorage.push_back(newName);
+    renamedSymbols[fn.getSymName()] = newNameStorage.back();
+    cloned.setName(newNameStorage.back());
     clonedFuncs.push_back(cloned);
   }
 
