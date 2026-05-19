@@ -991,6 +991,14 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
   for (const auto &[attrName, attrValue] : key.contextAttrs)
     uniqueName += "_ctx_" + attrName + "_" + attrValue;
 
+  // Check if function already exists in module (deduplication)
+  SymbolTable targetSymTable(mod);
+  if (auto existingFunc = targetSymTable.lookup(uniqueName)) {
+    // Function already exists, return it directly (avoid redefinition)
+    llvm::errs() << "ExpandTileOp: reuse existing function @" << uniqueName << "\n";
+    return cast<func::FuncOp>(existingFunc);
+  }
+
   for (auto [index, fn] : llvm::enumerate(parsedFuncs)) {
     IRMapping mapping;
     auto cloned = cast<func::FuncOp>(builder.clone(*fn, mapping));
