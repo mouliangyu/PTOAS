@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from .types import (
+    AnyInt,
     AnyMask,
     AnyType,
     MaskType,
@@ -940,6 +941,24 @@ class _ConstraintParamView:
     @property
     def dtype(self) -> Any:
         return self._attrs.get("dtype")
+
+    @property
+    def element_type(self) -> Any:
+        return self.dtype
+
+    @property
+    def value(self) -> Any:
+        if self._attrs.get("kind") == "scalar":
+            return self._attrs.get("value")
+        return None
+
+    def __add__(self, other: Any) -> Any:
+        v = self.value
+        return None if v is None else v + other
+
+    def __radd__(self, other: Any) -> Any:
+        v = self.value
+        return None if v is None else other + v
 
     @property
     def memory_space(self) -> Any:
@@ -1881,11 +1900,13 @@ def _matches_wildcard(pattern: WildcardType, actual: ScalarType | MaskType) -> b
 
 
 def _matches_scalar_annotation(
-    annotation: ScalarType | MaskType | WildcardType | TypeVariable,
+    annotation: ScalarType | MaskType | WildcardType | TypeVariable | type[int],
     actual: ScalarType | MaskType,
 ) -> bool:
     if isinstance(annotation, (ScalarType, MaskType)):
         return annotation == actual
+    if annotation is int:
+        return isinstance(actual, ScalarType) and is_integer_dtype(actual)
     if isinstance(annotation, WildcardType):
         return _matches_wildcard(annotation, actual)
     if isinstance(annotation, TypeVariable):
@@ -1993,6 +2014,12 @@ def _validate_parameter_spec(param: inspect.Parameter) -> KernelParameterSpec:
             kind="mask",
             annotation=annotation,
         )
+    if annotation is int:
+        return KernelParameterSpec(
+            name=param.name,
+            kind="scalar",
+            annotation=annotation,
+        )
     if isinstance(annotation, (ScalarType, WildcardType, TypeVariable)):
         return KernelParameterSpec(
             name=param.name,
@@ -2026,6 +2053,9 @@ def _default_dtype_signature(
             continue
         if param_spec.kind == "mask":
             defaults.append(param_spec.annotation if isinstance(param_spec.annotation, MaskType) else AnyMask)
+            continue
+        if param_spec.annotation is int:
+            defaults.append(AnyInt)
             continue
         if isinstance(param_spec.annotation, (WildcardType, TypeVariable)):
             defaults.append(AnyType)
