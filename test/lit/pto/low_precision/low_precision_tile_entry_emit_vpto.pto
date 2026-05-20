@@ -1,0 +1,89 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// Guards low-precision tile entry lowering through VPTO IR and Hivm LLVM.
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto %s -o - | FileCheck %s --check-prefix=VPTO
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o - | FileCheck %s --check-prefix=LLVM
+
+module {
+  func.func @low_precision_tile_flow(
+      %src_hif8_ptr : !pto.ptr<!pto.hif8>,
+      %src_f4_ptr : !pto.ptr<!pto.f4E2M1x2>,
+      %dst_f8_ptr : !pto.ptr<f8E5M2>)
+      attributes {pto.entry, pto.kernel_kind = #pto.kernel_kind<vector>} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %c16 = arith.constant 16 : index
+    %c64 = arith.constant 64 : index
+    %c1024 = arith.constant 1024 : index
+
+    %src_hif8_view = pto.make_tensor_view %src_hif8_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c64],
+      strides = [%c1024, %c1024, %c1024, %c64, %c1]
+      : !pto.tensor_view<1x1x1x16x64x!pto.hif8>
+    %src_f4_view = pto.make_tensor_view %src_f4_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c64],
+      strides = [%c1024, %c1024, %c1024, %c64, %c1]
+      : !pto.tensor_view<1x1x1x16x64x!pto.f4E2M1x2>
+    %dst_f8_view = pto.make_tensor_view %dst_f8_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c64],
+      strides = [%c1024, %c1024, %c1024, %c64, %c1]
+      : !pto.tensor_view<1x1x1x16x64xf8E5M2>
+
+    %src_hif8_part = pto.partition_view %src_hif8_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c64]
+      : !pto.tensor_view<1x1x1x16x64x!pto.hif8> -> !pto.partition_tensor_view<1x1x1x16x64x!pto.hif8>
+    %src_f4_part = pto.partition_view %src_f4_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c64]
+      : !pto.tensor_view<1x1x1x16x64x!pto.f4E2M1x2> -> !pto.partition_tensor_view<1x1x1x16x64x!pto.f4E2M1x2>
+    %dst_f8_part = pto.partition_view %dst_f8_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c64]
+      : !pto.tensor_view<1x1x1x16x64xf8E5M2> -> !pto.partition_tensor_view<1x1x1x16x64xf8E5M2>
+
+    %dst_hif8 = pto.alloc_tile
+      : !pto.tile_buf<loc=vec, dtype=!pto.hif8, rows=16, cols=64, v_row=16, v_col=64,
+                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
+    %dst_f4 = pto.alloc_tile
+      : !pto.tile_buf<loc=vec, dtype=!pto.f4E2M1x2, rows=16, cols=64, v_row=16, v_col=64,
+                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
+    %src_f8 = pto.alloc_tile
+      : !pto.tile_buf<loc=vec, dtype=f8E5M2, rows=16, cols=64, v_row=16, v_col=64,
+                      blayout=row_major, slayout=none_box, fractal=512, pad=0>
+
+    pto.tload ins(%src_hif8_part : !pto.partition_tensor_view<1x1x1x16x64x!pto.hif8>)
+              outs(%dst_hif8 : !pto.tile_buf<loc=vec, dtype=!pto.hif8, rows=16, cols=64, v_row=16, v_col=64,
+                                             blayout=row_major, slayout=none_box, fractal=512, pad=0>)
+    pto.tload ins(%src_f4_part : !pto.partition_tensor_view<1x1x1x16x64x!pto.f4E2M1x2>)
+              outs(%dst_f4 : !pto.tile_buf<loc=vec, dtype=!pto.f4E2M1x2, rows=16, cols=64, v_row=16, v_col=64,
+                                           blayout=row_major, slayout=none_box, fractal=512, pad=0>)
+    pto.tstore ins(%src_f8 : !pto.tile_buf<loc=vec, dtype=f8E5M2, rows=16, cols=64, v_row=16, v_col=64,
+                                           blayout=row_major, slayout=none_box, fractal=512, pad=0>)
+               outs(%dst_f8_part : !pto.partition_tensor_view<1x1x1x16x64xf8E5M2>)
+    return
+  }
+}
+
+// VPTO-LABEL: func.func @low_precision_tile_flow(
+// VPTO: pto.copy_gm_to_ubuf {{.*}} : !pto.ptr<!pto.hif8, gm>, !pto.ptr<!pto.hif8, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64
+// VPTO: pto.copy_gm_to_ubuf {{.*}} : !pto.ptr<!pto.f4E2M1x2, gm>, !pto.ptr<!pto.f4E2M1x2, ub>, i64, i64, i64, i64, i64, i1, i64, i64, i64
+// VPTO: pto.copy_ubuf_to_gm {{.*}} : !pto.ptr<f8E5M2, ub>, !pto.ptr<f8E5M2, gm>, i64, i64, i64, i64, i64, i64
+// VPTO-NOT: pto.tload
+// VPTO-NOT: pto.tstore
+
+// LLVM-LABEL: define void @low_precision_tile_flow(
+// LLVM: getelementptr i8, ptr addrspace(1) %0, i64 0
+// LLVM: call void @llvm.hivm.MOV.OUT.TO.UB.ALIGN.V2.hif8.DV
+// LLVM: getelementptr i8, ptr addrspace(1) %1, i64 0
+// LLVM: call void @llvm.hivm.MOV.OUT.TO.UB.ALIGN.V2.e2m1x2.DV
+// LLVM: getelementptr i8, ptr addrspace(1) %2, i64 0
+// LLVM: call void @llvm.hivm.MOV.UB.TO.OUT.ALIGN.V2.DV
+// LLVM-NOT: !pto.hif8
+// LLVM-NOT: !pto.f4E2M1x2

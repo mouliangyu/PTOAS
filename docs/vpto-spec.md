@@ -2,7 +2,7 @@
 
 > **Status:** DRAFT for review
 > **Base:** [vpto-spec.md](https://github.com/mouliangyu/PTOAS/blob/feature-vpto-backend/docs/vpto-spec.md) (2026-03-20)
-> **Updated:** 2026-04-30
+> **Updated:** 2026-05-07
 
 ---
 
@@ -1371,12 +1371,20 @@ Group 14 covers the full scalar `arith` surface. The rows below list common PTO 
 | Type | Bits | vreg Lanes | Description |
 |------|------|-----------|-------------|
 | `i8` / `si8` / `ui8` | 8 | 256 | Signless/signed/unsigned 8-bit integer |
+| `f8E4M3FN` | 8 | 256 | FP8 E4M3 floating-point element |
+| `f8E5M2` | 8 | 256 | FP8 E5M2 floating-point element |
+| `!pto.hif8` | 8 | 256 | HiFloat8 PTO dialect element |
+| `!pto.f4E1M2x2` | 8 | 256 packed pairs | Packed FP4 E1M2 pair type; one byte stores two FP4 scalars |
+| `!pto.f4E2M1x2` | 8 | 256 packed pairs | Packed FP4 E2M1 pair type; one byte stores two FP4 scalars |
 | `i16` / `si16` / `ui16` | 16 | 128 | Signless/signed/unsigned 16-bit integer |
 | `f16` | 16 | 128 | IEEE 754 half precision |
 | `bf16` | 16 | 128 | Brain floating point |
 | `i32` / `si32` / `ui32` | 32 | 64 | Signless/signed/unsigned 32-bit integer |
 | `f32` | 32 | 64 | IEEE 754 single precision |
 | `i64` / `si64` / `ui64` | 64 | 32 | Signless/signed/unsigned 64-bit integer |
+
+For the packed FP4 PTO dialect types, tile and vector shapes describe the
+physical packed extent, not the logical scalar FP4 element count.
 
 ---
 

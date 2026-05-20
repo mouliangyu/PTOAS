@@ -26,6 +26,7 @@
 //
 
 #include "PTO/IR/PTO.h"
+#include "PTO/IR/PTOTypeUtils.h"
 #include "PTO/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -180,23 +181,7 @@ struct SpecKeyInfo : public llvm::DenseMapInfo<SpecKey> {
 // Helpers
 // ============================================================================
 static std::string getDtypeString(Type elemTy) {
-  if (elemTy.isInteger(1)) return "i1";
-  if (elemTy.isF32()) return "f32";
-  if (elemTy.isF16()) return "f16";
-  if (elemTy.isBF16()) return "bf16";
-  if (elemTy.isUnsignedInteger(64)) return "ui64";
-  if (elemTy.isUnsignedInteger(32)) return "ui32";
-  if (elemTy.isUnsignedInteger(16)) return "ui16";
-  if (elemTy.isUnsignedInteger(8)) return "ui8";
-  if (elemTy.isSignedInteger(64)) return "si64";
-  if (elemTy.isSignedInteger(32)) return "si32";
-  if (elemTy.isSignedInteger(16)) return "si16";
-  if (elemTy.isSignedInteger(8)) return "si8";
-  if (elemTy.isSignlessInteger(64)) return "i64";
-  if (elemTy.isSignlessInteger(32)) return "i32";
-  if (elemTy.isSignlessInteger(16)) return "i16";
-  if (elemTy.isSignlessInteger(8)) return "i8";
-  return "";
+  return pto::getPTOCanonicalDtypeString(elemTy);
 }
 
 static StringRef getTileOpName(Operation *op) {
@@ -242,6 +227,14 @@ static std::string getMemorySpaceString(pto::TileBufType tbTy) {
 static std::string getMemorySpaceString(MemRefType mrTy) {
   auto msAttr = dyn_cast_or_null<pto::AddressSpaceAttr>(mrTy.getMemorySpace());
   return msAttr ? stringifyMemorySpace(msAttr.getAddressSpace()) : "gm";
+}
+
+static std::string getMemorySpaceString(pto::TensorViewType) {
+  return "gm";
+}
+
+static std::string getMemorySpaceString(pto::PartitionTensorViewType) {
+  return "gm";
 }
 
 static std::string getBLayoutString(int32_t blayout) {
@@ -322,6 +315,64 @@ static bool tryAppendPrecisionMode(
                     "implemented; falling back to DEFAULT behavior\n";
   }
   return true;
+}
+
+static Type getOperandElementType(Value value) {
+  Type ty = value.getType();
+  if (auto tbTy = dyn_cast<pto::TileBufType>(ty))
+    return tbTy.getElementType();
+  if (auto partTy = dyn_cast<pto::PartitionTensorViewType>(ty))
+    return partTy.getElementType();
+  if (auto tvTy = dyn_cast<pto::TensorViewType>(ty))
+    return tvTy.getElementType();
+  if (auto mrTy = dyn_cast<MemRefType>(ty))
+    return mrTy.getElementType();
+  return ty;
+}
+
+static bool isUnsupportedLowPrecisionTilelangFailure(StringRef helperStderr) {
+  return helperStderr.contains("unsupported dtype") ||
+         helperStderr.contains(
+             "found no registered kernel after operand schema filtering");
+}
+
+static std::string
+formatLowPrecisionTilelangOperandSummary(Operation *tileOp) {
+  std::string summary;
+  llvm::raw_string_ostream os(summary);
+  bool first = true;
+  for (auto [index, operand] : llvm::enumerate(tileOp->getOperands())) {
+    Type elemTy = getOperandElementType(operand);
+    if (!pto::isPTOLowPrecisionType(elemTy))
+      continue;
+    if (!first)
+      os << ", ";
+    first = false;
+    os << "#" << index << "=" << elemTy;
+  }
+  os.flush();
+  return summary;
+}
+
+static std::string buildUnsupportedLowPrecisionTilelangDiagnostic(
+    Operation *tileOp, StringRef targetArch) {
+  std::string operandSummary =
+      formatLowPrecisionTilelangOperandSummary(tileOp);
+  std::string arch =
+      targetArch.empty() ? "the current target" : targetArch.str();
+  return "low-precision dtype operand(s) [" + operandSummary +
+         "] are not supported by ExpandTileOp tilelang template "
+         "specialization yet for target " +
+         arch;
+}
+
+static std::string readOptionalTextFile(StringRef path) {
+  if (path.empty())
+    return "";
+  auto bufOrErr = llvm::MemoryBuffer::getFile(path);
+  if (!bufOrErr)
+    return "";
+  return std::string((*bufOrErr)->getBuffer());
 }
 
 static std::string getTRandomRoundsString(pto::TRandomOp op) {
@@ -483,6 +534,29 @@ static std::optional<OperandTypeInfo> buildOperandTypeInfo(Value value) {
     return info;
   }
 
+  // View operand — from PTO tensor view types before PTOViewToMemref.
+  if (auto partTy = dyn_cast<pto::PartitionTensorViewType>(ty)) {
+    OperandTypeInfo info;
+    info.kind = OperandKind::View;
+    info.dtype = getDtypeString(partTy.getElementType());
+    if (info.dtype.empty())
+      return std::nullopt;
+    info.viewMemorySpace = getMemorySpaceString(partTy);
+    info.viewShape.assign(partTy.getShape().begin(), partTy.getShape().end());
+    return info;
+  }
+
+  if (auto tvTy = dyn_cast<pto::TensorViewType>(ty)) {
+    OperandTypeInfo info;
+    info.kind = OperandKind::View;
+    info.dtype = getDtypeString(tvTy.getElementType());
+    if (info.dtype.empty())
+      return std::nullopt;
+    info.viewMemorySpace = getMemorySpaceString(tvTy);
+    info.viewShape.assign(tvTy.getShape().begin(), tvTy.getShape().end());
+    return info;
+  }
+
   // View operand — from MemRefType (lowered PartitionTensorViewType).
   if (auto mrTy = dyn_cast<MemRefType>(ty)) {
     OperandTypeInfo info;
@@ -547,6 +621,7 @@ static std::optional<SpecKey> buildSpecKey(Operation *op) {
 struct ExpandState {
   std::vector<OwningOpRef<ModuleOp>> parsedModules;
   llvm::DenseMap<SpecKey, func::FuncOp, SpecKeyInfo> specCache;
+  std::optional<std::string> lastTilelangUserError;
 
   std::string tilelangPath;
   std::string tilelangPkgPath;
@@ -679,6 +754,8 @@ static std::string buildContextAttrsJson(const SpecKey &key) {
 func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
                                               Operation *tileOp,
                                               ModuleOp mod, MLIRContext *ctx) {
+  lastTilelangUserError.reset();
+
   // Check cache first.
   auto cacheIt = specCache.find(key);
   if (cacheIt != specCache.end())
@@ -710,6 +787,17 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
   }
   ::close(tmpFD);
 
+  SmallString<128> tmpErrPath;
+  int tmpErrFD;
+  if (auto ec = llvm::sys::fs::createTemporaryFile("tilelang_expand", "err",
+                                                   tmpErrFD, tmpErrPath)) {
+    llvm::sys::fs::remove(tmpPath);
+    llvm::errs() << "ExpandTileOp: cannot create stderr temp file: "
+                 << ec.message() << "\n";
+    return nullptr;
+  }
+  ::close(tmpErrFD);
+
   // 4. Build command args.
   std::string opName = "pto." + key.opName;
   SmallVector<StringRef> args = {
@@ -726,7 +814,7 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
 
   // 5. Set up environment with PYTHONPATH.
   std::optional<StringRef> redirects[] = {std::nullopt, StringRef(tmpPath),
-                                          std::nullopt};
+                                          StringRef(tmpErrPath)};
 
   SmallVector<StringRef> envp;
   std::string pythonPathEnv;
@@ -757,6 +845,8 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
       hasPythonPath ? std::optional<ArrayRef<StringRef>>(envp) : std::nullopt,
       redirects, /*secondsToWait=*/30, /*memoryLimit=*/0, &errMsg);
 
+  std::string helperStderr = readOptionalTextFile(tmpErrPath);
+
   if (rc != 0) {
     std::string cmd;
     llvm::raw_string_ostream os(cmd);
@@ -775,16 +865,26 @@ func::FuncOp ExpandState::invokeTilelangDSL(const SpecKey &key,
       appendToken(arg);
     os.flush();
 
-    llvm::errs() << "ExpandTileOp: tilelang DSL helper failed (rc=" << rc
-                 << "): " << errMsg << "\n";
-    llvm::errs() << "ExpandTileOp: run: " << cmd << "\n";
+    if (!formatLowPrecisionTilelangOperandSummary(tileOp).empty() &&
+        isUnsupportedLowPrecisionTilelangFailure(helperStderr)) {
+      lastTilelangUserError =
+          buildUnsupportedLowPrecisionTilelangDiagnostic(tileOp, key.targetArch);
+    } else {
+      llvm::errs() << "ExpandTileOp: tilelang DSL helper failed (rc=" << rc
+                   << "): " << errMsg << "\n";
+      if (!helperStderr.empty())
+        llvm::errs() << helperStderr;
+      llvm::errs() << "ExpandTileOp: run: " << cmd << "\n";
+    }
     llvm::sys::fs::remove(tmpPath);
+    llvm::sys::fs::remove(tmpErrPath);
     return nullptr;
   }
 
   // 7. Read the generated MLIR.
   auto bufOrErr = llvm::MemoryBuffer::getFile(tmpPath);
   llvm::sys::fs::remove(tmpPath);
+  llvm::sys::fs::remove(tmpErrPath);
   if (!bufOrErr) {
     llvm::errs() << "ExpandTileOp: cannot read DSL output\n";
     return nullptr;
@@ -910,6 +1010,11 @@ LogicalResult ExpandState::expandTileOpsInFunction(func::FuncOp func,
     // Invoke tilelang DSL (with caching).
     func::FuncOp dslFn = invokeTilelangDSL(*specKeyOpt, op, mod, ctx);
     if (!dslFn) {
+      if (lastTilelangUserError) {
+        op->emitError(*lastTilelangUserError);
+        lastTilelangUserError.reset();
+        return failure();
+      }
       StringRef opName = getTileOpName(op);
       op->emitError("ExpandTileOp: failed to instantiate tilelang template for " +
                     opName);

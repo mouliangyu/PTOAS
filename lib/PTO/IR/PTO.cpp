@@ -96,6 +96,8 @@ static std::optional<StringRef> getVerifierArchName(Operation *op);
 static bool isSupportedVecElemType(Type ty, bool allowBf16 = true,
                                    bool allowInt8 = true);
 static bool isSupportedLoadStoreElemTypeA2A3(Type ty);
+static bool isSupportedLoadStoreElemTypeA5(Type ty);
+static const char *getSupportedLoadStoreElemTypeDesc(bool allowLowPrecision);
 static bool isSupportedGatherElemTypeA2A3(Type ty);
 static bool isSupportedGatherElemTypeA5(Type ty);
 static ParseResult parseSyncEventOpCommon(OpAsmParser &parser,
@@ -111,6 +113,8 @@ static SmallVector<int64_t, 4> getShapeVec(Type ty);
 static SmallVector<int64_t, 4> getValidShapeVec(Type ty);
 static SmallVector<int64_t, 4> getValidShapeVec(Value value);
 static LogicalResult verifyTileBufCommon(Operation *op, Type ty, StringRef name);
+static LogicalResult verifyTileBufCommonAllowLowPrecision(Operation *op, Type ty,
+                                                          StringRef name);
 static LogicalResult verifyTileBufSameElemType(Operation *op, Type lhs, Type rhs,
                                                StringRef lhsName,
                                                StringRef rhsName);
@@ -1546,6 +1550,17 @@ static LogicalResult verifyTileBufLayoutConstraints(Operation *op,
   return false;
 }
 
+static bool isSupportedLoadStoreElemTypeA5(Type ty) {
+  return isSupportedLoadStoreElemTypeA2A3(ty) || isPTOFloat8Type(ty) ||
+         isPTOHiFloat8Type(ty) || isPTOFloat4PackedType(ty);
+}
+
+static const char *getSupportedLoadStoreElemTypeDesc(bool allowLowPrecision) {
+  return allowLowPrecision
+             ? "i8/i16/i32/i64/u64/f16/bf16/f32/MLIR FP8/!pto.hif8/!pto.f4E1M2x2/!pto.f4E2M1x2"
+             : "i8/i16/i32/i64/u64/f16/bf16/f32";
+}
+
 static bool isSupportedGatherElemTypeA2A3(Type ty) {
   if (ty.isF16() || ty.isF32())
     return true;
@@ -2257,9 +2272,10 @@ LogicalResult AllocTileOp::verify() {
   auto ty = getResult().getType(); // TileBufType
 
   Type elemTy = ty.getElementType();
-  if (isPTOLowPrecisionType(elemTy))
+  if (isPTOLowPrecisionType(elemTy) &&
+      getVerifierTargetArch(getOperation()) != VerifierTargetArch::A5)
     return emitOpError() << "result dtype " << elemTy
-                         << " is not supported by pto.alloc_tile yet";
+                         << " is only supported by pto.alloc_tile on A5";
 
   if (failed(verifyTileBufLayoutConstraints(*this, ty, "result")))
     return failure();
@@ -2346,14 +2362,15 @@ LogicalResult TAssignOp::verify() {
 }
 
 LogicalResult TLoadOp::verify() {
-  auto verifyCommon = [&]() -> FailureOr<std::pair<pto::PartitionTensorViewType, pto::TileBufType>> {
+  auto verifyCommon =
+      [&]() -> FailureOr<std::pair<pto::PartitionTensorViewType, pto::TileBufType>> {
     auto srcPart = dyn_cast<pto::PartitionTensorViewType>(getSrc().getType());
     auto dstTile = dyn_cast<pto::TileBufType>(getDst().getType());
     if (!srcPart || !dstTile) {
       emitOpError("expects src to be !pto.partition_tensor_view and dst to be !pto.tile_buf");
       return failure();
     }
-    if (failed(verifyTileBufCommon(*this, dstTile, "dst")))
+    if (failed(verifyTileBufCommonAllowLowPrecision(*this, dstTile, "dst")))
       return failure();
 
     auto srcShape = srcPart.getShape();
@@ -2381,9 +2398,14 @@ LogicalResult TLoadOp::verify() {
 
     Type srcElem = srcPart.getElementType();
     Type dstElem = dstTile.getElementType();
-    if (!(dstElem.isInteger(8) || dstElem.isInteger(16) || dstElem.isInteger(32) ||
-          dstElem.isInteger(64) || dstElem.isF16() || dstElem.isBF16() || dstElem.isF32()))
-      return emitOpError("expects A2/A3 tload dst element type to be i8/i16/i32/i64/u64/f16/bf16/f32");
+    if (!isSupportedLoadStoreElemTypeA2A3(srcElem))
+      return emitOpError()
+             << "expects A2/A3 tload src element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/false);
+    if (!isSupportedLoadStoreElemTypeA2A3(dstElem))
+      return emitOpError()
+             << "expects A2/A3 tload dst element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/false);
 
     auto dstSpace = getPTOMemorySpaceEnum(dstTile);
     if (!dstSpace || (*dstSpace != pto::AddressSpace::VEC &&
@@ -2403,6 +2425,14 @@ LogicalResult TLoadOp::verify() {
 
     Type srcElem = srcPart.getElementType();
     Type dstElem = dstTile.getElementType();
+    if (!isSupportedLoadStoreElemTypeA5(srcElem))
+      return emitOpError()
+             << "expects A5 tload src element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/true);
+    if (!isSupportedLoadStoreElemTypeA5(dstElem))
+      return emitOpError()
+             << "expects A5 tload dst element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/true);
     unsigned srcBytes = getElemByteSize(srcElem);
     unsigned dstBytes = getElemByteSize(dstElem);
     if (srcBytes != dstBytes)
@@ -2438,6 +2468,8 @@ LogicalResult TLoadOp::verify() {
 }
 
 LogicalResult TPrefetchOp::verify() {
+  bool allowLowPrecision =
+      getVerifierTargetArch(getOperation()) == VerifierTargetArch::A5;
   Type srcTy = getSrc().getType();
   Type dstTy = getDst().getType();
 
@@ -2464,7 +2496,9 @@ LogicalResult TPrefetchOp::verify() {
   }
 
   if (auto dstTile = dyn_cast<pto::TileBufType>(dstTy)) {
-    if (failed(verifyTileBufCommon(*this, dstTile, "dst")))
+    if (failed(allowLowPrecision
+                   ? verifyTileBufCommonAllowLowPrecision(*this, dstTile, "dst")
+                   : verifyTileBufCommon(*this, dstTile, "dst")))
       return failure();
     auto dstValid = dstTile.getValidShape();
     for (unsigned i = 0; i < dstValid.size(); ++i) {
@@ -2486,6 +2520,26 @@ LogicalResult TPrefetchOp::verify() {
     dstElem = dstMr.getElementType();
   } else {
     return emitOpError("expects dst to be !pto.tile_buf or memref");
+  }
+
+  if (allowLowPrecision) {
+    if (!isSupportedLoadStoreElemTypeA5(srcElem))
+      return emitOpError()
+             << "expects A5 tprefetch src element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/true);
+    if (!isSupportedLoadStoreElemTypeA5(dstElem))
+      return emitOpError()
+             << "expects A5 tprefetch dst element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/true);
+  } else {
+    if (!isSupportedLoadStoreElemTypeA2A3(srcElem))
+      return emitOpError()
+             << "expects A2/A3 tprefetch src element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/false);
+    if (!isSupportedLoadStoreElemTypeA2A3(dstElem))
+      return emitOpError()
+             << "expects A2/A3 tprefetch dst element type to be "
+             << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/false);
   }
 
   if (getElemByteSize(srcElem) != getElemByteSize(dstElem))
@@ -2584,14 +2638,15 @@ LogicalResult mlir::pto::SyncWaitOp::verify() {
 }
 
 LogicalResult TStoreOp::verify() {
-  auto verifyCommon = [&]() -> FailureOr<std::pair<pto::TileBufType, pto::PartitionTensorViewType>> {
+  auto verifyCommon =
+      [&]() -> FailureOr<std::pair<pto::TileBufType, pto::PartitionTensorViewType>> {
     auto srcTile = dyn_cast<pto::TileBufType>(getSrc().getType());
     auto dstPart = dyn_cast<pto::PartitionTensorViewType>(getDst().getType());
     if (!srcTile || !dstPart) {
       emitOpError("expects src to be !pto.tile_buf and dst to be !pto.partition_tensor_view");
       return failure();
     }
-    if (failed(verifyTileBufCommon(*this, srcTile, "src")))
+    if (failed(verifyTileBufCommonAllowLowPrecision(*this, srcTile, "src")))
       return failure();
     for (auto [idx, dim] : llvm::enumerate(dstPart.getShape())) {
       if (dim != ShapedType::kDynamic && dim <= 0) {
@@ -2636,10 +2691,6 @@ LogicalResult TStoreOp::verify() {
     return std::make_pair(srcTile, dstPart);
   };
 
-  auto isLoadStoreElemType = [&](Type ty) -> bool {
-    return ty.isInteger(8) || ty.isInteger(16) || ty.isInteger(32) ||
-           ty.isInteger(64) || ty.isF16() || ty.isBF16() || ty.isF32();
-  };
   auto isI8Like = [&](Type ty) -> bool { return ty.isInteger(8); };
   bool hasPreQuant = static_cast<bool>(getPreQuantScalar());
   auto reluMode = getReluPreMode();
@@ -2664,8 +2715,14 @@ LogicalResult TStoreOp::verify() {
     if (*srcSpace == pto::AddressSpace::VEC || *srcSpace == pto::AddressSpace::MAT) {
       if (hasPreQuant)
         return emitOpError("expects preQuantScalar form to use loc=acc src");
-      if (!isLoadStoreElemType(srcElem))
-        return emitOpError("expects A2/A3 vec/mat tstore src element type to be i8/i16/i32/i64/u64/f16/bf16/f32");
+      if (!isSupportedLoadStoreElemTypeA2A3(srcElem))
+        return emitOpError()
+               << "expects A2/A3 vec/mat tstore src element type to be "
+               << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/false);
+      if (!isSupportedLoadStoreElemTypeA2A3(dstElem))
+        return emitOpError()
+               << "expects A2/A3 vec/mat tstore dst element type to be "
+               << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/false);
       if (getElemByteSize(srcElem) != getElemByteSize(dstElem))
         return emitOpError("expects A2/A3 vec/mat tstore src and dst element types to have the same bitwidth");
       return success();
@@ -2717,8 +2774,14 @@ LogicalResult TStoreOp::verify() {
     if (*srcSpace == pto::AddressSpace::VEC) {
       if (hasPreQuant)
         return emitOpError("expects preQuantScalar form to use loc=acc src");
-      if (!isLoadStoreElemType(srcElem))
-        return emitOpError("expects A5 vec tstore src element type to be i8/i16/i32/i64/u64/f16/bf16/f32");
+      if (!isSupportedLoadStoreElemTypeA5(srcElem))
+        return emitOpError()
+               << "expects A5 vec tstore src element type to be "
+               << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/true);
+      if (!isSupportedLoadStoreElemTypeA5(dstElem))
+        return emitOpError()
+               << "expects A5 vec tstore dst element type to be "
+               << getSupportedLoadStoreElemTypeDesc(/*allowLowPrecision=*/true);
       if (getElemByteSize(srcElem) != getElemByteSize(dstElem))
         return emitOpError("expects A5 vec tstore src and dst element types to have the same bitwidth");
 
@@ -3208,19 +3271,21 @@ static LogicalResult verifyMGatherMScatterTileShape(Operation *op, Type dataTy,
   return success();
 }
 
-static LogicalResult verifyTileBufCommon(Operation *op, Type ty, StringRef name) {
+static LogicalResult verifyTileBufCommonImpl(Operation *op, Type ty,
+                                             StringRef name,
+                                             bool allowLowPrecision) {
   auto tb = dyn_cast<pto::TileBufType>(ty);
   if (tb) {
     if (tb.getRank() != 2)
       return op->emitOpError() << "expects " << name << " to be a rank-2 tile_buf";
     Type elemTy = tb.getElementType();
-    if (isPTOLowPrecisionType(elemTy))
+    if (!allowLowPrecision && isPTOLowPrecisionType(elemTy))
       return op->emitOpError() << name << ": dtype " << elemTy
                                << " is not supported by this op yet";
   } else if (auto mr = dyn_cast<MemRefType>(ty)) {
     if (mr.getRank() != 2)
       return op->emitOpError() << "expects " << name << " to be a rank-2 memref";
-    if (isPTOLowPrecisionType(mr.getElementType()))
+    if (!allowLowPrecision && isPTOLowPrecisionType(mr.getElementType()))
       return op->emitOpError() << name << ": dtype " << mr.getElementType()
                                << " is not supported by this op yet";
   } else {
@@ -3238,6 +3303,16 @@ static LogicalResult verifyTileBufCommon(Operation *op, Type ty, StringRef name)
                                << "] <= shape[" << i << "]";
   }
   return success();
+}
+
+static LogicalResult verifyTileBufCommon(Operation *op, Type ty,
+                                         StringRef name) {
+  return verifyTileBufCommonImpl(op, ty, name, /*allowLowPrecision=*/false);
+}
+
+static LogicalResult verifyTileBufCommonAllowLowPrecision(Operation *op, Type ty,
+                                                          StringRef name) {
+  return verifyTileBufCommonImpl(op, ty, name, /*allowLowPrecision=*/true);
 }
 
 static LogicalResult verifyTileBufSameElemType(Operation *op, Type lhs, Type rhs,
@@ -3608,7 +3683,7 @@ static LogicalResult verifyTColArgReductionOpCommon(Operation *op, Type srcTy,
                                            /*requireNonZeroSrc=*/true)))
     return failure();
   Type srcElemTy = getElemTy(srcTy);
-  unsigned srcElemBits = srcElemTy ? srcElemTy.getIntOrFloatBitWidth() : 0;
+  unsigned srcElemBits = srcElemTy ? getPTOStorageElemBitWidth(srcElemTy) : 0;
   if (!(mlir::isa<IntegerType, FloatType>(srcElemTy) &&
         (srcElemBits == 8 || srcElemBits == 16 || srcElemBits == 32)))
     return op->emitOpError(
@@ -4834,11 +4909,30 @@ llvm::LogicalResult mlir::pto::TCvtOp::verify() {
     return success();
   Type srcTy = getSrc().getType();
   Type dstTy = getDst().getType();
-  if (failed(verifyTileBufCommon(*this, srcTy, "src")) ||
-      failed(verifyTileBufCommon(*this, dstTy, "dst")))
+
+  auto verifyA2A3 = [&]() -> LogicalResult {
+    if (failed(verifyTileBufCommon(*this, srcTy, "src")) ||
+        failed(verifyTileBufCommon(*this, dstTy, "dst")))
+      return failure();
+    if (getTmp() && failed(verifyTileBufCommon(*this, getTmp().getType(), "tmp")))
+      return failure();
+    return success();
+  };
+
+  auto verifyA5 = [&]() -> LogicalResult {
+    if (failed(verifyTileBufCommonAllowLowPrecision(*this, srcTy, "src")) ||
+        failed(verifyTileBufCommonAllowLowPrecision(*this, dstTy, "dst")))
+      return failure();
+    if (getTmp() &&
+        failed(
+            verifyTileBufCommonAllowLowPrecision(*this, getTmp().getType(), "tmp")))
+      return failure();
+    return success();
+  };
+
+  if (failed(dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5)))
     return failure();
-  if (getTmp() && failed(verifyTileBufCommon(*this, getTmp().getType(), "tmp")))
-    return failure();
+
   if (getShapeVec(srcTy) != getShapeVec(dstTy))
     return emitOpError("expects src and dst to have compatible shapes");
   if (failed(verifyTileBufSameValidShape(*this, srcTy, dstTy, "src", "dst")))
@@ -5544,10 +5638,11 @@ static mlir::LogicalResult verifyTFillPadLike(Operation *op, Type srcTy, Type ds
   auto dstElem = getElemTy(dstTy);
 
   auto getElemBytes = [](mlir::Type t) -> int64_t {
-    if (auto it = mlir::dyn_cast<mlir::IntegerType>(t))
-      return it.getWidth() / 8;
-    if (auto ft = mlir::dyn_cast<mlir::FloatType>(t))
-      return ft.getWidth() / 8;
+    unsigned bytes = getPTOStorageElemByteSize(t);
+    if (bytes)
+      return bytes;
+    if (getPTOStorageElemBitWidth(t))
+      return 1;
     return -1;
   };
 
@@ -5671,8 +5766,8 @@ llvm::LogicalResult mlir::pto::TGatherOp::verify() {
     if (!srcSpace || !dstSpace || *srcSpace != pto::AddressSpace::VEC ||
         *dstSpace != pto::AddressSpace::VEC)
       return emitOpError("expects src and dst to be in the vec address space");
-    unsigned srcElemBytes = srcElem.getIntOrFloatBitWidth() / 8;
-    unsigned dstElemBytes = dstElem.getIntOrFloatBitWidth() / 8;
+    unsigned srcElemBytes = getPTOStorageElemByteSize(srcElem);
+    unsigned dstElemBytes = getPTOStorageElemByteSize(dstElem);
     if (srcElemBytes != dstElemBytes)
       return emitOpError("expects src and dst element sizes to match");
 
@@ -5865,12 +5960,9 @@ mlir::LogicalResult mlir::pto::TGatherBOp::verify() {
   };
 
   auto getElemBytes = [](Type ty) -> std::optional<unsigned> {
-    if (ty.isBF16())
-      return 2;
-    if (auto it = mlir::dyn_cast<IntegerType>(ty))
-      return it.getWidth() / 8;
-    if (auto ft = mlir::dyn_cast<FloatType>(ty))
-      return ft.getWidth() / 8;
+    unsigned bytes = getPTOStorageElemByteSize(ty);
+    if (bytes)
+      return bytes;
     return std::nullopt;
   };
 
@@ -8080,21 +8172,10 @@ static std::optional<int64_t> getStaticNumElements(ArrayRef<int64_t> shape) {
 static std::optional<int64_t> getElemBytes(Type elemTy) {
   if (!elemTy)
     return std::nullopt;
-  if (auto ft = dyn_cast<FloatType>(elemTy)) {
-    if (ft.isF16() || ft.isBF16())
-      return 2;
-    if (ft.isF32())
-      return 4;
-    if (ft.isF64())
-      return 8;
-    return std::nullopt;
-  }
-  if (auto it = dyn_cast<IntegerType>(elemTy)) {
-    int64_t bits = it.getWidth();
-    if (bits <= 0)
-      return std::nullopt;
-    return std::max<int64_t>(1, bits / 8);
-  }
+  if (unsigned bytes = getPTOStorageElemByteSize(elemTy))
+    return bytes;
+  if (getPTOStorageElemBitWidth(elemTy))
+    return 1;
   return std::nullopt;
 }
 
@@ -9432,7 +9513,7 @@ mlir::LogicalResult mlir::pto::TTransOp::verify() {
       if (srcTb.getBLayoutValueI32() != static_cast<int32_t>(pto::BLayout::RowMajor))
         return emitOpError() << "expects A2/A3 transpose src to use the row_major blayout";
     }
-    unsigned elemBytes = srcElem.getIntOrFloatBitWidth() / 8;
+    unsigned elemBytes = getPTOStorageElemByteSize(srcElem);
     if (elemBytes != 1 && elemBytes != 2 && elemBytes != 4)
       return emitOpError() << "expects transpose element size to be 1, 2, or 4 bytes";
     auto isAllowedWidthType = [&](Type ty) {
@@ -9459,7 +9540,7 @@ mlir::LogicalResult mlir::pto::TTransOp::verify() {
     Type dstElem = getElemTy(dstTy);
     if (!srcElem || !tmpElem || !dstElem || srcElem != dstElem || srcElem != tmpElem)
       return emitOpError() << "expects src, tmp, and dst to have the same element type";
-    unsigned elemBytes = srcElem.getIntOrFloatBitWidth() / 8;
+    unsigned elemBytes = getPTOStorageElemByteSize(srcElem);
     if (elemBytes != 1 && elemBytes != 2 && elemBytes != 4)
       return emitOpError() << "expects transpose element size to be 1, 2, or 4 bytes";
     auto isAllowedWidthType = [&](Type ty) {
@@ -10336,15 +10417,7 @@ static LogicalResult computeInnerShape(TileBufConfigAttr cfg, Type elemTy,
     return success();
   }
 
-  int64_t elemBytes = -1;
-  if (auto ft = mlir::dyn_cast<FloatType>(elemTy)) {
-    if (ft.isF16() || ft.isBF16()) elemBytes = 2;
-    else if (ft.isF32()) elemBytes = 4;
-    else if (ft.isF64()) elemBytes = 8;
-  } else if (auto it = mlir::dyn_cast<IntegerType>(elemTy)) {
-    int64_t bytes = it.getWidth() / 8;
-    elemBytes = bytes > 0 ? bytes : 1;
-  }
+  int64_t elemBytes = getElemBytes(elemTy).value_or(-1);
   if (elemBytes <= 0) return failure();
 
   if (fr == 1024) {

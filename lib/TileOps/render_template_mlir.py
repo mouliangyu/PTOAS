@@ -49,6 +49,15 @@ _DTYPE_BY_NAME = {
     "f16": pto.f16,
     "bf16": pto.bf16,
     "f32": pto.f32,
+    "f8E4M3": pto.f8E4M3,
+    "f8E4M3FN": pto.f8E4M3FN,
+    "f8E4M3FNUZ": pto.f8E4M3FNUZ,
+    "f8E4M3B11FNUZ": pto.f8E4M3B11FNUZ,
+    "f8E5M2": pto.f8E5M2,
+    "f8E5M2FNUZ": pto.f8E5M2FNUZ,
+    "hif8": pto.hif8,
+    "f4e1m2x2": pto.f4E1M2x2,
+    "f4e2m1x2": pto.f4E2M1x2,
 }
 _MEMORY_SPACE_BY_NAME = {
     "gm": pto.MemorySpace.GM,

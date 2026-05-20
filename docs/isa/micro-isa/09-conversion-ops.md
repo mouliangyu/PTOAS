@@ -71,6 +71,19 @@ for (int i = 0; i < min(N, M); i++)
   use the typed-mask granularity that matches the source vector family on the
   current surface; there is no `!pto.mask<b64>` form in VPTO.
 
+  For A5 low-precision families, this document currently covers the following
+  `pto.vcvt` type-pair scenarios:
+
+  - `f8E4M3FN -> f32`
+  - `f8E5M2 -> f32`
+  - `!pto.hif8 -> f32`
+  - `f32 -> !pto.hif8`
+  - `f16 -> !pto.hif8`
+  - `bf16 -> !pto.f4E1M2x2`
+  - `bf16 -> !pto.f4E2M1x2`
+  - `!pto.f4E1M2x2 -> bf16`
+  - `!pto.f4E2M1x2 -> bf16`
+
 ---
 
 ### Rounding Modes
@@ -83,6 +96,7 @@ for (int i = 0; i < min(N, M); i++)
 | `C` | Round toward positive infinity (ceil) |
 | `Z` | Round toward zero (truncate) |
 | `O` | Round to odd |
+| `H` | Hybrid round; only meaningful for documented low-precision forms such as HiF8 routes |
 
 ---
 
@@ -97,18 +111,17 @@ for (int i = 0; i < min(N, M); i++)
 
 ### Part Modes
 
-Use `part` when a width-changing conversion writes only one half of each wider
-destination lane group.
+Use `part` when a width-changing conversion writes or selects only one portion
+of each wider lane group.
 
 - `Part` (`PART_EVEN`, `PART_ODD`)
-  - Used by ordinary width-changing conversions.
+  - Used by 2:1 or 1:2 width-ratio conversions.
   - Typical cases include `32 -> 16`, `16 -> 32`, and other even/odd packing
-    or unpacking forms.
+    or unpacking forms where one half-lane family is selected.
 - `Part_T` (`PART_P0`, `PART_P1`, `PART_P2`, `PART_P3`)
-  - Used by lower-level packed placement forms.
-  - Typical cases include `32 -> 8`, packed fp8/fp4 conversion paths, and
-    other flows where the result is written into one of four sub-parts before a
-    later merge or compact step.
+  - Used by 4:1 or 1:4 width-ratio packed placement forms.
+  - Typical cases include `32 -> 8` and other flows where the result is
+    written into one of four sub-parts before a later merge or compact step.
 
 | Mode | Description |
 |------|-------------|
@@ -135,8 +148,9 @@ destination lane group.
   - Use when the conversion may overflow the destination range and hardware
     exposes a saturating form.
 - `part`
-  - Use for width-changing conversions that select the even or odd half of the
-    destination packing layout.
+  - Use for width-changing conversions that select an `EVEN` / `ODD` half-lane
+    family or a `P0..P3` packed quarter-lane family, depending on the
+    documented width relation of the selected conversion.
 
 #### Float To Int
 
@@ -184,10 +198,23 @@ destination lane group.
 - `%dst = pto.vcvt %src, %mask {sat, part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<128xsi16>`
 - `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<64xsi32>, !pto.mask<b32> -> !pto.vreg<32xsi64>`
 
+#### Low-Precision Float To Float
+
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xf8E4M3FN>, !pto.mask<b8> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256xf8E5M2>, !pto.mask<b8> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256x!pto.hif8>, !pto.mask<b8> -> !pto.vreg<64xf32>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xf16>, !pto.mask<b16> -> !pto.vreg<256x!pto.hif8>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<64xf32>, !pto.mask<b32> -> !pto.vreg<256x!pto.hif8>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256x!pto.f4E1M2x2>, !pto.mask<b8> -> !pto.vreg<128xbf16>`
+- `%dst = pto.vcvt %src, %mask {part} : !pto.vreg<256x!pto.f4E2M1x2>, !pto.mask<b8> -> !pto.vreg<128xbf16>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<256x!pto.f4E1M2x2>`
+- `%dst = pto.vcvt %src, %mask {rnd, sat, part} : !pto.vreg<128xbf16>, !pto.mask<b16> -> !pto.vreg<256x!pto.f4E2M1x2>`
+
 ### A5 Supported Type Matrix
 
 The table below is only a summary. For exact attribute combinations, use the
-per-form entries above as the source of truth.
+per-form entries above as the source of truth. This baseline matrix covers the
+established scalar-width families.
 
 | `src \ dst` | `ui8` | `si8` | `ui16` | `si16` | `ui32` | `si32` | `si64` | `f16` | `f32` | `bf16` |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -201,6 +228,22 @@ per-form entries above as the source of truth.
 | `f16` | Y | Y |  | Y |  | Y |  |  | Y |  |
 | `f32` |  |  |  | Y |  | Y | Y | Y |  | Y |
 | `bf16` |  |  |  |  |  | Y |  | Y | Y |  |
+
+### A5 Low-Precision Conversion Matrix
+
+This table summarizes the documented A5 VPTO low-precision `pto.vcvt`
+type-pair forms.
+
+| `src \\ dst` | `f16` | `bf16` | `f32` | `f8E4M3FN` | `f8E5M2` | `!pto.hif8` | `!pto.f4E1M2x2` | `!pto.f4E2M1x2` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `f16` |  |  |  |  |  | Y |  |  |
+| `bf16` |  |  |  |  |  |  | Y | Y |
+| `f32` |  |  |  |  |  | Y |  |  |
+| `f8E4M3FN` |  |  | Y |  |  |  |  |  |
+| `f8E5M2` |  |  | Y |  |  |  |  |  |
+| `!pto.hif8` |  |  | Y |  |  |  |  |  |
+| `!pto.f4E1M2x2` |  | Y |  |  |  |  |  |  |
+| `!pto.f4E2M1x2` |  | Y |  |  |  |  |  |  |
 
 ---
 

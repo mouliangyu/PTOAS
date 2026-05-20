@@ -14,6 +14,7 @@
 #include "PTO/IR/PTO.h"
 #include "PTO/IR/PTOTypeUtils.h"
 #include "PTO/IR/PTOSyncUtils.h"
+#include "PTO/IR/VPTOVcvtUtils.h"
 #include "PTO/Transforms/Passes.h"
 
 #include "mlir/Conversion/Passes.h"
@@ -59,8 +60,17 @@ constexpr llvm::StringLiteral kVectorSuffix = "_mix_aiv";
 constexpr llvm::StringLiteral kCubeSuffix = "_mix_aic";
 
 static std::string getElementTypeFragment(Type type);
+static std::string getHIVMLowPrecisionFragment(Type type);
 static Type getElementTypeFromVectorLike(Type type);
 static std::optional<int64_t> getElementCountFromVectorLike(Type type);
+
+enum class VPTOTypeConversionMode {
+  PreserveSemantic,
+  LowerCustomLowPrecisionToCarrier,
+};
+
+static Type convertVPTOScalarLikeType(Type type, Builder &builder,
+                                      VPTOTypeConversionMode mode);
 
 static Type normalizeIntegerTypeForLLVMLowering(Type type, Builder &builder) {
   if (auto intType = dyn_cast<IntegerType>(type)) {
@@ -81,11 +91,42 @@ static Type normalizeIntegerTypeForLLVMLowering(Type type, Builder &builder) {
   return type;
 }
 
-static Type convertVPTOType(Type type, Builder &builder) {
+static bool requiresCustomLowPrecisionCarrier(Type type) {
+  return pto::isPTOHiFloat8Type(type) || pto::isPTOFloat4PackedType(type);
+}
+
+static Type getPointerArithmeticElementCarrierType(Type type, Builder &builder) {
+  if (pto::isPTOLowPrecisionType(type)) {
+    unsigned storageBits = pto::getPTOStorageElemBitWidth(type);
+    if (storageBits && storageBits % 8 == 0)
+      return builder.getIntegerType(storageBits);
+  }
+  return convertVPTOScalarLikeType(
+      type, builder, VPTOTypeConversionMode::LowerCustomLowPrecisionToCarrier);
+}
+
+static Type convertVPTOScalarLikeType(Type type, Builder &builder,
+                                      VPTOTypeConversionMode mode) {
+  if (mode == VPTOTypeConversionMode::LowerCustomLowPrecisionToCarrier &&
+      requiresCustomLowPrecisionCarrier(type))
+    return builder.getI8Type();
+  return normalizeIntegerTypeForLLVMLowering(type, builder);
+}
+
+static Type convertVPTOType(Type type, Builder &builder,
+                            VPTOTypeConversionMode mode) {
   if (auto vecType = dyn_cast<pto::VRegType>(type)) {
     Type elementType =
-        normalizeIntegerTypeForLLVMLowering(vecType.getElementType(), builder);
+        convertVPTOScalarLikeType(vecType.getElementType(), builder, mode);
     return VectorType::get({vecType.getElementCount()}, elementType);
+  }
+  if (auto vecType = dyn_cast<VectorType>(type)) {
+    Type elementType =
+        convertVPTOScalarLikeType(vecType.getElementType(), builder, mode);
+    if (elementType == vecType.getElementType())
+      return normalizeIntegerTypeForLLVMLowering(type, builder);
+    return VectorType::get(vecType.getShape(), elementType,
+                           vecType.getScalableDims());
   }
   if (isa<pto::MaskType>(type))
     return VectorType::get({256}, builder.getI1Type());
@@ -96,10 +137,12 @@ static Type convertVPTOType(Type type, Builder &builder) {
         builder.getContext(),
         static_cast<unsigned>(ptrType.getMemorySpace().getAddressSpace()));
   }
-  return normalizeIntegerTypeForLLVMLowering(type, builder);
+  return convertVPTOScalarLikeType(type, builder, mode);
 }
 
 static bool hasVPTOConvertibleType(Type type) {
+  if (auto vecType = dyn_cast<VectorType>(type))
+    return hasVPTOConvertibleType(vecType.getElementType());
   return isa<pto::VRegType, pto::MaskType, pto::AlignType, pto::PtrType>(type);
 }
 
@@ -118,13 +161,14 @@ static Value materializeVPTOCast(OpBuilder &builder, Type resultType,
 
 class VPTOTypeConverter final : public TypeConverter {
 public:
-  explicit VPTOTypeConverter(MLIRContext *context) {
+  explicit VPTOTypeConverter(MLIRContext *context,
+                             VPTOTypeConversionMode mode) {
     addConversion([](Type type) { return type; });
-    addConversion([](Type type) -> Type {
+    addConversion([mode](Type type) -> Type {
       // The conversion callback outlives this constructor, so build on demand
       // from the current type context instead of capturing a local Builder.
       Builder builder(type.getContext());
-      return convertVPTOType(type, builder);
+      return convertVPTOType(type, builder, mode);
     });
     addSourceMaterialization(materializeVPTOCast);
     addTargetMaterialization(materializeVPTOCast);
@@ -139,29 +183,6 @@ struct PlannedDecl {
 
 struct LoweringState {
   SmallVector<PlannedDecl> plannedDecls;
-};
-
-enum class VcvtElemKind {
-  Invalid,
-  F16,
-  BF16,
-  F32,
-  S8,
-  U8,
-  S16,
-  U16,
-  S32,
-  U32,
-  S64,
-};
-
-struct VcvtContract {
-  const char *intrinsic;
-  bool requiresRnd;
-  bool requiresSat;
-  bool requiresPart;
-  unsigned maskBitWidth;
-  bool satBeforeRnd = false;
 };
 
 static Value getI64Constant(OpBuilder &builder, Location loc, uint64_t value) {
@@ -183,13 +204,29 @@ static Value getI32Constant(OpBuilder &builder, Location loc, uint64_t value) {
 }
 
 static bool isMxElementType(Type ty) {
-  if (auto floatType = dyn_cast<FloatType>(ty))
-    return floatType.getWidth() == 8;
+  return !getHIVMLowPrecisionFragment(ty).empty();
+}
+
+static std::string getFallbackTypeTextFragment(Type type) {
   std::string typeText;
   llvm::raw_string_ostream os(typeText);
-  ty.print(os);
+  type.print(os);
   os.flush();
-  return StringRef(typeText).starts_with("f8");
+  std::string lower = StringRef(typeText).lower();
+  if (StringRef(lower).contains("e4m3"))
+    return "e4m3";
+  if (StringRef(lower).contains("e5m2"))
+    return "e5m2";
+  if (StringRef(lower).contains("e8m0"))
+    return "e8m0";
+  return {};
+}
+
+static std::string getHIVMLowPrecisionFragment(Type type) {
+  std::string lowPrecision = pto::getPTOLowPrecisionHIVMTypeFragment(type);
+  if (!lowPrecision.empty())
+    return lowPrecision;
+  return getFallbackTypeTextFragment(type);
 }
 
 static std::string getMadMxElementFragment(Type type) {
@@ -197,24 +234,7 @@ static std::string getMadMxElementFragment(Type type) {
     return "f16";
   if (type.isBF16())
     return "bf16";
-
-  std::string typeText;
-  llvm::raw_string_ostream os(typeText);
-  type.print(os);
-  os.flush();
-
-  std::string lower = StringRef(typeText).lower();
-  if (StringRef(lower).contains("e4m3"))
-    return "e4m3";
-  if (StringRef(lower).contains("e5m2"))
-    return "e5m2";
-  if (StringRef(lower).contains("hif4"))
-    return "hif4";
-  if (StringRef(lower).contains("e2m1x2"))
-    return "e2m1x2";
-  if (StringRef(lower).contains("e1m2x2"))
-    return "e1m2x2";
-  return {};
+  return getHIVMLowPrecisionFragment(type);
 }
 
 static FailureOr<StringRef> buildMadMxCalleeName(MLIRContext *context,
@@ -241,15 +261,7 @@ static std::string getMadRhsFragment(Type type) {
     if (intType.isUnsigned() && intType.getWidth() == 2)
       return "u2";
   }
-
-  std::string typeText;
-  llvm::raw_string_ostream os(typeText);
-  type.print(os);
-  os.flush();
-  std::string lower = StringRef(typeText).lower();
-  if (StringRef(lower).contains("e8m0"))
-    return "e8m0";
-  return {};
+  return getHIVMLowPrecisionFragment(type) == "e8m0" ? "e8m0" : std::string{};
 }
 
 static bool isMadE4M3ElementType(Type type) {
@@ -340,6 +352,9 @@ static std::string getElementTypeFragment(Type type) {
     return "bf16";
   if (type.isF32())
     return "f32";
+  std::string lowPrecision = pto::getPTOLowPrecisionHIVMTypeFragment(type);
+  if (!lowPrecision.empty())
+    return lowPrecision;
   if (auto intType = dyn_cast<IntegerType>(type))
     return (intType.isUnsigned() ? "u" : "s") + std::to_string(intType.getWidth());
   return {};
@@ -498,20 +513,9 @@ static std::string getCopyElementFragment(Type elementType) {
     return "bf16";
   if (elementType.isF32())
     return "f32";
-  // Handle FP8 family (e4m3/e5m2/e8m0/hif8) used by cube-matmul/mad_mx.
-  std::string typeText;
-  llvm::raw_string_ostream os(typeText);
-  elementType.print(os);
-  os.flush();
-  std::string lower = StringRef(typeText).lower();
-  if (StringRef(lower).contains("e4m3"))
-    return "e4m3";
-  if (StringRef(lower).contains("e5m2"))
-    return "e5m2";
-  if (StringRef(lower).contains("e8m0"))
-    return "e8m0";
-  if (StringRef(lower).contains("hif8"))
-    return "hif8";
+  std::string lowPrecision = getHIVMLowPrecisionFragment(elementType);
+  if (!lowPrecision.empty())
+    return lowPrecision;
   if (auto intType = dyn_cast<IntegerType>(elementType)) {
     switch (intType.getWidth()) {
     case 8:
@@ -530,13 +534,7 @@ static std::string getCopyElementFragment(Type elementType) {
 static std::string getNd2NzCopyElementFragment(Type elementType) {
   if (!elementType)
     return {};
-  std::string typeText;
-  llvm::raw_string_ostream os(typeText);
-  elementType.print(os);
-  os.flush();
-  std::string lower = StringRef(typeText).lower();
-  if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
-      StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+  if (!getHIVMLowPrecisionFragment(elementType).empty())
     return "U8";
 
   if (elementType.isF16() || elementType.isBF16())
@@ -601,25 +599,33 @@ static std::optional<uint64_t> parseHiLoPartImmediate(StringRef part) {
 }
 
 static std::optional<uint64_t> parseRoundModeImmediate(StringRef roundMode) {
-  if (roundMode == "R" || roundMode == "ROUND_R")
+  auto normalized = normalizeVcvtRoundModeToken(roundMode);
+  if (!normalized)
+    return std::nullopt;
+  if (*normalized == "R")
     return 0;
-  if (roundMode == "A" || roundMode == "ROUND_A")
+  if (*normalized == "A")
     return 1;
-  if (roundMode == "F" || roundMode == "ROUND_F")
+  if (*normalized == "F")
     return 2;
-  if (roundMode == "C" || roundMode == "ROUND_C")
+  if (*normalized == "C")
     return 3;
-  if (roundMode == "Z" || roundMode == "ROUND_Z")
+  if (*normalized == "Z")
     return 4;
-  if (roundMode == "O" || roundMode == "ROUND_O")
+  if (*normalized == "O")
     return 5;
+  if (*normalized == "H")
+    return 6;
   return std::nullopt;
 }
 
 static std::optional<uint64_t> parseSaturationImmediate(StringRef sat) {
-  if (sat == "SAT")
+  auto normalized = normalizeVcvtSaturationToken(sat);
+  if (!normalized)
+    return std::nullopt;
+  if (*normalized == "SAT")
     return 1;
-  if (sat == "NOSAT")
+  if (*normalized == "NOSAT")
     return 0;
   return std::nullopt;
 }
@@ -633,15 +639,16 @@ static std::optional<uint64_t> parsePartImmediate(StringRef part) {
 }
 
 static std::optional<uint64_t> parseVcvtPartImmediate(StringRef part) {
-  if (part == "EVEN" || part == "PART_EVEN" || part == "P0" ||
-      part == "PART_P0")
+  auto normalized = normalizeVcvtPartToken(part);
+  if (!normalized)
+    return std::nullopt;
+  if (*normalized == "EVEN" || *normalized == "P0")
     return 0;
-  if (part == "ODD" || part == "PART_ODD" || part == "P1" ||
-      part == "PART_P1")
+  if (*normalized == "ODD" || *normalized == "P1")
     return 1;
-  if (part == "P2" || part == "PART_P2")
+  if (*normalized == "P2")
     return 2;
-  if (part == "P3" || part == "PART_P3")
+  if (*normalized == "P3")
     return 3;
   return std::nullopt;
 }
@@ -718,171 +725,10 @@ static std::optional<uint64_t> parseSprImmediate(StringRef spr) {
 }
 
 static std::optional<unsigned> getDistElementWidth(Type type) {
-  if (auto intType = dyn_cast<IntegerType>(type))
-    return intType.getWidth();
-  if (type.isF16() || type.isBF16())
-    return 16;
-  if (type.isF32())
-    return 32;
-  if (type.isF64())
-    return 64;
-  return std::nullopt;
-}
-
-static VcvtElemKind classifyVcvtElemType(Type type) {
-  if (type.isF16())
-    return VcvtElemKind::F16;
-  if (type.isBF16())
-    return VcvtElemKind::BF16;
-  if (type.isF32())
-    return VcvtElemKind::F32;
-  if (auto intType = dyn_cast<IntegerType>(type)) {
-    switch (intType.getWidth()) {
-    case 8:
-      return intType.isUnsigned() ? VcvtElemKind::U8 : VcvtElemKind::S8;
-    case 16:
-      return intType.isUnsigned() ? VcvtElemKind::U16 : VcvtElemKind::S16;
-    case 32:
-      return intType.isUnsigned() ? VcvtElemKind::U32 : VcvtElemKind::S32;
-    case 64:
-      return intType.isUnsigned() ? VcvtElemKind::Invalid : VcvtElemKind::S64;
-    default:
-      return VcvtElemKind::Invalid;
-    }
-  }
-  return VcvtElemKind::Invalid;
-}
-
-static std::optional<VcvtContract> lookupVcvtContract(VcvtElemKind src,
-                                                      VcvtElemKind dst) {
-  switch (src) {
-  case VcvtElemKind::F32:
-    switch (dst) {
-    case VcvtElemKind::F16:
-      return VcvtContract{"llvm.hivm.vcvtff.f322f16.x", true, true, true, 32};
-    case VcvtElemKind::BF16:
-      return VcvtContract{"llvm.hivm.vcvtff.f322bf16.x", true, true, true, 32};
-    case VcvtElemKind::S16:
-      return VcvtContract{"llvm.hivm.vcvtfi.f322s16.x", true, true, true, 32};
-    case VcvtElemKind::S32:
-      return VcvtContract{"llvm.hivm.vcvtfi.f322s32.x", true, true, false, 32};
-    case VcvtElemKind::S64:
-      return VcvtContract{"llvm.hivm.vcvtfi.f322s64.x", true, true, true, 32};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::F16:
-    switch (dst) {
-    case VcvtElemKind::F32:
-      return VcvtContract{"llvm.hivm.vcvtff.f162f32.x", false, false, true, 16};
-    case VcvtElemKind::S32:
-      return VcvtContract{"llvm.hivm.vcvtfi.f162s32.x", true, false, true, 16};
-    case VcvtElemKind::S16:
-      return VcvtContract{"llvm.hivm.vcvtfi.f162s16.x", true, true, false, 16};
-    case VcvtElemKind::S8:
-      return VcvtContract{"llvm.hivm.vcvtfi.f162s8.x", true, true, true, 16};
-    case VcvtElemKind::U8:
-      return VcvtContract{"llvm.hivm.vcvtfi.f162u8.x", true, true, true, 16};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::BF16:
-    switch (dst) {
-    case VcvtElemKind::F16:
-      return VcvtContract{"llvm.hivm.vcvtff.bf162f16.x", true, true, false, 16,
-                          true};
-    case VcvtElemKind::F32:
-      return VcvtContract{"llvm.hivm.vcvtff.bf162f32.x", false, false, true, 16};
-    case VcvtElemKind::S32:
-      return VcvtContract{"llvm.hivm.vcvtfi.bf162s32.x", true, true, true, 16};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::U8:
-    switch (dst) {
-    case VcvtElemKind::F16:
-      return VcvtContract{"llvm.hivm.vcvtif.u82f16.x", false, false, true, 8};
-    case VcvtElemKind::U16:
-      return VcvtContract{"llvm.hivm.vcvtii.u82u16.x", false, false, true, 8};
-    case VcvtElemKind::U32:
-      return VcvtContract{"llvm.hivm.vcvtii.u82u32.x", false, false, true, 8};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::S8:
-    switch (dst) {
-    case VcvtElemKind::F16:
-      return VcvtContract{"llvm.hivm.vcvtif.s82f16.x", false, false, true, 8};
-    case VcvtElemKind::S16:
-      return VcvtContract{"llvm.hivm.vcvtii.s82s16.x", false, false, true, 8};
-    case VcvtElemKind::S32:
-      return VcvtContract{"llvm.hivm.vcvtii.s82s32.x", false, false, true, 8};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::U16:
-    switch (dst) {
-    case VcvtElemKind::U8:
-      return VcvtContract{"llvm.hivm.vcvtii.u162u8.x", false, true, true, 16};
-    case VcvtElemKind::U32:
-      return VcvtContract{"llvm.hivm.vcvtii.u162u32.x", false, false, true, 16};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::S16:
-    switch (dst) {
-    case VcvtElemKind::F16:
-      return VcvtContract{"llvm.hivm.vcvtif.s162f16.x", true, false, false, 16};
-    case VcvtElemKind::F32:
-      return VcvtContract{"llvm.hivm.vcvtif.s162f32.x", false, false, true, 16};
-    case VcvtElemKind::U8:
-      return VcvtContract{"llvm.hivm.vcvtii.s162u8.x", false, true, true, 16};
-    case VcvtElemKind::U32:
-      return VcvtContract{"llvm.hivm.vcvtii.s162u32.x", false, false, true, 16};
-    case VcvtElemKind::S32:
-      return VcvtContract{"llvm.hivm.vcvtii.s162s32.x", false, false, true, 16};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::U32:
-    switch (dst) {
-    case VcvtElemKind::U8:
-      return VcvtContract{"llvm.hivm.vcvtii.u322u8.x", false, true, true, 32};
-    case VcvtElemKind::U16:
-      return VcvtContract{"llvm.hivm.vcvtii.u322u16.x", false, true, true, 32};
-    case VcvtElemKind::S16:
-      return VcvtContract{"llvm.hivm.vcvtii.u322s16.x", false, true, true, 32};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::S32:
-    switch (dst) {
-    case VcvtElemKind::F32:
-      return VcvtContract{"llvm.hivm.vcvtif.s322f32.x", true, false, false, 32};
-    case VcvtElemKind::U8:
-      return VcvtContract{"llvm.hivm.vcvtii.s322u8.x", false, true, true, 32};
-    case VcvtElemKind::U16:
-      return VcvtContract{"llvm.hivm.vcvtii.s322u16.x", false, true, true, 32};
-    case VcvtElemKind::S16:
-      return VcvtContract{"llvm.hivm.vcvtii.s322s16.x", false, true, true, 32};
-    case VcvtElemKind::S64:
-      return VcvtContract{"llvm.hivm.vcvtii.s322s64.x", false, false, true, 32};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::S64:
-    switch (dst) {
-    case VcvtElemKind::F32:
-      return VcvtContract{"llvm.hivm.vcvtif.s642f32.x", true, false, true, 32};
-    case VcvtElemKind::S32:
-      return VcvtContract{"llvm.hivm.vcvtii.s642s32.x", false, true, true, 32};
-    default:
-      return std::nullopt;
-    }
-  case VcvtElemKind::Invalid:
+  unsigned width = getPTOStorageElemBitWidth(type);
+  if (!width)
     return std::nullopt;
-  }
-  return std::nullopt;
+  return width;
 }
 
 // VSQZ #st hint must only be set when the compacted vector feeds VSTUR.
@@ -1657,11 +1503,7 @@ static FailureOr<Value> convertElementOffsetToBytes(Operation *anchor, Value off
   if (!offsetI32)
     return failure();
 
-  unsigned bitWidth = 0;
-  if (auto intType = dyn_cast<IntegerType>(elementType))
-    bitWidth = intType.getWidth();
-  else if (auto floatType = dyn_cast<FloatType>(elementType))
-    bitWidth = floatType.getWidth();
+  unsigned bitWidth = getPTOStorageElemBitWidth(elementType);
   if (bitWidth == 0 || bitWidth % 8 != 0)
     return failure();
 
@@ -2119,13 +1961,7 @@ static std::string getDn2NzCopyElementFragment(Type type) {
     return {};
 
   Type elementType = ptrType.getElementType();
-  std::string typeText;
-  llvm::raw_string_ostream os(typeText);
-  elementType.print(os);
-  os.flush();
-  std::string lower = StringRef(typeText).lower();
-  if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
-      StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+  if (!getHIVMLowPrecisionFragment(elementType).empty())
     return "u8";
 
   if (elementType.isF16() || elementType.isBF16())
@@ -4062,13 +3898,15 @@ public:
         static_cast<unsigned>(pto::AddressSpace::MAT);
     constexpr unsigned caAddressSpace =
         static_cast<unsigned>(pto::AddressSpace::LEFT);
-    FailureOr<Value> src = reinterpretPointerToAddrSpace(op, srcRaw, cbufAddressSpace);
-    FailureOr<Value> dst = reinterpretPointerToAddrSpace(op, dstRaw, caAddressSpace);
+    FailureOr<Value> src =
+        reinterpretPointerToAddrSpace(op, srcRaw, cbufAddressSpace);
+    FailureOr<Value> dst =
+        reinterpretPointerToAddrSpace(op, dstRaw, caAddressSpace);
     if (failed(src) || failed(dst))
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/ca pointer spaces");
 
     Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
-    unsigned elemBitWidth = sourceElemType.getIntOrFloatBitWidth();
+    unsigned elemBitWidth = getPTOStorageElemBitWidth(sourceElemType);
     if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
       return rewriter.notifyMatchFailure(op,
                                          "unsupported load_cbuf_to_ca_mx element type");
@@ -4146,7 +3984,7 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to map cbuf/cb pointer spaces");
 
     Type sourceElemType = cast<pto::PtrType>(op.getSource().getType()).getElementType();
-    unsigned elemBitWidth = sourceElemType.getIntOrFloatBitWidth();
+    unsigned elemBitWidth = getPTOStorageElemBitWidth(sourceElemType);
     if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
       return rewriter.notifyMatchFailure(op,
                                          "unsupported load_cbuf_to_cb_mx element type");
@@ -5464,9 +5302,42 @@ public:
     Type elementType = getElementTypeFromVectorLike(op.getValue().getType());
     if (!elementType)
       return rewriter.notifyMatchFailure(op, "unsupported vsts element type");
+
+    Type loweredValueType =
+        this->getTypeConverter()->convertType(op.getValue().getType());
+    Type loweredDestinationType =
+        this->getTypeConverter()->convertType(op.getDestination().getType());
+    Type loweredMaskType =
+        this->getTypeConverter()->convertType(op.getMask().getType());
+    if (!loweredValueType || !loweredDestinationType || !loweredMaskType)
+      return rewriter.notifyMatchFailure(op, "failed to convert vsts operand types");
+
+    Value value = adaptor.getValue();
+    if (value.getType() != loweredValueType) {
+      value = rewriter
+                  .create<UnrealizedConversionCastOp>(
+                      op.getLoc(), TypeRange{loweredValueType}, value)
+                  .getResult(0);
+    }
+    Value destination = adaptor.getDestination();
+    if (destination.getType() != loweredDestinationType) {
+      destination = rewriter
+                        .create<UnrealizedConversionCastOp>(
+                            op.getLoc(), TypeRange{loweredDestinationType},
+                            destination)
+                        .getResult(0);
+    }
+    Value mask = adaptor.getMask();
+    if (mask.getType() != loweredMaskType) {
+      mask = rewriter
+                 .create<UnrealizedConversionCastOp>(
+                     op.getLoc(), TypeRange{loweredMaskType}, mask)
+                 .getResult(0);
+    }
+
     auto offsetBytes =
         convertElementOffsetToBytes(op, adaptor.getOffset(), elementType);
-    auto basePtr = dyn_cast<LLVM::LLVMPointerType>(adaptor.getDestination().getType());
+    auto basePtr = dyn_cast<LLVM::LLVMPointerType>(destination.getType());
     auto dist =
         parseStoreDistImmediate(op.getDist().value_or(""), elementType);
     if (failed(offsetBytes) || !basePtr || !dist)
@@ -5481,12 +5352,11 @@ public:
         op.getLoc(), rewriter.getI32IntegerAttr(*dist));
     Value zero = rewriter.create<arith::ConstantOp>(op.getLoc(),
                                                     rewriter.getI32IntegerAttr(0));
-    SmallVector<Value> args{adaptor.getValue(), adaptor.getDestination(),
-                            *offsetBytes, distValue, zero, adaptor.getMask()};
+    SmallVector<Value> args{value, destination, *offsetBytes, distValue, zero,
+                            mask};
     auto funcType = rewriter.getFunctionType(
-        TypeRange{adaptor.getValue().getType(), adaptor.getDestination().getType(),
-                  rewriter.getI32Type(), rewriter.getI32Type(),
-                  rewriter.getI32Type(), adaptor.getMask().getType()},
+        TypeRange{value.getType(), destination.getType(), rewriter.getI32Type(),
+                  rewriter.getI32Type(), rewriter.getI32Type(), mask.getType()},
         TypeRange{});
     rewriter.create<func::CallOp>(op.getLoc(), *calleeName, TypeRange{}, args);
     state.plannedDecls.push_back(PlannedDecl{calleeName->str(), funcType});
@@ -6332,6 +6202,10 @@ public:
     if (!resultType)
       return rewriter.notifyMatchFailure(op,
                                          "failed to convert vbitcast result type");
+    if (adaptor.getInput().getType() == resultType) {
+      rewriter.replaceOp(op, adaptor.getInput());
+      return success();
+    }
     rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType,
                                                  adaptor.getInput());
     return success();
@@ -7014,14 +6888,21 @@ public:
     if (!llvmPtrType)
       return rewriter.notifyMatchFailure(op, "expected LLVM pointer result type");
 
+    auto ptrType = dyn_cast<pto::PtrType>(op.getPtr().getType());
+    if (!ptrType)
+      return rewriter.notifyMatchFailure(op, "expected PTO pointer operand type");
+
+    Type gepElementType =
+        getPointerArithmeticElementCarrierType(ptrType.getElementType(), rewriter);
+
     Value offset = adaptor.getOffset();
     if (offset.getType().isIndex())
       offset = rewriter.create<arith::IndexCastUIOp>(op.getLoc(),
                                                      rewriter.getI64Type(), offset);
 
-    auto gep = rewriter.create<LLVM::GEPOp>(
-        op.getLoc(), llvmPtrType, cast<pto::PtrType>(op.getPtr().getType()).getElementType(),
-        adaptor.getPtr(), ValueRange{offset});
+    auto gep = rewriter.create<LLVM::GEPOp>(op.getLoc(), llvmPtrType,
+                                            gepElementType, adaptor.getPtr(),
+                                            ValueRange{offset});
     rewriter.replaceOp(op, gep.getResult());
     return success();
   }
@@ -7553,7 +7434,8 @@ static void foldVPTOTypeCasts(ModuleOp module, TypeConverter &typeConverter) {
 
 static LogicalResult lowerVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) {
   MLIRContext *context = module.getContext();
-  VPTOTypeConverter typeConverter(context);
+  VPTOTypeConverter typeConverter(context,
+                                  VPTOTypeConversionMode::PreserveSemantic);
   ConversionTarget target(*context);
   RewritePatternSet patterns(context);
   LoweringState state;
@@ -7572,7 +7454,8 @@ static LogicalResult lowerVPTOOps(ModuleOp module, llvm::raw_ostream &diagOS) {
 
 static LogicalResult lowerVPTOTypes(ModuleOp module, llvm::raw_ostream &diagOS) {
   MLIRContext *context = module.getContext();
-  VPTOTypeConverter typeConverter(context);
+  VPTOTypeConverter typeConverter(
+      context, VPTOTypeConversionMode::LowerCustomLowPrecisionToCarrier);
   ConversionTarget target(*context);
   RewritePatternSet patterns(context);
 
@@ -7618,7 +7501,8 @@ static LogicalResult lowerVPTOTypes(ModuleOp module, llvm::raw_ostream &diagOS) 
 }
 
 static Type normalizeTypeForOfficialLLVMLowering(Type type, Builder &builder) {
-  type = convertVPTOType(type, builder);
+  type = convertVPTOType(type, builder,
+                         VPTOTypeConversionMode::LowerCustomLowPrecisionToCarrier);
   return type;
 }
 

@@ -1,0 +1,36 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// Guards mx low-precision data-movement lowering to Hivm LLVM intrinsics.
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --vpto-emit-hivm-llvm %s -o - | FileCheck %s
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @low_precision_mx_data_movement_vpto_llvm() attributes {pto.kernel_kind = #pto.kernel_kind<cube>} {
+    %c0 = arith.constant 0 : i64
+    %c1 = arith.constant 1 : i64
+    %c2 = arith.constant 2 : i64
+    %c16 = arith.constant 16 : i64
+    %c64 = arith.constant 64 : i64
+    %src_f4 = pto.castptr %c0 : i64 -> !pto.ptr<!pto.f4E2M1x2, mat>
+    %dst_f4_left = pto.castptr %c0 : i64 -> !pto.ptr<!pto.f4E2M1x2, left>
+    %src_hif8 = pto.castptr %c0 : i64 -> !pto.ptr<!pto.hif8, mat>
+    %dst_hif8_right = pto.castptr %c0 : i64 -> !pto.ptr<!pto.hif8, right>
+
+    pto.load_cbuf_to_ca_mx %src_f4, %dst_f4_left, %c16, %c64
+      : !pto.ptr<!pto.f4E2M1x2, mat>, !pto.ptr<!pto.f4E2M1x2, left>, i64, i64
+    pto.load_cbuf_to_cb_mx %src_hif8, %dst_hif8_right, %c0, %c0, %c1, %c2, %c1, %c1
+      : !pto.ptr<!pto.hif8, mat>, !pto.ptr<!pto.hif8, right>, i64, i64, i64, i64, i64, i64
+    return
+  }
+}
+
+// CHECK-DAG: declare void @llvm.hivm.LOAD.L1.TO.L0A.MX.2Dv2.v(i64, ptr addrspace(2), i64, i64)
+// CHECK-DAG: declare void @llvm.hivm.LOAD.L1.TO.L0B.MX.2Dv2.v(i64, ptr addrspace(2), i64, i64)
+// CHECK-LABEL: define void @low_precision_mx_data_movement_vpto_llvm()
+// CHECK-DAG: call void @llvm.hivm.LOAD.L1.TO.L0A.MX.2Dv2.v(i64 0, ptr addrspace(2) null, i64 2203318222848, i64 65537)
+// CHECK-DAG: call void @llvm.hivm.LOAD.L1.TO.L0B.MX.2Dv2.v(i64 0, ptr addrspace(2) null, i64 2203318222848, i64 65537)
