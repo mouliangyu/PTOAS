@@ -180,8 +180,7 @@ struct SpecKeyInfo : public llvm::DenseMapInfo<SpecKey> {
 // Helpers
 // ============================================================================
 static std::string getDtypeString(Type elemTy) {
-  // TODO: i32
-  if (elemTy.isIndex()) return "i64";
+  if (elemTy.isIndex()) return "i32";
   if (elemTy.isInteger(1)) return "i1";
   if (elemTy.isF32()) return "f32";
   if (elemTy.isF16()) return "f16";
@@ -209,8 +208,6 @@ static Value bridgeOperandToType(OpBuilder &builder, Location loc,
   if (srcTy == dstTy)
     return operand;
   if (srcTy.isIndex() && isa<IntegerType>(dstTy))
-    return builder.create<arith::IndexCastOp>(loc, dstTy, operand);
-  if (isa<IntegerType>(srcTy) && dstTy.isIndex())
     return builder.create<arith::IndexCastOp>(loc, dstTy, operand);
   return builder.create<UnrealizedConversionCastOp>(loc, dstTy, operand)
       .getResult(0);
