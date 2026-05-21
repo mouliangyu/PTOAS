@@ -6,10 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a5 --emit-pto-ir --mlir-print-ir-before-all %s 2>&1 | FileCheck %s
-//
-// PTOViewToMemref still rejects low-precision memref element types today, so
-// this test matches the verifier-accepted IR dump before that later pass runs.
+// RUN: ptoas --pto-arch=a5 --emit-pto-ir %s 2>&1 | FileCheck %s
 
 module {
   func.func @alloc_tile_low_precision_valid() {
@@ -21,6 +18,4 @@ module {
 }
 
 // CHECK: func.func @alloc_tile_low_precision_valid()
-// CHECK: %0 = pto.alloc_tile : !pto.tile_buf<vec, 16x32x!pto.hif8>
-// CHECK: %1 = pto.alloc_tile : !pto.tile_buf<vec, 16x32x!pto.f4E1M2x2>
-// CHECK: %2 = pto.alloc_tile : !pto.tile_buf<vec, 16x32xf8E4M3FN>
+// CHECK-NOT: pto.alloc_tile

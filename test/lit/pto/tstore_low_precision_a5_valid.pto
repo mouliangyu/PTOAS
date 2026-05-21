@@ -6,11 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a5 --emit-pto-ir --mlir-print-ir-before-all %s 2>&1 | FileCheck %s
-//
-// The current PTOViewToMemref pipeline still rejects low-precision memref
-// element types, so this test matches the verifier-accepted IR dump before that
-// later pass runs.
+// RUN: ptoas --pto-arch=a5 --emit-pto-ir %s 2>&1 | FileCheck %s
 
 module {
   func.func @tstore_low_precision_a5_valid(
@@ -28,6 +24,8 @@ module {
   }
 }
 
-// CHECK: func.func @tstore_low_precision_a5_valid(%arg0: !pto.partition_tensor_view<16x16xf8E4M3FN>, %arg1: !pto.partition_tensor_view<16x16x!pto.hif8>, %arg2: i64)
-// CHECK: pto.tstore ins(%0 : !pto.tile_buf<vec, 16x16xf8E4M3FN>) outs(%arg0 : !pto.partition_tensor_view<16x16xf8E4M3FN>)
-// CHECK: pto.tstore ins(%1 : !pto.tile_buf<acc, 16x16xf32, blayout=col_major, slayout=row_major, fractal=1024>, %arg2 : i64) outs(%arg1 : !pto.partition_tensor_view<16x16x!pto.hif8>)
+// CHECK: func.func @tstore_low_precision_a5_valid(%arg0: memref<16x16xf8E4M3FN>, %arg1: memref<16x16x!pto.hif8>, %arg2: i64)
+// CHECK: pto.tstore ins(
+// CHECK: outs(%arg0 : memref<16x16xf8E4M3FN>)
+// CHECK: pto.tstore ins(
+// CHECK: outs(%arg1 : memref<16x16x!pto.hif8>)

@@ -120,6 +120,20 @@ static LogicalResult verifyTileBufCommon(Operation *op, Type ty, StringRef name,
 static LogicalResult verifyTileBufSameElemType(Operation *op, Type lhs, Type rhs,
                                                StringRef lhsName,
                                                StringRef rhsName);
+
+namespace {
+struct HiF8MemRefElementTypeModel
+    : public MemRefElementTypeInterface::ExternalModel<
+          HiF8MemRefElementTypeModel, HiF8Type> {};
+
+struct F4E1M2x2MemRefElementTypeModel
+    : public MemRefElementTypeInterface::ExternalModel<
+          F4E1M2x2MemRefElementTypeModel, F4E1M2x2Type> {};
+
+struct F4E2M1x2MemRefElementTypeModel
+    : public MemRefElementTypeInterface::ExternalModel<
+          F4E2M1x2MemRefElementTypeModel, F4E2M1x2Type> {};
+} // namespace
 static LogicalResult verifyTileBufSameValidShape(Operation *op, Type lhs, Type rhs,
                                                  StringRef lhsName, StringRef rhsName);
 static LogicalResult verifyVecTileCommon(Operation *op, Type ty, StringRef name);
@@ -2107,6 +2121,12 @@ void PTODialect::initialize() {
 #define GET_TYPEDEF_LIST
 #include "PTO/IR/PTOTypeDefs.cpp.inc"
       >();
+
+  HiF8Type::attachInterface<HiF8MemRefElementTypeModel>(*getContext());
+  F4E1M2x2Type::attachInterface<F4E1M2x2MemRefElementTypeModel>(
+      *getContext());
+  F4E2M1x2Type::attachInterface<F4E2M1x2MemRefElementTypeModel>(
+      *getContext());
 
   addOperations<
 #define GET_OP_LIST
