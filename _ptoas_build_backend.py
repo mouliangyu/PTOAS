@@ -73,7 +73,6 @@ def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
     meta["Requires-Python"] = ">=3.9"
     meta["License"] = "Apache-2.0"
     meta["Requires-Dist"] = "numpy"
-    meta["Requires-Dist"] = f"ptodsl @ file://{_REPO / 'ptodsl'}"
     (dist_info / "METADATA").write_text(str(meta))
     (dist_info / "WHEEL").write_text(
         "Wheel-Version: 1.0\nGenerator: _ptoas_build_backend\n"
@@ -234,7 +233,6 @@ def build_editable(wheel_directory, config_settings=None, metadata_directory=Non
         "Requires-Python: >=3.9\n"
         "License: Apache-2.0\n"
         "Requires-Dist: numpy\n"
-        f"Requires-Dist: ptodsl @ file://{_REPO / 'ptodsl'}\n"
     ).encode()
 
     record_lines = [
