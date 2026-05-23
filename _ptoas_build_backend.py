@@ -1,3 +1,11 @@
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
 """
 PEP 517 build backend for ptoas.
 
@@ -38,11 +46,11 @@ _MLIR_PY_PKG = (
 
 
 def get_requires_for_build_wheel(config_settings=None):
-    return ["setuptools>=68", "wheel", "pybind11"]
+    return ["setuptools>=68", "wheel", "pybind11<3"]
 
 
 def get_requires_for_build_editable(config_settings=None):
-    return ["setuptools>=68", "wheel", "pybind11"]
+    return ["setuptools>=68", "wheel", "pybind11<3"]
 
 
 def get_requires_for_build_sdist(config_settings=None):
@@ -65,7 +73,6 @@ def prepare_metadata_for_build_wheel(metadata_directory, config_settings=None):
     meta["Requires-Python"] = ">=3.9"
     meta["License"] = "Apache-2.0"
     meta["Requires-Dist"] = "numpy"
-    meta["Requires-Dist"] = f"ptodsl @ file://{_REPO / 'ptodsl'}"
     (dist_info / "METADATA").write_text(str(meta))
     (dist_info / "WHEEL").write_text(
         "Wheel-Version: 1.0\nGenerator: _ptoas_build_backend\n"
@@ -104,6 +111,10 @@ def _cmake_configure_and_build():
         f"-DMLIR_PYTHON_PACKAGE_DIR={_MLIR_PY_PKG}",
         f"-DCMAKE_INSTALL_PREFIX={_PTO_INSTALL_DIR}",
     ]
+
+    release_version = os.environ.get("PTOAS_RELEASE_VERSION_OVERRIDE", "")
+    if release_version:
+        cmake_cmd.append(f"-DPTOAS_RELEASE_VERSION_OVERRIDE={release_version}")
 
     hardening_cache = _REPO / "cmake" / "LinuxHardeningCache.cmake"
     if hardening_cache.exists():
@@ -222,7 +233,6 @@ def build_editable(wheel_directory, config_settings=None, metadata_directory=Non
         "Requires-Python: >=3.9\n"
         "License: Apache-2.0\n"
         "Requires-Dist: numpy\n"
-        f"Requires-Dist: ptodsl @ file://{_REPO / 'ptodsl'}\n"
     ).encode()
 
     record_lines = [
