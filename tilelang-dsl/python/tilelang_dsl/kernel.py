@@ -1832,12 +1832,13 @@ def _coerce_tile_specialization(
             MemorySpace.RIGHT,
             MemorySpace.ACC,
             MemorySpace.BIAS,
+            MemorySpace.SCALING,
             MemorySpace.UB,
         }
     )
     if spec.memory_space not in allowed_memory_spaces:
         if kernel_family == "cube":
-            allowed_text = "MemorySpace.MAT/LEFT/RIGHT/ACC/BIAS/UB"
+            allowed_text = "MemorySpace.MAT/LEFT/RIGHT/ACC/BIAS/SCALING/UB"
         else:
             allowed_text = "MemorySpace.UB"
         _raise_tile_param_error(
