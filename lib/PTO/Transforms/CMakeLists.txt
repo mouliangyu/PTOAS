@@ -96,6 +96,7 @@ add_mlir_dialect_library(PTOTransforms
   MLIRSCFDialect
   MLIRVectorDialect
   MLIRParser
+  MLIRArithTransforms
   MLIRSCFToEmitC
   MLIRSCFDialect
   MLIRSCFToControlFlow
