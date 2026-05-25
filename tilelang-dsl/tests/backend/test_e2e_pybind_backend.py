@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Huawei Technologies Co., Ltd.
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
-# Please refer to the License for details. You may not use this file except in compliance with the License.
+# Please refer to the License for details. You can not use this file except in compliance with the License.
 # THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
@@ -73,6 +73,7 @@ class TestPybindBackendLowering:
         from dataclasses import dataclass
         from tilelang_dsl.semantic import (
             SemanticParameter,
+            SemanticBinding,
             SemanticScalarType,
             SemanticIndexType,
             SemanticTensorViewType,
@@ -84,13 +85,18 @@ class TestPybindBackendLowering:
             target: str = "a5"
             op: str = "test"
             symbol_name: str = "test_kernel"
+            kernel_family: str = "test_family"  # Required by text renderer
             verify_enabled: bool = True
             advanced_enabled: bool = False
             dtype_signature: tuple = ()
             parameters: tuple = (
                 SemanticParameter(
-                    name="input",
-                    type=SemanticTensorViewType(rank=2, element_dtype=ScalarType("f32")),
+                    binding=SemanticBinding(
+                        name="input",
+                        ssa_name="%input",
+                        type=SemanticTensorViewType(rank=2, element_dtype=ScalarType("f32")),
+                        origin="parameter",
+                    ),
                 ),
             )
             tile_bindings: tuple = ()
