@@ -43,8 +43,38 @@ except ImportError:
     HAS_PYTEST = False
 
 
-def _create_mock_kernel():
-    """Create a mock SemanticKernel for testing."""
+def _check_pto_dialect_available():
+    """Check if PTO dialect bindings are available."""
+    try:
+        from mlir.dialects import pto
+        return True
+    except ImportError:
+        return False
+
+
+def _create_simple_mock_kernel():
+    """Create a simple mock kernel without PTO-specific types."""
+    from dataclasses import dataclass
+
+    @dataclass
+    class MockSemanticKernel:
+        target: str = "a5"
+        op: str = "test"
+        symbol_name: str = "simple_kernel"
+        kernel_family: str = "test_family"
+        verify_enabled: bool = True
+        advanced_enabled: bool = False
+        dtype_signature: tuple = ()
+        parameters: tuple = ()
+        tile_bindings: tuple = ()
+        body: tuple = ()
+        inline_helpers: tuple = ()
+
+    return MockSemanticKernel()
+
+
+def _create_mock_kernel_with_pto():
+    """Create a mock SemanticKernel for testing with PTO types."""
     from dataclasses import dataclass
     from tilelang_dsl.semantic import (
         SemanticParameter,
@@ -115,7 +145,7 @@ def test_text_backend_lower_simple():
     """Test lowering a simple kernel with TextBackend."""
     print("Test: TextBackend lower simple")
 
-    mock_kernel = _create_mock_kernel()
+    mock_kernel = _create_simple_mock_kernel()
     backend = TextBackend()
     result = backend.lower(mock_kernel)
 
@@ -137,7 +167,12 @@ def test_pybind_backend_lower_simple():
         print("  SKIPPED: MLIR Python bindings not available")
         return True
 
-    mock_kernel = _create_mock_kernel()
+    pto_available = _check_pto_dialect_available()
+    if not pto_available:
+        print("  SKIPPED: PTO dialect bindings not available (requires PTOAS build)")
+        return True
+
+    mock_kernel = _create_simple_mock_kernel()
     backend = PybindBackend()
     result = backend.lower(mock_kernel)
 
@@ -160,7 +195,12 @@ def test_backend_output_comparison():
         print("  SKIPPED: MLIR Python bindings not available")
         return True
 
-    mock_kernel = _create_mock_kernel()
+    pto_available = _check_pto_dialect_available()
+    if not pto_available:
+        print("  SKIPPED: PTO dialect bindings not available (requires PTOAS build)")
+        return True
+
+    mock_kernel = _create_simple_mock_kernel()
 
     text_backend = TextBackend()
     pybind_backend = PybindBackend()
@@ -179,7 +219,7 @@ def test_backend_output_comparison():
     pybind_norm = _normalize_mlir_text(pybind_result.as_text(), skip_comments=True)
 
     # Check key elements are present
-    assert mock_kernel.symbol_name in text_norm or "test_kernel" in text_norm, "Kernel name in text output"
+    assert mock_kernel.symbol_name in text_norm or "simple_kernel" in text_norm, "Kernel name in text output"
 
     # Compare normalized outputs
     if text_norm != pybind_norm:
@@ -201,9 +241,14 @@ def test_compare_backends_integration():
         print("  SKIPPED: MLIR Python bindings not available")
         return True
 
+    pto_available = _check_pto_dialect_available()
+    if not pto_available:
+        print("  SKIPPED: PTO dialect bindings not available (requires PTOAS build)")
+        return True
+
     from tilelang_dsl.backend_validator import compare_backends, BackendComparisonResult
 
-    mock_kernel = _create_mock_kernel()
+    mock_kernel = _create_simple_mock_kernel()
     result = compare_backends(mock_kernel)
 
     assert isinstance(result, BackendComparisonResult), "Returns BackendComparisonResult"

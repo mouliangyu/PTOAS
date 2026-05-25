@@ -16,11 +16,11 @@ Phase 2 implementation: core framework with basic stmt/expr rendering.
 Dependencies:
     - mlir.ir: MLIR Python bindings from LLVM build
     - mlir.dialects.func, arith, scf: Standard MLIR dialects
-    - pto.dialects.pto: PTO dialect bindings
+    - mlir.dialects.pto: PTO dialect bindings from PTOAS build
 
 To use this module, ensure PYTHONPATH includes:
     1. LLVM MLIR Python package: $LLVM_BUILD_DIR/tools/mlir/python_packages/mlir_core
-    2. PTO dialect: $PTOAS_INSTALL_DIR/mlir or $PTOAS_BUILD_DIR/python/mlir
+    2. PTOAS Python bindings: $PTOAS_BUILD_DIR/python
 
 Example:
     export PYTHONPATH="$LLVM_BUILD_DIR/tools/mlir/python_packages/mlir_core:$PTOAS_BUILD_DIR/python"
@@ -73,7 +73,7 @@ def _ensure_mlir_bindings() -> None:
         ) from exc
 
     try:
-        from pto.dialects import pto as pto_dialect
+        from mlir.dialects import pto as pto_dialect
         _pto_dialect = pto_dialect
     except ImportError:
         # PTO dialect is optional for some operations
@@ -280,12 +280,13 @@ class PybindRenderer:
         return self._module
 
     def _register_dialects(self, ctx: Any) -> None:
-        """Register all required dialects."""
-        _func_dialect.register_dialect(ctx)
-        _arith_dialect.register_dialect(ctx)
-        _scf_dialect.register_dialect(ctx)
-        if _pto_dialect is not None:
-            _pto_dialect.register_dialect(ctx, load=True)
+        """Register all required dialects.
+
+        Modern MLIR Python bindings auto-load dialects when their ops are used.
+        We call load_all_available_dialects() to ensure dialects are ready.
+        """
+        # Load all available dialects - this includes func, arith, scf, etc.
+        ctx.load_all_available_dialects()
 
     def _build_kernel_function(self) -> None:
         """Build the kernel function with parameters."""
