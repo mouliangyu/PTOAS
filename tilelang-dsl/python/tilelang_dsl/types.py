@@ -142,6 +142,7 @@ class MemorySpace(str, Enum):
     RIGHT = "right"
     ACC = "acc"
     BIAS = "bias"
+    SCALING = "scaling"
     UB = "ub"
 
 
