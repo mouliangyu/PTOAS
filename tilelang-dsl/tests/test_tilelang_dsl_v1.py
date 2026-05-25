@@ -872,6 +872,131 @@ def template(src: pto.Tile, ex_vec: pto.vector(pto.i16, (4,)), dst: pto.Tile):
         self.assertEqual(context_attrs["arg1_shape"], (4,))
         self.assertEqual(context_attrs["arg1_rank"], 1)
 
+    def test_select_descriptor_propagates_static_scalar_values_into_constraints(self) -> None:
+        source = """
+import tilelang_dsl as pto
+
+@pto.vkernel(
+    target="a5",
+    op="pto.expand_helper_scalar_value_unique",
+    dtypes=[(pto.f32, pto.i32, pto.f32)],
+    constraints=[lambda indexCol: indexCol.value % 8 == 0],
+    priority=10,
+)
+def template_aligned(src: pto.Tile, indexCol: pto.i32, dst: pto.Tile):
+    return None
+
+@pto.vkernel(
+    target="a5",
+    op="pto.expand_helper_scalar_value_unique",
+    dtypes=[(pto.f32, pto.i32, pto.f32)],
+)
+def template_fallback(src: pto.Tile, indexCol: pto.i32, dst: pto.Tile):
+    return None
+"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            module_path = Path(tmpdir) / "expand_helper_scalar_value_unique.py"
+            module_path.write_text(source, encoding="utf-8")
+
+            mod = expand_helper._import_py_file(module_path)
+            self.assertIsNotNone(mod)
+            descriptors = expand_helper._find_descriptors(mod)
+            self.assertTrue(descriptors)
+
+            aligned_operand_specs = expand_helper._parse_operand_specs(
+                """
+[
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  },
+  {
+    "kind": "scalar",
+    "dtype": "i32",
+    "value": 8
+  },
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  }
+]
+"""
+            )
+            unaligned_operand_specs = expand_helper._parse_operand_specs(
+                """
+[
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  },
+  {
+    "kind": "scalar",
+    "dtype": "i32",
+    "value": 1
+  },
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  }
+]
+"""
+            )
+
+            aligned = expand_helper._select_descriptor(
+                descriptors,
+                target="a5",
+                op_name="pto.expand_helper_scalar_value_unique",
+                operand_specs=aligned_operand_specs,
+            )
+            unaligned = expand_helper._select_descriptor(
+                descriptors,
+                target="a5",
+                op_name="pto.expand_helper_scalar_value_unique",
+                operand_specs=unaligned_operand_specs,
+            )
+
+        self.assertEqual(aligned.name, "template_aligned")
+        self.assertEqual(unaligned.name, "template_fallback")
+        self.assertEqual(aligned_operand_specs[1]["value"], 8)
+        context_attrs = expand_helper._build_positional_context_attrs(aligned_operand_specs)
+        self.assertEqual(context_attrs["arg1_value"], 8)
+
 
 class TileLangDSLSupportMatrixTests(unittest.TestCase):
     def test_stable_starter_surface_groups_map_to_stable_tier(self) -> None:
@@ -1656,6 +1781,117 @@ class TileLangDSLMatcherEntryTests(unittest.TestCase):
         )
 
         self.assertEqual(selected.name, "template_nd")
+
+    def test_select_kernel_constraints_can_read_scalar_parameter_values(self) -> None:
+        @pto.vkernel(
+            op="matcher_scalar_value_unique",
+            dtypes=[(pto.f32, pto.i32, pto.f32)],
+            constraints=[lambda indexCol: indexCol.value % 8 == 0],
+            priority=10,
+        )
+        def template_aligned(src: pto.Tile, indexCol: pto.i32, dst: pto.Tile):
+            return None
+
+        @pto.vkernel(
+            op="matcher_scalar_value_unique",
+            dtypes=[(pto.f32, pto.i32, pto.f32)],
+        )
+        def template_fallback(src: pto.Tile, indexCol: pto.i32, dst: pto.Tile):
+            return None
+
+        registry = pto.KernelRegistry((template_aligned, template_fallback))
+        aligned_operand_specs = expand_helper._parse_operand_specs(
+            """
+[
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  },
+  {
+    "kind": "scalar",
+    "dtype": "i32",
+    "value": 8
+  },
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  }
+]
+"""
+        )
+        fallback_operand_specs = expand_helper._parse_operand_specs(
+            """
+[
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  },
+  {
+    "kind": "scalar",
+    "dtype": "i32",
+    "value": 1
+  },
+  {
+    "kind": "tile",
+    "dtype": "f32",
+    "shape": [1, 64],
+    "valid_shape": [1, 64],
+    "memory_space": "ub",
+    "config": {
+      "b_layout": "row_major",
+      "s_layout": "none_box",
+      "s_fractal_size": 512,
+      "pad_value": "0x0"
+    }
+  }
+]
+"""
+        )
+
+        aligned = pto.select_kernel(
+            "a5",
+            "matcher_scalar_value_unique",
+            (pto.f32, pto.i32, pto.f32),
+            context_attrs=expand_helper._build_positional_context_attrs(aligned_operand_specs),
+            registry=registry,
+        )
+        fallback = pto.select_kernel(
+            "a5",
+            "matcher_scalar_value_unique",
+            (pto.f32, pto.i32, pto.f32),
+            context_attrs=expand_helper._build_positional_context_attrs(fallback_operand_specs),
+            registry=registry,
+        )
+
+        self.assertEqual(aligned.name, "template_aligned")
+        self.assertEqual(fallback.name, "template_fallback")
 
     def test_select_kernel_binds_selected_op_for_multi_op_descriptor(self) -> None:
         @pto.vkernel(
@@ -7644,6 +7880,48 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             text,
             r"pto\.strict_vecscope\(%tmp_\d+, %tmp_\d+, %c0, %upper_\d+, %step_\d+\)",
         )
+
+    def test_explicit_vecscope_if_merges_new_binding_defined_in_both_branches(self) -> None:
+        @pto.vkernel(op="explicit_vecscope_if_result_unique", dtypes=[(pto.f32, pto.f32, pto.i32)])
+        def kernel(src: pto.Tile, dst: pto.Tile, flag: pto.i32):
+            mask = pto.make_mask(pto.f32, pto.PAT.ALL)
+            with pto.vecscope():
+                if flag:
+                    vec = pto.vlds(src, 0)
+                else:
+                    vec = pto.vlds(src, 64)
+                pto.vsts(vec, dst, 0, mask)
+            return None
+
+        specialized = kernel.specialize(
+            src=pto.TileSpecialization(shape=(8, 128), memory_space=pto.MemorySpace.UB),
+            dst=pto.TileSpecialization(shape=(8, 128), memory_space=pto.MemorySpace.UB),
+        )
+
+        frontend_kernel = build_frontend_kernel_node(specialized)
+        vecscope_stmt = next(stmt for stmt in frontend_kernel.body if isinstance(stmt, FrontendVecscopeStmt))
+        self.assertIsInstance(vecscope_stmt.body[0], FrontendIfStmt)
+
+        semantic_kernel = analyze_frontend_kernel(frontend_kernel)
+        semantic_vecscope = next(
+            stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticVecscopeStmt)
+        )
+        if_stmt = semantic_vecscope.body[0]
+        self.assertIsInstance(if_stmt, SemanticIfStmt)
+        self.assertEqual([result.result_binding.name for result in if_stmt.results], ["vec"])
+        self.assertIsInstance(semantic_vecscope.body[1], SemanticVectorStoreStmt)
+
+        text = specialized.mlir_text()
+        self.assertIn("pto.vecscope {", text)
+        self.assertRegex(
+            text,
+            r"%vec_\d+ = scf\.if %tmp_\d+ -> \(!pto\.vreg<64xf32>\) \{",
+        )
+        self.assertRegex(
+            text,
+            r"scf\.yield %vec_\d+ : !pto\.vreg<64xf32>",
+        )
+        self.assertIn("pto.vsts", text)
 
     def test_extended_sync_buffer_ops_lower_to_authoring_surface(self) -> None:
         Pipe = pto.Pipe
