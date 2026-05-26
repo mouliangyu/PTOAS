@@ -292,7 +292,7 @@ static FailureOr<StringRef> buildMadTypedCalleeName(MLIRContext *context,
     return StringAttr::get(context, "llvm.hivm.MAD.f322f32.c310").getValue();
   if (isSignedOrSignlessInteger(dyn_cast<IntegerType>(lhsElem), 8) &&
       rhs == "s8" && dst == "s32")
-    return StringAttr::get(context, "llvm.hivm.MAD.s82s32.c310").getValue();
+    return StringAttr::get(context, "llvm.hivm.MAD.s8.c310").getValue();
   if (isMadE4M3ElementType(lhsElem) && isMadE4M3ElementType(rhsElem) &&
       dst == "f32")
     return StringAttr::get(context, "llvm.hivm.MAD.e4m3e4m3.c310").getValue();
