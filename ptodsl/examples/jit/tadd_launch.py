@@ -104,9 +104,9 @@ def _tadd_tile_dynamic_rows(A, B, C, rows, *, max_rows: int, cols: int) -> None:
     target="a5",
 )
 def TADD_f32_16x64(
-    A: pto.tensor_spec(rank=2, dtype=pto.f32),
-    B: pto.tensor_spec(rank=2, dtype=pto.f32),
-    C: pto.tensor_spec(rank=2, dtype=pto.f32),
+    A: pto.tensor_spec(dtype=pto.f32),
+    B: pto.tensor_spec(dtype=pto.f32),
+    C: pto.tensor_spec(dtype=pto.f32),
 ):
     _tadd_tile(A, B, C, 16, 64)
 
@@ -117,9 +117,9 @@ def TADD_f32_16x64(
     target="a5",
 )
 def TADD_f32_dyn_rows_x64(
-    A: pto.tensor_spec(rank=2, dtype=pto.f32),
-    B: pto.tensor_spec(rank=2, dtype=pto.f32),
-    C: pto.tensor_spec(rank=2, dtype=pto.f32),
+    A: pto.tensor_spec(dtype=pto.f32),
+    B: pto.tensor_spec(dtype=pto.f32),
+    C: pto.tensor_spec(dtype=pto.f32),
     rows: pto.i32,
 ):
     _tadd_tile_dynamic_rows(A, B, C, rows, max_rows=32, cols=64)
