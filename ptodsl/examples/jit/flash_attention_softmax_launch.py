@@ -23,175 +23,142 @@ online-softmax recurrence:
     running_sum = running_sum * exp(old_max - new_max) + exp(score_col - new_max)
     out         = exp(score_col - final_max) / final_sum
 
-The demo offers two launchable kernels so the current launch ABI does not need
-an extra runtime tile-width parameter:
-
-- ``rows64_seq128``: full-width 64-row packed softmax
-- ``rows81_seq96``: same single NPU, but two sequential row-pack updates
+The demo launches the same dynamic-shape kernel for multiple ``[seq, rows]``
+sizes by passing ``rows`` and ``seq`` as runtime scalar arguments.
 """
 
 import argparse
 import time
-from pathlib import Path
-import sys
 
 import numpy as np
 
-if __package__ in {None, ""}:
-    here = Path(__file__).resolve()
-    for candidate in here.parents:
-        if (candidate / "ptodsl" / "__init__.py").exists():
-            sys.path.insert(0, str(candidate))
-            break
-    else:
-        raise RuntimeError(
-            "Unable to locate the PTODSL Python package root from flash_attention_softmax_launch.py"
-        )
-
-from ptodsl import pto
+from ptodsl import pto, scalar as s
 
 _DEVICE = "npu:0"
+_MAX_ROWS = 128
+_MAX_SEQ = 128
 
 
-def _make_softmax_kernel(name: str, *, rows: int, seq: int):
-    if rows <= 0:
-        raise ValueError("rows must be positive")
-    if seq <= 0:
-        raise ValueError("seq must be positive")
+@pto.jit(
+    target="a5",
+    mode="explicit",
+    insert_sync=False,
+)
+def softmax_dynamic_shape(
+    scores: pto.tensor_spec(dtype=pto.f32),
+    out: pto.tensor_spec(dtype=pto.f32),
+    rows: pto.i32,
+    seq: pto.i32,
+):
+    lane_num = pto.elements_per_vreg(pto.f32)
+    physical_rows = ((_MAX_ROWS + lane_num - 1) // lane_num) * lane_num
+    scores_tile_bytes = _MAX_SEQ * physical_rows * pto.bytewidth(pto.f32)
+    runtime_rows = s.index_cast(rows)
+    runtime_seq = s.index_cast(seq)
+    total_elems = s.muli(runtime_rows, runtime_seq)
 
-    @pto.jit(
-        name=name,
-        target="a5",
-        mode="explicit",
-        insert_sync=False
+    scores_view = pto.make_tensor_view(
+        scores,
+        shape=[1, 1, 1, runtime_seq, runtime_rows],
+        strides=[total_elems, total_elems, total_elems, runtime_rows, 1],
     )
-    def kernel(
-        scores: pto.tensor_spec(rank=2, dtype=pto.f32),
-        out: pto.tensor_spec(rank=2, dtype=pto.f32),
-    ):
-        lane_num = pto.elements_per_vreg(pto.f32)
-        physical_rows = ((rows + lane_num - 1) // lane_num) * lane_num
-        scores_tile_bytes = seq * physical_rows * pto.bytewidth(pto.f32)
-        runtime_seq = scores.shape[0]
-        runtime_rows = scores.shape[1]
-        total_elems = runtime_rows * runtime_seq
+    out_view = pto.make_tensor_view(
+        out,
+        shape=[1, 1, 1, runtime_seq, runtime_rows],
+        strides=[total_elems, total_elems, total_elems, runtime_rows, 1],
+    )
+    scores_part = pto.partition_view(
+        scores_view,
+        offsets=[0, 0, 0, 0, 0],
+        sizes=[1, 1, 1, runtime_seq, runtime_rows],
+    )
+    out_part = pto.partition_view(
+        out_view,
+        offsets=[0, 0, 0, 0, 0],
+        sizes=[1, 1, 1, runtime_seq, runtime_rows],
+    )
 
-        scores_view = pto.make_tensor_view(
-            scores,
-            shape=[1, 1, 1, runtime_seq, runtime_rows],
-            strides=[total_elems, total_elems, total_elems, runtime_rows, 1],
-        )
-        out_view = pto.make_tensor_view(
-            out,
-            shape=[1, 1, 1, runtime_seq, runtime_rows],
-            strides=[total_elems, total_elems, total_elems, runtime_rows, 1],
-        )
-        scores_part = pto.partition_view(
-            scores_view,
-            offsets=[0, 0, 0, 0, 0],
-            sizes=[1, 1, 1, runtime_seq, runtime_rows],
-        )
-        out_part = pto.partition_view(
-            out_view,
-            offsets=[0, 0, 0, 0, 0],
-            sizes=[1, 1, 1, runtime_seq, runtime_rows],
-        )
+    scores_tile = pto.alloc_tile(
+        shape=[_MAX_SEQ, physical_rows],
+        dtype=pto.float32,
+        addr=0,
+        valid_shape=[runtime_seq, runtime_rows],
+        blayout="RowMajor",
+    )
+    out_tile = pto.alloc_tile(
+        shape=[_MAX_SEQ, physical_rows],
+        dtype=pto.float32,
+        addr=scores_tile_bytes,
+        valid_shape=[runtime_seq, runtime_rows],
+        blayout="RowMajor",
+    )
 
-        scores_tile = pto.alloc_tile(
-            shape=[seq, physical_rows],
-            dtype=pto.float32,
-            addr=0,
-            valid_shape=[runtime_seq, runtime_rows],
-            blayout="RowMajor",
-        )
-        out_tile = pto.alloc_tile(
-            shape=[seq, physical_rows],
-            dtype=pto.float32,
-            addr=scores_tile_bytes,
-            valid_shape=[runtime_seq, runtime_rows],
-            blayout="RowMajor",
-        )
+    pto.tile.load(scores_part, scores_tile)
+    out_tile.fill(0.0)
 
-        pto.tile.load(scores_part, scores_tile)
-        out_tile.fill(0.0)
+    pto.set_flag("MTE2", "V", event_id=0)
+    pto.wait_flag("MTE2", "V", event_id=0)
 
-        pto.set_flag("MTE2", "V", event_id=0)
-        pto.wait_flag("MTE2", "V", event_id=0)
+    with pto.simd():
+        row_loop = pto.for_(0, runtime_rows, step=lane_num).carry(remained=runtime_rows)
+        with row_loop:
+            row_base = row_loop.iv
+            remaining_rows = row_loop.remained
+            active_rows, remaining_after_pack = pto.make_mask(pto.f32, remaining_rows)
+            running_max = pto.vlds(scores_tile[0, row_base:])
+            running_sum = pto.vbr(1.0)
 
-        with pto.simd():
-            row_loop = pto.for_(0, runtime_rows, step=lane_num).carry(remained=runtime_rows)
-            with row_loop:
-                row_base = row_loop.iv
-                remaining_rows = row_loop.remained
-                active_rows, remaining_after_pack = pto.make_mask(pto.f32, remaining_rows)
-                running_max = pto.vlds(scores_tile[0, row_base:])
-                running_sum = pto.vbr(1.0)
+            softmax_loop = pto.for_(1, runtime_seq, step=1).carry(
+                running_max=running_max,
+                running_sum=running_sum,
+            )
+            with softmax_loop:
+                col = softmax_loop.iv
+                running_max = softmax_loop.running_max
+                running_sum = softmax_loop.running_sum
+                col_vec = pto.vlds(scores_tile[col, row_base:])
+                merged_max = pto.vmax(running_max, col_vec, active_rows)
+                running_delta = pto.vsub(running_max, merged_max, active_rows)
+                scaled_running = pto.vexp(running_delta, active_rows)
+                running_sum_scaled = pto.vmul(scaled_running, running_sum, active_rows)
+                col_delta = pto.vsub(col_vec, merged_max, active_rows)
+                col_exp = pto.vexp(col_delta, active_rows)
+                merged_sum = pto.vadd(running_sum_scaled, col_exp, active_rows)
+                softmax_loop.update(running_max=merged_max, running_sum=merged_sum)
 
-                softmax_loop = pto.for_(1, runtime_seq, step=1).carry(
-                    running_max=running_max,
-                    running_sum=running_sum,
-                )
-                with softmax_loop:
-                    col = softmax_loop.iv
-                    running_max = softmax_loop.running_max
-                    running_sum = softmax_loop.running_sum
-                    col_vec = pto.vlds(scores_tile[col, row_base:])
-                    merged_max = pto.vmax(running_max, col_vec, active_rows)
-                    running_delta = pto.vsub(running_max, merged_max, active_rows)
-                    scaled_running = pto.vexp(running_delta, active_rows)
-                    running_sum_scaled = pto.vmul(scaled_running, running_sum, active_rows)
-                    col_delta = pto.vsub(col_vec, merged_max, active_rows)
-                    col_exp = pto.vexp(col_delta, active_rows)
-                    merged_sum = pto.vadd(running_sum_scaled, col_exp, active_rows)
-                    softmax_loop.update(running_max=merged_max, running_sum=merged_sum)
+            final_max = softmax_loop.final("running_max")
+            final_sum = softmax_loop.final("running_sum")
 
-                final_max = softmax_loop.final("running_max")
-                final_sum = softmax_loop.final("running_sum")
+            with pto.for_(0, runtime_seq, step=1) as col:
+                col_vec = pto.vlds(scores_tile[col, row_base:])
+                out_delta = pto.vsub(col_vec, final_max, active_rows)
+                exp_vec = pto.vexp(out_delta, active_rows)
+                out_vec = pto.vdiv(exp_vec, final_sum, active_rows)
+                pto.vsts(out_vec, out_tile[col, row_base:], active_rows)
 
-                with pto.for_(0, runtime_seq, step=1) as col:
-                    col_vec = pto.vlds(scores_tile[col, row_base:])
-                    out_delta = pto.vsub(col_vec, final_max, active_rows)
-                    exp_vec = pto.vexp(out_delta, active_rows)
-                    out_vec = pto.vdiv(exp_vec, final_sum, active_rows)
-                    pto.vsts(out_vec, out_tile[col, row_base:], active_rows)
+            row_loop.update(remained=remaining_after_pack)
 
-                row_loop.update(remained=remaining_after_pack)
+    pto.set_flag("V", "MTE3", event_id=0)
+    pto.wait_flag("V", "MTE3", event_id=0)
 
-        pto.set_flag("V", "MTE3", event_id=0)
-        pto.wait_flag("V", "MTE3", event_id=0)
+    pto.tile.store(out_tile, out_part)
+    pto.pipe_barrier(pto.Pipe.ALL)
 
-        pto.tile.store(out_tile, out_part)
-        pto.pipe_barrier(pto.Pipe.ALL)
-
-    return kernel
-
-
-SOFTMAX_ROWS64_SEQ128 = _make_softmax_kernel(
-    "softmax_rows64_seq128",
-    rows=64,
-    seq=128,
-)
-SOFTMAX_ROWS81_SEQ96 = _make_softmax_kernel(
-    "softmax_rows81_seq96",
-    rows=81,
-    seq=96,
-)
 
 KERNELS = (
-    SOFTMAX_ROWS64_SEQ128,
-    SOFTMAX_ROWS81_SEQ96,
+    softmax_dynamic_shape,
 )
 
 CASES = [
     {
         "name": "rows64_seq128",
-        "kernel": SOFTMAX_ROWS64_SEQ128,
+        "kernel": softmax_dynamic_shape,
         "rows": 64,
         "seq": 128,
     },
     {
         "name": "rows81_seq96",
-        "kernel": SOFTMAX_ROWS81_SEQ96,
+        "kernel": softmax_dynamic_shape,
         "rows": 81,
         "seq": 96,
     },
@@ -250,6 +217,8 @@ def run_case(case: dict[str, object], torch) -> None:
     compiled[1, stream](
         scores_t,
         out_t,
+        int(case["rows"]),
+        int(case["seq"]),
     )
     torch.npu.synchronize()
     launch_s = time.perf_counter() - t0

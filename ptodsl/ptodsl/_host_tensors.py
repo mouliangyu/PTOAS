@@ -103,8 +103,8 @@ def inspect_host_tensor_metadata(tensor) -> HostTensorMetadata:
 class TensorSpec:
     """Static ABI hint for one Python-native ``@pto.jit`` tensor parameter."""
 
-    rank: int
     dtype: object
+    rank: int = 2
     address_space: str = "gm"
 
     def __post_init__(self):
@@ -139,9 +139,9 @@ class TensorSpec:
         )
 
 
-def tensor_spec(*, rank: int, dtype, address_space: str = "gm") -> TensorSpec:
+def tensor_spec(*, dtype, rank: int = 2, address_space: str = "gm") -> TensorSpec:
     """Declare the ABI contract of one Python-native ``@pto.jit`` tensor parameter."""
-    return TensorSpec(rank=rank, dtype=dtype, address_space=address_space)
+    return TensorSpec(dtype=dtype, rank=rank, address_space=address_space)
 
 
 class HostTensorValue:
