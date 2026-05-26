@@ -12,6 +12,7 @@
 #include "PTO/Transforms/BufferizableOpInterfaceImpl.h"
 #include "VPTOFatobjEmission.h"
 #include "VPTOHostStubEmission.h"
+#include "TilelangDaemon.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -320,118 +321,6 @@ static llvm::cl::opt<std::string> daemonSocketPath(
                    "(default: /tmp/tilelang_daemon_{pid}.sock)"),
     llvm::cl::init(""));
 
-// Global daemon process handle
-static std::optional<std::pair<llvm::sys::procid_t, std::string>> daemonProcessInfo;
-
-static std::string generateDaemonSocketPath() {
-  return "/tmp/tilelang_daemon_" + std::to_string(::getpid()) + ".sock";
-}
-
-static bool startTilelangDaemon(const std::string &socketPath,
-                                 const std::string &templateDir,
-                                 const std::string &pkgPath) {
-  // Locate Python executable
-  auto pythonPath = llvm::sys::findProgramByName("python3");
-  if (!pythonPath) {
-    llvm::errs() << "Error: Cannot find python3 executable for daemon\n";
-    return false;
-  }
-
-  // Build daemon command args
-  SmallVector<StringRef, 8> args = {
-      *pythonPath, "-m", "tilelang_dsl.daemon",
-      "--socket", socketPath,
-      "--template-dir", templateDir,
-  };
-
-  // Set up environment with PYTHONPATH
-  SmallVector<StringRef> envp;
-  std::string pythonPathEnv;
-  std::vector<std::string> envStorage;
-
-  if (!pkgPath.empty()) {
-    const char *existingPath = ::getenv("PYTHONPATH");
-    pythonPathEnv = "PYTHONPATH=" + pkgPath;
-    if (existingPath && existingPath[0] != '\0') {
-      pythonPathEnv += ":";
-      pythonPathEnv += existingPath;
-    }
-    for (char **e = environ; *e; ++e) {
-      StringRef entry(*e);
-      if (entry.starts_with("PYTHONPATH="))
-        continue;
-      envStorage.push_back(std::string(entry));
-    }
-    envStorage.push_back(pythonPathEnv);
-    for (auto &s : envStorage)
-      envp.push_back(s);
-  }
-
-  // Start daemon process (background, detached)
-  std::string errMsg;
-  bool executionFailed = false;
-  
-  llvm::sys::ProcessInfo procInfo = llvm::sys::ExecuteNoWait(
-      *pythonPath, args,
-      !pkgPath.empty() ? std::optional<ArrayRef<StringRef>>(envp) : std::nullopt,
-      {}, /*redirects*/
-      0, /*memoryLimit*/
-      &errMsg,
-      &executionFailed,
-      nullptr, /*AffinityMask*/
-      true /*DetachProcess - daemon脱离控制终端*/
-  );
-
-  if (executionFailed || procInfo.Pid == llvm::sys::ProcessInfo::InvalidPid) {
-    llvm::errs() << "Error: Failed to start TileLang daemon: " << errMsg << "\n";
-    return false;
-  }
-
-  // Store daemon process info for cleanup
-  daemonProcessInfo = std::make_pair(procInfo.Pid, socketPath);
-
-  // Give daemon a moment to start and create socket
-  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-  // Verify daemon socket exists
-  if (!llvm::sys::fs::exists(socketPath)) {
-    llvm::errs() << "Error: Daemon socket not created at " << socketPath << "\n";
-    llvm::errs() << "Note: Daemon process started (pid=" << procInfo.Pid 
-                 << ") but socket not found. Check daemon logs.\n";
-    return false;
-  }
-
-  llvm::errs() << "TileLang daemon started (pid=" << procInfo.Pid
-               << ", socket=" << socketPath << ")\n";
-  return true;
-}
-
-static void stopTilelangDaemon() {
-  if (!daemonProcessInfo)
-    return;
-
-  llvm::sys::procid_t pid = daemonProcessInfo->first;
-  std::string socketPath = daemonProcessInfo->second;
-
-  // Send SIGTERM to daemon process
-  kill(pid, SIGTERM);
-
-  // Wait briefly for daemon to exit
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-  // Remove socket file
-  if (llvm::sys::fs::exists(socketPath)) {
-    llvm::sys::fs::remove(socketPath);
-  }
-
-  llvm::errs() << "TileLang daemon stopped (pid=" << pid << ")\n";
-  daemonProcessInfo = std::nullopt;
-}
-
-static void registerDaemonCleanupHandler() {
-  std::atexit(stopTilelangDaemon);
-}
-
 static pto::ExpandTileOpOptions resolveExpandTileOpOptions(int argc,
                                                            char **argv) {
   pto::ExpandTileOpOptions expandOpts;
@@ -455,13 +344,13 @@ static pto::ExpandTileOpOptions resolveExpandTileOpOptions(int argc,
   if (!expandOpts.tilelangPath.empty()) {
     std::string socket = daemonSocketPath;
     if (socket.empty())
-      socket = generateDaemonSocketPath();
+      socket = ptoas::DaemonManager::generateSocketPath();
 
     // Register cleanup handler (daemon will be stopped on PTOAS exit)
-    registerDaemonCleanupHandler();
+    ptoas::registerDaemonCleanup();
 
     // Try to start daemon automatically
-    if (startTilelangDaemon(socket, expandOpts.tilelangPath, expandOpts.tilelangPkgPath)) {
+    if (ptoas::DaemonManager::start(socket, expandOpts.tilelangPath, expandOpts.tilelangPkgPath)) {
       expandOpts.daemonSocketPath = socket;
       llvm::errs() << "Info: TileLang daemon started successfully\n";
     } else {
