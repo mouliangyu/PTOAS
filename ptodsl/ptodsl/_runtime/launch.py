@@ -17,6 +17,7 @@ from .._host_tensors import (
     looks_like_host_tensor,
 )
 from .._kernel_signature import DeviceParameterSpec, RuntimeScalarParameterSpec, TensorSpecParameterSpec
+from .. import _types as _pto_types
 from .._types import _resolve
 from .native_build import build_native_library
 
@@ -24,6 +25,25 @@ from mlir.ir import BF16Type, F16Type, F32Type, IndexType, IntegerType
 
 if TYPE_CHECKING:
     from .._kernel_compilation import CompiledKernelHandle
+
+
+_RUNTIME_SCALAR_CTYPES_BY_DESCRIPTOR = {
+    _pto_types.index: ctypes.c_int64,
+    _pto_types.int1: ctypes.c_bool,
+    _pto_types.int8: ctypes.c_int8,
+    _pto_types.int16: ctypes.c_int16,
+    _pto_types.int32: ctypes.c_int32,
+    _pto_types.int64: ctypes.c_int64,
+    _pto_types.si8: ctypes.c_int8,
+    _pto_types.si16: ctypes.c_int16,
+    _pto_types.si32: ctypes.c_int32,
+    _pto_types.si64: ctypes.c_int64,
+    _pto_types.ui8: ctypes.c_uint8,
+    _pto_types.ui16: ctypes.c_uint16,
+    _pto_types.ui32: ctypes.c_uint32,
+    _pto_types.ui64: ctypes.c_uint64,
+    _pto_types.float32: ctypes.c_float,
+}
 
 
 def _normalize_stream_ptr(stream):
@@ -56,6 +76,10 @@ def _as_void_ptr(value):
 
 
 def _ctype_for_runtime_scalar(annotation):
+    descriptor_ctype = _RUNTIME_SCALAR_CTYPES_BY_DESCRIPTOR.get(annotation)
+    if descriptor_ctype is not None:
+        return descriptor_ctype
+
     type_obj = _resolve(annotation)
     if IndexType.isinstance(type_obj):
         return ctypes.c_int64

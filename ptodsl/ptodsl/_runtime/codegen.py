@@ -11,8 +11,30 @@ from __future__ import annotations
 
 from mlir.ir import BF16Type, F16Type, F32Type, IndexType, IntegerType
 
+from .. import _types as _pto_types
 from .._kernel_signature import DeviceParameterSpec, RuntimeScalarParameterSpec, TensorSpecParameterSpec
 from .._types import _PtrDescriptor, _resolve
+
+
+_RUNTIME_SCALAR_CPP_TYPES_BY_DESCRIPTOR = {
+    _pto_types.index: "int64_t",
+    _pto_types.int1: "bool",
+    _pto_types.int8: "int8_t",
+    _pto_types.int16: "int16_t",
+    _pto_types.int32: "int32_t",
+    _pto_types.int64: "int64_t",
+    _pto_types.si8: "int8_t",
+    _pto_types.si16: "int16_t",
+    _pto_types.si32: "int32_t",
+    _pto_types.si64: "int64_t",
+    _pto_types.ui8: "uint8_t",
+    _pto_types.ui16: "uint16_t",
+    _pto_types.ui32: "uint32_t",
+    _pto_types.ui64: "uint64_t",
+    _pto_types.float32: "float",
+    _pto_types.float16: "__fp16",
+    _pto_types.bf16: "__bf16",
+}
 
 
 def _elem_cpp_type(elem) -> str:
@@ -52,6 +74,10 @@ def _device_param_cpp_type(annotation) -> str:
 
 
 def _runtime_scalar_cpp_type(annotation) -> str:
+    descriptor_cpp_type = _RUNTIME_SCALAR_CPP_TYPES_BY_DESCRIPTOR.get(annotation)
+    if descriptor_cpp_type is not None:
+        return descriptor_cpp_type
+
     type_obj = _resolve(annotation)
     if IndexType.isinstance(type_obj):
         return "int64_t"

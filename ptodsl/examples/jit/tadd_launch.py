@@ -31,7 +31,7 @@ if __package__ in {None, ""}:
             "Unable to locate the PTODSL Python package root from tadd_launch.py"
         )
 
-from ptodsl import pto
+from ptodsl import pto, scalar as s
 
 _DEVICE = "npu:0"
 
@@ -69,6 +69,35 @@ def _tadd_tile(A, B, C, rows: int, cols: int) -> None:
     pto.tile.store(c_tile, c_part)
 
 
+def _tadd_tile_dynamic_rows(A, B, C, rows, *, max_rows: int, cols: int) -> None:
+    c0 = pto.const(0)
+    c1 = pto.const(1)
+    c_rows = s.index_cast(rows)
+    c_cols = pto.const(cols)
+    c_elems = s.muli(c_rows, c_cols)
+
+    shape = [c1, c1, c1, c_rows, c_cols]
+    strides = [c_elems, c_elems, c_elems, c_cols, c1]
+    off = [c0, c0, c0, c0, c0]
+
+    a_view = pto.make_tensor_view(A, shape=shape, strides=strides)
+    b_view = pto.make_tensor_view(B, shape=shape, strides=strides)
+    c_view = pto.make_tensor_view(C, shape=shape, strides=strides)
+
+    a_part = pto.partition_view(a_view, offsets=off, sizes=shape)
+    b_part = pto.partition_view(b_view, offsets=off, sizes=shape)
+    c_part = pto.partition_view(c_view, offsets=off, sizes=shape)
+
+    a_tile = pto.alloc_tile(shape=[max_rows, cols], dtype=pto.float32, valid_shape=[c_rows, cols])
+    b_tile = pto.alloc_tile(shape=[max_rows, cols], dtype=pto.float32, valid_shape=[c_rows, cols])
+    c_tile = pto.alloc_tile(shape=[max_rows, cols], dtype=pto.float32, valid_shape=[c_rows, cols])
+
+    pto.tile.load(a_part, a_tile)
+    pto.tile.load(b_part, b_tile)
+    pto.tile.add(a_tile, b_tile, c_tile)
+    pto.tile.store(c_tile, c_part)
+
+
 @pto.jit(
     name="TADD_f32_16x64",
     kernel_kind="vector",
@@ -83,19 +112,20 @@ def TADD_f32_16x64(
 
 
 @pto.jit(
-    name="TADD_f32_32x32",
+    name="TADD_f32_dyn_rows_x64",
     kernel_kind="vector",
     target="a5",
 )
-def TADD_f32_32x32(
+def TADD_f32_dyn_rows_x64(
     A: pto.tensor_spec(rank=2, dtype=pto.f32),
     B: pto.tensor_spec(rank=2, dtype=pto.f32),
     C: pto.tensor_spec(rank=2, dtype=pto.f32),
+    rows: pto.i32,
 ):
-    _tadd_tile(A, B, C, 32, 32)
+    _tadd_tile_dynamic_rows(A, B, C, rows, max_rows=32, cols=64)
 
 
-KERNELS = (TADD_f32_16x64, TADD_f32_32x32)
+KERNELS = (TADD_f32_16x64, TADD_f32_dyn_rows_x64)
 
 
 def emit_mlir():
@@ -108,7 +138,20 @@ def emit_mlir():
 
 CASES = [
     {"name": "f32_16x64", "kernel": TADD_f32_16x64, "shape": (16, 64), "eps": 1e-6},
-    {"name": "f32_32x32", "kernel": TADD_f32_32x32, "shape": (32, 32), "eps": 1e-6},
+    {
+        "name": "f32_dyn_rows_16x64",
+        "kernel": TADD_f32_dyn_rows_x64,
+        "shape": (16, 64),
+        "dynamic_rows": True,
+        "eps": 1e-6,
+    },
+    {
+        "name": "f32_dyn_rows_32x64",
+        "kernel": TADD_f32_dyn_rows_x64,
+        "shape": (32, 64),
+        "dynamic_rows": True,
+        "eps": 1e-6,
+    },
 ]
 
 
@@ -143,7 +186,8 @@ def run_case(case: dict, torch) -> None:
     compile_s = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    compiled[1, stream](a, b, c)
+    launch_args = (a, b, c, shape[0]) if case.get("dynamic_rows") else (a, b, c)
+    compiled[1, stream](*launch_args)
     torch.npu.synchronize()
     launch_s = time.perf_counter() - t0
 
