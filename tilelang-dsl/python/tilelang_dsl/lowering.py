@@ -75,6 +75,7 @@ from .semantic import (
     SemanticWaitIntraCoreStmt,
 )
 from .types import (
+    CompactMode,
     MaskPattern,
     PadValue,
     ScalarType,
@@ -3866,12 +3867,15 @@ class _AuthoringRenderer:
         v_row = valid_shape[0]
         v_col = 1 if ty.rank == 1 else valid_shape[1]
         config = ty.config or TileConfig()
+        compact_suffix = ""
+        if config.compact_mode.value != "null":
+            compact_suffix = f", compact={self._render_tile_buf_compact_mode(config.compact_mode)}"
         return (
             f"!pto.tile_buf<loc={self._render_tile_buf_loc(ty.memory_space or 'ub')}, "
             f"dtype={ty.element_dtype.name}, rows={rows}, cols={cols}, "
             f"v_row={self._render_tile_buf_dim(v_row)}, v_col={self._render_tile_buf_dim(v_col)}, "
             f"blayout={config.b_layout.value}, slayout={config.s_layout.value}, "
-            f"fractal={config.s_fractal_size}, pad={self._render_tile_buf_pad_value(config.pad_value)}>"
+            f"fractal={config.s_fractal_size}, pad={self._render_tile_buf_pad_value(config.pad_value)}{compact_suffix}>"
         )
 
     def _render_tile_buf_loc(self, memory_space: str) -> str:
@@ -3908,6 +3912,15 @@ class _AuthoringRenderer:
                 "custom TileConfig.pad_value MLIR type rendering requires PTO tile_buf parser support for custom pad encodings"
             )
         return str(pad_value.encoded)
+
+    def _render_tile_buf_compact_mode(self, compact_mode: CompactMode) -> str:
+        if compact_mode == CompactMode.NULL:
+            return "0"
+        if compact_mode == CompactMode.NORMAL:
+            return "1"
+        if compact_mode == CompactMode.ROW_PLUS_ONE:
+            return "2"
+        raise NotImplementedError(f"unsupported TileConfig.compact_mode '{compact_mode}'")
 
     def _dtype_byte_width(self, dtype: ScalarType) -> int:
         try:

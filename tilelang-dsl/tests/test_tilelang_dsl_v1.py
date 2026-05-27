@@ -294,6 +294,7 @@ class TileLangDSLPackageTests(unittest.TestCase):
         self.assertEqual(default_config.s_layout, pto.SLayout.NONE_BOX)
         self.assertEqual(default_config.s_fractal_size, 512)
         self.assertEqual(default_config.pad_value, pto.PadValue.NULL)
+        self.assertEqual(default_config.compact_mode, pto.CompactMode.NULL)
 
         config = pto.TileConfig.from_mapping(
             {
@@ -301,12 +302,14 @@ class TileLangDSLPackageTests(unittest.TestCase):
                 "s_layout": "row_major",
                 "fractal": 16,
                 "pad": "max",
+                "compact": "row_plus_one",
             }
         )
         self.assertEqual(config.b_layout, pto.BLayout.COL_MAJOR)
         self.assertEqual(config.s_layout, pto.SLayout.ROW_MAJOR)
         self.assertEqual(config.s_fractal_size, 16)
         self.assertEqual(config.pad_value, pto.PadValue.MAX)
+        self.assertEqual(config.compact_mode, pto.CompactMode.ROW_PLUS_ONE)
 
     def test_pad_value_supports_standard_and_custom_payloads(self) -> None:
         custom = pto.PadValue.custom_f32(-1.0)
@@ -3873,7 +3876,9 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             secondary = config.s_layout
             fractal = config.s_fractal_size
             pad = config.pad_value
+            compact = config.compact_mode
             pad_direct = tile.pad_value
+            compact_direct = tile.compact_mode
             pad_scalar = pad.eval()
             pad_direct_scalar = pad_direct.eval()
             rank = tile.rank
@@ -3890,6 +3895,7 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
                         "s_layout": pto.SLayout.ROW_MAJOR,
                         "s_fractal_size": 16,
                         "pad_value": pto.PadValue.ZERO,
+                        "compact_mode": pto.CompactMode.ROW_PLUS_ONE,
                     }
                 ),
             )
@@ -3902,13 +3908,15 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
             secondary_assign,
             fractal_assign,
             pad_assign,
+            compact_assign,
             pad_direct_assign,
+            compact_direct_assign,
             pad_scalar_assign,
             pad_direct_scalar_assign,
             rank_assign,
             space_assign,
         ) = (
-            semantic_kernel.body[:10]
+            semantic_kernel.body[:12]
         )
 
         self.assertIsInstance(config_assign, SemanticAssignStmt)
@@ -3935,10 +3943,18 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertIsInstance(pad_assign.targets[0].type, SemanticPadValueType)
         self.assertEqual(pad_assign.targets[0].type.element_dtype, pto.f16)
 
+        self.assertIsInstance(compact_assign.value, SemanticSymbolExpr)
+        self.assertEqual(compact_assign.value.value, pto.CompactMode.ROW_PLUS_ONE)
+        self.assertEqual(compact_assign.value.type.kind, "compact_mode")
+
         self.assertIsInstance(pad_direct_assign.value, SemanticSymbolExpr)
         self.assertEqual(pad_direct_assign.value.value, pto.PadValue.ZERO)
         self.assertIsInstance(pad_direct_assign.targets[0].type, SemanticPadValueType)
         self.assertEqual(pad_direct_assign.targets[0].type.element_dtype, pto.f16)
+
+        self.assertIsInstance(compact_direct_assign.value, SemanticSymbolExpr)
+        self.assertEqual(compact_direct_assign.value.value, pto.CompactMode.ROW_PLUS_ONE)
+        self.assertEqual(compact_direct_assign.value.type.kind, "compact_mode")
 
         self.assertIsInstance(pad_scalar_assign.value, SemanticLiteralExpr)
         self.assertEqual(pad_scalar_assign.value.value, 0.0)
@@ -7490,6 +7506,35 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         self.assertRegex(
             text,
             r"%ptr_\d+ = pto\.tile_buf_addr %buf_\d+ : !pto\.tile_buf<loc=vec, dtype=f32, rows=8, cols=64, v_row=8, v_col=64, blayout=row_major, slayout=none_box, fractal=512, pad=0> -> !pto\.ptr<f32, ub>",
+        )
+
+    def test_tile_constructor_accepts_compact_mode_and_lowers_compact_suffix(self) -> None:
+        @pto.vkernel(op="body_local_tile_ctor_compact_unique", dtypes=[(pto.f32,)], advanced=True)
+        def kernel(inp: pto.TensorView):
+            buf = pto.Tile(
+                [8, 64],
+                pto.f32,
+                pto.MemorySpace.UB,
+                compact_mode=pto.CompactMode.ROW_PLUS_ONE,
+            )
+            ptr = buf.as_ptr()
+            return None
+
+        semantic_kernel = analyze_frontend_kernel(build_frontend_kernel_node(kernel))
+        assign_stmt = next(stmt for stmt in semantic_kernel.body if isinstance(stmt, SemanticAssignStmt))
+        self.assertIsInstance(assign_stmt.targets[0].type, SemanticTileType)
+        tile_type = assign_stmt.targets[0].type
+        self.assertIsNotNone(tile_type.config)
+        self.assertEqual(tile_type.config.compact_mode, pto.CompactMode.ROW_PLUS_ONE)
+
+        text = kernel.mlir_text()
+        self.assertRegex(
+            text,
+            r"%buf_\d+ = pto\.alloc_tile : !pto\.tile_buf<loc=vec, dtype=f32, rows=8, cols=64, v_row=8, v_col=64, blayout=row_major, slayout=none_box, fractal=512, pad=0, compact=2>",
+        )
+        self.assertRegex(
+            text,
+            r"%ptr_\d+ = pto\.tile_buf_addr %buf_\d+ : !pto\.tile_buf<loc=vec, dtype=f32, rows=8, cols=64, v_row=8, v_col=64, blayout=row_major, slayout=none_box, fractal=512, pad=0, compact=2> -> !pto\.ptr<f32, ub>",
         )
 
     def test_tile_constructor_uses_cube_memory_space_default_layouts(self) -> None:
