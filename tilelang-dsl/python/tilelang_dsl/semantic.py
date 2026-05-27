@@ -53,6 +53,7 @@ from .types import (
     BarrierType,
     BLayout,
     CmpMode,
+    CompactMode,
     DeinterleaveDist,
     Event,
     InterleaveDist,
@@ -135,6 +136,7 @@ _MEMORY_SPACE_SYMBOLS = {memory_space.name: memory_space for memory_space in Mem
 _PAD_MODE_SYMBOLS = {pad_mode.name: pad_mode for pad_mode in PadMode}
 _B_LAYOUT_SYMBOLS = {layout.name: layout for layout in BLayout}
 _S_LAYOUT_SYMBOLS = {layout.name: layout for layout in SLayout}
+_COMPACT_MODE_SYMBOLS = {compact_mode.name: compact_mode for compact_mode in CompactMode}
 _PAD_VALUE_SYMBOLS = {
     pad_value.name: pad_value
     for pad_value in (PadValue.NULL, PadValue.ZERO, PadValue.MAX, PadValue.MIN)
@@ -2572,6 +2574,8 @@ class _SemanticAnalyzer:
                 return self._attach_expr_source_location(self._memory_space_expr(base), expr)
             if expr.attr == "pad_value" and isinstance(base.type, SemanticTileType):
                 return self._attach_expr_source_location(self._tile_pad_value_expr(base), expr)
+            if expr.attr == "compact_mode" and isinstance(base.type, SemanticTileType):
+                return self._attach_expr_source_location(self._tile_compact_mode_expr(base), expr)
             if expr.attr == "config":
                 return self._attach_expr_source_location(self._tile_config_expr(base), expr)
             if expr.attr == "valid_shape":
@@ -2894,6 +2898,15 @@ class _SemanticAnalyzer:
                     value=s_layout,
                     type=SemanticMetaType(kind="s_layout"),
                 )
+        if expr.namespace in {"CompactMode", "pto.CompactMode"}:
+            compact_mode = _COMPACT_MODE_SYMBOLS.get(expr.name)
+            if compact_mode is not None:
+                return SemanticSymbolExpr(
+                    namespace=expr.namespace,
+                    name=expr.name,
+                    value=compact_mode,
+                    type=SemanticMetaType(kind="compact_mode"),
+                )
         if expr.namespace in {"PadValue", "pto.PadValue"}:
             pad_value = _PAD_VALUE_SYMBOLS.get(expr.name)
             if pad_value is not None:
@@ -3102,6 +3115,18 @@ class _SemanticAnalyzer:
             type=SemanticPadValueType(element_dtype=base_type.element_dtype),
         )
 
+    def _tile_compact_mode_expr(self, base: SemanticExpr) -> SemanticExpr:
+        base_type = base.type
+        if not isinstance(base_type, SemanticTileType):
+            raise TypeError("unsupported attribute access 'compact_mode' in TileLang DSL v1")
+        config = base_type.config or TileConfig()
+        return SemanticSymbolExpr(
+            namespace="pto",
+            name=config.compact_mode.name,
+            value=config.compact_mode,
+            type=SemanticMetaType(kind="compact_mode"),
+        )
+
     def _pad_value_eval_expr(
         self,
         base: SemanticExpr,
@@ -3176,6 +3201,13 @@ class _SemanticAnalyzer:
                 name=config.pad_value.name,
                 value=config.pad_value,
                 type=SemanticPadValueType(element_dtype=base.type.element_dtype),
+            )
+        if attr == "compact_mode":
+            return SemanticSymbolExpr(
+                namespace="pto",
+                name=config.compact_mode.name,
+                value=config.compact_mode,
+                type=SemanticMetaType(kind="compact_mode"),
             )
         raise TypeError(f"unsupported TileConfig attribute access '{attr}' in TileLang DSL v1")
 
@@ -5380,8 +5412,6 @@ class _SemanticAnalyzer:
         compact_mode_expr: SemanticExpr | None,
         addr_expr: SemanticExpr | None,
     ) -> SemanticExpr:
-        if compact_mode_expr is not None:
-            raise TypeError("pto.Tile compact_mode is not supported in TileLang DSL v1 yet")
         if addr_expr is not None:
             self._require_i64_like_expr(addr_expr, "pto.Tile addr")
 
@@ -5399,6 +5429,7 @@ class _SemanticAnalyzer:
             s_layout_expr=s_layout_expr,
             fractal_size_expr=fractal_size_expr,
             pad_value_expr=pad_value_expr,
+            compact_mode_expr=compact_mode_expr,
         )
         lowered_args: list[SemanticExpr] = []
         if valid_shape_expr is not None or addr_expr is not None:
@@ -5475,6 +5506,7 @@ class _SemanticAnalyzer:
         s_layout_expr: SemanticExpr | None,
         fractal_size_expr: SemanticExpr | None,
         pad_value_expr: SemanticExpr | None,
+        compact_mode_expr: SemanticExpr | None,
     ) -> TileConfig:
         defaults = dict(TileConfig.for_memory_space(memory_space).fields)
         if b_layout_expr is not None:
@@ -5491,6 +5523,10 @@ class _SemanticAnalyzer:
             if not isinstance(pad_value, PadValue):
                 raise TypeError("pto.Tile pad_value must be a PadValue symbol in TileLang DSL v1")
             defaults["pad_value"] = pad_value
+        if compact_mode_expr is not None:
+            defaults["compact_mode"] = self._require_compact_mode_symbol(
+                compact_mode_expr, "pto.Tile compact_mode"
+            )
         return TileConfig(tuple(sorted(defaults.items())))
 
     def _require_b_layout_symbol(self, expr: SemanticExpr, context: str) -> BLayout:
@@ -5526,6 +5562,23 @@ class _SemanticAnalyzer:
         ):
             return expr.binding.value
         raise TypeError(f"{context} must be an SLayout symbol in TileLang DSL v1")
+
+    def _require_compact_mode_symbol(self, expr: SemanticExpr, context: str) -> CompactMode:
+        if (
+            isinstance(expr, SemanticSymbolExpr)
+            and isinstance(expr.type, SemanticMetaType)
+            and expr.type.kind == "compact_mode"
+            and isinstance(expr.value, CompactMode)
+        ):
+            return expr.value
+        if (
+            isinstance(expr, SemanticBindingRef)
+            and isinstance(expr.type, SemanticMetaType)
+            and expr.type.kind == "compact_mode"
+            and isinstance(expr.binding.value, CompactMode)
+        ):
+            return expr.binding.value
+        raise TypeError(f"{context} must be a CompactMode symbol in TileLang DSL v1")
 
     def _analyze_get_lanes(
         self,
