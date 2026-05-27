@@ -21,7 +21,8 @@ import numpy as np
 from mlir.dialects import pto as _pto
 from mlir.ir import Attribute
 
-from ptodsl import pto
+from ptodsl import pto, scalar as s
+from ptodsl._ops import _coerce_i64
 from ptodsl._surface_values import unwrap_surface_value
 
 _DEVICE = "npu:0"
@@ -35,14 +36,14 @@ def _mte_gm_l1_frac(source, destination, *, shape, src_layout, dst_group, ctrl):
     _pto.mte_gm_l1_frac(
         _raw(source),
         _raw(destination),
-        _raw(shape[0]),
-        _raw(shape[1]),
-        _raw(src_layout[0]),
-        _raw(dst_group[0]),
-        _raw(dst_group[1]),
-        _raw(dst_group[2]),
-        _raw(dst_group[3]),
-        _raw(ctrl[0]),
+        _coerce_i64(shape[0], context="mte_gm_l1_frac shape[0]"),
+        _coerce_i64(shape[1], context="mte_gm_l1_frac shape[1]"),
+        _coerce_i64(src_layout[0], context="mte_gm_l1_frac src_layout[0]"),
+        _coerce_i64(dst_group[0], context="mte_gm_l1_frac dst_group[0]"),
+        _coerce_i64(dst_group[1], context="mte_gm_l1_frac dst_group[1]"),
+        _coerce_i64(dst_group[2], context="mte_gm_l1_frac dst_group[2]"),
+        _coerce_i64(dst_group[3], context="mte_gm_l1_frac dst_group[3]"),
+        _coerce_i64(ctrl[0], context="mte_gm_l1_frac ctrl[0]"),
         _raw(ctrl[1]),
         Attribute.parse("#pto<cube_load_frac_mode nd2nz>"),
     )
@@ -63,11 +64,14 @@ def TMATMUL_f16_16x16x16(
     A: pto.tensor_spec(rank=2, dtype=pto.f16),
     B: pto.tensor_spec(rank=2, dtype=pto.f16),
     C: pto.tensor_spec(rank=2, dtype=pto.f32),
+    dim: pto.i32,
 ):
     c0 = pto.const(0, dtype=pto.i64)
     c1 = pto.const(1, dtype=pto.i64)
-    c16 = pto.const(16, dtype=pto.i64)
-    c32 = pto.const(32, dtype=pto.i64)
+    c2 = pto.const(2)
+    c16 = s.index_cast(dim)
+    c16_static = pto.const(16)
+    c32 = s.muli(c16_static, c2)
     false = pto.const(0, dtype=pto.i1)
 
     l1_a_tile = pto.alloc_tile(
@@ -148,7 +152,7 @@ def TMATMUL_f16_16x16x16(
 
     pto.set_flag("M", "FIX", event_id=1)
     pto.wait_flag("M", "FIX", event_id=1)
-    pto.mte_l0c_gm(l0c, C.data_handle, c16, c16, c16, c16, c0, c0)
+    pto.mte_l0c_gm(l0c, C.data_handle, c16, c16, c16_static, c16_static, c0, c0)
     pto.pipe_barrier(pto.Pipe.ALL)
 
 
@@ -173,26 +177,37 @@ def npu_stream(torch):
 def test_tmatmul() -> None:
     torch = init_runtime()
     rng = np.random.RandomState(0)
-    a_np = rng.uniform(-1.0, 1.0, size=(16, 16)).astype(np.float16)
-    b_np = rng.uniform(-1.0, 1.0, size=(16, 16)).astype(np.float16)
-    ref = np.matmul(a_np.astype(np.float32), b_np.astype(np.float32))
-
-    a = torch.from_numpy(a_np).to(_DEVICE)
-    b = torch.from_numpy(b_np).to(_DEVICE)
-    c = torch.empty((16, 16), dtype=torch.float32, device=_DEVICE)
     stream = npu_stream(torch)
+    dims = [int(rng.randint(4, 16)) for _ in range(2)] + [16]
 
     t0 = time.perf_counter()
     compiled = TMATMUL_f16_16x16x16.compile()
     compile_s = time.perf_counter() - t0
 
-    t0 = time.perf_counter()
-    compiled[1, stream](a, b, c)
-    torch.npu.synchronize()
-    launch_s = time.perf_counter() - t0
+    for dim in dims:
+        a_np = np.zeros((16, 16), dtype=np.float16)
+        b_np = np.zeros((16, 16), dtype=np.float16)
+        a_np[:dim, :dim] = rng.uniform(-1.0, 1.0, size=(dim, dim)).astype(np.float16)
+        b_np[:dim, :dim] = rng.uniform(-1.0, 1.0, size=(dim, dim)).astype(np.float16)
+        ref = np.matmul(
+            a_np[:dim, :dim].astype(np.float32),
+            b_np[:dim, :dim].astype(np.float32),
+        )
 
-    np.testing.assert_allclose(c.cpu().numpy(), ref, rtol=1e-2, atol=1e-2)
-    print(f"PASS TMATMUL_f16_16x16x16 compile={compile_s:.3f}s launch={launch_s:.3f}s")
+        a = torch.from_numpy(a_np).to(_DEVICE)
+        b = torch.from_numpy(b_np).to(_DEVICE)
+        c = torch.empty((16, 16), dtype=torch.float32, device=_DEVICE)
+
+        t0 = time.perf_counter()
+        compiled[1, stream](a, b, c, dim)
+        torch.npu.synchronize()
+        launch_s = time.perf_counter() - t0
+
+        np.testing.assert_allclose(c.cpu().numpy()[:dim, :dim], ref, rtol=1e-2, atol=1e-2)
+        print(
+            f"PASS TMATMUL_f16_{dim}x{dim}x{dim}  "
+            f"compile={compile_s:.3f}s launch={launch_s:.3f}s"
+        )
 
 
 def main(argv=None) -> int:
