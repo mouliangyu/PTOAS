@@ -2986,6 +2986,35 @@ def mte_l1_l0b(source, destination, k, n, *, transpose=False):
     )
 
 
+@_explicit_mode_only("pto.mte_l0c_gm(...)")
+def mte_l0c_gm(
+    source,
+    destination,
+    m,
+    n,
+    src_stride,
+    dst_stride,
+    sid=0,
+    l2_cache_ctrl=0,
+    *,
+    mode="nz2nd",
+):
+    """``pto.mte_l0c_gm`` – ACC to GM store."""
+    if isinstance(mode, str):
+        mode = Attribute.parse(f"#pto<acc_store_mode {mode}>")
+    _pto.mte_l0c_gm(
+        unwrap_surface_value(source),
+        unwrap_surface_value(destination),
+        _coerce_i64(m, context="mte_l0c_gm m"),
+        _coerce_i64(n, context="mte_l0c_gm n"),
+        _coerce_i64(src_stride, context="mte_l0c_gm src_stride"),
+        _coerce_i64(dst_stride, context="mte_l0c_gm dst_stride"),
+        _coerce_i64(sid, context="mte_l0c_gm sid"),
+        _coerce_i64(l2_cache_ctrl, context="mte_l0c_gm l2_cache_ctrl"),
+        mode=mode,
+    )
+
+
 @_explicit_mode_only("pto.mte_l0c_ub(...)")
 def mte_l0c_ub(source, destination, m, n, src_stride, dst_stride, sub_blockid=0, *, dst_mode="single"):
     """``pto.mte_l0c_ub`` – ACC to UB store."""
@@ -3259,7 +3288,7 @@ __all__ = [
     "tfillpad", "tfillpad_expand", "tfillpad_inplace",
     "as_ptr",
     "mte_load", "mte_store", "mte_gm_ub", "mte_ub_gm", "mte_ub_ub", "mte_ub_l1", "mem_bar",
-    "mte_l1_l0a", "mte_l1_l0b", "mte_l0c_ub",
+    "mte_l1_l0a", "mte_l1_l0b", "mte_l0c_gm", "mte_l0c_ub",
     "mad", "mad_acc", "mad_bias", "mad_mx", "mad_mx_acc", "mad_mx_bias",
     "get_block_idx", "get_block_num", "get_subblock_idx", "get_subblock_num",
     "store_vfsimt_info", "get_tid_x", "get_tid_y", "get_tid_z",
