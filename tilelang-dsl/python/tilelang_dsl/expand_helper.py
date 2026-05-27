@@ -79,6 +79,7 @@ _MEMSPACE_MAP = {
     "right": MemorySpace.RIGHT,
     "acc": MemorySpace.ACC,
     "bias": MemorySpace.BIAS,
+    "scaling": MemorySpace.SCALING,
 }
 
 
@@ -423,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--memory-space",
         default="ub",
-        help="Memory space (ub/gm/mat/left/right/acc/bias)",
+        help="Memory space (ub/gm/mat/left/right/acc/bias/scaling)",
     )
     parser.add_argument(
         "--operand-specs",

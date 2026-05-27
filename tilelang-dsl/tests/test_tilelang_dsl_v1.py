@@ -6,6 +6,7 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 
+import asyncio
 import tempfile
 import unittest
 import io
@@ -17,6 +18,7 @@ from importlib import util
 from pathlib import Path
 
 import tilelang_dsl as pto
+import tilelang_dsl.daemon_core as daemon_core
 import tilelang_dsl.expand_helper as expand_helper
 import tilelang_dsl.kernel as kernel_impl
 from tilelang_dsl.support_matrix import (
@@ -712,6 +714,24 @@ def kernel(src: pto.Tile, dst: pto.Tile):
             "blayout=row_major, slayout=none_box, fractal=512, pad=1>",
             mlir_text,
         )
+
+    def test_expand_helper_parse_operand_specs_accepts_scaling_memory_space(self) -> None:
+        operand_specs = expand_helper._parse_operand_specs(
+            """
+[
+  {
+    "kind": "tile",
+    "dtype": "f16",
+    "shape": [1, 16],
+    "valid_shape": [1, 16],
+    "memory_space": "scaling"
+  }
+]
+"""
+        )
+
+        self.assertEqual(len(operand_specs), 1)
+        self.assertEqual(operand_specs[0]["memory_space"], pto.MemorySpace.SCALING)
 
     def test_select_descriptor_uses_positional_context_for_named_constraints(self) -> None:
         source = """
@@ -1982,6 +2002,35 @@ class TileLangDSLMatcherEntryTests(unittest.TestCase):
 
         self.assertEqual(aligned.name, "template_aligned")
         self.assertEqual(fallback.name, "template_fallback")
+
+    def test_instance_cache_instantiate_accepts_signed_scalar_operand_specs(self) -> None:
+        source = """
+import tilelang_dsl as pto
+
+@pto.vkernel(
+    target="a5",
+    op="matcher_signed_scalar_instance_unique",
+    dtypes=[(pto.si32,)],
+)
+def kernel(value: pto.si32):
+    return None
+"""
+
+        async def instantiate_from_tmpdir(tmpdir: str) -> str:
+            cache = daemon_core.InstanceCache()
+            cache.scan_template_directory(Path(tmpdir))
+            return await cache.instantiate(
+                "a5",
+                "matcher_signed_scalar_instance_unique",
+                [{"kind": "scalar", "dtype": "si32"}],
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            module_path = Path(tmpdir) / "matcher_signed_scalar_instance_unique.py"
+            module_path.write_text(source, encoding="utf-8")
+            mlir_text = asyncio.run(instantiate_from_tmpdir(tmpdir))
+
+        self.assertIn("func.func @kernel(%arg0: si32)", mlir_text)
 
     def test_select_kernel_binds_selected_op_for_multi_op_descriptor(self) -> None:
         @pto.vkernel(
