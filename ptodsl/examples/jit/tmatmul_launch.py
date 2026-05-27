@@ -203,7 +203,7 @@ def test_tmatmul() -> None:
         torch.npu.synchronize()
         launch_s = time.perf_counter() - t0
 
-        np.testing.assert_allclose(c.cpu().numpy()[:dim, :dim], ref, rtol=1e-2, atol=1e-2)
+        np.testing.assert_allclose(c.cpu().numpy()[:dim, :dim], ref, rtol=1e-6, atol=1e-6)
         print(
             f"PASS TMATMUL_f16_{dim}x{dim}x{dim}  "
             f"compile={compile_s:.3f}s launch={launch_s:.3f}s"
