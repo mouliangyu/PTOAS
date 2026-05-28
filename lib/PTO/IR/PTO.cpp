@@ -11763,6 +11763,7 @@ static LogicalResult verifyFrontendInitCommon(InitOpT op,
     if (slotNum <= 0)
       return op.emitOpError("expects 'slot_num' to be greater than 0");
   }
+  PTOArch arch = getTargetArch(op.getOperation());
 
   bool hasGlobalSlotTensor = static_cast<bool>(op.getGmSlotTensor());
   bool hasC2vConsumerBuf = static_cast<bool>(op.getC2vConsumerBuf());
@@ -11776,7 +11777,7 @@ static LogicalResult verifyFrontendInitCommon(InitOpT op,
     if (op.getLocalSlotNumAttr())
       return op.emitOpError(
           "globaltensor pipe init does not use 'local_slot_num'");
-    if (getTargetArch(op.getOperation()) == PTOArch::A5) {
+    if (arch == PTOArch::A5) {
       return op.emitOpError(
           "globaltensor pipe entries are supported for a2/a3 l2g2l pipes");
     }
@@ -11795,6 +11796,9 @@ static LogicalResult verifyFrontendInitCommon(InitOpT op,
   }
 
   if (auto localSlotNumAttr = op.getLocalSlotNumAttr()) {
+    if (arch == PTOArch::A5)
+      return op.emitOpError(
+          "'local_slot_num' is only supported for a2/a3 frontend pipe lowering");
     int32_t localSlotNum = localSlotNumAttr.getInt();
     if (localSlotNum <= 0)
       return op.emitOpError("expects 'local_slot_num' to be greater than 0");

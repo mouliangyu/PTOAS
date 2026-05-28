@@ -8561,6 +8561,9 @@ pto.aic_initialize_pipe {id = 0, dir_mask = 1, slot_size = 1024, nosplit = true}
 - If `slot_num` is present, it must be greater than `0`
 - If `local_slot_num` is present, it must be greater than `0` and no greater
   than the effective `slot_num`
+- On A5, `local_slot_num` must be omitted; A5 frontend pipes lower to
+  `pto.initialize_l2l_pipe`, which does not use a local FIFO slot-count
+  template parameter
 - A global-only GM FIFO initialize carries only `gm_slot_tensor`; it must not
   carry `gm_slot_buffer`, `local_slot_num`, `c2v_consumer_buf`, or
   `v2c_consumer_buf`; it may carry `slot_num`

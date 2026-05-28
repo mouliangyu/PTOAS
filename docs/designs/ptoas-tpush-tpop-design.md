@@ -666,6 +666,7 @@ pto.tfree(%entry, %pipe : !pto.tensor_view<128x512xf32>, !pto.pipe) {split = 0}
 #### A5
 
 - `pto.aic_initialize_pipe` 和 `pto.aiv_initialize_pipe` lower 为 `pto.initialize_l2l_pipe`
+- A5 不支持 `local_slot_num`；前端 init 若显式携带该属性，verifier 会报错
 
 ### 6.2 `DIR_MASK=1/2`
 
@@ -1013,7 +1014,7 @@ pass 在模块级按两步执行：
   `slot_num`；缺省时 `DIR_MASK=1/2` 使用 `8`，`DIR_MASK=3` 使用 `4`
 - `local_slot_num` 若出现，可出现在 `pto.initialize_l2g2l_pipe` 或 legacy 前端
   `pto.aic_initialize_pipe` / `pto.aiv_initialize_pipe` 上，且必须大于 `0`
-  且不大于其有效 `slot_num`；global-only GM FIFO 不携带 `local_slot_num`
+  且不大于其有效 `slot_num`；A5 和 global-only GM FIFO 不携带 `local_slot_num`
 - `flag_base` 若出现，必须满足基本合法性；是否已填写以及具体分配值由 flag 分配保证
 - `pto.initialize_l2g2l_pipe` 必须提供 `gm_addr` 或 `gm_slot_tensor`；只有存在 consumer 侧 local FIFO buffer 时才提供 `local_addr` / `peer_local_addr`
 - `pto.initialize_l2l_pipe` 必须提供 `local_addr`
