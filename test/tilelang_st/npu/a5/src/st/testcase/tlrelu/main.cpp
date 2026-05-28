@@ -24,6 +24,8 @@ using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTLRELU_f32_32x64_dst128(float *src, float *dst, float slope, void *stream);
+void LaunchTLRELU_f32_merge_axis_16x72(float *src, float *dst, float slope, void *stream);
+
 void LaunchTLRELU_f16_63x64_dst128(uint16_t *src, uint16_t *dst, float slope, void *stream);
 void LaunchTLRELU_f32_7x448_dst512(float *src, float *dst, float slope, void *stream);
 void LaunchTLRELU_f32_256x16_dst32(float *src, float *dst, float slope, void *stream);
@@ -48,6 +50,7 @@ static const TestCase kCases[] = {
     {"f16_63x64_dst128",    (LaunchFn)LaunchTLRELU_f16_63x64_dst128,    63,   64,   63,  128, 63,  64,  sizeof(uint16_t), true},
     {"f32_7x448_dst512",    (LaunchFn)LaunchTLRELU_f32_7x448_dst512,    7,    448,  7,   512, 7,   448, sizeof(float),  false},
     {"f32_256x16_dst32",    (LaunchFn)LaunchTLRELU_f32_256x16_dst32,    256,  16,   256, 32,  256, 16,  sizeof(float),  false},
+    {"f32_merge_axis_16x72", (LaunchFn)LaunchTLRELU_f32_merge_axis_16x72, 16, 72, 16, 72, 16, 72, sizeof(float), false},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

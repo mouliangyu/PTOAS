@@ -25,3 +25,10 @@ extern "C" __global__ AICORE void TOR_i32_32x32(__gm__ int32_t *a, __gm__ int32_
 void LaunchTOR_i32_32x32(int32_t *a, int32_t *b, int32_t *c, void *stream) {
     TOR_i32_32x32<<<1, nullptr, stream>>>((__gm__ int32_t *)a, (__gm__ int32_t *)b, (__gm__ int32_t *)c);
 }
+
+// Merge-axis case: i32 merge axis 16x72
+extern "C" __global__ AICORE void TOR_i32_merge_axis_16x72(__gm__ int32_t *a, __gm__ int32_t *b, __gm__ int32_t *c);
+
+void LaunchTOR_i32_merge_axis_16x72(int32_t *a, int32_t *b, int32_t *c, void *stream) {
+    TOR_i32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ int32_t *)a, (__gm__ int32_t *)b, (__gm__ int32_t *)c);
+}

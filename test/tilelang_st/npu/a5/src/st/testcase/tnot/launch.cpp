@@ -53,3 +53,10 @@ extern "C" __global__ AICORE void TNOT_uint32_60x60(__gm__ uint32_t *a, __gm__ u
 void LaunchTNOT_uint32_60x60(void *a, void *b, void *stream) {
     TNOT_uint32_60x60<<<1, nullptr, stream>>>((__gm__ uint32_t *)a, (__gm__ uint32_t *)b);
 }
+
+// Merge-axis case: int8 merge axis 32x264
+extern "C" __global__ AICORE void TNOT_int8_merge_axis_32x288(__gm__ int8_t *a, __gm__ int8_t *b);
+
+void LaunchTNOT_int8_merge_axis_32x288(void *a, void *b, void *stream) {
+    TNOT_int8_merge_axis_32x288<<<1, nullptr, stream>>>((__gm__ int8_t *)a, (__gm__ int8_t *)b);
+}

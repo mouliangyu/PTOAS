@@ -81,3 +81,10 @@ extern "C" __global__ AICORE void TMOV_u8_128x128(__gm__ uint8_t *src, __gm__ ui
 void LaunchTMOV_u8_128x128(uint8_t *src, uint8_t *dst, void *stream) {
     TMOV_u8_128x128<<<1, nullptr, stream>>>((__gm__ uint8_t *)src, (__gm__ uint8_t *)dst);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TMOV_f32_merge_axis_16x72(__gm__ float *src, __gm__ float *dst);
+
+void LaunchTMOV_f32_merge_axis_16x72(float *src, float *dst, void *stream) {
+    TMOV_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst);
+}

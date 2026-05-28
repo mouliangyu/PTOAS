@@ -12,8 +12,63 @@
 // to produce a fatobj object.
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {
-  // Case 0: f32 16x64 (1024 elements)
-  func.func @TADD_f32_16x64(%a_ptr: !pto.ptr<f32>, %b_ptr: !pto.ptr<f32>, %c_ptr: !pto.ptr<f32>) attributes {pto.kernel} {
+  // Case 0: f32 merge-axis full-axis 16x72 (1152 elements)
+  func.func @TADD_f32_merge_axis_16x72(%a_ptr: !pto.ptr<f32>, %b_ptr: !pto.ptr<f32>, %c_ptr: !pto.ptr<f32>) attributes {pto.aicore} {
+    %c0    = arith.constant 0    : index
+    %c1    = arith.constant 1    : index
+    %c16   = arith.constant 16   : index
+    %c72   = arith.constant 72   : index
+    %c1152 = arith.constant 1152 : index
+
+    %a_view = pto.make_tensor_view %a_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c72],
+      strides = [%c1152, %c1152, %c1152, %c72, %c1]
+      : !pto.tensor_view<1x1x1x16x72xf32>
+    %b_view = pto.make_tensor_view %b_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c72],
+      strides = [%c1152, %c1152, %c1152, %c72, %c1]
+      : !pto.tensor_view<1x1x1x16x72xf32>
+    %c_view = pto.make_tensor_view %c_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c72],
+      strides = [%c1152, %c1152, %c1152, %c72, %c1]
+      : !pto.tensor_view<1x1x1x16x72xf32>
+
+    %a_part = pto.partition_view %a_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c72]
+      : !pto.tensor_view<1x1x1x16x72xf32> -> !pto.partition_tensor_view<1x1x1x16x72xf32>
+    %b_part = pto.partition_view %b_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c72]
+      : !pto.tensor_view<1x1x1x16x72xf32> -> !pto.partition_tensor_view<1x1x1x16x72xf32>
+    %c_part = pto.partition_view %c_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c72]
+      : !pto.tensor_view<1x1x1x16x72xf32> -> !pto.partition_tensor_view<1x1x1x16x72xf32>
+
+    %a = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x72xf32>
+    %b = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x72xf32>
+    %c = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x72xf32>
+
+    pto.tload ins(%a_part : !pto.partition_tensor_view<1x1x1x16x72xf32>)
+              outs(%a : !pto.tile_buf<vec, 16x72xf32>)
+    pto.tload ins(%b_part : !pto.partition_tensor_view<1x1x1x16x72xf32>)
+              outs(%b : !pto.tile_buf<vec, 16x72xf32>)
+
+    pto.tadd ins(%a, %b : !pto.tile_buf<vec, 16x72xf32>,
+                          !pto.tile_buf<vec, 16x72xf32>)
+             outs(%c : !pto.tile_buf<vec, 16x72xf32>)
+
+    pto.tstore ins(%c : !pto.tile_buf<vec, 16x72xf32>)
+               outs(%c_part : !pto.partition_tensor_view<1x1x1x16x72xf32>)
+    return
+  }
+
+  // Case 1: f32 16x64 (1024 elements)
+  func.func @TADD_f32_16x64(%a_ptr: !pto.ptr<f32>, %b_ptr: !pto.ptr<f32>, %c_ptr: !pto.ptr<f32>) attributes {pto.aicore} {
     %c0    = arith.constant 0    : index
     %c1    = arith.constant 1    : index
     %c16   = arith.constant 16   : index
@@ -67,8 +122,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     return
   }
 
-  // Case 1: f32 32x32 (1024 elements)
-  func.func @TADD_f32_32x32(%a_ptr: !pto.ptr<f32>, %b_ptr: !pto.ptr<f32>, %c_ptr: !pto.ptr<f32>) attributes {pto.kernel} {
+  // Case 2: f32 32x32 (1024 elements)
+  func.func @TADD_f32_32x32(%a_ptr: !pto.ptr<f32>, %b_ptr: !pto.ptr<f32>, %c_ptr: !pto.ptr<f32>) attributes {pto.aicore} {
     %c0    = arith.constant 0    : index
     %c1    = arith.constant 1    : index
     %c32   = arith.constant 32   : index

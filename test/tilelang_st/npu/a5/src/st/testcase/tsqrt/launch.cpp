@@ -53,3 +53,10 @@ extern "C" __global__ AICORE void TSQRT_f16_64x64_hp2(__gm__ uint16_t *a, __gm__
 void LaunchTSQRT_f16_64x64_hp2(void *a, void *b, void *stream) {
     TSQRT_f16_64x64_hp2<<<1, nullptr, stream>>>((__gm__ uint16_t *)a, (__gm__ uint16_t *)b);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TSQRT_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b);
+
+void LaunchTSQRT_f32_merge_axis_16x72(void *a, void *b, void *stream) {
+    TSQRT_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
+}

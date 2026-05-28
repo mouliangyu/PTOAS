@@ -39,3 +39,10 @@ extern "C" __global__ AICORE void TRSQRT_f16_32x32(__gm__ uint16_t *a, __gm__ ui
 void LaunchTRSQRT_f16_32x32(void *a, void *b, void *stream) {
     TRSQRT_f16_32x32<<<1, nullptr, stream>>>((__gm__ uint16_t *)a, (__gm__ uint16_t *)b);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TRSQRT_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b);
+
+void LaunchTRSQRT_f32_merge_axis_16x72(void *a, void *b, void *stream) {
+    TRSQRT_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
+}

@@ -62,4 +62,13 @@ CASES = [
         "dst_valid_shape": (256, 16),
         "eps": 1e-3,
     },
+    {
+        "name": "f32_merge_axis_16x72",
+        "dtype": np.float32,
+        "shape": (16, 72),
+        "valid_shape": (16, 72),
+        "dst_shape": (16, 72),
+        "dst_valid_shape": (16, 72),
+        "eps": 1e-3,
+    },
 ]

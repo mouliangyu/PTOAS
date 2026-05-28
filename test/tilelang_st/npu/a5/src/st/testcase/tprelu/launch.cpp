@@ -67,3 +67,10 @@ extern "C" __global__ AICORE void TPRELU_f32_2048x8(__gm__ float *src0, __gm__ f
 void LaunchTPRELU_f32_2048x8(float *src0, float *src1, float *dst, void *stream) {
     TPRELU_f32_2048x8<<<1, nullptr, stream>>>((__gm__ float *)src0, (__gm__ float *)src1, (__gm__ float *)dst);
 }
+
+// Merge-axis case: f16 merge axis 16x136
+extern "C" __global__ AICORE void TPRELU_f16_merge_axis_16x144(__gm__ uint16_t *src0, __gm__ uint16_t *src1, __gm__ uint16_t *dst);
+
+void LaunchTPRELU_f16_merge_axis_16x144(uint16_t *src0, uint16_t *src1, uint16_t *dst, void *stream) {
+    TPRELU_f16_merge_axis_16x144<<<1, nullptr, stream>>>((__gm__ uint16_t *)src0, (__gm__ uint16_t *)src1, (__gm__ uint16_t *)dst);
+}

@@ -67,3 +67,10 @@ extern "C" __global__ AICORE void TLOG_f16_32x32_hp(__gm__ uint16_t *a, __gm__ u
 void LaunchTLOG_f16_32x32_hp(void *a, void *b, void *stream) {
     TLOG_f16_32x32_hp<<<1, nullptr, stream>>>((__gm__ uint16_t *)a, (__gm__ uint16_t *)b);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TLOG_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b);
+
+void LaunchTLOG_f32_merge_axis_16x72(void *a, void *b, void *stream) {
+    TLOG_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
+}

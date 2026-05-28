@@ -42,3 +42,10 @@ extern "C" __global__ AICORE void TSHLS_i16_15x192(__gm__ int16_t *src, __gm__ i
 void LaunchTSHLS_i16_15x192(int16_t *src, int16_t *dst, void *stream) {
     TSHLS_i16_15x192<<<1, nullptr, stream>>>((__gm__ int16_t *)src, (__gm__ int16_t *)dst, TSHLS_SCALAR);
 }
+
+// Merge-axis case: i32 merge axis 16x72
+extern "C" __global__ AICORE void TSHLS_i32_merge_axis_16x72(__gm__ int32_t *src, __gm__ int32_t *dst, int16_t scalar);
+
+void LaunchTSHLS_i32_merge_axis_16x72(int32_t *src, int32_t *dst, void *stream) {
+    TSHLS_i32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ int32_t *)src, (__gm__ int32_t *)dst, TSHLS_SCALAR);
+}

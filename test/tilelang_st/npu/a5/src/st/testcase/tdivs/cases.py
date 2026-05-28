@@ -242,4 +242,12 @@ CASES = [
         "direction": "scalar_src",
         "test_pattern": "overflow",
     },
+{
+        "name": "f32_merge_axis_16x72",
+        "dtype": np.float32,
+        "shape": (16, 72),
+        "valid_shape": (16, 72),
+        "eps": 1e-6,
+        "direction": "src_scalar",
+    },
 ]

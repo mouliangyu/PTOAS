@@ -37,4 +37,11 @@ CASES = [
         "valid_shape": (32, 32),
         "eps": 0,
     },
+    {
+        "name": "i32_merge_axis_16x72",
+        "dtype": np.int32,
+        "shape": (16, 72),
+        "valid_shape": (16, 72),
+        "eps": 0,
+    },
 ]

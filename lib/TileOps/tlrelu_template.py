@@ -11,6 +11,41 @@
 import sys
 from pathlib import Path
 import tilelang_dsl as pto
+from merge_axis import emit_binary_merge_axis, emit_unary_merge_axis, full_axis_constraint
+
+
+@pto.vkernel(
+    target="a5",
+    op="pto.tlrelu",
+    constraints=[full_axis_constraint],
+    priority=100,
+    advanced=True,
+)
+def template_tlrelu_merge_axis(src: pto.Tile, slope: pto.f32, dst: pto.Tile):
+    dtype = dst.element_type
+    valid_rows, valid_cols = dst.valid_shape
+    total_elems = valid_rows * valid_cols
+    lanes = pto.get_lanes(dtype)
+    with pto.strict_vecscope(dst, src, slope, total_elems, 0, total_elems, lanes) as (
+        out_tile,
+        in_tile,
+        slope_value,
+        area,
+        lb,
+        ub,
+        step,
+    ):
+        if pto.constexpr(out_tile.element_type == pto.f16):
+            slope_scalar = pto.f16(slope_value)
+        else:
+            slope_scalar = slope_value
+        remained = area
+        for lane in range(lb, ub, step):
+            mask, remained = pto.make_mask(out_tile.element_type, remained)
+            vec = pto.vlds(in_tile, lane)
+            result = pto.vlrelu(vec, slope_scalar, mask)
+            pto.vsts(result, out_tile, lane, mask)
+    return
 
 
 @pto.vkernel(

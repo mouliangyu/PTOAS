@@ -23,6 +23,8 @@ using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTSHR_i32_16x64(int32_t *a, int32_t *b, int32_t *c, void *stream);
+void LaunchTSHR_i32_merge_axis_16x72(int32_t *a, int32_t *b, int32_t *c, void *stream);
+
 void LaunchTSHR_i32_32x32(int32_t *a, int32_t *b, int32_t *c, void *stream);
 
 using LaunchFn = void (*)(int32_t *, int32_t *, int32_t *, void *);
@@ -40,6 +42,7 @@ struct TestCase {
 static const TestCase kCases[] = {
     {"i32_16x64", LaunchTSHR_i32_16x64, 16, 64, 16, 64, sizeof(int32_t)},
     {"i32_32x32", LaunchTSHR_i32_32x32, 32, 32, 32, 32, sizeof(int32_t)},
+    {"i32_merge_axis_16x72", LaunchTSHR_i32_merge_axis_16x72, 16, 72, 16, 72, sizeof(int32_t)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

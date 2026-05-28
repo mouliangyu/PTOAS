@@ -23,6 +23,7 @@ using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTDIVS_f32_32x64(float *src, float *dst, void *stream);
+void LaunchTDIVS_f32_merge_axis_16x72(float *src, float *dst, void *stream);
 void LaunchTDIVS_f16_63x64(uint16_t *src, uint16_t *dst, void *stream);
 void LaunchTDIVS_f32_7x448(float *src, float *dst, void *stream);
 void LaunchTDIVS_f32_256x16(float *src, float *dst, void *stream);
@@ -77,6 +78,7 @@ static const TestCase kCases[] = {
     {"f16_16x64_hp_subnormal_scalar_src",  (void (*)(void*,void*,void*))LaunchTDIVS_f16_16x64_hp_subnormal_scalar_src,  16,  64,  16,  64,  sizeof(uint16_t)},
     {"f32_16x64_hp_overflow_scalar_src",   (void (*)(void*,void*,void*))LaunchTDIVS_f32_16x64_hp_overflow_scalar_src,   16,  64,  16,  64,  sizeof(float)},
     {"f16_16x64_hp_overflow_scalar_src",   (void (*)(void*,void*,void*))LaunchTDIVS_f16_16x64_hp_overflow_scalar_src,   16,  64,  16,  64,  sizeof(uint16_t)},
+    {"f32_merge_axis_16x72",   (void (*)(void*,void*,void*))LaunchTDIVS_f32_merge_axis_16x72, 16, 72, 16, 72,  sizeof(float)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

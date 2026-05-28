@@ -39,3 +39,10 @@ extern "C" __global__ AICORE void TABS_f16_32x32(__gm__ uint16_t *a, __gm__ uint
 void LaunchTABS_f16_32x32(void *a, void *b, void *stream) {
     TABS_f16_32x32<<<1, nullptr, stream>>>((__gm__ uint16_t *)a, (__gm__ uint16_t *)b);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TABS_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b);
+
+void LaunchTABS_f32_merge_axis_16x72(void *a, void *b, void *stream) {
+    TABS_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
+}

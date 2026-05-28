@@ -23,6 +23,8 @@ using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTMOV_f32_64x64(float *src, float *dst, void *stream);
+void LaunchTMOV_f32_merge_axis_16x72(float *src, float *dst, void *stream);
+
 void LaunchTMOV_f32_32x32(float *src, float *dst, void *stream);
 void LaunchTMOV_f32_128x128(float *src, float *dst, void *stream);
 void LaunchTMOV_f32_128x32(float *src, float *dst, void *stream);
@@ -54,6 +56,7 @@ static const TestCase kCases[] = {
     {"f16_128x128",  (void(*)(void*,void*,void*))LaunchTMOV_f16_128x128,  128,  128,  128,  128,  sizeof(uint16_t)},
     {"u8_64x64",     (void(*)(void*,void*,void*))LaunchTMOV_u8_64x64,     64,   64,   64,   64,   sizeof(uint8_t)},
     {"u8_128x128",   (void(*)(void*,void*,void*))LaunchTMOV_u8_128x128,   128,  128,  128,  128,  sizeof(uint8_t)},
+    {"f32_merge_axis_16x72", (void(*)(void*,void*,void*))LaunchTMOV_f32_merge_axis_16x72, 16, 72, 16, 72, sizeof(float)},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

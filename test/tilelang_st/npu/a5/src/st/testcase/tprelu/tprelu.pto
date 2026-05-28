@@ -491,4 +491,65 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
                outs(%dst_part : !pto.partition_tensor_view<1x1x1x2048x8xf32>)
     return
   }
+
+
+
+
+  // Merge-axis case: f16 full-axis 16x136 (2176 elements)
+  func.func @TPRELU_f16_merge_axis_16x144(%src0_ptr: !pto.ptr<f16>, %src1_ptr: !pto.ptr<f16>, %dst_ptr: !pto.ptr<f16>) attributes {pto.aicore} {
+    %c0    = arith.constant 0    : index
+    %c1    = arith.constant 1    : index
+    %c16   = arith.constant 16   : index
+    %c144  = arith.constant 144  : index
+    %c2304 = arith.constant 2304 : index
+
+    %src0_view = pto.make_tensor_view %src0_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c144],
+      strides = [%c2304, %c2304, %c2304, %c144, %c1]
+      : !pto.tensor_view<1x1x1x16x144xf16>
+    %src1_view = pto.make_tensor_view %src1_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c144],
+      strides = [%c2304, %c2304, %c2304, %c144, %c1]
+      : !pto.tensor_view<1x1x1x16x144xf16>
+    %dst_view = pto.make_tensor_view %dst_ptr,
+      shape = [%c1, %c1, %c1, %c16, %c144],
+      strides = [%c2304, %c2304, %c2304, %c144, %c1]
+      : !pto.tensor_view<1x1x1x16x144xf16>
+
+    %src0_part = pto.partition_view %src0_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c144]
+      : !pto.tensor_view<1x1x1x16x144xf16> -> !pto.partition_tensor_view<1x1x1x16x144xf16>
+    %src1_part = pto.partition_view %src1_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c144]
+      : !pto.tensor_view<1x1x1x16x144xf16> -> !pto.partition_tensor_view<1x1x1x16x144xf16>
+    %dst_part = pto.partition_view %dst_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c16, %c144]
+      : !pto.tensor_view<1x1x1x16x144xf16> -> !pto.partition_tensor_view<1x1x1x16x144xf16>
+
+    %src0_tile = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x144xf16>
+    %src1_tile = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x144xf16>
+    %tmp_tile = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x144xf16>
+    %dst_tile = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x144xf16>
+
+    pto.tload ins(%src0_part : !pto.partition_tensor_view<1x1x1x16x144xf16>)
+              outs(%src0_tile : !pto.tile_buf<vec, 16x144xf16>)
+    pto.tload ins(%src1_part : !pto.partition_tensor_view<1x1x1x16x144xf16>)
+              outs(%src1_tile : !pto.tile_buf<vec, 16x144xf16>)
+
+    pto.tprelu ins(%src0_tile, %src1_tile, %tmp_tile : !pto.tile_buf<vec, 16x144xf16>,
+                           !pto.tile_buf<vec, 16x144xf16>,
+                           !pto.tile_buf<vec, 16x144xf16>)
+               outs(%dst_tile : !pto.tile_buf<vec, 16x144xf16>)
+
+    pto.tstore ins(%dst_tile : !pto.tile_buf<vec, 16x144xf16>)
+               outs(%dst_part : !pto.partition_tensor_view<1x1x1x16x144xf16>)
+    return
+  }
 }

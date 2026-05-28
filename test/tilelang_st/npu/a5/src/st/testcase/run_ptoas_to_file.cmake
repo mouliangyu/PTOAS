@@ -13,6 +13,14 @@ endif()
 get_filename_component(KERNEL_FATOBJ_DIR "${KERNEL_FATOBJ}" DIRECTORY)
 file(MAKE_DIRECTORY "${KERNEL_FATOBJ_DIR}")
 
+get_filename_component(
+    PTOAS_REPO_ROOT
+    "${CMAKE_CURRENT_LIST_DIR}/../../../../../../.."
+    ABSOLUTE
+)
+set(PTOAS_TILELANG_PATH "${PTOAS_REPO_ROOT}/lib/TileOps")
+set(PTOAS_TILELANG_PKG_PATH "${PTOAS_REPO_ROOT}/tilelang-dsl/python")
+
 if(NOT DEFINED PTOAS_ENABLE_INSERT_SYNC)
     set(PTOAS_ENABLE_INSERT_SYNC ON)
 endif()
@@ -27,6 +35,10 @@ if(DEFINED PTOAS_PTO_LEVEL AND NOT PTOAS_PTO_LEVEL STREQUAL "")
 endif()
 
 list(APPEND PTOAS_COMMAND --pto-backend=vpto)
+list(APPEND PTOAS_COMMAND
+    "--tilelang-path=${PTOAS_TILELANG_PATH}"
+    "--tilelang-pkg-path=${PTOAS_TILELANG_PKG_PATH}"
+)
 
 if(PTOAS_ENABLE_INSERT_SYNC)
     list(APPEND PTOAS_COMMAND --enable-insert-sync)

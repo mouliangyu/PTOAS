@@ -53,3 +53,10 @@ extern "C" __global__ AICORE void TNEG_i16_64x16(__gm__ int16_t *a, __gm__ int16
 void LaunchTNEG_i16_64x16(void *a, void *b, void *stream) {
     TNEG_i16_64x16<<<1, nullptr, stream>>>((__gm__ int16_t *)a, (__gm__ int16_t *)b);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TNEG_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b);
+
+void LaunchTNEG_f32_merge_axis_16x72(void *a, void *b, void *stream) {
+    TNEG_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
+}

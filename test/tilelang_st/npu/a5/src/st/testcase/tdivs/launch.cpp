@@ -149,3 +149,9 @@ extern "C" __global__ AICORE void TDIVS_f16_16x64_hp_overflow_scalar_src(__gm__ 
 void LaunchTDIVS_f16_16x64_hp_overflow_scalar_src(unsigned short *src, unsigned short *dst, void *stream) {
     TDIVS_f16_16x64_hp_overflow_scalar_src<<<1, nullptr, stream>>>((__gm__ unsigned short *)src, (__gm__ unsigned short *)dst, (unsigned short)0x7BEF);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TDIVS_f32_merge_axis_16x72(__gm__ float *src, __gm__ float *dst, float scalar);
+void LaunchTDIVS_f32_merge_axis_16x72(float *src, float *dst, void *stream) {
+    TDIVS_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst, TDIVS_SCALAR_F32);
+}

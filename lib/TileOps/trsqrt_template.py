@@ -9,8 +9,57 @@
 """TileLang DSL template for pto.trsqrt"""
 
 import tilelang_dsl as pto
+from merge_axis import emit_binary_merge_axis, emit_unary_merge_axis, full_axis_constraint
 
 # TODO: Add implementation for HIGH_PRECISION type
+@pto.vkernel(
+    target="a5",
+    op="pto.trsqrt",
+    dtypes=[(pto.f16, pto.f16), (pto.f32, pto.f32)],
+    constraints=[full_axis_constraint],
+    priority=100,
+    advanced=True,
+)
+def template_trsqrt_merge_axis(src: pto.Tile, dst: pto.Tile):
+    dtype = dst.element_type
+    valid_rows, valid_cols = dst.valid_shape
+    total_elems = valid_rows * valid_cols
+    lanes = pto.get_lanes(dtype)
+    if pto.constexpr(dtype == pto.f32):
+        with pto.strict_vecscope(dst, src, pto.f32(1.0), total_elems, 0, total_elems, lanes) as (
+            out_tile,
+            in_tile,
+            one_value,
+            area,
+            lb,
+            ub,
+            step,
+        ):
+            remained = area
+            for lane in range(lb, ub, step):
+                mask, remained = pto.make_mask(out_tile.element_type, remained)
+                vec = pto.vlds(in_tile, lane)
+                result = pto.vdiv(pto.vbr(one_value), pto.vsqrt(vec, mask), mask)
+                pto.vsts(result, out_tile, lane, mask)
+    else:
+        with pto.strict_vecscope(dst, src, pto.f16(1.0), total_elems, 0, total_elems, lanes) as (
+            out_tile,
+            in_tile,
+            one_value,
+            area,
+            lb,
+            ub,
+            step,
+        ):
+            remained = area
+            for lane in range(lb, ub, step):
+                mask, remained = pto.make_mask(out_tile.element_type, remained)
+                vec = pto.vlds(in_tile, lane)
+                result = pto.vdiv(pto.vbr(one_value), pto.vsqrt(vec, mask), mask)
+                pto.vsts(result, out_tile, lane, mask)
+    return
+
+
 @pto.vkernel(
     target="a5",
     op="pto.trsqrt",

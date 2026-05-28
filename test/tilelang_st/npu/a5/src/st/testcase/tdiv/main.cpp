@@ -23,6 +23,7 @@ using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
 void LaunchTDIV_f32_16x64(float *a, float *b, float *c, void *stream);
+void LaunchTDIV_f32_merge_axis_16x72(float *a, float *b, float *c, void *stream);
 void LaunchTDIV_f32_32x32(float *a, float *b, float *c, void *stream);
 void LaunchTDIV_f32_64x64(float *a, float *b, float *c, void *stream);
 void LaunchTDIV_f16_16x256(void *a, void *b, void *c, void *stream);
@@ -71,6 +72,7 @@ static const TestCase kCases[] = {
     {"f16_16x64_hp_partial", (LaunchFn)LaunchTDIV_f16_16x64_hp_partial, 16, 64, 16, 63, 2},
     {"f32_2x16_hp", (LaunchFn)LaunchTDIV_f32_2x16_hp, 2, 16, 2, 16, 4},
     {"f16_2x32_hp", (LaunchFn)LaunchTDIV_f16_2x32_hp, 2, 32, 2, 32, 2},
+    {"f32_merge_axis_16x72", (LaunchFn)LaunchTDIV_f32_merge_axis_16x72, 16, 72, 16, 72, 4},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 

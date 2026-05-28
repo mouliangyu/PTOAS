@@ -19,4 +19,5 @@ CASES = [
     {"name": "i16_15x192", "dtype": np.int16, "shape": (15, 192), "valid_shape": (15, 192), "eps": 0},
     {"name": "f32_7x448", "dtype": np.float32, "shape": (7, 448), "valid_shape": (7, 448), "eps": 1e-6},
     {"name": "f32_256x16", "dtype": np.float32, "shape": (256, 16), "valid_shape": (256, 16), "eps": 1e-6},
+{"name": "f32_merge_axis_16x72", "dtype": np.float32, "shape": (16, 72), "valid_shape": (16, 72), "eps": 1e-6},
 ]
