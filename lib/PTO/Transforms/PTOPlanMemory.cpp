@@ -426,6 +426,12 @@ void MemLivenessAnalysis::RecursionIR(Region *region, Liveness live) {
       // alias/result buffer.
       UpdateOpGenInfo(curOpInfo, ValueRange{op->getOperand(0)});
       OpKillHandle(curOpInfo, live, op->getBlock());
+    } else if (auto tileAddrOp = dyn_cast<pto::TileBufAddrOp>(op)) {
+      // tile_buf_addr only exposes an address view of an already materialized
+      // tile. Model the pointer/memref result as an alias of the source buffer
+      // so later MemoryEffects ops such as MTE can update liveness through it.
+      UpdateBufferAlias(tileAddrOp.getDst(), tileAddrOp.getSrc());
+      OpKillHandle(curOpInfo, live, op->getBlock());
     } else if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
       UpdateStoreOpInfo(curOpInfo, storeOp.getMemRef(), live);
     } else if (auto ptoDpsOp = dyn_cast<pto::PTO_DpsInitOpInterface>(op)) {
@@ -453,6 +459,21 @@ void MemLivenessAnalysis::RecursionIR(Region *region, Liveness live) {
     } else if (auto selectOp = dyn_cast<arith::SelectOp>(op)) {
       UpdateBufferAlias(selectOp.getResult(), selectOp.getTrueValue(), true);
       UpdateBufferAlias(selectOp.getResult(), selectOp.getFalseValue(), true);
+      OpKillHandle(curOpInfo, live, op->getBlock());
+    } else if (auto memEffectOp = dyn_cast<MemoryEffectOpInterface>(op)) {
+      SmallVector<SideEffects::EffectInstance<MemoryEffects::Effect>,
+                  kMemoryEffectReserveSize>
+          effects;
+      memEffectOp.getEffects(effects);
+      SmallVector<Value> writtenBuffers;
+      for (const auto &effect : effects) {
+        if (!isa<MemoryEffects::Write>(effect.getEffect()))
+          continue;
+        Value value = effect.getValue();
+        if (value)
+          writtenBuffers.push_back(value);
+      }
+      UpdateOpGenInfo(curOpInfo, writtenBuffers);
       OpKillHandle(curOpInfo, live, op->getBlock());
     } else if (auto callOp = dyn_cast<func::CallOp>(op)) {
       UpdateOpGenInfo(curOpInfo, llvm::to_vector(callOp->getOperands()));

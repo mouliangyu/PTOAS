@@ -68,6 +68,10 @@ void setBaseMemRefTypeScope(Value val, AddressSpaceAttr targetMemScope) {
 
 
 std::optional<AddressSpaceAttr> GetBufferSpaceAttr(Value operand) {
+  if (auto ptrType = dyn_cast<pto::PtrType>(operand.getType())) {
+    return ptrType.getMemorySpace();
+  }
+
   if (!llvm::isa<MemRefType>(operand.getType())) {
     return std::nullopt;
   }

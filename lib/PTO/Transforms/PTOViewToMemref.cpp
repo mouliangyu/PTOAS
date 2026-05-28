@@ -62,7 +62,7 @@ namespace {
 static void markForceDynamicValidShape(Operation *op, bool force,
                                        MLIRContext *ctx);
 
-static Type convertPTOTypeToMemRef(Type t);
+static Type convertPTOTypeToMemRef(Type t, bool convertPtr = true);
 
 // =============================================================================
 // Helper: Metadata Backtracking (核心机制)
@@ -525,9 +525,11 @@ static Type convertTileBufTypeToMemRef(mlir::pto::TileBufType tbTy) {
                          tbTy.getMemorySpace());
 }
 
-static Type convertPTOTypeToMemRef(Type t) {
+static Type convertPTOTypeToMemRef(Type t, bool convertPtr) {
   // 1. 处理 !pto.ptr<T>
   if (auto pty = dyn_cast<mlir::pto::PtrType>(t)) {
+    if (!convertPtr)
+      return t;
     return MemRefType::get({ShapedType::kDynamic}, pty.getElementType(),
                            MemRefLayoutAttrInterface(), pty.getMemorySpace());
   }
@@ -1182,11 +1184,14 @@ struct PTOViewToMemrefPass
       // ------------------------------------------------------------------
       // Stage 0: Rewrite Function Signature
       // ------------------------------------------------------------------
+      bool preservePtrBoundary = func->hasAttr("pto.simt_entry");
       SmallVector<Type> newInputs;
-      for (Type t : fnTy.getInputs()) newInputs.push_back(convertPTOTypeToMemRef(t));
+      for (Type t : fnTy.getInputs())
+        newInputs.push_back(convertPTOTypeToMemRef(t, !preservePtrBoundary));
 
       SmallVector<Type> newResults;
-      for (Type t : fnTy.getResults()) newResults.push_back(convertPTOTypeToMemRef(t));
+      for (Type t : fnTy.getResults())
+        newResults.push_back(convertPTOTypeToMemRef(t, !preservePtrBoundary));
 
       // Update entry block arguments
       for (unsigned i = 0; i < entry.getNumArguments(); ++i) {

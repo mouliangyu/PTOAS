@@ -8,6 +8,8 @@
 
 add_ptodsl_python_test(ptodsl_docs_as_test "ptodsl/tests/ptodsl_docs_as_test.py")
 add_ptodsl_python_test(ptodsl_flash_attention_demo_compile "ptodsl/tests/ptodsl_flash_attention_demo_compile.py")
+add_ptodsl_python_test(ptodsl_flash_atten4_port_compile "ptodsl/tests/ptodsl_flash_atten4_port_compile.py")
+add_ptodsl_python_test(ptodsl_flash_atten4_port_frontend_verify "ptodsl/tests/ptodsl_flash_atten4_port_frontend_verify.py")
 add_ptodsl_python_test(ptodsl_jit_compile "ptodsl/tests/ptodsl_jit_compile.py")
 add_ptodsl_python_test(ptodsl_jit_diagnostics "ptodsl/tests/ptodsl_jit_diagnostics.py")
 add_ptodsl_python_test(ptodsl_ptoas_frontend_verify "ptodsl/tests/ptodsl_ptoas_frontend_verify.py")
