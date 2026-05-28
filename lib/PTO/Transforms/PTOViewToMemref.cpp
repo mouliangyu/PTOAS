@@ -1864,7 +1864,8 @@ struct PTOViewToMemrefPass
         IRRewriter rewriter(ctx);
         rewriter.setInsertionPoint(op);
         rewriter.replaceOpWithNewOp<pto::TExpOp>(
-            op, TypeRange{}, op->getOperand(0), op->getOperand(1));
+            op, TypeRange{}, op->getOperand(0), op->getOperand(1),
+            op.getPrecisionTypeAttr());
       }
 
       // --- TMulOp [Src, Scalar, Dst] ---
@@ -1939,7 +1940,7 @@ struct PTOViewToMemrefPass
           op, TypeRange{}, 
           op->getOperand(0), op->getOperand(1),
           op->getOperand(kThirdOperandIndex),
-          op->getOperand(kFourthOperandIndex));
+          op->getOperand(kFourthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TMatmulMxOp---
@@ -1953,7 +1954,7 @@ struct PTOViewToMemrefPass
           op->getOperand(0), op->getOperand(1),
           op->getOperand(kThirdOperandIndex),
           op->getOperand(kFourthOperandIndex),
-          op->getOperand(kFifthOperandIndex));
+          op->getOperand(kFifthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TMatmulMxAccOp  ---
@@ -1968,7 +1969,7 @@ struct PTOViewToMemrefPass
           op->getOperand(kThirdOperandIndex),
           op->getOperand(kFourthOperandIndex),
           op->getOperand(kFifthOperandIndex),
-          op->getOperand(kSixthOperandIndex));
+          op->getOperand(kSixthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TMatmulMxBiasOp ---
@@ -1998,7 +1999,7 @@ struct PTOViewToMemrefPass
         Value dst = op->getOperand(kThirdOperandIndex);
 
         rewriter.replaceOpWithNewOp<pto::TGemvOp>(
-          op, TypeRange{}, lhs, rhs, dst);
+          op, TypeRange{}, lhs, rhs, dst, op.getAccPhaseAttr());
       }
 
       // --- TGemvAccOp [Acc, Lhs, Rhs, Dst] ---
@@ -2011,7 +2012,7 @@ struct PTOViewToMemrefPass
           op, TypeRange{}, 
           op->getOperand(0), op->getOperand(1),
           op->getOperand(kThirdOperandIndex),
-          op->getOperand(kFourthOperandIndex));
+          op->getOperand(kFourthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TGemvBiasOp [Acc, Lhs, Rhs, Bias, Dst] ---
@@ -2024,7 +2025,7 @@ struct PTOViewToMemrefPass
           op, TypeRange{}, 
           op->getOperand(0), op->getOperand(1),
           op->getOperand(kThirdOperandIndex),
-          op->getOperand(kFourthOperandIndex));
+          op->getOperand(kFourthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TGemvMxOp [A, AScale, B, BScale, Dst] ---
@@ -2038,7 +2039,7 @@ struct PTOViewToMemrefPass
           op->getOperand(0), op->getOperand(1),
           op->getOperand(kThirdOperandIndex),
           op->getOperand(kFourthOperandIndex),
-          op->getOperand(kFifthOperandIndex));
+          op->getOperand(kFifthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TGemvMxAccOp [CIn, A, AScale, B, BScale, Dst] ---
@@ -2053,7 +2054,7 @@ struct PTOViewToMemrefPass
           op->getOperand(kThirdOperandIndex),
           op->getOperand(kFourthOperandIndex),
           op->getOperand(kFifthOperandIndex),
-          op->getOperand(kSixthOperandIndex));
+          op->getOperand(kSixthOperandIndex), op.getAccPhaseAttr());
       }
 
       // --- TGemvMxBiasOp [A, AScale, B, BScale, Bias, Dst] ---
@@ -2694,7 +2695,8 @@ struct PTOViewToMemrefPass
             TypeRange{},
             src0,
             src1,
-            dst);
+            dst,
+            op.getPrecisionTypeAttr());
       }
 
       DefaultInlineVector<mlir::pto::TDivSOp> divsops;
@@ -3059,7 +3061,8 @@ struct PTOViewToMemrefPass
             op,
             TypeRange{},
             src,
-            dst);
+            dst,
+            op.getPrecisionTypeAttr());
       }
 
       DefaultInlineVector<mlir::pto::TLReluOp> lreluops;

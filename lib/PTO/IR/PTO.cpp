@@ -4134,6 +4134,81 @@ static LogicalResult verifyGemvTileOperands(Operation *op, Type lhsTy, Type rhsT
   return failure();
 }
 
+static LogicalResult verifyA5MxGemvTileOperands(Operation *op, Type lhsTy,
+                                                Type rhsTy, Type dstTy) {
+  if (failed(verifyTileBufCommon(op, lhsTy, "lhs", /*allowLowPrecision=*/true)) ||
+      failed(verifyTileBufCommon(op, rhsTy, "rhs", /*allowLowPrecision=*/true)) ||
+      failed(verifyAccTileCommon(op, dstTy, "dst")))
+    return failure();
+
+  auto lhsSpace = getPTOMemorySpaceEnum(lhsTy);
+  auto rhsSpace = getPTOMemorySpaceEnum(rhsTy);
+  auto dstSpace = getPTOMemorySpaceEnum(dstTy);
+  if (!lhsSpace || !rhsSpace || !dstSpace)
+    return op->emitOpError("expects lhs, rhs, and dst to have explicit address spaces");
+  if (*lhsSpace != pto::AddressSpace::LEFT || *rhsSpace != pto::AddressSpace::RIGHT ||
+      *dstSpace != pto::AddressSpace::ACC)
+    return op->emitOpError(
+        "expects lhs, rhs, and dst to use the left, right, and acc address spaces");
+
+  auto lhsShape = getMatmulLogicalShapeVec(lhsTy);
+  auto rhsShape = getMatmulLogicalShapeVec(rhsTy);
+  auto dstShape = getMatmulLogicalShapeVec(dstTy);
+  if ((lhsShape[0] != dstShape[0] || rhsShape[1] != dstShape[1] ||
+       lhsShape[1] != rhsShape[0]))
+    return op->emitOpError(
+        "expects static matmul tile shapes lhs[M,K], rhs[K,N], and dst[M,N]");
+
+  auto lhsValid = getValidShapeVec(lhsTy);
+  auto rhsValid = getValidShapeVec(rhsTy);
+  auto dstValid = getValidShapeVec(dstTy);
+  if (lhsValid.size() == 2 && rhsValid.size() == 2) {
+    int64_t m = lhsValid[0];
+    int64_t k = lhsValid[1];
+    int64_t n = rhsValid[1];
+    if ((m != ShapedType::kDynamic && (m < 1 || m > 4095)) ||
+        (k != ShapedType::kDynamic && (k < 1 || k > 4095)) ||
+        (n != ShapedType::kDynamic && (n < 1 || n > 4095)))
+      return op->emitOpError("expects m, k, and n valid sizes to be in [1, 4095]");
+  }
+
+  if (lhsValid[0] != ShapedType::kDynamic && lhsValid[0] != 1)
+    return op->emitOpError("expects lhs valid_shape[0] to be 1 for tgemv");
+  if (dstValid[0] != ShapedType::kDynamic && dstValid[0] != 1)
+    return op->emitOpError("expects dst valid_shape[0] to be 1 for tgemv");
+  if (lhsValid[1] != ShapedType::kDynamic && rhsValid[0] != ShapedType::kDynamic &&
+      lhsValid[1] != rhsValid[0])
+    return op->emitOpError()
+           << "expects lhs valid_shape[1] to equal rhs valid_shape[0], but got "
+           << lhsValid[1] << " vs " << rhsValid[0];
+  if (rhsValid[1] != ShapedType::kDynamic && dstValid[1] != ShapedType::kDynamic &&
+      rhsValid[1] != dstValid[1])
+    return op->emitOpError()
+           << "expects rhs valid_shape[1] to equal dst valid_shape[1], but got "
+           << rhsValid[1] << " vs " << dstValid[1];
+
+  auto lhsTb = dyn_cast<pto::TileBufType>(lhsTy);
+  auto rhsTb = dyn_cast<pto::TileBufType>(rhsTy);
+  auto dstTb = dyn_cast<pto::TileBufType>(dstTy);
+  if (!lhsTb || !rhsTb || !dstTb)
+    return success();
+
+  if (lhsTb.getBLayoutValueI32() != static_cast<int32_t>(pto::BLayout::ColMajor))
+    return op->emitOpError("expects lhs to use the col_major blayout on A5");
+  if (rhsTb.getBLayoutValueI32() != static_cast<int32_t>(pto::BLayout::RowMajor))
+    return op->emitOpError("expects rhs to use the row_major blayout on A5");
+  if (dstTb.getBLayoutValueI32() != static_cast<int32_t>(pto::BLayout::ColMajor))
+    return op->emitOpError("expects dst to use the col_major blayout on A5");
+
+  if (lhsTb.getSLayoutValueI32() != static_cast<int32_t>(pto::SLayout::RowMajor))
+    return op->emitOpError("expects lhs to use the row_major slayout on A5");
+  if (rhsTb.getSLayoutValueI32() != static_cast<int32_t>(pto::SLayout::ColMajor))
+    return op->emitOpError("expects rhs to use the col_major slayout on A5");
+  if (dstTb.getSLayoutValueI32() != static_cast<int32_t>(pto::SLayout::RowMajor))
+    return op->emitOpError("expects dst to use the row_major slayout on A5");
+  return success();
+}
+
 static LogicalResult verifyMatBiasTileA2A3(Operation *op, Type biasTy, Type dstTy,
                                            bool requireFloatBias) {
   if (failed(verifyTileBufCommon(op, biasTy, "bias")))
@@ -5638,7 +5713,9 @@ static bool isA5Fp8LikeType(Type ty) {
 }
 
 static bool isA5MxInputType(Type ty) {
-  return isA5Fp8LikeType(ty);
+  if (auto ft = dyn_cast<FloatType>(ty))
+    return ft.isFloat8E4M3FN() || ft.isFloat8E5M2();
+  return false;
 }
 
 static LogicalResult verifyA5MxTypeTriple(Operation *op, Type lhsTy, Type rhsTy,
@@ -5648,10 +5725,12 @@ static LogicalResult verifyA5MxTypeTriple(Operation *op, Type lhsTy, Type rhsTy,
   Type rhsElem = getElemTy(rhsTy);
   Type dstElem = getElemTy(dstTy);
 
-  if (!isA5MxInputType(lhsElem) || !isA5MxInputType(rhsElem))
-    return op->emitOpError()
-           << "expects A5 mx operands " << lhsName << " and " << rhsName
-           << " to use fp8 element types";
+  if (!isA5MxInputType(lhsElem))
+    return op->emitOpError() << lhsName << ": dtype " << lhsElem
+                             << " is not supported by this op yet";
+  if (!isA5MxInputType(rhsElem))
+    return op->emitOpError() << rhsName << ": dtype " << rhsElem
+                             << " is not supported by this op yet";
 
   if (!dstElem.isF32())
     return op->emitOpError()
@@ -6622,11 +6701,11 @@ LogicalResult TGemvMxOp::verify() {
                                              getA().getType(), "a_scale", "a")) ||
         failed(verifyScaleTileMatchesOperand(*this, getBScale().getType(),
                                              getB().getType(), "b_scale", "b")) ||
-        failed(verifyGemvTileOperands(*this, getA().getType(), getB().getType(),
-                                      getDst().getType())))
+        failed(verifyA5MxGemvTileOperands(*this, getA().getType(), getB().getType(),
+                                          getDst().getType())))
       return failure();
     if (failed(verifyA5MxTypeTriple(*this, getA().getType(), getB().getType(),
-                                    getDst().getType(), "a", "b", "dst")))
+                                    getDst().getType(), "lhs", "rhs", "dst")))
       return failure();
     return verifyMatmulLike(*this, getA().getType(), getB().getType(),
                             getDst().getType());
@@ -6644,11 +6723,11 @@ LogicalResult TGemvMxAccOp::verify() {
                                              getA().getType(), "a_scale", "a")) ||
         failed(verifyScaleTileMatchesOperand(*this, getBScale().getType(),
                                              getB().getType(), "b_scale", "b")) ||
-        failed(verifyGemvTileOperands(*this, getA().getType(), getB().getType(),
-                                      getDst().getType())))
+        failed(verifyA5MxGemvTileOperands(*this, getA().getType(), getB().getType(),
+                                          getDst().getType())))
       return failure();
     if (failed(verifyA5MxTypeTriple(*this, getA().getType(), getB().getType(),
-                                    getDst().getType(), "a", "b", "dst")))
+                                    getDst().getType(), "lhs", "rhs", "dst")))
       return failure();
     if (failed(verifyTileBufSameElemType(*this, getCIn().getType(),
                                              getDst().getType(), "c_in", "dst")) ||
@@ -6676,7 +6755,7 @@ LogicalResult TGemvMxBiasOp::verify() {
                                  /*requireFloatBias=*/true)))
       return failure();
     if (failed(verifyA5MxTypeTriple(*this, getA().getType(), getB().getType(),
-                                    getDst().getType(), "a", "b", "dst")))
+                                    getDst().getType(), "lhs", "rhs", "dst")))
       return failure();
     auto biasShape = getShapeVec(getBias().getType());
     auto dstShape = getShapeVec(getDst().getType());
@@ -6723,7 +6802,7 @@ LogicalResult TMatmulMxOp::verify() {
     if (failed(verifyA2A3()))
       return failure();
     return verifyA5MxTypeTriple(*this, getA().getType(), getB().getType(),
-                                getDst().getType(), "a", "b", "dst");
+                                getDst().getType(), "lhs", "rhs", "dst");
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
 }
@@ -6740,7 +6819,7 @@ LogicalResult TMatmulMxAccOp::verify() {
     if (failed(verifyA2A3()))
       return failure();
     if (failed(verifyA5MxTypeTriple(*this, getA().getType(), getB().getType(),
-                                    getDst().getType(), "a", "b", "dst")))
+                                    getDst().getType(), "lhs", "rhs", "dst")))
       return failure();
     if (failed(verifyTileBufSameElemType(*this, getCIn().getType(),
                                              getDst().getType(), "c_in", "dst")) ||
@@ -6767,7 +6846,7 @@ LogicalResult TMatmulMxBiasOp::verify() {
     if (failed(verifyA2A3()))
       return failure();
     return verifyA5MxTypeTriple(*this, getA().getType(), getB().getType(),
-                                getDst().getType(), "a", "b", "dst");
+                                getDst().getType(), "lhs", "rhs", "dst");
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
 }
@@ -8703,6 +8782,8 @@ mlir::LogicalResult mlir::pto::TRowExpandDivOp::verify() {
             "expects A5 trowexpanddiv element type to be i8/i16/i32/f16/f32");
       return emitOpError("expects element type to be f16 or f32");
     }
+    if (getPrecisionType() == pto::DivPrecision::HighPrecision && !getTmp())
+      return emitOpError("expects tmp when precisionType is high_precision");
     return mlir::success();
   };
   auto verifyA2A3 = [&]() -> LogicalResult { return verifyByArch(PTOArch::A3); };
@@ -9091,6 +9172,8 @@ mlir::LogicalResult mlir::pto::TRsqrtOp::verify() {
   auto ft = mlir::dyn_cast<mlir::FloatType>(getElemTy(ts));
   if (!ft || (!ft.isF16() && !ft.isF32()))
     return emitOpError("expects element type to be f16 or f32");
+  if (getPrecisionType() == pto::RsqrtPrecision::HighPrecision && !getTmp())
+    return emitOpError("expects tmp when precisionType is high_precision");
   if (auto tmp = getTmp()) {
     Type tt = tmp.getType();
     if (failed(verifyVecTileCommon(*this, tt, "tmp")))

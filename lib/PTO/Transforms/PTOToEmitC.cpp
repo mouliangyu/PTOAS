@@ -4627,8 +4627,8 @@ struct PTOTStoreToTSTORE : public OpConversionPattern<pto::TStoreOp> {
 // Render `pto.tmatmul` as one of three forms depending on the optional
 // `acc_phase` attribute:
 //   * absent / Unspecified  -> `TMATMUL(dst, lhs, rhs)`
-//   * Partial               -> `TMATMUL<AccPhase::Partial>(dst, lhs, rhs)`
-//   * Final                 -> `TMATMUL<AccPhase::Final>(dst, lhs, rhs)`
+//   * Partial               -> `TMATMUL<pto::AccPhase::Partial>(dst, lhs, rhs)`
+//   * Final                 -> `TMATMUL<pto::AccPhase::Final>(dst, lhs, rhs)`
 // The Unspecified default keeps backward compatibility with all upstream IR
 // that does not yet emit an explicit phase attribute.
 static ArrayAttr buildAccPhaseTemplateArgs(ConversionPatternRewriter &rewriter,
@@ -4638,10 +4638,10 @@ static ArrayAttr buildAccPhaseTemplateArgs(ConversionPatternRewriter &rewriter,
   case pto::AccPhase::Unspecified:
     return ArrayAttr{};
   case pto::AccPhase::Partial:
-    tmpl = "AccPhase::Partial";
+    tmpl = "pto::AccPhase::Partial";
     break;
   case pto::AccPhase::Final:
-    tmpl = "AccPhase::Final";
+    tmpl = "pto::AccPhase::Final";
     break;
   }
   if (tmpl.empty())
@@ -4692,10 +4692,12 @@ struct PTOTGemvToTGEMV : public OpConversionPattern<pto::TGemvOp> {
     Value rhs = peelUnrealized(adaptor.getRhs()); // B (Vector)
     Value dst = peelUnrealized(adaptor.getDst()); // C (Result)
 
-    // 2. 直接生成函数调用 TGEMV(dst, lhs, rhs)
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
+
     rewriter.create<emitc::CallOpaqueOp>(
         op.getLoc(), TypeRange{}, "TGEMV",
-        ArrayAttr{}, ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*template_args=*/templateArgs,
         ValueRange{dst, lhs, rhs});
 
     // 3. 处理 Op 替换/删除
@@ -4725,10 +4727,12 @@ struct PTOTGemvAccToTGEMVACC : public OpConversionPattern<pto::TGemvAccOp> {
     Value rhs   = peelUnrealized(adaptor.getRhs());   // B (Vector)
     Value dst   = peelUnrealized(adaptor.getDst());   // AccNew
 
-    // 2. 直接生成函数调用 TGEMV_ACC(dst, accIn, lhs, rhs)
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
+
     rewriter.create<emitc::CallOpaqueOp>(
         op.getLoc(), TypeRange{}, "TGEMV_ACC",
-        ArrayAttr{}, ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*template_args=*/templateArgs,
         ValueRange{dst, accIn, lhs, rhs});
 
     // 3. 处理 Op 替换/删除
@@ -7831,15 +7835,31 @@ struct PTOColExpandDivToEmitC : public OpConversionPattern<pto::TColExpandDivOp>
   LogicalResult matchAndRewrite(pto::TColExpandDivOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src0 = peelUnrealized(adaptor.getSrc0());
     Value src1 = peelUnrealized(adaptor.getSrc1());
     Value dst = peelUnrealized(adaptor.getDst());
 
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::DivPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::DivPrecision::Default:
+        precisionTok = "pto::DivAlgorithm::DEFAULT";
+        break;
+      case pto::DivPrecision::HighPrecision:
+        precisionTok = "pto::DivAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
+
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TCOLEXPANDDIV",
         /*args=*/ArrayAttr{},
-        /*templateArgs=*/ArrayAttr{},
+        /*templateArgs=*/templateArgs,
         /*operands=*/ValueRange{dst, src0, src1});
 
     rewriter.eraseOp(op);
@@ -8284,10 +8304,26 @@ struct PTODivToTDIV : public OpConversionPattern<pto::TDivOp> {
     Value src0 = peelUnrealized(adaptor.getSrc0());
     Value src1 = peelUnrealized(adaptor.getSrc1());
     Value dst  = peelUnrealized(adaptor.getDst());
+    auto *ctx = rewriter.getContext();
+
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::DivPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::DivPrecision::Default:
+        precisionTok = "pto::DivAlgorithm::DEFAULT";
+        break;
+      case pto::DivPrecision::HighPrecision:
+        precisionTok = "pto::DivAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
 
     rewriter.create<emitc::CallOpaqueOp>(
         op.getLoc(), TypeRange{}, "TDIV",
-        ArrayAttr{}, ArrayAttr{},
+        ArrayAttr{}, templateArgs,
         ValueRange{dst, src0, src1});
 
     rewriter.eraseOp(op);
@@ -8358,13 +8394,29 @@ struct PTOExpToEmitC : public OpConversionPattern<pto::TExpOp> {
   LogicalResult matchAndRewrite(pto::TExpOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
     Value dst = peelUnrealized(adaptor.getDst());
 
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::ExpPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::ExpPrecision::Default:
+        precisionTok = "pto::ExpAlgorithm::DEFAULT";
+        break;
+      case pto::ExpPrecision::HighPrecision:
+        precisionTok = "pto::ExpAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
+
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TEXP",
-        ArrayAttr{}, ArrayAttr{},
+        ArrayAttr{}, templateArgs,
         ValueRange{dst, src});
 
     rewriter.eraseOp(op);
@@ -8715,14 +8767,29 @@ struct PTOLogToEmitC : public OpConversionPattern<pto::TLogOp> {
   LogicalResult matchAndRewrite(pto::TLogOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
     Value dst = peelUnrealized(adaptor.getDst());
 
     SmallVector<Value, 2> operands{dst, src};
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::LogPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::LogPrecision::Default:
+        precisionTok = "pto::LogAlgorithm::DEFAULT";
+        break;
+      case pto::LogPrecision::HighPrecision:
+        precisionTok = "pto::LogAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TLOG",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
@@ -9522,14 +9589,29 @@ struct PTORecipToEmitC : public OpConversionPattern<pto::TRecipOp> {
   LogicalResult matchAndRewrite(pto::TRecipOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
     Value dst = peelUnrealized(adaptor.getDst());
 
     SmallVector<Value, 2> operands{dst, src};
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::RecipPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::RecipPrecision::Default:
+        precisionTok = "pto::RecipAlgorithm::DEFAULT";
+        break;
+      case pto::RecipPrecision::HighPrecision:
+        precisionTok = "pto::RecipAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TRECIP",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
@@ -9570,15 +9652,30 @@ struct PTORemToEmitC : public OpConversionPattern<pto::TRemOp> {
   LogicalResult matchAndRewrite(pto::TRemOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src0 = peelUnrealized(adaptor.getSrc0());
     Value src1 = peelUnrealized(adaptor.getSrc1());
     Value tmp  = peelUnrealized(adaptor.getTmp());
     Value dst  = peelUnrealized(adaptor.getDst());
     SmallVector<Value, 4> operands{dst, src0, src1, tmp};
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::RemPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::RemPrecision::Default:
+        precisionTok = "pto::RemAlgorithm::DEFAULT";
+        break;
+      case pto::RemPrecision::HighPrecision:
+        precisionTok = "pto::RemAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TREM",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
@@ -9592,15 +9689,30 @@ struct PTOFModToEmitC : public OpConversionPattern<pto::TFModOp> {
   LogicalResult matchAndRewrite(pto::TFModOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src0 = peelUnrealized(adaptor.getSrc0());
     Value src1 = peelUnrealized(adaptor.getSrc1());
     Value dst  = peelUnrealized(adaptor.getDst());
 
     SmallVector<Value, 3> operands{dst, src0, src1};
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::FmodPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::FmodPrecision::Default:
+        precisionTok = "pto::FmodAlgorithm::DEFAULT";
+        break;
+      case pto::FmodPrecision::HighPrecision:
+        precisionTok = "pto::FmodAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TFMOD",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
@@ -9734,25 +9846,13 @@ struct PTORowExpandExpdifToEmitC
 // PTOConvert.cpp  (add lowering + patterns.add for TROWEXPANDDIV DPS/memref op)
 //===----------------------------------------------------------------------===//
 // Helper: replace or erase based on whether op has results.
-static void replaceOrEraseWithOpaqueCall(Operation *op,
-                                        StringRef callee,
-                                        ArrayRef<Value> args,
-                                        ConversionPatternRewriter &rewriter) {
-  TypeRange resultTypes = op->getResultTypes();
-  auto call = rewriter.create<emitc::CallOpaqueOp>(
-      op->getLoc(), resultTypes, callee, ArrayAttr{}, ArrayAttr{}, ValueRange(args));
-  if (resultTypes.empty())
-    rewriter.eraseOp(op);
-  else
-    rewriter.replaceOp(op, call.getResults());
-}
-
 static void replaceOrEraseWithOpaqueCallAndReturnDst(Operation *op, Value dst,
                                                      StringRef callee,
                                                      ArrayRef<Value> args,
+                                                     ArrayAttr templateArgs,
                                                      ConversionPatternRewriter &rewriter) {
   rewriter.create<emitc::CallOpaqueOp>(
-      op->getLoc(), TypeRange{}, callee, ArrayAttr{}, ArrayAttr{}, ValueRange(args));
+      op->getLoc(), TypeRange{}, callee, ArrayAttr{}, templateArgs, ValueRange(args));
   if (op->getNumResults() == 1)
     rewriter.replaceOp(op, dst);
   else
@@ -9771,8 +9871,10 @@ struct PTOTGemvBiasToTGEMV_BIAS
     Value bias = peelUnrealized(adaptor.getBias());
     Value dst  = peelUnrealized(adaptor.getDst());
 
-    replaceOrEraseWithOpaqueCall(op.getOperation(), "TGEMV_BIAS",
-                                {dst, a, b, bias}, rewriter);
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
+    replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TGEMV_BIAS",
+                                             {dst, a, b, bias}, templateArgs, rewriter);
     return success();
   }
 };
@@ -9789,8 +9891,11 @@ struct PTOTGemvMXToTGEMV_MX
     Value bScale  = peelUnrealized(adaptor.getBScale());
     Value dst     = peelUnrealized(adaptor.getDst());
 
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
     replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TGEMV_MX",
-                                             {dst, a, aScale, b, bScale}, rewriter);
+                                             {dst, a, aScale, b, bScale}, templateArgs,
+                                             rewriter);
     return success();
   }
 };
@@ -9808,8 +9913,11 @@ struct PTOTGemvMXAccToTGEMV_MX
     Value bScale  = peelUnrealized(adaptor.getBScale());
     Value dst     = peelUnrealized(adaptor.getDst());
 
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
     replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TGEMV_MX",
-                                             {dst, cIn, a, aScale, b, bScale}, rewriter);
+                                             {dst, cIn, a, aScale, b, bScale}, templateArgs,
+                                             rewriter);
     return success();
   }
 };
@@ -9828,7 +9936,8 @@ struct PTOTGemvMXBiasToTGEMV_MX
     Value dst     = peelUnrealized(adaptor.getDst());
 
     replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TGEMV_MX",
-                                             {dst, a, aScale, b, bScale, bias}, rewriter);
+                                             {dst, a, aScale, b, bScale, bias}, ArrayAttr{},
+                                             rewriter);
     return success();
   }
 };
@@ -9844,8 +9953,10 @@ struct PTOTMatmulBiasToTMATMUL_BIAS
     Value bias = peelUnrealized(adaptor.getBias());
     Value dst  = peelUnrealized(adaptor.getDst());
 
-    replaceOrEraseWithOpaqueCall(op.getOperation(), "TMATMUL_BIAS",
-                                {dst, a, b, bias}, rewriter);
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
+    replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TMATMUL_BIAS",
+                                             {dst, a, b, bias}, templateArgs, rewriter);
     return success();
   }
 };
@@ -9862,8 +9973,11 @@ struct PTOTMatmulMXToTMATMUL_MX
     Value bScale  = peelUnrealized(adaptor.getBScale());
     Value dst     = peelUnrealized(adaptor.getDst());
 
-    replaceOrEraseWithOpaqueCall(op.getOperation(), "TMATMUL_MX",
-                                {dst, a, aScale, b, bScale}, rewriter);
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
+    replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TMATMUL_MX",
+                                             {dst, a, aScale, b, bScale}, templateArgs,
+                                             rewriter);
     return success();
   }
 };
@@ -9881,8 +9995,11 @@ struct PTOTMatmulMXAccToTMATMUL_MX_ACC
     Value bScale  = peelUnrealized(adaptor.getBScale());
     Value dst     = peelUnrealized(adaptor.getDst());
 
-    replaceOrEraseWithOpaqueCall(op.getOperation(), "TMATMUL_MX",
-                                {dst, cIn, a, aScale, b, bScale}, rewriter);
+    ArrayAttr templateArgs =
+        buildAccPhaseTemplateArgs(rewriter, op.getAccPhase());
+    replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TMATMUL_MX",
+                                             {dst, cIn, a, aScale, b, bScale}, templateArgs,
+                                             rewriter);
     return success();
   }
 };
@@ -9900,8 +10017,9 @@ struct PTOTMatmulMXBiasToTMATMUL_MX_BIAS
     Value bias    = peelUnrealized(adaptor.getBias());
     Value dst     = peelUnrealized(adaptor.getDst());
 
-    replaceOrEraseWithOpaqueCall(op.getOperation(), "TMATMUL_MX",
-                                {dst, a, aScale, b, bScale, bias}, rewriter);
+    replaceOrEraseWithOpaqueCallAndReturnDst(op.getOperation(), dst, "TMATMUL_MX",
+                                             {dst, a, aScale, b, bScale, bias}, ArrayAttr{},
+                                             rewriter);
     return success();
   }
 };
@@ -9912,6 +10030,7 @@ struct PTORowExpandDivToEmitC : public OpConversionPattern<pto::TRowExpandDivOp>
   LogicalResult matchAndRewrite(pto::TRowExpandDivOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src0 = peelUnrealized(adaptor.getSrc0());
     Value src1 = peelUnrealized(adaptor.getSrc1());
@@ -9923,9 +10042,23 @@ struct PTORowExpandDivToEmitC : public OpConversionPattern<pto::TRowExpandDivOp>
       operands.assign({dst, src0, src1, tmp});
     else
       operands.assign({dst, src0, src1});
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::DivPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::DivPrecision::Default:
+        precisionTok = "pto::DivAlgorithm::DEFAULT";
+        break;
+      case pto::DivPrecision::HighPrecision:
+        precisionTok = "pto::DivAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TROWEXPANDDIV",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
@@ -10202,15 +10335,30 @@ struct PTORsqrtToEmitC : public OpConversionPattern<pto::TRsqrtOp> {
   LogicalResult matchAndRewrite(pto::TRsqrtOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
     Value dst = peelUnrealized(adaptor.getDst());
     SmallVector<Value, 3> operands{dst, src};
     if (Value tmp = adaptor.getTmp())
       operands.push_back(peelUnrealized(tmp));
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::RsqrtPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::RsqrtPrecision::Default:
+        precisionTok = "pto::RsqrtAlgorithm::DEFAULT";
+        break;
+      case pto::RsqrtPrecision::HighPrecision:
+        precisionTok = "pto::RsqrtAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TRSQRT",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
@@ -10446,14 +10594,29 @@ struct PTOSqrtSToEmitC : public OpConversionPattern<pto::TSqrtOp> {
   LogicalResult matchAndRewrite(pto::TSqrtOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
     Value dst = peelUnrealized(adaptor.getDst());
 
     SmallVector<Value, 4> operands{dst, src};
+    ArrayAttr templateArgs;
+    if (op.getPrecisionType() != pto::SqrtPrecision::Default) {
+      StringRef precisionTok;
+      switch (op.getPrecisionType()) {
+      case pto::SqrtPrecision::Default:
+        precisionTok = "pto::SqrtAlgorithm::DEFAULT";
+        break;
+      case pto::SqrtPrecision::HighPrecision:
+        precisionTok = "pto::SqrtAlgorithm::HIGH_PRECISION";
+        break;
+      }
+      templateArgs = rewriter.getArrayAttr(
+          {emitc::OpaqueAttr::get(ctx, precisionTok)});
+    }
     rewriter.create<emitc::CallOpaqueOp>(
         loc, TypeRange{}, "TSQRT",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
         /*operands=*/operands);
 
     rewriter.eraseOp(op);
