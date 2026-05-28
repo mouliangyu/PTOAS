@@ -6,12 +6,13 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#include "VPTOFatobjEmission.h"
+#include "ObjectEmission.h"
 
 #include "PTO/Transforms/VPTOLLVMEmitter.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
@@ -120,6 +121,13 @@ static std::optional<std::string> getAscendHomePath() {
   return std::string(env);
 }
 
+static std::optional<std::string> getEnvPath(llvm::StringRef name) {
+  const char *env = std::getenv(name.str().c_str());
+  if (!env || !*env)
+    return std::nullopt;
+  return std::string(env);
+}
+
 static std::string joinPath(llvm::StringRef lhs, llvm::StringRef rhs) {
   llvm::SmallString<256> joined(lhs);
   llvm::sys::path::append(joined, rhs);
@@ -135,6 +143,59 @@ static std::optional<std::string> locateProgram(llvm::StringRef envPath,
   return std::nullopt;
 }
 
+static bool hasPTOISAHeader(llvm::StringRef includeDir) {
+  return llvm::sys::fs::exists(joinPath(includeDir, "pto/pto-inst.hpp"));
+}
+
+static void addExistingIncludeDir(llvm::SmallVectorImpl<std::string> &dirs,
+                                  llvm::StringRef path) {
+  if (path.empty() || !llvm::sys::fs::is_directory(path))
+    return;
+  if (llvm::is_contained(dirs, path))
+    return;
+  dirs.push_back(path.str());
+}
+
+static void addPTOISAIncludeDirs(llvm::SmallVectorImpl<std::string> &dirs,
+                                 llvm::StringRef ptoIsaPath) {
+  if (ptoIsaPath.empty() || !llvm::sys::fs::is_directory(ptoIsaPath))
+    return;
+  std::string includeDir = joinPath(ptoIsaPath, "include");
+  if (hasPTOISAHeader(includeDir))
+    addExistingIncludeDir(dirs, includeDir);
+  std::string commonDir = joinPath(ptoIsaPath, "tests/common");
+  addExistingIncludeDir(dirs, commonDir);
+  if (hasPTOISAHeader(ptoIsaPath))
+    addExistingIncludeDir(dirs, ptoIsaPath);
+}
+
+static llvm::SmallVector<std::string, 8>
+discoverCppIncludeDirs(llvm::StringRef ascendHome,
+                       llvm::raw_ostream &diagOS,
+                       std::string &ptoIsaPath) {
+  llvm::SmallVector<std::string, 8> includeDirs;
+  if (auto env = getEnvPath("PTO_ISA_PATH"))
+    ptoIsaPath = *env;
+  else if (auto env = getEnvPath("PTO_ISA_ROOT"))
+    ptoIsaPath = *env;
+
+  addPTOISAIncludeDirs(includeDirs, ptoIsaPath);
+  addExistingIncludeDir(includeDirs, joinPath(ascendHome, "include"));
+  std::string driverPath =
+      getEnvPath("ASCEND_DRIVER_PATH").value_or("/usr/local/Ascend/driver");
+  addExistingIncludeDir(includeDirs, joinPath(driverPath, "kernel/inc"));
+
+  if (ptoIsaPath.empty()) {
+    diagOS << "Warning: PTO_ISA_PATH/PTO_ISA_ROOT is not set; "
+              "C++ device object emission may fail to include pto/pto-inst.hpp.\n";
+  } else if (includeDirs.empty()) {
+    diagOS << "Warning: no PTO-ISA include directory containing "
+              "pto/pto-inst.hpp was found under "
+           << ptoIsaPath << ".\n";
+  }
+  return includeDirs;
+}
+
 class VPTOFatobjToolchain;
 
 static bool compileDeviceLLVMToObject(llvm::StringRef llPath,
@@ -143,7 +204,7 @@ static bool compileDeviceLLVMToObject(llvm::StringRef llPath,
                                       llvm::StringRef bishengPath,
                                       llvm::StringRef stderrPath,
                                       llvm::raw_ostream &diagOS);
-static bool compileHostStubToFatobj(llvm::StringRef stubPath,
+static bool compileHostStubToObject(llvm::StringRef stubPath,
                                     llvm::StringRef outObjPath,
                                     llvm::StringRef moduleId,
                                     llvm::StringRef targetCPU,
@@ -157,8 +218,35 @@ static bool mergeDeviceObjects(llvm::ArrayRef<std::string> deviceObjPaths,
                                llvm::StringRef stderrPath,
                                llvm::raw_ostream &diagOS);
 
+static llvm::StringRef
+getTargetCPU(mlir::pto::ObjectEmissionDeviceTarget target) {
+  switch (target) {
+  case mlir::pto::ObjectEmissionDeviceTarget::Vector:
+    return "dav-c310-vec";
+  case mlir::pto::ObjectEmissionDeviceTarget::Cube:
+    return "dav-c310-cube";
+  }
+  llvm_unreachable("unknown object emission device target");
+}
+
 class VPTOFatobjToolchain {
 public:
+  explicit VPTOFatobjToolchain(
+      const mlir::pto::ObjectEmissionToolchain &toolchain)
+      : ascendHomePath(toolchain.ascendHomePath),
+        bishengPath(toolchain.bishengPath),
+        bishengCc1Path(toolchain.bishengCc1Path),
+        cceLdPath(toolchain.cceLdPath),
+        ldLldPath(toolchain.ldLldPath),
+        resourceDirPath(toolchain.resourceDirPath),
+        resourceIncludeDirPath(toolchain.resourceIncludeDirPath),
+        cceStubDirPath(toolchain.cceStubDirPath),
+        bishengCompilerBinDirPath(toolchain.bishengCompilerBinDirPath),
+        ptoIsaPath(toolchain.ptoIsaPath) {
+    cppIncludeDirs.assign(toolchain.cppIncludeDirs.begin(),
+                          toolchain.cppIncludeDirs.end());
+  }
+
   static std::optional<VPTOFatobjToolchain>
   create(llvm::raw_ostream &diagOS) {
     std::optional<std::string> ascendHome = getAscendHomePath();
@@ -167,7 +255,7 @@ public:
       return std::nullopt;
     }
 
-    VPTOFatobjToolchain toolchain(*ascendHome);
+    VPTOFatobjToolchain toolchain(*ascendHome, diagOS);
     if (!toolchain.validate(diagOS))
       return std::nullopt;
     return toolchain;
@@ -187,8 +275,26 @@ public:
     return bishengCompilerBinDirPath;
   }
 
+  mlir::pto::ObjectEmissionToolchain toPublicToolchain() const {
+    mlir::pto::ObjectEmissionToolchain toolchain;
+    toolchain.ascendHomePath = ascendHomePath;
+    toolchain.bishengPath = bishengPath;
+    toolchain.bishengCc1Path = bishengCc1Path;
+    toolchain.cceLdPath = cceLdPath;
+    toolchain.ldLldPath = ldLldPath;
+    toolchain.resourceDirPath = resourceDirPath;
+    toolchain.resourceIncludeDirPath = resourceIncludeDirPath;
+    toolchain.cceStubDirPath = cceStubDirPath;
+    toolchain.bishengCompilerBinDirPath = bishengCompilerBinDirPath;
+    toolchain.ptoIsaPath = ptoIsaPath;
+    toolchain.cppIncludeDirs.assign(cppIncludeDirs.begin(),
+                                    cppIncludeDirs.end());
+    return toolchain;
+  }
+
 private:
-  explicit VPTOFatobjToolchain(llvm::StringRef ascendHome)
+  explicit VPTOFatobjToolchain(llvm::StringRef ascendHome,
+                               llvm::raw_ostream &diagOS)
       : ascendHomePath(ascendHome.str()),
         bishengPath(joinPath(ascendHomePath, "bin/bisheng")),
         bishengCc1Path(
@@ -202,7 +308,10 @@ private:
         resourceIncludeDirPath(joinPath(resourceDirPath, "include")),
         cceStubDirPath(joinPath(resourceIncludeDirPath, "cce_stub")),
         bishengCompilerBinDirPath(
-            joinPath(ascendHomePath, "tools/bisheng_compiler/bin")) {}
+            joinPath(ascendHomePath, "tools/bisheng_compiler/bin")) {
+    cppIncludeDirs = discoverCppIncludeDirs(ascendHomePath, diagOS,
+                                            ptoIsaPath);
+  }
 
   bool validate(llvm::raw_ostream &diagOS) const {
     if (!llvm::sys::fs::exists(bishengPath)) {
@@ -234,6 +343,8 @@ private:
   std::string resourceIncludeDirPath;
   std::string cceStubDirPath;
   std::string bishengCompilerBinDirPath;
+  std::string ptoIsaPath;
+  llvm::SmallVector<std::string, 8> cppIncludeDirs;
 };
 
 class VPTOFatobjArtifacts {
@@ -311,7 +422,7 @@ public:
                        llvm::raw_ostream &diagOS) {
     if (!tempFiles.create("ptoas-host-stub", ".o", hostStubObjPath, diagOS))
       return false;
-    return compileHostStubToFatobj(stubPath, hostStubObjPath, moduleId,
+    return compileHostStubToObject(stubPath, hostStubObjPath, moduleId,
                                    targetCPU, toolchain, mergedDeviceObjPath,
                                    stderrPath, diagOS);
   }
@@ -326,6 +437,9 @@ public:
         "-cce-lite-bin-module-id",
         moduleId.str(),
         std::string("-cce-aicore-arch=") + targetCPU.str(),
+        // Keep device externals relocatable until the final
+        // --cce-fatobj-link link step.
+        "-dc",
         "-r",
         "-o",
         outPath.str(),
@@ -398,6 +512,7 @@ static bool compileDeviceLLVMToObject(llvm::StringRef llPath,
       std::string("--cce-aicore-arch=") + targetCPU.str(),
       "--cce-aicore-only",
       "-O2",
+      "-dc",
       "-c",
       "-x",
       "ir",
@@ -409,7 +524,85 @@ static bool compileDeviceLLVMToObject(llvm::StringRef llPath,
                               "device LLVM compilation", llPath);
 }
 
-static bool compileHostStubToFatobj(llvm::StringRef stubPath,
+static bool compileCppDeviceSourceToObject(
+    llvm::StringRef cppPath, llvm::StringRef outObjPath,
+    llvm::StringRef targetCPU, const mlir::pto::ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  llvm::SmallVector<std::string, 32> args = {
+      toolchain.bishengPath,
+      "-xcce",
+      "-fenable-matrix",
+      "--cce-aicore-enable-tl",
+      "--cce-aicore-only",
+      "-fPIC",
+      "-Xhost-start",
+      "-Xhost-end",
+      "-mllvm",
+      "-cce-aicore-stack-size=0x8000",
+      "-mllvm",
+      "-cce-aicore-function-stack-size=0x8000",
+      "-mllvm",
+      "-cce-aicore-record-overflow=true",
+      "-mllvm",
+      "-cce-aicore-addr-transform",
+      "-mllvm",
+      "-cce-aicore-dcci-insert-for-scalar=false",
+      std::string("--cce-aicore-arch=") + targetCPU.str(),
+      "-DREGISTER_BASE",
+      "-std=c++17",
+      "-dc",
+  };
+  for (const std::string &includeDir : toolchain.cppIncludeDirs)
+    args.push_back("-I" + includeDir);
+  args.push_back("-c");
+  args.push_back(cppPath.str());
+  args.push_back("-o");
+  args.push_back(outObjPath.str());
+
+  return runCommandWithStderr(toolchain.bishengPath, args, stderrPath, diagOS,
+                              "C++ device compilation");
+}
+
+static bool compileCppDeviceSourceToFatobj(
+    llvm::StringRef cppPath, llvm::StringRef outObjPath,
+    const mlir::pto::ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  llvm::SmallVector<std::string, 32> args = {
+      toolchain.bishengPath,
+      "-xcce",
+      "-fenable-matrix",
+      "--cce-aicore-enable-tl",
+      "-fPIC",
+      "-Xhost-start",
+      "-Xhost-end",
+      "-mllvm",
+      "-cce-aicore-stack-size=0x8000",
+      "-mllvm",
+      "-cce-aicore-function-stack-size=0x8000",
+      "-mllvm",
+      "-cce-aicore-record-overflow=true",
+      "-mllvm",
+      "-cce-aicore-addr-transform",
+      "-mllvm",
+      "-cce-aicore-dcci-insert-for-scalar=false",
+      "--cce-aicore-arch=dav-c310",
+      "-DREGISTER_BASE",
+      "-std=c++17",
+      "-O2",
+      "-dc",
+      "-c",
+  };
+  for (const std::string &includeDir : toolchain.cppIncludeDirs)
+    args.push_back("-I" + includeDir);
+  args.push_back(cppPath.str());
+  args.push_back("-o");
+  args.push_back(outObjPath.str());
+
+  return runCommandWithStderr(toolchain.bishengPath, args, stderrPath, diagOS,
+                              "C++ fatobj compilation");
+}
+
+static bool compileHostStubToObject(llvm::StringRef stubPath,
                                     llvm::StringRef outObjPath,
                                     llvm::StringRef moduleId,
                                     llvm::StringRef targetCPU,
@@ -537,13 +730,174 @@ static bool mergeDeviceObjects(llvm::ArrayRef<std::string> deviceObjPaths,
                               "device object merge");
 }
 
+static bool linkFatobjFiles(llvm::ArrayRef<std::string> fatobjPaths,
+                            llvm::StringRef outObjPath,
+                            const mlir::pto::ObjectEmissionToolchain &toolchain,
+                            llvm::StringRef stderrPath,
+                            llvm::raw_ostream &diagOS) {
+  if (fatobjPaths.empty())
+    return false;
+
+  llvm::SmallVector<std::string, 32> args = {
+      toolchain.bishengPath,
+      "--cce-fatobj-link",
+      "--cce-aicore-arch=dav-c310",
+      "-r",
+      "-o",
+      outObjPath.str(),
+  };
+  for (const std::string &path : fatobjPaths)
+    args.push_back(path);
+
+  return runCommandWithStderr(toolchain.bishengPath, args, stderrPath, diagOS,
+                              "fatobj link");
+}
+
 } // namespace
 
-mlir::LogicalResult mlir::pto::emitVPTOFatobj(llvm::Module *cubeModule,
-                                              llvm::Module *vectorModule,
-                                              llvm::StringRef stubSource,
-                                              llvm::ToolOutputFile &outputFile,
+mlir::LogicalResult mlir::pto::discoverObjectEmissionToolchain(
+    ObjectEmissionToolchain &publicToolchain, llvm::raw_ostream &diagOS) {
+  std::optional<VPTOFatobjToolchain> toolchain =
+      VPTOFatobjToolchain::create(diagOS);
+  if (!toolchain)
+    return failure();
+  publicToolchain = toolchain->toPublicToolchain();
+  return success();
+}
+
+mlir::LogicalResult mlir::pto::writeLLVMModule(llvm::Module &module,
+                                               llvm::StringRef path,
+                                               llvm::raw_ostream &diagOS) {
+  return writeLLVMModuleFile(module, path, diagOS) ? success() : failure();
+}
+
+mlir::LogicalResult mlir::pto::writeCppSource(llvm::StringRef cppSource,
+                                              llvm::StringRef path,
                                               llvm::raw_ostream &diagOS) {
+  return writeTextFile(path, cppSource, diagOS) ? success() : failure();
+}
+
+mlir::LogicalResult mlir::pto::writeHostStubSource(
+    llvm::StringRef stubSource, llvm::StringRef path,
+    llvm::raw_ostream &diagOS) {
+  return writeTextFile(path, stubSource, diagOS) ? success() : failure();
+}
+
+mlir::LogicalResult mlir::pto::compileCppToDeviceObject(
+    llvm::StringRef cppPath, llvm::StringRef outObjPath,
+    ObjectEmissionDeviceTarget target, const ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  return compileCppDeviceSourceToObject(cppPath, outObjPath,
+                                        getTargetCPU(target), toolchain,
+                                        stderrPath, diagOS)
+             ? success()
+             : failure();
+}
+
+mlir::LogicalResult mlir::pto::compileLLVMToDeviceObject(
+    llvm::StringRef llPath, llvm::StringRef outObjPath,
+    ObjectEmissionDeviceTarget target, const ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  return compileDeviceLLVMToObject(llPath, outObjPath, getTargetCPU(target),
+                                   toolchain.bishengPath, stderrPath, diagOS)
+             ? success()
+             : failure();
+}
+
+mlir::LogicalResult mlir::pto::emitCppVectorDeviceObject(
+    llvm::StringRef cppSource, llvm::StringRef cppPath,
+    llvm::StringRef outObjPath, const ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  if (failed(writeCppSource(cppSource, cppPath, diagOS)))
+    return failure();
+  return compileCppToDeviceObject(cppPath, outObjPath,
+                                  ObjectEmissionDeviceTarget::Vector,
+                                  toolchain, stderrPath, diagOS);
+}
+
+mlir::LogicalResult mlir::pto::emitCppCubeDeviceObject(
+    llvm::StringRef cppSource, llvm::StringRef cppPath,
+    llvm::StringRef outObjPath, const ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  if (failed(writeCppSource(cppSource, cppPath, diagOS)))
+    return failure();
+  return compileCppToDeviceObject(cppPath, outObjPath,
+                                  ObjectEmissionDeviceTarget::Cube,
+                                  toolchain, stderrPath, diagOS);
+}
+
+mlir::LogicalResult mlir::pto::emitCppFatobj(
+    llvm::StringRef cppSource, llvm::StringRef cppPath,
+    llvm::StringRef outObjPath, const ObjectEmissionToolchain &toolchain,
+    llvm::StringRef stderrPath, llvm::raw_ostream &diagOS) {
+  if (failed(writeCppSource(cppSource, cppPath, diagOS)))
+    return failure();
+  return compileCppDeviceSourceToFatobj(cppPath, outObjPath, toolchain,
+                                        stderrPath, diagOS)
+             ? success()
+             : failure();
+}
+
+mlir::LogicalResult mlir::pto::emitVPTOVectorDeviceObject(
+    llvm::Module &module, llvm::StringRef llPath, llvm::StringRef outObjPath,
+    const ObjectEmissionToolchain &toolchain, llvm::StringRef stderrPath,
+    llvm::raw_ostream &diagOS) {
+  if (failed(writeLLVMModule(module, llPath, diagOS)))
+    return failure();
+  return compileLLVMToDeviceObject(llPath, outObjPath,
+                                   ObjectEmissionDeviceTarget::Vector,
+                                   toolchain, stderrPath, diagOS);
+}
+
+mlir::LogicalResult mlir::pto::emitVPTOCubeDeviceObject(
+    llvm::Module &module, llvm::StringRef llPath, llvm::StringRef outObjPath,
+    const ObjectEmissionToolchain &toolchain, llvm::StringRef stderrPath,
+    llvm::raw_ostream &diagOS) {
+  if (failed(writeLLVMModule(module, llPath, diagOS)))
+    return failure();
+  return compileLLVMToDeviceObject(llPath, outObjPath,
+                                   ObjectEmissionDeviceTarget::Cube,
+                                   toolchain, stderrPath, diagOS);
+}
+
+mlir::LogicalResult mlir::pto::mergeDeviceObjects(
+    llvm::ArrayRef<std::string> deviceObjPaths, llvm::StringRef outObjPath,
+    const ObjectEmissionToolchain &toolchain, llvm::StringRef stderrPath,
+    llvm::raw_ostream &diagOS) {
+  return ::mergeDeviceObjects(deviceObjPaths, outObjPath, toolchain.ldLldPath,
+                              stderrPath, diagOS)
+             ? success()
+             : failure();
+}
+
+mlir::LogicalResult mlir::pto::compileStubToFatobj(
+    llvm::StringRef stubPath, llvm::StringRef deviceObjPath,
+    llvm::StringRef outputPath, llvm::StringRef moduleId,
+    const ObjectEmissionToolchain &toolchain, llvm::StringRef stderrPath,
+    llvm::raw_ostream &diagOS) {
+  VPTOFatobjToolchain privateToolchain(toolchain);
+
+  constexpr llvm::StringLiteral targetCPU = "dav-c310";
+  return compileHostStubToObject(stubPath, outputPath, moduleId, targetCPU,
+                                 privateToolchain, deviceObjPath, stderrPath,
+                                 diagOS)
+             ? success()
+             : failure();
+}
+
+mlir::LogicalResult mlir::pto::linkFatobjs(
+    llvm::ArrayRef<std::string> fatobjPaths, llvm::StringRef outputPath,
+    const ObjectEmissionToolchain &toolchain, llvm::StringRef stderrPath,
+    llvm::raw_ostream &diagOS) {
+  return linkFatobjFiles(fatobjPaths, outputPath, toolchain, stderrPath, diagOS)
+             ? success()
+             : failure();
+}
+
+mlir::LogicalResult mlir::pto::emitVPTOFatobjFromLLVMModules(
+    llvm::Module *cubeModule, llvm::Module *vectorModule,
+    llvm::StringRef stubSource, llvm::ToolOutputFile &outputFile,
+    llvm::raw_ostream &diagOS) {
   if (!cubeModule && !vectorModule) {
     diagOS << "Error: VPTO fatobj emission requires at least one LLVM module.\n";
     return failure();

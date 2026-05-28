@@ -6,8 +6,14 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#include "PTOASDriver.h"
+// RUN: not ptoas --pto-arch=a5 --emit-vpto %s -o - 2>&1 | FileCheck %s
 
-int main(int argc, char **argv) {
-  return mlir::pto::runPTOASDriver(argc, argv);
+module attributes {pto.target_arch = "a5"} {
+  module attributes {pto.backend = "vpto"} {
+    func.func @missing_kernel_kind() {
+      return
+    }
+  }
 }
+
+// CHECK: vpto backend child module must carry 'pto.kernel_kind'

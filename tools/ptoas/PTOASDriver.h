@@ -6,8 +6,13 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#include "PTOASDriver.h"
+#ifndef PTOAS_DRIVER_H
+#define PTOAS_DRIVER_H
 
-int main(int argc, char **argv) {
-  return mlir::pto::runPTOASDriver(argc, argv);
-}
+namespace mlir::pto {
+
+int runPTOASDriver(int argc, char **argv);
+
+} // namespace mlir::pto
+
+#endif

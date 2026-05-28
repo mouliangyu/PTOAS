@@ -6,8 +6,24 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#include "PTOASDriver.h"
+// RUN: not ptoas --pto-arch=a5 %s -o %t.o 2>&1 | FileCheck %s
 
-int main(int argc, char **argv) {
-  return mlir::pto::runPTOASDriver(argc, argv);
+module attributes {pto.target_arch = "a5"} {
+  module attributes {pto.backend = "emitc"} {
+    func.func private @vpto_post() attributes {pto.aicore}
+  }
+
+  module attributes {
+    pto.backend = "vpto",
+    pto.kernel_kind = #pto.kernel_kind<vector>
+  } {
+    func.func public @vpto_post() {
+      return
+    }
+    func.func @vpto_device() attributes {pto.aicore} {
+      return
+    }
+  }
 }
+
+// CHECK: external func.func declaration must not be marked pto.aicore

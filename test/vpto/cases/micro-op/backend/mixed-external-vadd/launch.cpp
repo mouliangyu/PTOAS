@@ -6,8 +6,20 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#include "PTOASDriver.h"
+#ifndef __VEC_SCOPE__
+#define __VEC_SCOPE__
+#endif
 
-int main(int argc, char **argv) {
-  return mlir::pto::runPTOASDriver(argc, argv);
+#include <stdint.h>
+#ifndef __CPU_SIM
+#include "acl/acl.h"
+#endif
+
+extern "C" __global__ [aicore] void mixed_external_vadd_kernel(
+    __gm__ float *lhs, __gm__ float *rhs, __gm__ float *out);
+
+void LaunchMixed_external_vadd_kernel(float *lhs, float *rhs, float *out,
+                                      void *stream) {
+  mixed_external_vadd_kernel<<<1, nullptr, stream>>>(
+      (__gm__ float *)lhs, (__gm__ float *)rhs, (__gm__ float *)out);
 }

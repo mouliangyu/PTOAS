@@ -6,8 +6,18 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#include "PTOASDriver.h"
+// RUN: not ptoas --pto-arch=a5 --pto-backend=emitc --emit-vpto %s -o - 2>&1 | FileCheck %s
 
-int main(int argc, char **argv) {
-  return mlir::pto::runPTOASDriver(argc, argv);
+module attributes {
+  pto.backend = "vpto",
+  pto.kernel_kind = #pto.kernel_kind<vector>,
+  pto.target_arch = "a5"
+} {
+  func.func @backend_cli_override() {
+    %ctrl = pto.get_ctrl : i64
+    pto.set_ctrl %ctrl : i64
+    return
+  }
 }
+
+// CHECK: Error: VPTO-specific flags require --pto-backend=vpto or pto.backend = "vpto".
