@@ -16,4 +16,4 @@ module attributes {pto.target_arch = "a5"} {
   }
 }
 
-// CHECK: vpto backend child module must carry 'pto.kernel_kind'
+// CHECK: expected VPTO kernel submodule to carry 'pto.kernel_kind'

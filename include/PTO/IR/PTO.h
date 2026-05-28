@@ -185,6 +185,9 @@ inline constexpr llvm::StringLiteral kPTOSimtEntryAttrName = "pto.simt_entry";
 /// Return true if the function carries an explicit entry marker.
 bool hasExplicitPTOEntryAttr(func::FuncOp func);
 
+/// Return true if the function is marked as a PTO device kernel.
+bool isPTOKernelFunction(func::FuncOp func);
+
 /// Return true if the function should be emitted as an AICORE entry.
 bool isPTOEntryFunction(func::FuncOp func);
 

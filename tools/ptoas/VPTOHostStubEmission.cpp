@@ -20,10 +20,6 @@ using namespace mlir;
 
 namespace {
 
-static bool hasVPTOKernelAttr(Operation *op) {
-  return op->hasAttr("pto.kernel") || op->hasAttr("pto.aicore");
-}
-
 struct VPTOKernelStubDecl {
   std::string logicalName;
   SmallVector<std::string> argTypes;
@@ -81,7 +77,7 @@ static LogicalResult collectVPTOKernelStubDecls(
 
   for (ModuleOp module : modules) {
     module.walk([&](func::FuncOp func) {
-      if (func.isExternal() || !hasVPTOKernelAttr(func))
+      if (func.isExternal() || !pto::isPTOKernelFunction(func))
         return;
 
       std::string logicalName = getLogicalKernelName(func.getSymName());
