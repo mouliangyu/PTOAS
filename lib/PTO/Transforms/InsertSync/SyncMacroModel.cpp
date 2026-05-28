@@ -143,6 +143,30 @@ std::optional<SyncMacroModel> getTScatterSyncMacroModel(pto::TScatterOp op) {
   return model;
 }
 
+std::optional<SyncMacroModel> getTGatherSyncMacroModel(pto::TGatherOp op) {
+  if (!op.hasCompareForm() || getTargetArch(op.getOperation()) == PTOArch::A5)
+    return std::nullopt;
+
+  Value tmp = op.getTmp();
+  Value cdst = op.getCdst();
+  if (!tmp || !cdst)
+    return std::nullopt;
+
+  SyncMacroModel model;
+  // A2/A3 compare TGATHER lowers to TCMPS on PIPE_V, an index generation loop
+  // on PIPE_S, a V reduce over the generated indexes, and a scalar writeback of
+  // the reserved count into cdst.
+  addPhase(model, PipelineType::PIPE_V, ValueRange{tmp},
+           ValueRange{op.getSrc()});
+  addPhase(model, PipelineType::PIPE_S, ValueRange{tmp}, ValueRange{});
+  addPhase(model, PipelineType::PIPE_V, ValueRange{op.getDst()},
+           ValueRange{tmp});
+  addPhase(model, PipelineType::PIPE_S, ValueRange{cdst}, ValueRange{});
+  addHiddenEvent(model, PipelineType::PIPE_S, PipelineType::PIPE_V,
+                 ArrayRef<unsigned>{0});
+  return model;
+}
+
 } // namespace
 
 std::optional<SyncMacroModel> mlir::pto::getSyncMacroModel(Operation *op) {
@@ -152,5 +176,7 @@ std::optional<SyncMacroModel> mlir::pto::getSyncMacroModel(Operation *op) {
     return model;
   if (auto tscatter = dyn_cast<pto::TScatterOp>(op))
     return getTScatterSyncMacroModel(tscatter);
+  if (auto tgather = dyn_cast<pto::TGatherOp>(op))
+    return getTGatherSyncMacroModel(tgather);
   return std::nullopt;
 }
