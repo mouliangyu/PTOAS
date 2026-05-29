@@ -50,6 +50,10 @@ def _populate_dtype_map() -> None:
     for name in (
         "f16",
         "bf16",
+        # FP4 types: lowercase names match Python variable names in types.py
+        # (used for getattr lookup); actual ScalarType.name is uppercase for MLIR
+        "f4e1m2x2",
+        "f4e2m1x2",
         "f32",
         "i8",
         "si8",

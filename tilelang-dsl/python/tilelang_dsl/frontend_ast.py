@@ -854,6 +854,7 @@ _DMA_CALL_KEYWORDS: dict[str, frozenset[str]] = {
     "cube_store": frozenset({"nburst", "loops"}),
     "cube_load_frac": frozenset({"shape", "src_layout", "dst_group", "ctrl"}),
     "bias_load": frozenset({"nburst"}),
+    "fb_load": frozenset({"nburst"}),
     "left_load": frozenset(),
     "right_load": frozenset(),
     "left_load_mx": frozenset(),

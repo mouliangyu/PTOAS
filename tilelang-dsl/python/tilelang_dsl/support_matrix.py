@@ -238,6 +238,7 @@ CUBE_ONLY_PTO_CALLS = frozenset(
         "cube_store",
         "cube_load_frac",
         "bias_load",
+        "fb_load",
         "left_load",
         "right_load",
         "left_load_mx",

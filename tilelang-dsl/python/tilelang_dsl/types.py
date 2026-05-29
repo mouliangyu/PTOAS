@@ -58,6 +58,8 @@ _FLOAT_DTYPE_WIDTHS = {
     "f16": 16,
     "bf16": 16,
     "f32": 32,
+    "f4E1M2x2": 4,  # 4-bit float, 2 packed per byte
+    "f4E2M1x2": 4,  # 4-bit float, 2 packed per byte
 }
 
 _DTYPE_BYTE_WIDTHS = {
@@ -711,6 +713,11 @@ ui64 = ScalarType("ui64")
 f16 = ScalarType("f16")
 bf16 = ScalarType("bf16")
 f32 = ScalarType("f32")
+# FP4 types: 1 byte = 2 FP4 packed elements
+# Note: Python variable names use lowercase (Python naming convention),
+# while ScalarType.name uses uppercase to match MLIR mnemonic (e.g., !pto.f4E1M2x2).
+f4e1m2x2 = ScalarType("f4E1M2x2")  # E1M2 format: 1 exponent bit, 2 mantissa bits
+f4e2m1x2 = ScalarType("f4E2M1x2")  # E2M1 format: 2 exponent bits, 1 mantissa bit
 PIPE = Pipe
 EVENT = Event
 PAT = MaskPattern

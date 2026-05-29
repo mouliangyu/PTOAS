@@ -2963,7 +2963,11 @@ class _AuthoringRenderer:
         if expr.name == "bias_load":
             self._render_cube_bias_load(expr, env, indent=indent, into=into)
             return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
-
+        
+        if expr.name == "fb_load":
+            self._render_cube_fb_load(expr, env, indent=indent, into=into)
+            return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
+        
         if expr.name in {"left_load", "right_load", "left_load_mx", "right_load_mx"}:
             self._render_cube_stage_load(expr, env, indent=indent, into=into)
             return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
@@ -3405,6 +3409,27 @@ class _AuthoringRenderer:
         into.append(
             self._indent(indent)
             + f"pto.bias_load {source.name}, {destination.name}, {len_burst.name}"
+            + f" nburst({nburst[0].name}, {nburst[1].name}, {nburst[2].name}) : "
+            + f"{self._render_type(source.type)}, {self._render_type(destination.type)}, "
+            + f"{self._render_type(len_burst.type)}, {self._render_type(nburst[0].type)}, "
+            + f"{self._render_type(nburst[1].type)}, {self._render_type(nburst[2].type)}"
+        )
+
+    def _render_cube_fb_load(
+    self,
+    expr: SemanticCallExpr,
+    env: dict[str, _RenderedValue],
+    *,
+    indent: int,
+    into: list[str],
+    ) -> None:
+        source = self._lower_expr(expr.args[0], env, indent=indent, into=into)
+        destination = self._lower_expr(expr.args[1], env, indent=indent, into=into)
+        len_burst = self._lower_to_i64(expr.args[2], env, indent=indent, into=into)
+        nburst = self._lower_cube_i64_tuple(expr.args[3], env, indent=indent, into=into, expected_len=3)
+        into.append(
+            self._indent(indent)
+            + f"pto.fb_load {source.name}, {destination.name}, {len_burst.name}"
             + f" nburst({nburst[0].name}, {nburst[1].name}, {nburst[2].name}) : "
             + f"{self._render_type(source.type)}, {self._render_type(destination.type)}, "
             + f"{self._render_type(len_burst.type)}, {self._render_type(nburst[0].type)}, "

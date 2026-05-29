@@ -288,6 +288,7 @@ _CUBE_TRANSFER_OPS = {
     "cube_store",
     "cube_load_frac",
     "bias_load",
+    "fb_load",
     "left_load",
     "right_load",
     "left_load_mx",
@@ -3970,6 +3971,8 @@ class _SemanticAnalyzer:
             return self._analyze_cube_load_frac(args, keywords)
         if expr.name == "bias_load":
             return self._analyze_cube_bias_load(args, keywords)
+        if expr.name == "fb_load":
+            return self._analyze_cube_fb_load(args, keywords)
         if expr.name in {"left_load", "right_load", "left_load_mx", "right_load_mx"}:
             return self._analyze_cube_stage_load(expr.name, args, keywords)
         if expr.name in {"acc_store", "acc_store_gm", "acc_store_ub"}:
@@ -4330,6 +4333,41 @@ class _SemanticAnalyzer:
         return SemanticCallExpr(
             namespace="pto",
             name="bias_load",
+            args=(args[0], args[1], args[2], nburst_expr),
+            type=None,
+        )
+    
+    def _analyze_cube_fb_load(
+        self,
+        args: tuple[SemanticExpr, ...],
+        keywords: dict[str, SemanticExpr],
+    ) -> SemanticExpr:
+        if len(args) != 3:
+            raise TypeError("pto.fb_load expects exactly 3 positional arguments in TileLang DSL v1")
+        src = self._require_pointer_expr(args[0], "pto.fb_load source", memory_space="mat")
+        dst = self._require_pointer_expr(args[1], "pto.fb_load destination", memory_space="scaling")
+        # fb_load supports generic types (any dtype), similar to pto-isa TMovToFb
+        self._require_i64_like_expr(args[2], "pto.fb_load len_burst")
+        allowed_keywords = {"nburst"}
+        unsupported_keywords = sorted(set(keywords) - allowed_keywords)
+        if unsupported_keywords:
+            raise TypeError(
+                f"pto.fb_load only accepts keyword(s) nburst in TileLang DSL v1; "
+                f"got unsupported keyword(s): {', '.join(unsupported_keywords)}"
+            )
+        nburst_expr = keywords.get("nburst", SemanticTupleExpr(
+            elements=(
+                SemanticLiteralExpr(value=1, type=SemanticIndexType()),
+                SemanticLiteralExpr(value=0, type=SemanticIndexType()),
+                SemanticLiteralExpr(value=0, type=SemanticIndexType()),
+            ),
+            type=SemanticTupleType(elements=(SemanticIndexType(), SemanticIndexType(), SemanticIndexType())),
+        ))
+        if "nburst" in keywords:
+            nburst_expr = self._require_cube_i64_tuple(keywords["nburst"], "pto.fb_load nburst", exact_len=3)
+        return SemanticCallExpr(
+            namespace="pto",
+            name="fb_load",
             args=(args[0], args[1], args[2], nburst_expr),
             type=None,
         )
