@@ -8976,6 +8976,13 @@ static LogicalResult verifyTRowExpandReduceLikeOp(Operation *op, Type src0Ty,
   if (src0Valid.size() != 2 || src1Valid.size() != 2 || dstValid.size() != 2)
     return op->emitOpError("expects src0, src1, and dst to have rank-2 valid_shape");
 
+  // Operand-form invariant, enforced regardless of the valid region: A5 has no
+  // tmp form for these ops. Must run before the empty-marker early-accept below,
+  // otherwise a 0x0 dst would let an A5 tmp form slip through and lower to the
+  // A2/A3 4-operand TROWEXPAND* call.
+  if (hasTmp && targetArch == PTOArch::A5)
+    return op->emitOpError("expects A5 form to omit tmp");
+
   // Fully-empty dst valid region (0x0): dual-AIV no-op replay marker. Element
   // type/layout were already checked above; the op writes no elements, so accept
   // and skip the non-empty broadcast/width constraints. One-sided empties still
@@ -9052,8 +9059,7 @@ static LogicalResult verifyTRowExpandReduceLikeOp(Operation *op, Type src0Ty,
                                      targetArch == PTOArch::A3);
   };
 
-  if (hasTmp && targetArch == PTOArch::A5)
-    return op->emitOpError("expects A5 form to omit tmp");
+  // (A5 tmp-form invariant is checked earlier, before the empty-marker accept.)
 
   if (src0MatchesDst) {
     if (succeeded(checkFullAndBroadcast(src0Ty, src0Valid, "src0", src1Ty,
