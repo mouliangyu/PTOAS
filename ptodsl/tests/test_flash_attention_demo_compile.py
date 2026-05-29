@@ -80,7 +80,8 @@ def main() -> None:
         f"unexpected source file mapping: {port_info!r}",
     )
     for feature in [
-        "QK_PRELOAD prologue/steady/epilogue shadow schedule",
+        "QK_PRELOAD prologue/steady/epilogue schedule",
+        "A5 local pipe surface for QK/P/PV stage boundaries",
         "Vec_S0 row-slice state arrays",
         "exp_max_ring per preload slot and row-slice",
         "wide P slot producer/consumer",
@@ -105,6 +106,12 @@ def main() -> None:
     expect("pto.trowexpandmul" in wrapper_text, "wrapper compile should keep GU rescale")
     expect("pto.trowexpanddiv" in wrapper_text, "wrapper compile should keep final normalization")
     expect("pto.make_tensor_view" in wrapper_text, "QK/P/PV GM slots should be explicit tensor views")
+    expect("pto.aic_initialize_pipe" in wrapper_text, "FA should initialize local pipes on the Cube side")
+    expect("pto.aiv_initialize_pipe" in wrapper_text, "FA should initialize local pipes on the Vector side")
+    expect("pto.tpush_to_aiv" in wrapper_text, "FA should push Cube-produced stages to Vector through pipe surface")
+    expect("pto.tpop_from_aic" in wrapper_text, "FA should pop Cube-produced stages on Vector through pipe surface")
+    expect("pto.tpush_to_aic" in wrapper_text, "FA should push Vector-produced P stage to Cube through pipe surface")
+    expect("pto.tpop_from_aiv" in wrapper_text, "FA should pop Vector-produced P stage on Cube through pipe surface")
     expect("%c256" in wrapper_text, "S1_TILE=256 should appear in slot tensor view shape operands")
     expect("32x256xf32" in wrapper_text, "S1_TILE=256 should use Vec_S0=32 row-slice tiles")
 

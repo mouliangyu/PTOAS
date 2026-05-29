@@ -15,14 +15,15 @@ Source implementation:
 The source is authored against the older external ``huawei-csl/pto-dsl``
 package.  This file ports the authored kernel shape and dataflow to the current
 PTOAS in-tree PTODSL surface.  It is intentionally frontend/compile focused:
-it emits PTO MLIR that exposes the same high-level stages and slot layout, but
-does not implement the old runtime FIFO protocol in Python.
+it emits PTO MLIR that exposes the same high-level stages, slot layout, and
+Cube/Vector pipe transaction boundaries, but does not implement the old runtime
+FIFO protocol in Python.
 
 Ported source structure:
 
     old fa_builder.py module/to_ir_module    -> @pto.jit(...).compile(...)
     old TensorType/SubTensorType globals     -> pto.ptr + make_tensor_view
-    old declare_global + l2g2l FIFO entries  -> GM slot tensor views
+    old declare_global + l2g2l FIFO entries  -> GM slot tensor views + local pipe surface
     old pto.load/store                       -> pto.tile.load/store
     old tile.matmul/matmul_acc               -> @pto.cube + pto.mad/mad_acc
     old vector row-reduce softmax/GU         -> @pto.simd tile ops
@@ -36,9 +37,10 @@ The source four-stage pipeline is preserved in the authored surface:
 
 Current boundary:
 
-* True talloc/tpush/tpop/tfree FIFO scheduling is a backend/runtime concern.
-  This port represents the slot addresses and stage dataflow in frontend MLIR
-  using explicit GM slot tensor views.
+* True FIFO scheduling, TSyncCVID lifetime management, and runtime backpressure
+  are backend/runtime concerns.  This port represents the slot addresses and
+  stage dataflow in frontend MLIR using explicit GM slot tensor views plus
+  PTODSL local pipe init/push/pop/free transactions.
 * The source example targets non-causal HEAD=128 FA.  This port keeps that
   contract and rejects unsupported specialization knobs early.
 * Runtime launch, torch_npu validation, and A3/A5 performance checks are not
@@ -72,6 +74,9 @@ CUBE_S1 = 128
 DEFAULT_S1_TILE = 256
 DEFAULT_QK_PRELOAD = 3
 SLOT_NUM = 8
+QK_C2V_PIPE_ID = 0
+P_V2C_PIPE_ID = 1
+PV_C2V_PIPE_ID = 2
 
 SPLIT_UP_DOWN = 1
 VEC_CORES = 2
@@ -104,7 +109,7 @@ def describe_hw_native_flash_attention_port():
             "old_tensor_types": "TensorType/SubTensorType module globals",
             "new_tensor_views": "pto.ptr + pto.make_tensor_view + pto.partition_view",
             "old_fifo": "initialize_l2g2l_pipe + talloc/tpush/tpop/tfree",
-            "new_frontend_slots": "explicit GM slot tensor views; runtime FIFO remains backend work",
+            "new_frontend_slots": "explicit GM slot tensor views + A5 local pipe surface; runtime FIFO remains backend work",
         },
         "source_constants": {
             "S0": S0,
@@ -118,7 +123,8 @@ def describe_hw_native_flash_attention_port():
         },
         "dataflow": ["compute_qk", "compute_p", "compute_pv", "compute_gu"],
         "frontend_features": [
-            "QK_PRELOAD prologue/steady/epilogue shadow schedule",
+            "QK_PRELOAD prologue/steady/epilogue schedule",
+            "A5 local pipe surface for QK/P/PV stage boundaries",
             "Vec_S0 row-slice state arrays",
             "exp_max_ring per preload slot and row-slice",
             "wide P slot producer/consumer",
@@ -196,6 +202,9 @@ def flash_attention_kernel(
     slot_size_qk_f32 = S0 * S1_TILE
     slot_size_pv_f32 = S0 * HEAD
     slot_size_p_f16 = S0 * S1_TILE
+    qk_pipe_slot_bytes = S0 * CUBE_S1 * 4
+    p_pipe_slot_bytes = vec_s0 * S1_TILE * 2
+    pv_pipe_slot_bytes = S0 * HEAD * 4
     gm_pv_off_f32 = slot_size_qk_f32 * SLOT_NUM
     gm_p_off_f32 = gm_pv_off_f32 + slot_size_pv_f32 * SLOT_NUM
 
@@ -231,6 +240,42 @@ def flash_attention_kernel(
         p_workspace,
         offsets=[p_slot_row_offset, c0],
         sizes=[cSLOT_NUM * cS0, cS1_TILE],
+    )
+    qk_c2v_buf = pto.reserve_buffer(
+        "fa_qk_c2v_fifo",
+        size=qk_pipe_slot_bytes * SLOT_NUM,
+        location="vec",
+    )
+    p_v2c_buf = pto.reserve_buffer(
+        "fa_p_v2c_fifo",
+        size=p_pipe_slot_bytes * SLOT_NUM,
+        location="mat",
+    )
+    pv_c2v_buf = pto.reserve_buffer(
+        "fa_pv_c2v_fifo",
+        size=pv_pipe_slot_bytes * SLOT_NUM,
+        location="vec",
+    )
+    qk_c2v_pipe = pto.pipe.c2v_local(
+        slot_size=qk_pipe_slot_bytes,
+        consumer_buf=qk_c2v_buf,
+        id=QK_C2V_PIPE_ID,
+        local_slot_num=SLOT_NUM,
+        nosplit=True,
+    )
+    p_v2c_pipe = pto.pipe.v2c_local(
+        slot_size=p_pipe_slot_bytes,
+        consumer_buf=p_v2c_buf,
+        id=P_V2C_PIPE_ID,
+        local_slot_num=SLOT_NUM,
+        nosplit=True,
+    )
+    pv_c2v_pipe = pto.pipe.c2v_local(
+        slot_size=pv_pipe_slot_bytes,
+        consumer_buf=pv_c2v_buf,
+        id=PV_C2V_PIPE_ID,
+        local_slot_num=SLOT_NUM,
+        nosplit=True,
     )
 
     q_mat = pto.alloc_tile(shape=[S0, HEAD], dtype=pto.f16, memory_space="mat")
@@ -316,6 +361,7 @@ def flash_attention_kernel(
                 q_left,
                 k_view,
                 qk_slot_part,
+                qk_c2v_pipe,
                 k_mat,
                 k_right,
                 qk_acc,
@@ -352,6 +398,8 @@ def flash_attention_kernel(
                                 compute_p(
                                     qk_slot_part,
                                     p_slot_part,
+                                    qk_c2v_pipe,
+                                    p_v2c_pipe,
                                     qk_vec,
                                     p_fp32,
                                     p_fp16,
@@ -369,6 +417,8 @@ def flash_attention_kernel(
                                         compute_p(
                                             qk_slot_part,
                                             p_slot_part,
+                                            qk_c2v_pipe,
+                                            p_v2c_pipe,
                                             qk_vec,
                                             p_fp32,
                                             p_fp16,
@@ -399,6 +449,8 @@ def flash_attention_kernel(
                 p_slot_part,
                 v_view,
                 pv_slot_part,
+                p_v2c_pipe,
+                pv_c2v_pipe,
                 p_recv,
                 p_left,
                 v_mat,
@@ -427,6 +479,7 @@ def flash_attention_kernel(
                                     continue
                                 compute_gu(
                                     pv_slot_part,
+                                    pv_c2v_pipe,
                                     pv_vec,
                                     o_tile[static_row_slice],
                                     exp_max_ring[static_ring][static_row_slice],
@@ -437,6 +490,7 @@ def flash_attention_kernel(
                                     with ring_br.then_:
                                         compute_gu(
                                             pv_slot_part,
+                                            pv_c2v_pipe,
                                             pv_vec,
                                             o_tile[static_row_slice],
                                             exp_max_ring[static_ring][static_row_slice],
@@ -444,6 +498,9 @@ def flash_attention_kernel(
                                         )
 
     with pto.for_(qb_start, qb_end, step=1) as qb:
+        init_fa_cube_pipes(qk_c2v_pipe, p_v2c_pipe, pv_c2v_pipe)
+        init_fa_vector_pipes(qk_c2v_pipe, p_v2c_pipe, pv_c2v_pipe)
+
         q_part = pto.partition_view(q_view, offsets=[qb * cS0, c0], sizes=[cS0, cHEAD])
         pto.tile.load(q_part, q_mat)
         pto.tile.mov(q_mat, q_left)
@@ -494,10 +551,25 @@ def flash_attention_kernel(
 
 
 @pto.cube
+def init_fa_cube_pipes(qk_c2v_pipe, p_v2c_pipe, pv_c2v_pipe):
+    qk_c2v_pipe.init_cube()
+    p_v2c_pipe.init_cube()
+    pv_c2v_pipe.init_cube()
+
+
+@pto.simd
+def init_fa_vector_pipes(qk_c2v_pipe, p_v2c_pipe, pv_c2v_pipe):
+    qk_c2v_pipe.init_simd()
+    p_v2c_pipe.init_simd()
+    pv_c2v_pipe.init_simd()
+
+
+@pto.cube
 def compute_qk(
     q_left: pto.Tile,
     k_view: pto.TensorView,
     qk_slot_part: pto.PartitionTensorView,
+    qk_pipe,
     k_mat: pto.Tile,
     k_right: pto.Tile,
     qk_acc: pto.Tile,
@@ -510,12 +582,15 @@ def compute_qk(
     pto.mad(q_left.as_ptr(), k_right.as_ptr(), qk_acc.as_ptr(), S0, CUBE_S1, HEAD)
     pto.mte_l0c_ub(qk_acc.as_ptr(), qk_tile.as_ptr(), S0, CUBE_S1, CUBE_S1, CUBE_S1, 0)
     pto.tile.store(qk_tile, qk_slot_part)
+    qk_pipe.push(qk_tile, split=0)
 
 
 @pto.simd
 def compute_p(
     qk_slot_part: pto.PartitionTensorView,
     p_slot_part: pto.PartitionTensorView,
+    qk_pipe,
+    p_pipe,
     qk_tile: pto.Tile,
     p_fp32: pto.Tile,
     p_fp16: pto.Tile,
@@ -527,6 +602,8 @@ def compute_p(
     exp_max: pto.Tile,
     is_init: pto.i1,
 ):
+    _ = qk_pipe.pop(result_type=qk_tile, split=0)
+    qk_pipe.free(split=0)
     pto.tile.load(qk_slot_part, qk_tile)
     pto.tile.rowmax(qk_tile, local_max, tmp=tmp)
 
@@ -565,6 +642,7 @@ def compute_p(
 
     pto.tile.cvt(p_fp32, p_fp16)
     pto.tile.store(p_fp16, p_slot_part)
+    p_pipe.push(p_fp16, split=0)
 
 
 @pto.cube
@@ -572,6 +650,8 @@ def compute_pv(
     p_slot_part: pto.PartitionTensorView,
     v_view: pto.TensorView,
     pv_slot_part: pto.PartitionTensorView,
+    p_pipe,
+    pv_pipe,
     p_recv: pto.Tile,
     p_left: pto.Tile,
     v_mat: pto.Tile,
@@ -581,6 +661,8 @@ def compute_pv(
     s1_sub: pto.index,
     is_first_sub: pto.i1,
 ):
+    _ = p_pipe.pop(result_type=p_recv, split=0)
+    p_pipe.free(split=0)
     pto.tile.load(p_slot_part, p_recv)
     pto.tile.mov(p_recv, p_left)
 
@@ -596,16 +678,20 @@ def compute_pv(
 
     pto.mte_l0c_ub(pv_acc.as_ptr(), pv_tile.as_ptr(), S0, HEAD, HEAD, HEAD, 0)
     pto.tile.store(pv_tile, pv_slot_part)
+    pv_pipe.push(pv_tile, split=0)
 
 
 @pto.simd
 def compute_gu(
     pv_slot_part: pto.PartitionTensorView,
+    pv_pipe,
     pv_tile: pto.Tile,
     o_tile: pto.Tile,
     exp_max: pto.Tile,
     is_init: pto.i1,
 ):
+    _ = pv_pipe.pop(result_type=pv_tile, split=0)
+    pv_pipe.free(split=0)
     pto.tile.load(pv_slot_part, pv_tile)
     if isinstance(is_init, bool):
         if is_init:
