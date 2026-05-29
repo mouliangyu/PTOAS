@@ -193,7 +193,10 @@ set(ALL_TESTCASES
     trems
     tfmods
     tcmps
+    tgemv
     tmatmul
+    tmatmul_acc
+    tmatmul_bias
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
