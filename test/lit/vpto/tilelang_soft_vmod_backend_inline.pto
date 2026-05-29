@@ -112,7 +112,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
   }
 }
 
-// CHECK-LABEL: func.func @kernel(
+// CHECK-LABEL: func.func @kernel.vector(
 // CHECK: pto.vecscope {
 // CHECK: pto.vlds
 // CHECK: pto.vdiv

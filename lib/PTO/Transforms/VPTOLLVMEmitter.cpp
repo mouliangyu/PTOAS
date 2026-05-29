@@ -55,15 +55,8 @@ void attachHIVMKernelAnnotations(llvm::Module &llvmModule);
 
 namespace {
 
-constexpr llvm::StringLiteral kPTOKernelAttrName = "pto.kernel";
-constexpr llvm::StringLiteral kLegacyPTOAICoreAttrName = "pto.aicore";
 constexpr llvm::StringLiteral kVectorSuffix = "_mix_aiv";
 constexpr llvm::StringLiteral kCubeSuffix = "_mix_aic";
-
-static bool hasVPTOKernelAttr(Operation *op) {
-  return op->hasAttr(kPTOKernelAttrName) ||
-         op->hasAttr(kLegacyPTOAICoreAttrName);
-}
 
 static std::string getElementTypeFragment(Type type);
 static Type getElementTypeFromVectorLike(Type type);
@@ -7784,7 +7777,7 @@ static LogicalResult renameKernelFunctionsForKernelKind(ModuleOp module,
   }
 
   for (func::FuncOp funcOp : module.getOps<func::FuncOp>()) {
-    if (!hasVPTOKernelAttr(funcOp))
+    if (!pto::isPTOKernelFunction(funcOp))
       continue;
     if (funcOp.getSymName().ends_with(suffix))
       continue;

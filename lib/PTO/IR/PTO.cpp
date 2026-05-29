@@ -2111,6 +2111,11 @@ bool mlir::pto::hasExplicitPTOEntryAttr(func::FuncOp func) {
                   func->hasAttrOfType<UnitAttr>(kLegacyHACCEntryAttrName));
 }
 
+bool mlir::pto::isPTOKernelFunction(func::FuncOp func) {
+  return func && (func->hasAttrOfType<UnitAttr>("pto.kernel") ||
+                  func->hasAttrOfType<UnitAttr>("pto.aicore"));
+}
+
 static constexpr StringLiteral kEffectivePTOEntryAttrName =
     "pto.internal.entry";
 
