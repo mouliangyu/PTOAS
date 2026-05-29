@@ -1,0 +1,36 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// RUN: ptoas --pto-arch=a5 %s --emit-c --tile-op-expand 2>&1 | FileCheck %s
+
+// Test TSTORE.ACC NZ2ND template - ACC → GM with NZ2ND layout conversion
+
+module attributes {pto.target_arch = "a5"} {
+  func.func @tstore_acc_nz2nd_f32(%src_acc: !pto.ptr<f32, l0c>, %dst_gm: !pto.ptr<f32, gm>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+    %c0 = arith.constant 0 : i64
+    %c16 = arith.constant 16 : i64
+    %c32 = arith.constant 32 : i64
+
+    // Allocate ACC buffer
+    %acc_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major, fractal=512>
+
+    // Get pointer from tile
+    %acc_ptr = pto.tile_buf_addr %acc_tile : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major, fractal=512> -> !pto.ptr<f32, l0c>
+
+    // Use mte_l0c_gm for NZ2ND
+    pto.mte_l0c_gm %acc_ptr, %dst_gm, %c16, %c32, %c32, %c32, %c0, %c0, nz2nd
+      : !pto.ptr<f32, l0c>, !pto.ptr<f32, gm>, i64, i64, i64, i64, i64, i64
+
+    pto.barrier #pto.pipe<PIPE_ALL>
+    return
+  }
+}
+
+// CHECK-LABEL: tstore_acc_nz2nd_f32
+// CHECK: pto.mte_l0c_gm
+// CHECK: nz2nd

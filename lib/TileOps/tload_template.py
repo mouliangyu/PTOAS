@@ -300,3 +300,168 @@ def template_tload_nz2nz(src: pto.PartitionTensorView, dst: pto.Tile):
                 enable_ub_pad=False,
             )
     return
+
+
+# ============================================================================
+# Cube Matrix Templates: TLOAD.MAT (GM → L1)
+# ============================================================================
+
+def _constraint_tload_mat_base(src, dst) -> bool:
+    """TLOAD.MAT 基础约束检查"""
+    # dst 必须是 MemorySpace.MAT
+    dst_space = dst.memory_space
+    if dst_space is None:
+        return False
+    dst_space_value = dst_space.value if hasattr(dst_space, "value") else dst_space
+    if dst_space_value not in {"mat", "MAT"}:
+        return False
+    # dst 必须是 2D Tile
+    if dst.rank != 2:
+        return False
+    # dtype 检查
+    dst_dtype = dst.dtype
+    if dst_dtype is None:
+        return False
+    dtype_name = dst_dtype.name if hasattr(dst_dtype, "name") else str(dst_dtype)
+    supported_dtypes = {"f16", "bf16", "f32", "i8", "si8", "ui8", "i16", "si16", "ui16", "i32", "si32"}
+    if dtype_name not in supported_dtypes:
+        return False
+    return True
+
+
+def _constraint_tload_mat_nd2nz(src, dst) -> bool:
+    """TLOAD.MAT ND2NZ 分形加载约束"""
+    if not _constraint_tload_mat_base(src, dst):
+        return False
+    # dst layout 必须是 col_major (NZ 格式)
+    config = dst.config
+    if config is None:
+        return False
+    b_layout = config.b_layout
+    if b_layout is None:
+        return False
+    b_layout_value = b_layout.value if hasattr(b_layout, "value") else b_layout
+    # COL_MAJOR 对应 NZ 格式
+    if b_layout_value not in {"col_major", "COL_MAJOR"}:
+        return False
+    return True
+
+
+def _constraint_tload_mat_dn2nz(src, dst) -> bool:
+    """TLOAD.MAT DN2NZ 分形加载约束"""
+    if not _constraint_tload_mat_base(src, dst):
+        return False
+    config = dst.config
+    if config is None:
+        return False
+    b_layout = config.b_layout
+    if b_layout is None:
+        return False
+    b_layout_value = b_layout.value if hasattr(b_layout, "value") else b_layout
+    if b_layout_value not in {"col_major", "COL_MAJOR"}:
+        return False
+    return True
+
+
+@pto.ckernel(
+    target="a5",
+    op="pto.tload",
+    dtypes=[
+        (pto.f16,),
+        (pto.bf16,),
+        (pto.f32,),
+    ],
+    constraints=[_constraint_tload_mat_nd2nz],
+    name="tload_gm_to_mat_nd2nz",
+)
+def template_tload_gm_to_mat_nd2nz(src: pto.Tile, dst: pto.Tile):
+    """GM → MAT ND2NZ 分形加载模板
+
+    将 GM 中的 Row-Major (ND) 格式数据加载到 L1 MAT Buffer 的 NZ 格式。
+
+    Args:
+        src: Tile with GM memory_space, PartitionTensorView
+        dst: Tile with MAT memory_space, shape=(M, K), col_major layout
+
+    Uses:
+        pto.mte_gm_l1_frac with mode="nd2nz"
+    """
+    m, k = dst.valid_shape
+    dtype = dst.element_type
+    elem_bytes = pto.bytewidth(dtype)
+
+    gm_ptr = src.as_ptr()
+    mat_ptr = dst.as_ptr()
+
+    # ND2NZ 参数计算
+    # n_value = M (行数), d_value = K (列数)
+    n_value = m
+    d_value = k
+
+    # src_layout: 内层 stride = K (一行有多少元素)
+    src_inner_stride = k
+
+    # dst_group: (group_count, loop2_stride, loop3_stride, loop4_stride)
+    # 对于简单单块情况: (1, 1, m, 0)
+    dst_group = (1, 1, m, 0)
+
+    # ctrl: (l2_cache_ctrl, smallc0_en)
+    ctrl = (0, False)
+
+    pto.mte_gm_l1_frac(
+        gm_ptr, mat_ptr, "nd2nz",
+        shape=(n_value, d_value),
+        src_layout=(src_inner_stride,),
+        dst_group=dst_group,
+        ctrl=ctrl
+    )
+
+
+@pto.ckernel(
+    target="a5",
+    op="pto.tload",
+    dtypes=[
+        (pto.f16,),
+        (pto.bf16,),
+        (pto.f32,),
+    ],
+    constraints=[_constraint_tload_mat_dn2nz],
+    name="tload_gm_to_mat_dn2nz",
+)
+def template_tload_gm_to_mat_dn2nz(src: pto.Tile, dst: pto.Tile):
+    """GM → MAT DN2NZ 分形加载模板
+
+    将 GM 中的 Col-Major (DN) 格式数据加载到 L1 MAT Buffer 的 NZ 格式。
+
+    Args:
+        src: Tile with GM memory_space, col-major source layout
+        dst: Tile with MAT memory_space, shape=(M, K), col_major layout
+
+    Uses:
+        pto.mte_gm_l1_frac with mode="dn2nz"
+    """
+    m, k = dst.valid_shape
+    dtype = dst.element_type
+
+    gm_ptr = src.as_ptr()
+    mat_ptr = dst.as_ptr()
+
+    # DN2NZ 参数计算
+    # 对于 DN 格式，原始 shape 是 (K, M)，需要转换
+    # n_value = K, d_value = M
+    n_value = k
+    d_value = m
+
+    # src_layout: 内层 stride = M (一列有多少元素)
+    src_inner_stride = m
+
+    dst_group = (1, 1, k, 0)
+    ctrl = (0, False)
+
+    pto.mte_gm_l1_frac(
+        gm_ptr, mat_ptr, "dn2nz",
+        shape=(n_value, d_value),
+        src_layout=(src_inner_stride,),
+        dst_group=dst_group,
+        ctrl=ctrl
+    )
