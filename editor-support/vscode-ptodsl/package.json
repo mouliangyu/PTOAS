@@ -1,0 +1,52 @@
+{
+  "name": "vscode-ptodsl",
+  "displayName": "PTODSL Syntax",
+  "description": "TextMate-based syntax highlighting for PTODSL in Python files.",
+  "version": "0.1.0",
+  "publisher": "mly",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ptodsl",
+    "pto",
+    "python",
+    "syntax highlighting"
+  ],
+  "activationEvents": [
+    "onLanguage:ptodsl",
+    "onLanguage:python"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ptodsl",
+        "aliases": [
+          "PTODSL"
+        ],
+        "extensions": [
+          ".ptodsl.py",
+          ".pto.py"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ptodsl",
+        "scopeName": "source.ptodsl",
+        "path": "./syntaxes/ptodsl.tmLanguage.json"
+      },
+      {
+        "scopeName": "ptodsl.injection",
+        "path": "./syntaxes/ptodsl-injection.tmLanguage.json",
+        "injectTo": [
+          "source.python"
+        ]
+      }
+    ]
+  }
+}

@@ -56,6 +56,15 @@ pip install -e .
 
 ---
 
+## Editor support
+
+`editor-support/vscode-ptodsl/` contains a lightweight VS Code syntax package
+for PTODSL. It highlights PTODSL decorators, control-flow helpers, surface
+types, and `scalar.*` helpers on top of ordinary Python syntax, and it can
+also be assigned directly to `*.ptodsl.py` or `*.pto.py` files.
+
+---
+
 ## Running the IR check
 
 ```bash
