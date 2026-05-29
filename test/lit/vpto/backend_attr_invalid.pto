@@ -6,26 +6,16 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-#ifndef PTOAS_VPTO_FATOBJ_EMISSION_H
-#define PTOAS_VPTO_FATOBJ_EMISSION_H
+// RUN: not ptoas --pto-arch=a5 --emit-vpto %s -o - 2>&1 | FileCheck %s
 
-#include "llvm/ADT/StringRef.h"
-#include "mlir/Support/LogicalResult.h"
-
-namespace llvm {
-class ToolOutputFile;
-class Module;
-class raw_ostream;
+module attributes {
+  pto.backend = "other",
+  pto.kernel_kind = #pto.kernel_kind<vector>,
+  pto.target_arch = "a5"
+} {
+  func.func @backend_attr_invalid() {
+    return
+  }
 }
 
-namespace mlir::pto {
-
-LogicalResult emitVPTOFatobj(llvm::Module *cubeModule,
-                             llvm::Module *vectorModule,
-                             llvm::StringRef stubSource,
-                             llvm::ToolOutputFile &outputFile,
-                             llvm::raw_ostream &diagOS);
-
-} // namespace mlir::pto
-
-#endif
+// CHECK: invalid pto.backend 'other'. Expected 'emitc' or 'vpto'.
