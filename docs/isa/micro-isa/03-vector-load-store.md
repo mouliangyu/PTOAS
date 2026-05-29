@@ -115,14 +115,14 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
 
   Post-update form:
 
-  `%result, %updated_source = pto.vlds %source[%offset] {dist = "DIST"} : !pto.ptr<T, ub> -> !pto.vreg<NxT>, !pto.ptr<T, ub>`
+  `%result, %updated_base = pto.vlds %source[%offset] {dist = "DIST"} : !pto.ptr<T, ub> -> !pto.vreg<NxT>, !pto.ptr<T, ub>`
 - **semantics:** Vector load with distribution mode.
 - **inputs:**
   `%source` is the UB base address, `%offset` is the load displacement, and
   `DIST` selects the distribution mode.
 - **outputs:**
   `%result` is the loaded vector register value. In the post-update form,
-  `%updated_source` is the source pointer advanced according to `%offset`.
+  `%updated_base` is the base pointer advanced according to `%offset`.
 - **constraints and limitations:**
   The effective address MUST satisfy the alignment rule of the selected
   distribution mode. `NORM` reads one full vector footprint. Broadcast,
@@ -130,8 +130,8 @@ DMA **`TLOAD` / `TSTORE`** (global memory ↔ UB) use **MTE** pipes, not `RV_VLD
   how memory bytes are mapped into destination lanes, but they do not change the
   fact that the source is UB memory. PTO surface exposes load `dist` as family
   tokens, and each family only supports the element widths listed below.
-  The optional `%updated_source` result must have the same pointer type as
-  `%source`.
+  The optional `%updated_base` result must have the same pointer type as the
+  base address operand.
 
 **Distribution families:**
 

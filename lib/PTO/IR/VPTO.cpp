@@ -3941,9 +3941,9 @@ static LogicalResult verifyVldsCommon(LoadOp op) {
 LogicalResult VldsOp::verify() {
   if (failed(verifyVldsCommon(*this)))
     return failure();
-  if (Value updatedSource = getUpdatedSource()) {
-    if (updatedSource.getType() != getSource().getType())
-      return emitOpError("requires updated source result to match source type");
+  if (Value updatedBase = getUpdatedBase()) {
+    if (updatedBase.getType() != getSource().getType())
+      return emitOpError("requires updated base result to match base type");
   }
   return success();
 }
@@ -5308,10 +5308,9 @@ static LogicalResult verifyVstsCommon(StoreOp op) {
 LogicalResult VstsOp::verify() {
   if (failed(verifyVstsCommon(*this)))
     return failure();
-  if (getUpdatedDestination() &&
-      getUpdatedDestination().getType() != getDestination().getType())
-    return emitOpError(
-        "requires updated destination result to match destination type");
+  if (getUpdatedBase() &&
+      getUpdatedBase().getType() != getDestination().getType())
+    return emitOpError("requires updated base result to match base type");
   return success();
 }
 void Vstsx2Op::getEffects(
@@ -5454,10 +5453,9 @@ LogicalResult VsstbOp::verify() {
     return emitOpError("requires block_stride to be i16");
   if (!getRepeatStride().getType().isSignlessInteger(16))
     return emitOpError("requires repeat_stride to be i16");
-  if (getUpdatedDestination() &&
-      getUpdatedDestination().getType() != getDestination().getType())
-    return emitOpError(
-        "requires updated destination result to match destination type");
+  if (getUpdatedBase() &&
+      getUpdatedBase().getType() != getDestination().getType())
+    return emitOpError("requires updated base result to match base type");
   return success();
 }
 

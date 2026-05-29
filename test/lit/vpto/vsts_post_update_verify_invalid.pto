@@ -19,4 +19,4 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
   }
 }
 
-// CHECK: requires updated destination result to match destination type
+// CHECK: requires updated base result to match base type

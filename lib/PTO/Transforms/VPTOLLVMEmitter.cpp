@@ -5171,7 +5171,7 @@ public:
     if (failed(this->getTypeConverter()->convertTypes(op->getResultTypes(), resultTypes)))
       return rewriter.notifyMatchFailure(op, "failed to convert vlds result types");
 
-    bool usePostIntrinsic = static_cast<bool>(op.getUpdatedSource());
+    bool usePostIntrinsic = static_cast<bool>(op.getUpdatedBase());
     if (usePostIntrinsic) {
       if (resultTypes.size() != 2 || resultTypes[1] != adaptor.getSource().getType())
         return rewriter.notifyMatchFailure(op,
@@ -5448,7 +5448,7 @@ public:
       return rewriter.notifyMatchFailure(op, "failed to materialize vsts operands");
 
     FailureOr<StringRef> calleeName =
-        op.getUpdatedDestination()
+        op.getUpdatedBase()
             ? buildVstsPostCallee(op.getContext(), op.getValue().getType())
             : buildVstsCallee(op.getContext(), op.getValue().getType());
     if (failed(calleeName))
@@ -5458,7 +5458,7 @@ public:
     if (failed(this->getTypeConverter()->convertTypes(op->getResultTypes(),
                                                       resultTypes)))
       return rewriter.notifyMatchFailure(op, "failed to convert vsts result types");
-    bool usePostIntrinsic = static_cast<bool>(op.getUpdatedDestination());
+    bool usePostIntrinsic = static_cast<bool>(op.getUpdatedBase());
     if (usePostIntrinsic) {
       if (resultTypes.size() != 1 ||
           resultTypes[0] != adaptor.getDestination().getType())
@@ -5515,7 +5515,7 @@ public:
                                                       resultTypes)))
       return rewriter.notifyMatchFailure(op,
                                          "failed to convert vsstb result types");
-    bool usePostIntrinsic = static_cast<bool>(op.getUpdatedDestination());
+    bool usePostIntrinsic = static_cast<bool>(op.getUpdatedBase());
     if (usePostIntrinsic) {
       if (resultTypes.size() != 1 ||
           resultTypes[0] != adaptor.getDestination().getType())
