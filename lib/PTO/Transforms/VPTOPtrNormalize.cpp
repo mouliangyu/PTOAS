@@ -218,10 +218,17 @@ static Value materializeScalarAccessPtr(Value source, PatternRewriter &rewriter,
     return materializeScalarAccessPtr(addr, rewriter, loc);
   }
 
-  // Restrict normalization to memref views that already sit on top of a ptr-like
-  // boundary bridge. Materializing fresh memref -> ptr casts here would leave
-  // illegal pto.castptr(memref) behind in this pass.
-  return {};
+  auto memrefType = dyn_cast<MemRefType>(source.getType());
+  if (!memrefType)
+    return {};
+  auto memorySpace =
+      getPointerMemorySpace(memrefType.getMemorySpace(), rewriter.getContext());
+  if (!memorySpace)
+    return {};
+  auto ptrType =
+      pto::PtrType::get(rewriter.getContext(), memrefType.getElementType(),
+                        memorySpace);
+  return rewriter.create<pto::CastPtrOp>(loc, ptrType, source);
 }
 
 static Value materializeBoundaryOperandPtr(Value source,
@@ -322,9 +329,22 @@ struct ConvertCastPtrPattern : public OpConversionPattern<pto::CastPtrOp> {
 
     Value input = adaptor.getInput();
     Type inputType = input.getType();
-    if (isMemRefType(inputType) || isMemRefType(convertedResultType))
+    if (isMemRefType(convertedResultType))
       return rewriter.notifyMatchFailure(op,
-                                         "memref castptr must be eliminated");
+                                         "memref castptr result must be eliminated");
+
+    if (isMemRefType(inputType)) {
+      auto ptrType = dyn_cast<pto::PtrType>(convertedResultType);
+      if (!ptrType)
+        return rewriter.notifyMatchFailure(op,
+                                           "expected pto.ptr result for memref input");
+      Value basePtrIdx = rewriter.create<memref::ExtractAlignedPointerAsIndexOp>(
+          op.getLoc(), input);
+      Value basePtrI64 = rewriter.create<arith::IndexCastUIOp>(
+          op.getLoc(), rewriter.getI64Type(), basePtrIdx);
+      rewriter.replaceOpWithNewOp<pto::CastPtrOp>(op, ptrType, basePtrI64);
+      return success();
+    }
 
     if (!isa<pto::PtrType, IntegerType>(inputType) ||
         !isa<pto::PtrType, IntegerType>(convertedResultType))

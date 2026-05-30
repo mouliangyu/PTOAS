@@ -2036,10 +2036,10 @@ static ParseResult parseStructuredAccStoreClauses(
         return success();
     }
     StringRef keyword;
-    if (parser.parseKeyword(&keyword)) {
+    if (parser.parseOptionalKeyword(&keyword)) {
       if (!seenClause)
         return success();
-      return failure();
+      return parser.emitError(parser.getCurrentLocation(), "expected valid keyword");
     }
     seenClause = true;
 

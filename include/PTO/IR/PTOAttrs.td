@@ -729,6 +729,16 @@ def PTO_AccToVecModeAttr : PTO_Attr<"AccToVecMode", "acc_to_vec_mode"> {
   let parameters = (ins EnumParameter<PTO_AccToVecMode_Enum>:$value);
   let assemblyFormat = "`<` params `>`";
 }
+
+def PTO_TInsertMode_Enum : PTO_I32Enum<"TInsertMode", "TINSERT split mode (A5)", [
+  I32EnumAttrCase<"SPLIT2", 2, "split2">,
+  I32EnumAttrCase<"SPLIT4", 3, "split4">
+]>;
+
+def PTO_TInsertModeAttr : PTO_Attr<"TInsertMode", "tinsert_mode"> {
+  let parameters = (ins EnumParameter<PTO_TInsertMode_Enum>:$value);
+  let assemblyFormat = "`<` params `>`";
+}
 //===----------------------------------------------------------------------===//
 // MaskPattern
 //===----------------------------------------------------------------------===//

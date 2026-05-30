@@ -7790,8 +7790,9 @@ struct PTOExtractFPToEmitC : public OpConversionPattern<pto::TExtractFPOp> {
   }
 };
 //===----------------------------------------------------------------------===//
-// pto.tinsert lowering -> TINSERT(dst, src, indexRow, indexCol)
-// Keep lowering arch-agnostic and let PTO-ISA infer proper A5 path.
+// pto.tinsert lowering -> TINSERT(dst, src, [fp|scalar,] indexRow, indexCol)
+// Template args are emitted when optional parameters are present to match
+// the corresponding pto-isa TINSERT_IMPL overloads.
 //===----------------------------------------------------------------------===//
 
 struct PTOInsertToEmitC : public OpConversionPattern<pto::TInsertOp> {
@@ -7800,16 +7801,141 @@ struct PTOInsertToEmitC : public OpConversionPattern<pto::TInsertOp> {
   LogicalResult matchAndRewrite(pto::TInsertOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
     Value dst = peelUnrealized(adaptor.getDst());
     Value r0  = peelUnrealized(adaptor.getIndexRow());
     Value c0  = peelUnrealized(adaptor.getIndexCol());
+    Value fp;
+    if (op.getFp())
+      fp = peelUnrealized(adaptor.getFp());
+    Value preQuantScalar;
+    if (op.getPreQuantScalar())
+      preQuantScalar = peelUnrealized(adaptor.getPreQuantScalar());
+
+    auto dstOT = mlir::dyn_cast<emitc::OpaqueType>(dst.getType());
+    auto srcOT = mlir::dyn_cast<emitc::OpaqueType>(src.getType());
+
+    auto reluTok = [&](pto::ReluPreMode mode) -> StringRef {
+      switch (mode) {
+      case pto::ReluPreMode::NoRelu:     return "ReluPreMode::NoRelu";
+      case pto::ReluPreMode::NormalRelu: return "ReluPreMode::NormalRelu";
+      case pto::ReluPreMode::ScalarRelu: return "ReluPreMode::ScalarRelu";
+      case pto::ReluPreMode::VectorRelu: return "ReluPreMode::VectorRelu";
+      case pto::ReluPreMode::Pwl:        return "ReluPreMode::Pwl";
+      }
+      llvm_unreachable("unknown ReluPreMode");
+    };
+
+    auto modeTok = [&](pto::AccToVecMode mode) -> StringRef {
+      switch (mode) {
+      case pto::AccToVecMode::SingleModeVec0: return "pto::AccToVecMode::SingleModeVec0";
+      case pto::AccToVecMode::SingleModeVec1: return "pto::AccToVecMode::SingleModeVec1";
+      case pto::AccToVecMode::DualModeSplitM: return "pto::AccToVecMode::DualModeSplitM";
+      case pto::AccToVecMode::DualModeSplitN: return "pto::AccToVecMode::DualModeSplitN";
+      }
+      llvm_unreachable("unknown AccToVecMode");
+    };
+
+    auto splitTok = [&](pto::TInsertMode mode) -> StringRef {
+      switch (mode) {
+      case pto::TInsertMode::SPLIT2: return "pto::TInsertMode::SPLIT2";
+      case pto::TInsertMode::SPLIT4: return "pto::TInsertMode::SPLIT4";
+      }
+      llvm_unreachable("unknown TInsertMode");
+    };
+
+    const bool hasFp = static_cast<bool>(fp);
+    const bool hasPreQuantScalar = static_cast<bool>(preQuantScalar);
+    const bool hasMode = static_cast<bool>(op.getAccToVecModeAttr());
+    const bool reluNonDefault = op.getReluPreMode() != pto::ReluPreMode::NoRelu;
+    const bool hasSplitMode = static_cast<bool>(op.getTinsertModeAttr());
+
+    SmallVector<Value, 6> operands{dst, src};
+
+    // Split mode: TINSERT<TInsertMode::SPLIT*, DstType, SrcType>(dst, src, r0, c0)
+    if (hasSplitMode) {
+      SmallVector<Attribute, 3> templateArgVec;
+      templateArgVec.push_back(
+          emitc::OpaqueAttr::get(ctx, splitTok(op.getTinsertModeAttr().getValue())));
+      if (dstOT && srcOT) {
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, dstOT.getValue().str()));
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, srcOT.getValue().str()));
+      }
+      operands.push_back(r0);
+      operands.push_back(c0);
+      rewriter.create<emitc::CallOpaqueOp>(
+          loc, TypeRange{}, "TINSERT",
+          /*args=*/ArrayAttr{},
+          /*templateArgs=*/rewriter.getArrayAttr(templateArgVec),
+          /*operands=*/operands);
+      rewriter.eraseOp(op);
+      return success();
+    }
+
+    // Build template args vector (type-templated path).
+    SmallVector<Attribute, 6> templateArgVec;
+    if (dstOT && srcOT) {
+      templateArgVec.push_back(
+          emitc::OpaqueAttr::get(ctx, dstOT.getValue().str()));
+      templateArgVec.push_back(
+          emitc::OpaqueAttr::get(ctx, srcOT.getValue().str()));
+    }
+
+    if (hasFp) {
+      // Vector quantization (fp tile).
+      auto fpOT = mlir::dyn_cast<emitc::OpaqueType>(fp.getType());
+      if (fpOT)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, fpOT.getValue().str()));
+      if (hasMode)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, modeTok(op.getAccToVecModeAttr().getValue())));
+      if (hasMode || reluNonDefault)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, reluTok(op.getReluPreMode())));
+      operands.push_back(fp);
+    } else if (hasPreQuantScalar) {
+      // Scalar quantization.
+      if (hasMode)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, modeTok(op.getAccToVecModeAttr().getValue())));
+      if (hasMode || reluNonDefault)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, reluTok(op.getReluPreMode())));
+      operands.push_back(preQuantScalar);
+    } else if (hasMode) {
+      // AccToVecMode without fp/preQuantScalar.
+      templateArgVec.push_back(
+          emitc::OpaqueAttr::get(ctx, modeTok(op.getAccToVecModeAttr().getValue())));
+      templateArgVec.push_back(
+          emitc::OpaqueAttr::get(ctx, reluTok(op.getReluPreMode())));
+    } else if (reluNonDefault) {
+      // Only ReLU mode.
+      templateArgVec.push_back(
+          emitc::OpaqueAttr::get(ctx, reluTok(op.getReluPreMode())));
+    }
+
+    operands.push_back(r0);
+    operands.push_back(c0);
+
+    // Determine callee: use TINSERT_FP for the dedicated fp-tile op (kept
+    // separately), otherwise always TINSERT.
+    StringRef callee = "TINSERT";
+
+    ArrayAttr templateArgs =
+        templateArgVec.size() == 2 && !hasFp && !hasPreQuantScalar &&
+                !hasMode && !reluNonDefault
+            ? ArrayAttr{}
+            : rewriter.getArrayAttr(templateArgVec);
 
     rewriter.create<emitc::CallOpaqueOp>(
-        loc, TypeRange{}, "TINSERT",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
-        /*operands=*/ValueRange{dst, src, r0, c0});
+        loc, TypeRange{}, callee,
+        /*args=*/ArrayAttr{}, /*templateArgs=*/templateArgs,
+        /*operands=*/operands);
 
     rewriter.eraseOp(op);
     return success();
@@ -7817,6 +7943,7 @@ struct PTOInsertToEmitC : public OpConversionPattern<pto::TInsertOp> {
 };
 //===----------------------------------------------------------------------===//
 // pto.tinsert_fp lowering -> TINSERT_FP(dst, src, fp, indexRow, indexCol)
+// Emits template args when accToVecMode / reluPreMode are present.
 //===----------------------------------------------------------------------===//
 
 struct PTOInsertFPToEmitC : public OpConversionPattern<pto::TInsertFPOp> {
@@ -7825,17 +7952,76 @@ struct PTOInsertFPToEmitC : public OpConversionPattern<pto::TInsertFPOp> {
   LogicalResult matchAndRewrite(pto::TInsertFPOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const override {
     auto loc = op.getLoc();
+    auto *ctx = rewriter.getContext();
 
     Value src = peelUnrealized(adaptor.getSrc());
-    Value fp = peelUnrealized(adaptor.getFp());
+    Value fp  = peelUnrealized(adaptor.getFp());
     Value dst = peelUnrealized(adaptor.getDst());
-    Value r0 = peelUnrealized(adaptor.getIndexRow());
-    Value c0 = peelUnrealized(adaptor.getIndexCol());
+    Value r0  = peelUnrealized(adaptor.getIndexRow());
+    Value c0  = peelUnrealized(adaptor.getIndexCol());
 
-    rewriter.create<emitc::CallOpaqueOp>(
-        loc, TypeRange{}, "TINSERT_FP",
-        /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
-        /*operands=*/ValueRange{dst, src, fp, r0, c0});
+    auto reluTok = [&](pto::ReluPreMode mode) -> StringRef {
+      switch (mode) {
+      case pto::ReluPreMode::NoRelu:     return "ReluPreMode::NoRelu";
+      case pto::ReluPreMode::NormalRelu: return "ReluPreMode::NormalRelu";
+      case pto::ReluPreMode::ScalarRelu: return "ReluPreMode::ScalarRelu";
+      case pto::ReluPreMode::VectorRelu: return "ReluPreMode::VectorRelu";
+      case pto::ReluPreMode::Pwl:        return "ReluPreMode::Pwl";
+      }
+      llvm_unreachable("unknown ReluPreMode");
+    };
+
+    auto modeTok = [&](pto::AccToVecMode mode) -> StringRef {
+      switch (mode) {
+      case pto::AccToVecMode::SingleModeVec0: return "pto::AccToVecMode::SingleModeVec0";
+      case pto::AccToVecMode::SingleModeVec1: return "pto::AccToVecMode::SingleModeVec1";
+      case pto::AccToVecMode::DualModeSplitM: return "pto::AccToVecMode::DualModeSplitM";
+      case pto::AccToVecMode::DualModeSplitN: return "pto::AccToVecMode::DualModeSplitN";
+      }
+      llvm_unreachable("unknown AccToVecMode");
+    };
+
+    const bool hasMode = static_cast<bool>(op.getAccToVecModeAttr());
+    const bool reluNonDefault = op.getReluPreMode() != pto::ReluPreMode::NoRelu;
+
+    SmallVector<Value, 5> operands{dst, src, fp, r0, c0};
+
+    auto dstOT = mlir::dyn_cast<emitc::OpaqueType>(dst.getType());
+    auto srcOT = mlir::dyn_cast<emitc::OpaqueType>(src.getType());
+    auto fpOT  = mlir::dyn_cast<emitc::OpaqueType>(fp.getType());
+
+    if (!hasMode && !reluNonDefault) {
+      // Legacy path: emit TINSERT_FP without template args.
+      ArrayAttr templateArgs;
+      if (dstOT && srcOT && fpOT) {
+        templateArgs = rewriter.getArrayAttr({
+            emitc::OpaqueAttr::get(ctx, dstOT.getValue().str()),
+            emitc::OpaqueAttr::get(ctx, srcOT.getValue().str()),
+            emitc::OpaqueAttr::get(ctx, fpOT.getValue().str()),
+        });
+      } else {
+        templateArgs = ArrayAttr{};
+      }
+      rewriter.create<emitc::CallOpaqueOp>(
+          loc, TypeRange{}, "TINSERT_FP",
+          /*args=*/ArrayAttr{}, templateArgs, operands);
+    } else {
+      // Path with accToVecMode / reluPreMode: emit TINSERT with full template args.
+      SmallVector<Attribute, 5> templateArgVec;
+      if (dstOT) templateArgVec.push_back(emitc::OpaqueAttr::get(ctx, dstOT.getValue().str()));
+      if (srcOT) templateArgVec.push_back(emitc::OpaqueAttr::get(ctx, srcOT.getValue().str()));
+      if (fpOT)  templateArgVec.push_back(emitc::OpaqueAttr::get(ctx, fpOT.getValue().str()));
+      if (hasMode)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, modeTok(op.getAccToVecModeAttr().getValue())));
+      if (hasMode || reluNonDefault)
+        templateArgVec.push_back(
+            emitc::OpaqueAttr::get(ctx, reluTok(op.getReluPreMode())));
+      rewriter.create<emitc::CallOpaqueOp>(
+          loc, TypeRange{}, "TINSERT",
+          /*args=*/ArrayAttr{}, rewriter.getArrayAttr(templateArgVec),
+          operands);
+    }
 
     rewriter.eraseOp(op);
     return success();
