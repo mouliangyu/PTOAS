@@ -2786,6 +2786,8 @@ class _AuthoringRenderer:
         op_text = f"pto.{expr.name} " + ", ".join(value.name for value in operands)
         if clause_parts:
             op_text += ", " + ", ".join(clause_parts)
+        else:
+            op_text += ","
         into.append(self._indent(indent) + op_text + " : " + ", ".join(type_parts))
 
     def _lower_cube_loop_groups(

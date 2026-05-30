@@ -25,6 +25,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Func/Transforms/FuncConversions.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/Transforms/Patterns.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -8708,6 +8709,39 @@ public:
 
     Value input = adaptor.getInput();
     Type inputType = input.getType();
+
+    if (isa<BaseMemRefType>(op.getInput().getType())) {
+      Value replacement = input;
+      Type replacementType = inputType;
+      if (auto cast =
+              op.getInput().getDefiningOp<UnrealizedConversionCastOp>()) {
+        if (cast->getNumOperands() == 1 && cast->getNumResults() == 1) {
+          Value original = cast.getOperand(0);
+          Type convertedOriginal =
+              getTypeConverter()->convertType(original.getType());
+          if (convertedOriginal) {
+            replacement = original;
+            replacementType = convertedOriginal;
+          }
+        }
+      }
+      if (replacementType == convertedResultType) {
+        rewriter.replaceOp(op, replacement);
+        return success();
+      }
+      auto replacementPtr = dyn_cast<LLVM::LLVMPointerType>(replacementType);
+      auto targetPtr = dyn_cast<LLVM::LLVMPointerType>(convertedResultType);
+      if (replacementPtr && targetPtr) {
+        if (replacementPtr.getAddressSpace() == targetPtr.getAddressSpace())
+          rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, targetPtr,
+                                                        replacement);
+        else
+          rewriter.replaceOpWithNewOp<LLVM::AddrSpaceCastOp>(op, targetPtr,
+                                                              replacement);
+        return success();
+      }
+    }
+
     if (inputType == convertedResultType) {
       rewriter.replaceOp(op, input);
       return success();
@@ -8718,16 +8752,17 @@ public:
         rewriter.replaceOpWithNewOp<LLVM::IntToPtrOp>(op, llvmPtrType, input);
         return success();
       }
-      auto sourcePtrType = dyn_cast<LLVM::LLVMPointerType>(inputType);
-      if (!sourcePtrType)
-        return rewriter.notifyMatchFailure(op,
-                                           "expected integer or LLVM pointer input");
-      if (sourcePtrType.getAddressSpace() == llvmPtrType.getAddressSpace()) {
-        rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, llvmPtrType, input);
+      if (auto sourcePtrType = dyn_cast<LLVM::LLVMPointerType>(inputType)) {
+        if (sourcePtrType.getAddressSpace() == llvmPtrType.getAddressSpace()) {
+          rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, llvmPtrType, input);
+          return success();
+        }
+        rewriter.replaceOpWithNewOp<LLVM::AddrSpaceCastOp>(op, llvmPtrType,
+                                                            input);
         return success();
       }
-      return rewriter.notifyMatchFailure(
-          op, "cross-address-space ptr casts are unsupported");
+      return rewriter.notifyMatchFailure(op,
+                                         "expected integer or LLVM pointer input");
     }
 
     if (auto resultIntType = dyn_cast<IntegerType>(convertedResultType)) {
