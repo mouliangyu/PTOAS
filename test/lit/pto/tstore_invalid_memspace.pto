@@ -6,25 +6,25 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: not ptoas --pto-arch=a5 %s --emit-c --tile-op-expand 2>&1 | FileCheck %s
+// RUN: not ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
 
 // Test TSTORE.ACC invalid memory space - should fail because MAT is not ACC
 
 module attributes {pto.target_arch = "a5"} {
-  func.func @tstore_invalid_memspace(%src_l1: !pto.ptr<f32, l1>, %dst_gm: !pto.ptr<f32, gm>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
-    %c0 = arith.constant 0 : i64
+ func.func @tstore_invalid_memspace(%src_l1: !pto.ptr<f32, l1>, %dst_gm: !pto.ptr<f32, gm>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+ %c0 = arith.constant 0 : i64
 
-    // This should fail - source is MAT, not ACC for TSTORE.ACC
-    %src_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major>
+ // This should fail - source is MAT, not ACC for TSTORE.ACC
+ %src_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major>
 
-    %src_ptr = pto.tile_buf_addr %src_tile : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major> -> !pto.ptr<f32, l1>
+ %src_ptr = pto.tile_buf_addr %src_tile : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major> -> !pto.ptr<f32, l1>
 
-    // This should NOT match TSTORE.ACC template because source is MAT, not ACC
-    pto.tstore %src_ptr, %dst_gm : !pto.ptr<f32, l1>, !pto.ptr<f32, gm>
+ // This should NOT match TSTORE.ACC template because source is MAT, not ACC
+ pto.tstore %src_ptr, %dst_gm : !pto.ptr<f32, l1>, !pto.ptr<f32, gm>
 
-    pto.barrier #pto.pipe<PIPE_ALL>
-    return
-  }
+ pto.barrier #pto.pipe<PIPE_ALL>
+ return
+ }
 }
 
 // CHECK: error: no matching template for pto.tstore
