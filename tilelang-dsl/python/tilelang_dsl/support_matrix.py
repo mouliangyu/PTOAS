@@ -256,6 +256,7 @@ CUBE_ONLY_PTO_CALLS = frozenset(
         "mte_l0c_l1",
         "mte_l0c_gm",
         "mte_l0c_ub",
+        "tmov_fp",
     }
 )
 

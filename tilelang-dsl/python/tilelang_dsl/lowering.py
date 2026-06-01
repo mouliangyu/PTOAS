@@ -2086,7 +2086,7 @@ class _AuthoringRenderer:
         if expr.name == "fb_load":
             self._render_cube_fb_load(expr, env, indent=indent, into=into)
             return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
-        
+
         if expr.name in {"left_load", "right_load", "left_load_mx", "right_load_mx"}:
             self._render_cube_stage_load(expr, env, indent=indent, into=into)
 
@@ -2100,6 +2100,10 @@ class _AuthoringRenderer:
 
         if expr.name in {"mte_l0c_l1", "mte_l0c_gm", "mte_l0c_ub"}:
             self._render_mte_l0c_store(expr, env, indent=indent, into=into)
+            return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
+
+        if expr.name == "tmov_fp":
+            self._render_tmov_fp(expr, env, indent=indent, into=into)
             return _RenderedValue(name="__void_call__", type=SemanticMetaType(kind="void"))
 
         if expr.name in {"ppack", "punpack"}:
@@ -2785,6 +2789,23 @@ class _AuthoringRenderer:
         if clause_parts:
             op_text += ", " + ", ".join(clause_parts)
         into.append(self._indent(indent) + op_text + " : " + ", ".join(type_parts))
+
+    def _render_tmov_fp(
+        self,
+        expr: SemanticCallExpr,
+        env: dict[str, _RenderedValue],
+        *,
+        indent: int,
+        into: list[str],
+    ) -> None:
+        src = self._lower_expr(expr.args[0], env, indent=indent, into=into)
+        fp = self._lower_expr(expr.args[1], env, indent=indent, into=into)
+        dst = self._lower_expr(expr.args[2], env, indent=indent, into=into)
+        into.append(
+            self._indent(indent)
+            + f"pto.tmov.fp ins({src.name}, {fp.name} : {self._render_type(src.type)}, {self._render_type(fp.type)})"
+            + f" outs({dst.name} : {self._render_type(dst.type)})"
+        )
 
     def _lower_cube_loop_groups(
         self,

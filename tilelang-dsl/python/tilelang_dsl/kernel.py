@@ -2853,6 +2853,8 @@ def ckernel(
     templates: Any = _UNSET,
     dtypes: Any = None,
     name: str | None = None,
+    advanced: bool = False,
+    constraints: Any = _UNSET,
     priority: Any = _UNSET,
 ) -> VKernelDescriptor | Callable[[Callable[..., Any]], VKernelDescriptor]:
     """Create a TileLang DSL cube-kernel descriptor.
@@ -2872,8 +2874,8 @@ def ckernel(
             dtypes=dtypes,
             name=name,
             verify=True,
-            advanced=False,
-            constraints=_UNSET,
+            advanced=advanced,
+            constraints=constraints,
             priority=priority,
             kernel_family="cube",
         )

@@ -298,6 +298,7 @@ _CUBE_TRANSFER_OPS = {
     "mte_l0c_l1",
     "mte_l0c_gm",
     "mte_l0c_ub",
+    "tmov_fp",
 }
 _LEGACY_CUBE_ALIAS_CANONICAL = {
     "cube_load": "mte_gm_l1",
@@ -3775,6 +3776,8 @@ class _SemanticAnalyzer:
             return self._analyze_mte_stage_load(expr.name, args, keywords)
         if expr.name in {"mte_l0c_l1", "mte_l0c_gm", "mte_l0c_ub"}:
             return self._analyze_mte_l0c_store(expr.name, args, keywords)
+        if expr.name == "tmov_fp":
+            return self._analyze_tmov_fp(args, keywords)
         raise TypeError(f"call surface `pto.{expr.name}` is not supported in TileLang DSL v1 yet")
 
     def _reject_legacy_cube_alias(self, name: str) -> None:
@@ -4560,6 +4563,23 @@ class _SemanticAnalyzer:
             ),
             type=None,
         )
+
+    def _analyze_tmov_fp(
+        self,
+        args: tuple[SemanticExpr, ...],
+        keywords: dict[str, SemanticExpr],
+    ) -> SemanticExpr:
+        if len(args) != 3:
+            raise TypeError("pto.tmov_fp expects exactly 3 positional arguments in TileLang DSL v1")
+        src = self._require_pointer_expr(args[0], "pto.tmov_fp source", memory_space="acc")
+        fp = self._require_pointer_expr(args[1], "pto.tmov_fp scaling", memory_space="scaling")
+        dst = self._require_pointer_expr(args[2], "pto.tmov_fp destination", memory_space="mat")
+        if keywords:
+            raise TypeError(
+                f"pto.tmov_fp does not accept keyword arguments in TileLang DSL v1; "
+                f"got unsupported keyword(s): {', '.join(sorted(keywords))}"
+            )
+        return SemanticCallExpr(namespace="pto", name="tmov_fp", args=args, type=None)
 
     def _cube_static_int_if_available(self, expr: SemanticExpr) -> int | None:
         if isinstance(expr, SemanticLiteralExpr) and isinstance(expr.value, int) and not isinstance(expr.value, bool):

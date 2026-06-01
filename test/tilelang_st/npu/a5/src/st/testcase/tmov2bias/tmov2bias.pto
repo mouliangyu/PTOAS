@@ -6,10 +6,10 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// TileLang ST kernel for cube tmov2bias: explicit Mat->Bias movement test.
-// Tests the TMOV2BIAS (mte_l1_bt) operation explicitly.
-// Simplified version - same matmul flow as tmov2left, with dummy mte_l1_bt call.
-// Compiled by ptoas --enable-insert-sync --pto-backend=vpto --pto-level=level3
+// TileLang ST kernel for cube tmov (Mat->Bias): tests template expansion path.
+// Uses pto.tmov OP which will be expanded via --enable-tile-op-expand.
+// The template_tmov_m2b template should be selected when dst memory_space is "bias".
+// Compiled by ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
   func.func @TMOV2BIAS_f16_16x16x16(%a_gm: !pto.ptr<f16, gm>, %b_gm: !pto.ptr<f16, gm>, %c_gm: !pto.ptr<f32, gm>) attributes {pto.aicore} {
@@ -19,7 +19,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %c32_i64 = arith.constant 32 : i64
     %c256_i64 = arith.constant 256 : i64
     %c512_i64 = arith.constant 512 : i64
-    %c768_i64 = arith.constant 768 : i64  // address for dummy bias
+    %c768_i64 = arith.constant 768 : i64
     %false = arith.constant false
 
     // L1 Mat tiles (source for TMOV)
@@ -28,7 +28,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %l1_b_tile = pto.alloc_tile addr = %c512_i64
       : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>
 
-    // Dummy bias L1 tile (for testing mte_l1_bt)
+    // L1 Bias tile (Mat buffer holding bias data, will be moved to Bias Table)
     %l1_bias_tile = pto.alloc_tile addr = %c768_i64
       : !pto.tile_buf<mat, 1x16xf32, blayout=row_major, slayout=none_box>
 
@@ -38,7 +38,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %l0b_tile = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>
 
-    // Bias tile (L0/BT) - destination for TMOV2BIAS
+    // Bias tile (L0/BT) - destination for TMOV Mat->Bias
     %bias_tile = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<bias, 1x16xf32, blayout=row_major, slayout=none_box>
 
@@ -53,18 +53,12 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %l1_b = pto.tile_buf_addr %l1_b_tile
       : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>
      -> !pto.ptr<f16, l1>
-    %l1_bias = pto.tile_buf_addr %l1_bias_tile
-      : !pto.tile_buf<mat, 1x16xf32, blayout=row_major, slayout=none_box>
-     -> !pto.ptr<f32, l1>
     %l0a = pto.tile_buf_addr %l0a_tile
       : !pto.tile_buf<left, 16x16xf16, blayout=col_major, slayout=row_major>
      -> !pto.ptr<f16, l0a>
     %l0b = pto.tile_buf_addr %l0b_tile
       : !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>
      -> !pto.ptr<f16, l0b>
-    %bias_addr = pto.tile_buf_addr %bias_tile
-      : !pto.tile_buf<bias, 1x16xf32, blayout=row_major, slayout=none_box>
-     -> !pto.ptr<f32, bt>
     %l0c = pto.tile_buf_addr %l0c_tile
       : !pto.tile_buf<acc, 16x16xf32, blayout=col_major, slayout=row_major, fractal=1024>
      -> !pto.ptr<f32, l0c>
@@ -82,9 +76,9 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     pto.set_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID0"]
 
-    // TMOV2LEFT: L1 Mat -> L0A Left
-    pto.mte_l1_l0a %l1_a, %l0a, %c16_i64, %c16_i64
-      : !pto.ptr<f16, l1>, !pto.ptr<f16, l0a>, i64, i64
+    // TMOV Mat->Left: L1 Mat -> L0A Left (using pto.tmov for template expansion)
+    pto.tmov ins(%l1_a_tile : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>)
+             outs(%l0a_tile : !pto.tile_buf<left, 16x16xf16, blayout=col_major, slayout=row_major>)
 
     // TLOAD B: GM -> L1 Mat
     pto.mte_gm_l1_frac %b_gm, %l1_b, nd2nz,
@@ -99,21 +93,17 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     pto.set_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID1"]
     pto.wait_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID1"]
 
-    // TMOV2RIGHT: L1 Mat -> L0B Right
-    pto.mte_l1_l0b %l1_b, %l0b, %c16_i64, %c16_i64 {transpose = true}
-      : !pto.ptr<f16, l1>, !pto.ptr<f16, l0b>, i64, i64
+    // TMOV Mat->Right: L1 Mat -> L0B Right (using pto.tmov for template expansion)
+    pto.tmov ins(%l1_b_tile : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>)
+             outs(%l0b_tile : !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>)
+
+    // TMOV Mat->Bias: L1 Mat -> Bias Table (using pto.tmov for template expansion)
+    // This tests the template_tmov_m2b template with constraint dst.memory_space == BIAS
+    pto.tmov ins(%l1_bias_tile : !pto.tile_buf<mat, 1x16xf32, blayout=row_major, slayout=none_box>)
+             outs(%bias_tile : !pto.tile_buf<bias, 1x16xf32, blayout=row_major, slayout=none_box>)
 
     pto.set_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID0"]
-
-    // TMOV2BIAS: L1 Mat -> Bias Table (mte_l1_bt) - dummy operation before matmul
-    // 16 f32 = 64 bytes = 2 bursts
-    %bt_len_burst = arith.constant 2 : i64
-    %bt_n_burst = arith.constant 1 : i64
-    %bt_src_gap = arith.constant 0 : i64
-    %bt_dst_gap = arith.constant 0 : i64
-    pto.mte_l1_bt %l1_bias, %bias_addr, %bt_len_burst nburst(%bt_n_burst, %bt_src_gap, %bt_dst_gap)
-      : !pto.ptr<f32, l1>, !pto.ptr<f32, bt>, i64, i64, i64, i64
 
     // TMATMUL: compute
     pto.tmatmul ins(%l0a_tile, %l0b_tile : !pto.tile_buf<left, 16x16xf16, blayout=col_major, slayout=row_major>,

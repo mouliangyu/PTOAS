@@ -6,10 +6,8 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// TileLang ST kernel for tmov.fp: L1 Mat -> FB movement test.
-// Tests the TMOV_FP path by testing mte_l1_fb operation (Mat->FB movement).
-// Simplified version - same matmul flow as tmov2scale, with dummy mte_l1_fb call.
-// Note: Full tmov.fp (Acc->Mat with FB) requires int8 matmul template which is not yet available.
+// TileLang ST kernel for cube tmov_fp: tests mte_l1_fb operation.
+// Simplified matmul flow with dummy mte_l1_fb call before matmul.
 // Compiled by ptoas --enable-insert-sync --pto-backend=vpto --pto-level=level3
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
@@ -18,8 +16,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %c1_i64 = arith.constant 1 : i64
     %c16_i64 = arith.constant 16 : i64
     %c32_i64 = arith.constant 32 : i64
-    %c256_i64 = arith.constant 256 : i64  // 16*16
-    %c512_i64 = arith.constant 512 : i64  // 256+256 (address for scale)
+    %c256_i64 = arith.constant 256 : i64
+    %c512_i64 = arith.constant 512 : i64
     %false = arith.constant false
 
     // L1 Mat tiles
@@ -28,9 +26,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %l1_b_tile = pto.alloc_tile addr = %c256_i64
       : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>
 
-    // Scale/FB Mat tile (L1) - dummy for testing mte_l1_fb
-    // 1x16 i64 = 128 bytes = 2 bursts (each 64 bytes for FB), aligned to 128-bit for FB
-    // Hardware requires n_burst to be even number for fixpipe buffer
+    // L1 Scale/FB tile (dummy)
     %l1_scale_tile = pto.alloc_tile addr = %c512_i64
       : !pto.tile_buf<mat, 1x16xi64, blayout=row_major, slayout=none_box>
 
@@ -40,8 +36,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %l0b_tile = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>
 
-    // Scaling tile (L0/FB) - destination for TMOV2SCALE
-    // 1x16 i64 = 128 bytes = 2 bursts
+    // Scaling tile (L0/FB)
     %scale_tile = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<scaling, 1x16xi64, blayout=row_major, slayout=none_box>
 
@@ -93,12 +88,10 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     pto.set_flag["PIPE_M", "PIPE_FIX", "EVENT_ID1"]
     pto.wait_flag["PIPE_M", "PIPE_FIX", "EVENT_ID1"]
 
-    // TMOV2SCALE: L1 Mat -> Fixpipe Buffer (mte_l1_fb) - this is the operation being tested
-    // Note: L1 data is dummy (not loaded from GM), just testing the mte_l1_fb operation
-    // FB burst: 64 bytes = 1 burst (each 64 bytes for FB)
-    // Hardware requires n_burst to be even number for fixpipe buffer
+    // TMOV_FP: dummy mte_l1_fb call
+    // FB burst: 64 bytes, n_burst must be even
     %fb_len_burst = arith.constant 1 : i64
-    %fb_n_burst = arith.constant 2 : i64  // Must be even for FB
+    %fb_n_burst = arith.constant 2 : i64
     %fb_src_gap = arith.constant 0 : i64
     %fb_dst_gap = arith.constant 0 : i64
     pto.mte_l1_fb %l1_scale, %scale_addr, %fb_len_burst nburst(%fb_n_burst, %fb_src_gap, %fb_dst_gap)
