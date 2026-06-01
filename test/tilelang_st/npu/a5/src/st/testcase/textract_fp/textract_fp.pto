@@ -38,7 +38,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %left_tile = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<left, 16x16xf16, blayout=col_major, slayout=row_major>
     %right_tile = pto.alloc_tile addr = %c0_i64
-      : !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>
+      : !pto.tile_buf<right, 16x16xf16, blayout=col_major, slayout=row_major>
     %acc_tile = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<acc, 16x16xf32, blayout=col_major, slayout=row_major, fractal=1024>
     %fp_tile = pto.alloc_tile addr = %c0_i64
@@ -60,7 +60,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
       : !pto.tile_buf<left, 16x16xf16, blayout=col_major, slayout=row_major>
      -> !pto.ptr<f16, l0a>
     %right_ptr = pto.tile_buf_addr %right_tile
-      : !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>
+      : !pto.tile_buf<right, 16x16xf16, blayout=col_major, slayout=row_major>
      -> !pto.ptr<f16, l0b>
     %acc_ptr = pto.tile_buf_addr %acc_tile
       : !pto.tile_buf<acc, 16x16xf32, blayout=col_major, slayout=row_major, fractal=1024>
@@ -92,14 +92,14 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     // --- L1 -> L0A/L0B ---
     pto.mte_l1_l0a %a_l1, %left_ptr, %c16_i64, %c16_i64
       : !pto.ptr<f16, l1>, !pto.ptr<f16, l0a>, i64, i64
-    pto.mte_l1_l0b %b_l1, %right_ptr, %c16_i64, %c16_i64 {transpose = true}
+    pto.mte_l1_l0b %b_l1, %right_ptr, %c16_i64, %c16_i64
       : !pto.ptr<f16, l1>, !pto.ptr<f16, l0b>, i64, i64
 
     // --- tmatmul -> acc ---
     pto.set_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID0"]
     pto.tmatmul ins(%left_tile, %right_tile : !pto.tile_buf<left, 16x16xf16, blayout=col_major, slayout=row_major>,
-                                         !pto.tile_buf<right, 16x16xf16, blayout=row_major, slayout=col_major>)
+                                         !pto.tile_buf<right, 16x16xf16, blayout=col_major, slayout=row_major>)
                 outs(%acc_tile : !pto.tile_buf<acc, 16x16xf32, blayout=col_major, slayout=row_major, fractal=1024>)
     pto.set_flag["PIPE_M", "PIPE_FIX", "EVENT_ID0"]
     pto.wait_flag["PIPE_M", "PIPE_FIX", "EVENT_ID0"]
