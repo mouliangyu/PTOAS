@@ -1438,6 +1438,50 @@ class TileLangDSLMatcherEntryTests(unittest.TestCase):
         self.assertIs(selected.py_fn, high_priority_kernel.py_fn)
         self.assertEqual(selected.priority, 100)
 
+    def test_ckernel_constraints_are_forwarded_to_select_kernel(self) -> None:
+        def requires_large_batch(batch=0):
+            return batch >= 1024
+
+        @pto.ckernel(
+            op="cube_constraint_priority_unique",
+            dtypes=[(pto.f16,)],
+            constraints=[requires_large_batch],
+            priority=100,
+        )
+        def high_priority_kernel(inp: pto.TensorView):
+            return None
+
+        @pto.ckernel(
+            op="cube_constraint_priority_unique",
+            dtypes=[(pto.f16,)],
+            constraints=[],
+            priority=10,
+        )
+        def fallback_kernel(inp: pto.TensorView):
+            return None
+
+        registry = pto.KernelRegistry((high_priority_kernel, fallback_kernel))
+
+        selected = pto.select_kernel(
+            "a5",
+            "cube_constraint_priority_unique",
+            (pto.f16,),
+            context_attrs={"batch": 128},
+            registry=registry,
+        )
+        self.assertIs(selected.py_fn, fallback_kernel.py_fn)
+        self.assertEqual(selected.priority, 10)
+
+        selected = pto.select_kernel(
+            "a5",
+            "cube_constraint_priority_unique",
+            (pto.f16,),
+            context_attrs={"batch": 4096},
+            registry=registry,
+        )
+        self.assertIs(selected.py_fn, high_priority_kernel.py_fn)
+        self.assertEqual(selected.priority, 100)
+
     def test_select_kernel_raises_tie_error_for_equal_highest_priority(self) -> None:
         @pto.vkernel(
             op="matcher_priority_tie_unique",
@@ -1895,6 +1939,29 @@ class TileLangDSLMatcherEntryTests(unittest.TestCase):
 
         self.assertTrue(evaluation.passed, msg=evaluation.error_message)
 
+    def test_daemon_context_attrs_normalize_dtype_to_scalartype(self) -> None:
+        operand_specs = [
+            {
+                "kind": "view",
+                "dtype": "f32",
+                "shape": [1, 1, 1, 16, 64],
+                "strides": [1024, 1024, 1024, 64, 1],
+                "memory_space": "gm",
+            },
+            {
+                "kind": "tile",
+                "dtype": "f32",
+                "shape": [16, 64],
+                "valid_shape": [16, 64],
+                "memory_space": "ub",
+            },
+        ]
+
+        context_attrs = daemon_core._build_positional_context_attrs(operand_specs)
+
+        self.assertIs(context_attrs["arg0_dtype"], pto.f32)
+        self.assertIs(context_attrs["arg1_dtype"], pto.f32)
+
     def test_select_kernel_constraints_can_read_scalar_parameter_values(self) -> None:
         @pto.vkernel(
             op="matcher_scalar_value_unique",
@@ -2034,6 +2101,155 @@ def kernel(value: pto.si32):
             mlir_text = asyncio.run(instantiate_from_tmpdir(tmpdir))
 
         self.assertIn("func.func @kernel(%arg0: si32)", mlir_text)
+
+    def test_instance_cache_constraints_can_read_dtype_objects(self) -> None:
+        source = """
+import tilelang_dsl as pto
+
+@pto.vkernel(
+    target="a5",
+    op="matcher_daemon_dtype_constraints_unique",
+    dtypes=[(pto.AnyType, pto.AnyType)],
+    constraints=[lambda src, dst: src.dtype == pto.f32 and dst.dtype == pto.f32],
+    priority=100,
+)
+def constrained(src: pto.TensorView, dst: pto.Tile):
+    return None
+
+@pto.vkernel(
+    target="a5",
+    op="matcher_daemon_dtype_constraints_unique",
+    dtypes=[(pto.AnyType, pto.AnyType)],
+    constraints=[],
+    priority=10,
+)
+def fallback(src: pto.TensorView, dst: pto.Tile):
+    return None
+"""
+
+        operand_specs = [
+            {
+                "kind": "view",
+                "dtype": "f32",
+                "shape": [1, 1, 1, 16, 64],
+                "strides": [1024, 1024, 1024, 64, 1],
+                "memory_space": "gm",
+            },
+            {
+                "kind": "tile",
+                "dtype": "f32",
+                "shape": [16, 64],
+                "valid_shape": [16, 64],
+                "memory_space": "ub",
+            },
+        ]
+
+        async def instantiate_from_tmpdir(tmpdir: str) -> str:
+            cache = daemon_core.InstanceCache()
+            cache.scan_template_directory(Path(tmpdir))
+            return await cache.instantiate(
+                "a5",
+                "matcher_daemon_dtype_constraints_unique",
+                operand_specs,
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            module_path = Path(tmpdir) / "matcher_daemon_dtype_constraints_unique.py"
+            module_path.write_text(source, encoding="utf-8")
+            mlir_text = asyncio.run(instantiate_from_tmpdir(tmpdir))
+
+        self.assertIn("func.func @constrained", mlir_text)
+
+    def test_instance_cache_constraints_can_read_scalar_values(self) -> None:
+        source = """
+import tilelang_dsl as pto
+
+@pto.vkernel(
+    target="a5",
+    op="matcher_daemon_scalar_value_constraints_unique",
+    dtypes=[(pto.f32, pto.i32, pto.f32)],
+    constraints=[lambda src, indexCol, dst: indexCol.value % 8 == 0],
+    priority=100,
+)
+def constrained(src: pto.Tile, indexCol: pto.i32, dst: pto.Tile):
+    return None
+
+@pto.vkernel(
+    target="a5",
+    op="matcher_daemon_scalar_value_constraints_unique",
+    dtypes=[(pto.f32, pto.i32, pto.f32)],
+    constraints=[],
+    priority=10,
+)
+def fallback(src: pto.Tile, indexCol: pto.i32, dst: pto.Tile):
+    return None
+"""
+
+        aligned_operand_specs = [
+            {
+                "kind": "tile",
+                "dtype": "f32",
+                "shape": [1, 64],
+                "valid_shape": [1, 64],
+                "memory_space": "ub",
+            },
+            {
+                "kind": "scalar",
+                "dtype": "i32",
+                "value": 8,
+            },
+            {
+                "kind": "tile",
+                "dtype": "f32",
+                "shape": [1, 64],
+                "valid_shape": [1, 64],
+                "memory_space": "ub",
+            },
+        ]
+
+        fallback_operand_specs = [
+            {
+                "kind": "tile",
+                "dtype": "f32",
+                "shape": [1, 64],
+                "valid_shape": [1, 64],
+                "memory_space": "ub",
+            },
+            {
+                "kind": "scalar",
+                "dtype": "i32",
+                "value": 1,
+            },
+            {
+                "kind": "tile",
+                "dtype": "f32",
+                "shape": [1, 64],
+                "valid_shape": [1, 64],
+                "memory_space": "ub",
+            },
+        ]
+
+        async def instantiate_from_tmpdir(tmpdir: str, operand_specs: list[dict]) -> str:
+            cache = daemon_core.InstanceCache()
+            cache.scan_template_directory(Path(tmpdir))
+            return await cache.instantiate(
+                "a5",
+                "matcher_daemon_scalar_value_constraints_unique",
+                operand_specs,
+            )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            module_path = Path(tmpdir) / "matcher_daemon_scalar_value_constraints_unique.py"
+            module_path.write_text(source, encoding="utf-8")
+            aligned_mlir = asyncio.run(instantiate_from_tmpdir(tmpdir, aligned_operand_specs))
+            fallback_mlir = asyncio.run(instantiate_from_tmpdir(tmpdir, fallback_operand_specs))
+
+        self.assertIn("func.func @constrained", aligned_mlir)
+        self.assertIn("func.func @fallback", fallback_mlir)
+        self.assertEqual(
+            daemon_core._build_positional_context_attrs(aligned_operand_specs)["arg1_value"],
+            8,
+        )
 
     def test_select_kernel_binds_selected_op_for_multi_op_descriptor(self) -> None:
         @pto.vkernel(
@@ -9986,6 +10202,10 @@ class TileLangDSLDiagnosticsTests(unittest.TestCase):
             pto.vkernel(op="x", dtypes=[(pto.f32,)], constraints=[123])(kernel)
         self.assertIn("constraints[0] must be callable", str(constraints_ctx.exception))
 
+        with self.assertRaises(TypeError) as cube_constraints_ctx:
+            pto.ckernel(op="x", dtypes=[(pto.f32,)], constraints=[123])(kernel)
+        self.assertIn("constraints[0] must be callable", str(cube_constraints_ctx.exception))
+
         with self.assertRaises(TypeError) as priority_ctx:
             pto.vkernel(op="x", dtypes=[(pto.f32,)], priority=True)(kernel)
         self.assertIn("priority must be an int", str(priority_ctx.exception))
@@ -10525,6 +10745,31 @@ class TileLangDSLDiagnosticsTests(unittest.TestCase):
             "pto.mte_l0c_l1 pre_quant mode qf322f16_pre_scalar requires f32 source elements",
             str(pre_quant_src_family_ctx.exception),
         )
+
+        @pto.ckernel(op="pto.mad", dtypes=[(pto.f16,)], name="cube_si32_pre_quant_bridge_unique")
+        def si32_pre_quant_kernel(inp: pto.TensorView):
+            acc = pto.Tile((16, 16), pto.si32, pto.MemorySpace.ACC)
+            l1 = pto.Tile((16, 16), pto.f16, pto.MemorySpace.MAT)
+            pto.mte_l0c_l1(
+                acc.as_ptr(),
+                l1.as_ptr(),
+                16,
+                16,
+                16,
+                16,
+                pre_quant=(pto.f32(1.0), "deqf16_scalar"),
+            )
+
+        text = pto.select_kernel(
+            "a5",
+            "pto.mad",
+            (pto.f16,),
+            registry=pto.KernelRegistry((si32_pre_quant_kernel,)),
+        ).specialize().mlir_text()
+
+        self.assertIn("pre_quant(", text)
+        self.assertRegex(text, r"= pto\.castptr %[^:]+ : !pto\.ptr<si32, l0c> -> !pto\.ptr<i32, l0c>")
+        self.assertRegex(text, r"pto\.mte_l0c_l1 %[^,]+, %[^,]+, .* : !pto\.ptr<i32, l0c>, !pto\.ptr<f16, l1>,")
 
         @pto.ckernel(op="pto.mad", dtypes=[(pto.f16,)], name="cube_bad_pre_quant_dst_family_unique")
         def pre_quant_dst_family_kernel(inp: pto.TensorView):

@@ -313,9 +313,14 @@ def _build_positional_context_attrs(operand_specs: list[dict]) -> dict[str, Any]
     for index, spec in enumerate(operand_specs):
         prefix = f"arg{index}"
         attrs[f"{prefix}_kind"] = spec.get("kind")
-        attrs[f"{prefix}_dtype"] = spec.get("dtype")
+        dtype = spec.get("dtype")
+        if isinstance(dtype, str):
+            dtype = _convert_dtype_str_to_scalar(dtype)
+        attrs[f"{prefix}_dtype"] = dtype
 
         if spec.get("kind") == "scalar":
+            if "value" in spec:
+                attrs[f"{prefix}_value"] = spec["value"]
             continue
 
         shape = spec.get("shape")

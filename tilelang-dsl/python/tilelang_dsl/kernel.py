@@ -2853,7 +2853,6 @@ def ckernel(
     templates: Any = _UNSET,
     dtypes: Any = None,
     name: str | None = None,
-    advanced: bool = False,
     constraints: Any = _UNSET,
     priority: Any = _UNSET,
 ) -> VKernelDescriptor | Callable[[Callable[..., Any]], VKernelDescriptor]:
@@ -2874,7 +2873,7 @@ def ckernel(
             dtypes=dtypes,
             name=name,
             verify=True,
-            advanced=advanced,
+            advanced=False,
             constraints=constraints,
             priority=priority,
             kernel_family="cube",
