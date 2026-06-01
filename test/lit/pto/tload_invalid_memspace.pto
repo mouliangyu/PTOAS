@@ -8,28 +8,28 @@
 
 // RUN: not ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
 
-// Test TLOAD invalid memory space - should fail because ACC is not a valid
-// destination for TLOAD (only VEC/MAT are valid)
+// Test TLOAD invalid element size - should fail because src and dst element
+// sizes do not match (f32 src vs f16 dst)
 
 module attributes {pto.target_arch = "a5"} {
- func.func @tload_invalid_memspace(%src: !pto.ptr<f16>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+ func.func @tload_invalid_elem_size(%src: !pto.ptr<f32>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
  %c0 = arith.constant 0 : index
  %c1 = arith.constant 1 : index
  %c16 = arith.constant 16 : index
  %c32 = arith.constant 32 : index
 
- %tv = pto.make_tensor_view %src, shape = [%c16, %c32], strides = [%c32, %c1] : !pto.tensor_view<?x?xf16>
- %sv = pto.partition_view %tv, offsets = [%c0, %c0], sizes = [%c16, %c32] : !pto.tensor_view<?x?xf16> -> !pto.partition_tensor_view<16x32xf16>
+ %tv = pto.make_tensor_view %src, shape = [%c16, %c32], strides = [%c32, %c1] : !pto.tensor_view<?x?xf32>
+ %sv = pto.partition_view %tv, offsets = [%c0, %c0], sizes = [%c16, %c32] : !pto.tensor_view<?x?xf32> -> !pto.partition_tensor_view<16x32xf32>
 
- // ACC is not a valid destination for TLOAD (only VEC/MAT are valid)
- %dst_tile = pto.alloc_tile : !pto.tile_buf<loc=acc, dtype=f16, rows=16, cols=32, v_row=16, v_col=32, blayout=col_major, slayout=row_major, fractal=512, pad=0>
+ // f16 dst does not match f32 src element size
+ %dst_tile = pto.alloc_tile : !pto.tile_buf<vec, 16x32xf16>
 
- pto.tload ins(%sv : !pto.partition_tensor_view<16x32xf16>)
-           outs(%dst_tile : !pto.tile_buf<loc=acc, dtype=f16, rows=16, cols=32, v_row=16, v_col=32, blayout=col_major, slayout=row_major, fractal=512, pad=0>)
+ pto.tload ins(%sv : !pto.partition_tensor_view<16x32xf32>)
+           outs(%dst_tile : !pto.tile_buf<vec, 16x32xf16>)
 
  pto.barrier #pto.pipe<PIPE_ALL>
  return
  }
 }
 
-// CHECK: error: expects dst to use loc=vec or loc=mat
+// CHECK: error: expects src and dst element types to have the same element size

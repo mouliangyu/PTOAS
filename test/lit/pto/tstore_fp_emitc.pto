@@ -12,16 +12,15 @@
 
 module attributes {pto.target_arch = "a5"} {
  func.func @tstore_fp_f32_f16(%dst_gm: !pto.ptr<f16>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
- %c0_i64 = arith.constant 0 : i64
  %c1 = arith.constant 1 : index
  %c32 = arith.constant 32 : index
  %c0_idx = arith.constant 0 : index
 
  // Allocate ACC buffer
- %acc_tile = pto.alloc_tile addr = %c0_i64 : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major>
+ %acc_tile = pto.alloc_tile : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major>
 
  // Allocate FP (scaling) buffer
- %fp_tile = pto.alloc_tile addr = %c0_i64 : !pto.tile_buf<scaling, 1x32xf16>
+ %fp_tile = pto.alloc_tile : !pto.tile_buf<scaling, 1x32xf16>
 
  // Construct destination partition view
  %tv = pto.make_tensor_view %dst_gm, shape = [%c1, %c32], strides = [%c32, %c1] : !pto.tensor_view<?x?xf16>

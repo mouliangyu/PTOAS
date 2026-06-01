@@ -6,23 +6,22 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: not ptoas --pto-arch=a2 %s 2>&1 | FileCheck %s
+// RUN: not ptoas --pto-arch=a3 %s 2>&1 | FileCheck %s
 
 // Test TSTORE_FP invalid dtype combination - should fail because ACC must be f32 or i32
-// NOTE: A5 verifier does not check element type, so this test uses A2 where the check exists.
+// NOTE: A5 verifier does not check element type, so this test uses A3 where the check exists.
 
-module attributes {pto.target_arch = "a2"} {
+module attributes {pto.target_arch = "a3"} {
  func.func @tstore_fp_invalid_dtype(%dst_gm: !pto.ptr<f16>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
- %c0 = arith.constant 0 : i64
  %c1 = arith.constant 1 : index
  %c32 = arith.constant 32 : index
  %c0_idx = arith.constant 0 : index
 
  // This should fail - ACC with f16 is not supported for TSTORE_FP (requires f32/i32)
- %acc_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<acc, 16x32xf16, blayout=col_major, slayout=row_major>
+ %acc_tile = pto.alloc_tile : !pto.tile_buf<acc, 16x32xf16, blayout=col_major, slayout=row_major>
 
  // Allocate FP (scaling) buffer
- %fp_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<scaling, 1x32xf16>
+ %fp_tile = pto.alloc_tile : !pto.tile_buf<scaling, 1x32xf16>
 
  // Construct destination partition view
  %tv = pto.make_tensor_view %dst_gm, shape = [%c1, %c32], strides = [%c32, %c1] : !pto.tensor_view<?x?xf16>

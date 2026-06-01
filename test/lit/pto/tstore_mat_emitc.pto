@@ -6,12 +6,12 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a2 %s 2>&1 | FileCheck %s
+// RUN: ptoas --pto-arch=a3 %s 2>&1 | FileCheck %s
 
 // Test TSTORE.MAT template - MAT (L1) → GM store using tstore DPS surface
-// NOTE: A5 TSTORE only accepts VEC/ACC src, so this test uses A2 where MAT src is valid.
+// NOTE: A5 TSTORE only accepts VEC/ACC src, so this test uses A3 where MAT src is valid.
 
-module attributes {pto.target_arch = "a2"} {
+module attributes {pto.target_arch = "a3"} {
  func.func @tstore_mat_f16(%src: !pto.ptr<f16>, %dst: !pto.ptr<f16>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
   %c0 = arith.constant 0 : index
   %c1 = arith.constant 1 : index
