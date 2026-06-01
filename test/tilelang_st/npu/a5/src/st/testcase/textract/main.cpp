@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
 
     if (stream != nullptr) aclrtDestroyStream(stream);
     aclrtResetDevice(deviceId);
-    aclrtFinalize();
+    aclFinalize();
 
     return rc;
 }
