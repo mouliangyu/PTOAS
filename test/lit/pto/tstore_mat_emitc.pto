@@ -6,26 +6,27 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
+// RUN: ptoas --pto-arch=a2 %s 2>&1 | FileCheck %s
 
-// Test TSTORE.MAT template - MAT (L1) → GM store
-// NOTE: pto.mte_l1_gm DSL surface not yet supported, this test is pending
+// Test TSTORE.MAT template - MAT (L1) → GM store using tstore DPS surface
+// NOTE: A5 TSTORE only accepts VEC/ACC src, so this test uses A2 where MAT src is valid.
 
-module attributes {pto.target_arch = "a5"} {
- func.func @tstore_mat_f16(%src_l1: !pto.ptr<f16, l1>, %dst_gm: !pto.ptr<f16, gm>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
-  %c0 = arith.constant 0 : i64
-  %c16 = arith.constant 16 : i64
-  %c32 = arith.constant 32 : i64
+module attributes {pto.target_arch = "a2"} {
+ func.func @tstore_mat_f16(%src: !pto.ptr<f16>, %dst: !pto.ptr<f16>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c16 = arith.constant 16 : index
+  %c32 = arith.constant 32 : index
+
+  %tv = pto.make_tensor_view %dst, shape = [%c16, %c32], strides = [%c32, %c1] : !pto.tensor_view<?x?xf16>
+  %sv = pto.partition_view %tv, offsets = [%c0, %c0], sizes = [%c16, %c32] : !pto.tensor_view<?x?xf16> -> !pto.partition_tensor_view<16x32xf16>
 
   // Allocate MAT buffer in L1
-  %mat_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>
+  %mat_tile = pto.alloc_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>
 
-  // Get pointer from tile
-  %mat_ptr = pto.tile_buf_addr %mat_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major> -> !pto.ptr<f16, l1>
-
-  // Use mte_l1_gm for MAT store
-  pto.mte_l1_gm %mat_ptr, %dst_gm, %c16, %c32, %c32, %c32, %c0, %c0
-   : !pto.ptr<f16, l1>, !pto.ptr<f16, gm>, i64, i64, i64, i64, i64, i64
+  // Use tstore for MAT → GM store
+  pto.tstore ins(%mat_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>)
+             outs(%sv : !pto.partition_tensor_view<16x32xf16>)
 
   pto.barrier #pto.pipe<PIPE_ALL>
   return
@@ -33,4 +34,4 @@ module attributes {pto.target_arch = "a5"} {
 }
 
 // CHECK-LABEL: tstore_mat_f16
-// CHECK: pto.mte_l1_gm
+// CHECK: pto.tstore

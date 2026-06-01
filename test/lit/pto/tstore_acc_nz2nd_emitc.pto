@@ -17,10 +17,10 @@ module attributes {pto.target_arch = "a5"} {
   %c32 = arith.constant 32 : i64
 
   // Allocate ACC buffer
-  %acc_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major, fractal=512>
+  %acc_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major>
 
   // Get pointer from tile
-  %acc_ptr = pto.tile_buf_addr %acc_tile : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major, fractal=512> -> !pto.ptr<f32, l0c>
+  %acc_ptr = pto.tile_buf_addr %acc_tile : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major> -> !pto.ptr<f32, l0c>
 
   // Use mte_l0c_gm for NZ2ND
   pto.mte_l0c_gm %acc_ptr, %dst_gm, %c16, %c32, %c32, %c32, %c0, %c0, nz2nd

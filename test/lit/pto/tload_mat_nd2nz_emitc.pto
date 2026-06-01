@@ -16,6 +16,7 @@ module attributes {pto.target_arch = "a5"} {
   %c1 = arith.constant 1 : i64
   %c16 = arith.constant 16 : i64
   %c32 = arith.constant 32 : i64
+  %false = arith.constant false
 
   // Allocate L1 MAT buffer
   %dst_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>
@@ -23,7 +24,7 @@ module attributes {pto.target_arch = "a5"} {
   // Get pointer from tile
   %dst_ptr = pto.tile_buf_addr %dst_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major> -> !pto.ptr<f16, l1>
 
-  // Use cube_load_frac for ND2NZ
+  // Use mte_gm_l1_frac for ND2NZ
   pto.mte_gm_l1_frac %src_gm, %dst_ptr, nd2nz,
    shape(%c16, %c32),
    src_layout(%c32),
@@ -33,7 +34,6 @@ module attributes {pto.target_arch = "a5"} {
     shape i64, i64, src_layout(i64),
     dst_group i64, i64, i64, i64, ctrl i64, i1
 
-  %false = arith.constant false
   pto.barrier #pto.pipe<PIPE_ALL>
   return
  }

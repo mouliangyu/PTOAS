@@ -8,24 +8,28 @@
 
 // RUN: not ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
 
-// Test TSTORE.ACC invalid memory space - should fail because MAT is not ACC
+// Test TSTORE invalid memory space - should fail because MAT is not a valid
+// source for A5 TSTORE (only VEC/ACC are valid)
 
 module attributes {pto.target_arch = "a5"} {
- func.func @tstore_invalid_memspace(%src_l1: !pto.ptr<f32, l1>, %dst_gm: !pto.ptr<f32, gm>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
- %c0 = arith.constant 0 : i64
+ func.func @tstore_invalid_memspace(%src: !pto.ptr<f32>, %dst: !pto.ptr<f32>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+ %c0 = arith.constant 0 : index
+ %c1 = arith.constant 1 : index
+ %c16 = arith.constant 16 : index
+ %c32 = arith.constant 32 : index
 
- // This should fail - source is MAT, not ACC for TSTORE.ACC
- %src_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major>
+ %tv = pto.make_tensor_view %dst, shape = [%c16, %c32], strides = [%c32, %c1] : !pto.tensor_view<?x?xf32>
+ %sv = pto.partition_view %tv, offsets = [%c0, %c0], sizes = [%c16, %c32] : !pto.tensor_view<?x?xf32> -> !pto.partition_tensor_view<16x32xf32>
 
- %src_ptr = pto.tile_buf_addr %src_tile : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major> -> !pto.ptr<f32, l1>
+ // This should fail - MAT is not a valid source for A5 TSTORE (only VEC/ACC)
+ %src_tile = pto.alloc_tile : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major>
 
- // This should NOT match TSTORE.ACC template because source is MAT, not ACC
- pto.tstore %src_ptr, %dst_gm : !pto.ptr<f32, l1>, !pto.ptr<f32, gm>
+ pto.tstore ins(%src_tile : !pto.tile_buf<mat, 16x32xf32, blayout=col_major, slayout=row_major>)
+            outs(%sv : !pto.partition_tensor_view<16x32xf32>)
 
  pto.barrier #pto.pipe<PIPE_ALL>
  return
  }
 }
 
-// CHECK: error: no matching template for pto.tstore
-// CHECK-SAME: memory space constraint
+// CHECK: expects A5 tstore src to use loc=vec or loc=acc
