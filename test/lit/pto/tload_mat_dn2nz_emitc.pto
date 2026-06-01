@@ -1,0 +1,45 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// RUN: ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
+
+// Test TLOAD.MAT DN2NZ template - GM → L1 (MAT) with DN2NZ fractal load
+
+module attributes {pto.target_arch = "a5"} {
+ func.func @tload_mat_dn2nz_f16(%src_gm: !pto.ptr<f16, gm>, %dst_l1: !pto.ptr<f16, l1>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+  %c0 = arith.constant 0 : i64
+  %c1 = arith.constant 1 : i64
+  %c16 = arith.constant 16 : i64
+  %c32 = arith.constant 32 : i64
+
+  // Allocate L1 MAT buffer
+  %dst_tile = pto.alloc_tile addr = %c0 : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>
+
+  // Get pointer from tile
+  %dst_ptr = pto.tile_buf_addr %dst_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major> -> !pto.ptr<f16, l1>
+
+  // Use cube_load_frac for DN2NZ
+  pto.mte_gm_l1_frac %src_gm, %dst_ptr, dn2nz,
+   shape(%c16, %c32),
+   src_layout(%c32),
+   dst_group(%c1, %c1, %c16, %c0),
+   ctrl(%c0, %false)
+   : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, dn2nz,
+    shape i64, i64, src_layout(i64),
+    dst_group i64, i64, i64, i64, ctrl i64, i1
+
+  %false = arith.constant false
+  pto.barrier #pto.pipe<PIPE_ALL>
+  return
+ }
+}
+
+// CHECK-LABEL: tload_mat_dn2nz_f16
+// CHECK: pto.mte_gm_l1_frac
+// CHECK: dn2nz
+// CHECK: shape(16, 32)
