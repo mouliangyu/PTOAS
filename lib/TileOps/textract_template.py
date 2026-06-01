@@ -13,15 +13,21 @@ TEXTRACT extracts a sub-tile window from src into dst at offset (indexRow, index
 
 Supported data-flow directions (A5):
 
-Cube path (Mat -> Left/Right) — limited to indexRow=0, indexCol=0
-  (Issue #403 P2 needed for offset extraction with start-position parameters):
-  - Mat -> Left   : PIPE_MTE1, lowers to pto.mte_l1_l0a
-  - Mat -> Right  : PIPE_MTE1, lowers to pto.mte_l1_l0b
+Cube path (Mat -> Left/Right):
+  The mte_l1_l0a/l0b transpose flag is set based on src tile layout:
+    - Same fractal (src.col_major blayout + src.row_major slayout):
+      transpose=False — direct extraction (TExtractToA / TExtractToACompact)
+    - Cross fractal (src.row_major blayout + src.col_major slayout):
+      transpose=True — transposed extraction (TExtractToATransCompact / TExtractToA<true>)
+  Offset extraction (indexRow/indexCol != 0) is currently blocked by
+  constraint check pending Issue #403 P2 support.
 
 Fix-pipe path (Acc -> Mat with FP quantization):
   - textract_fp   : PIPE_FIX, uses pto.mte_l0c_l1 with pre_quant keyword
-  The VPTOExpandWrapperOps lowering automatically generates SetFpcOp +
-  CopyMatrixCcToCbufOp when pre_quant is provided with a _vec mode.
+  Currently constrained to indexRow=0, indexCol=0. The index_row/index_col
+  parameters are accepted but unused in the lowering because the start
+  position for fix-pipe copy is implicit (whole-tile extraction from L0C).
+  Future work: pass index offset to mte_l0c_l1 when PTO-ISA supports it.
 
 Vector path (Vec -> Vec):
   - Vec -> Vec ND : PIPE_V, uses pto.vlds/vsts subscript syntax
@@ -47,10 +53,26 @@ _FP_QUANT_MODE_MAP = {
 }
 
 
-def _textract_cube_dst_is_left(src, index_row, index_col, dst) -> bool:
+def _is_same_fractal_as_left(src) -> bool:
+    if src.config is None:
+        return True
+    return (src.config.b_layout != pto.BLayout.ROW_MAJOR
+            and src.config.s_layout == pto.SLayout.ROW_MAJOR)
+
+
+def _is_cross_fractal_as_left(src) -> bool:
+    if src.config is None:
+        return False
+    return (src.config.b_layout == pto.BLayout.ROW_MAJOR
+            and src.config.s_layout == pto.SLayout.COL_MAJOR)
+
+
+def _textract_cube_dst_is_left_same_fractal(src, index_row, index_col, dst) -> bool:
     dst_ms = dst.memory_space
     if not (dst_ms == "left" if isinstance(dst_ms, str)
             else dst_ms.value == "left"):
+        return False
+    if not _is_same_fractal_as_left(src):
         return False
     index_row_val = index_row.value if hasattr(index_row, 'value') else None
     index_col_val = index_col.value if hasattr(index_col, 'value') else None
@@ -61,10 +83,58 @@ def _textract_cube_dst_is_left(src, index_row, index_col, dst) -> bool:
     return True
 
 
-def _textract_cube_dst_is_right(src, index_row, index_col, dst) -> bool:
+def _textract_cube_dst_is_left_cross_fractal(src, index_row, index_col, dst) -> bool:
+    dst_ms = dst.memory_space
+    if not (dst_ms == "left" if isinstance(dst_ms, str)
+            else dst_ms.value == "left"):
+        return False
+    if not _is_cross_fractal_as_left(src):
+        return False
+    index_row_val = index_row.value if hasattr(index_row, 'value') else None
+    index_col_val = index_col.value if hasattr(index_col, 'value') else None
+    if index_row_val is not None and index_row_val != 0:
+        return False
+    if index_col_val is not None and index_col_val != 0:
+        return False
+    return True
+
+
+def _is_same_fractal_as_right(src) -> bool:
+    if src.config is None:
+        return True
+    return (src.config.b_layout != pto.BLayout.ROW_MAJOR
+            and src.config.s_layout == pto.SLayout.ROW_MAJOR)
+
+
+def _is_cross_fractal_as_right(src) -> bool:
+    if src.config is None:
+        return False
+    return (src.config.b_layout == pto.BLayout.ROW_MAJOR
+            and src.config.s_layout == pto.SLayout.COL_MAJOR)
+
+
+def _textract_cube_dst_is_right_same_fractal(src, index_row, index_col, dst) -> bool:
     dst_ms = dst.memory_space
     if not (dst_ms == "right" if isinstance(dst_ms, str)
             else dst_ms.value == "right"):
+        return False
+    if not _is_same_fractal_as_right(src):
+        return False
+    index_row_val = index_row.value if hasattr(index_row, 'value') else None
+    index_col_val = index_col.value if hasattr(index_col, 'value') else None
+    if index_row_val is not None and index_row_val != 0:
+        return False
+    if index_col_val is not None and index_col_val != 0:
+        return False
+    return True
+
+
+def _textract_cube_dst_is_right_cross_fractal(src, index_row, index_col, dst) -> bool:
+    dst_ms = dst.memory_space
+    if not (dst_ms == "right" if isinstance(dst_ms, str)
+            else dst_ms.value == "right"):
+        return False
+    if not _is_cross_fractal_as_right(src):
         return False
     index_row_val = index_row.value if hasattr(index_row, 'value') else None
     index_col_val = index_col.value if hasattr(index_col, 'value') else None
@@ -112,6 +182,12 @@ def _textract_fp_acc2mat_constraint(src, fp, index_row, index_col, dst) -> bool:
     if not (dst_ms == "mat" if isinstance(dst_ms, str)
             else dst_ms.value == "mat"):
         return False
+    index_row_val = index_row.value if hasattr(index_row, 'value') else None
+    index_col_val = index_col.value if hasattr(index_col, 'value') else None
+    if index_row_val is not None and index_row_val != 0:
+        return False
+    if index_col_val is not None and index_col_val != 0:
+        return False
     return (src.dtype, dst.dtype) in _FP_QUANT_MODE_MAP
 
 
@@ -129,6 +205,12 @@ def _make_fp_constraint(src_dtype, dst_dtype):
         if not (dst_ms == "mat" if isinstance(dst_ms, str)
                 else dst_ms.value == "mat"):
             return False
+        index_row_val = index_row.value if hasattr(index_row, 'value') else None
+        index_col_val = index_col.value if hasattr(index_col, 'value') else None
+        if index_row_val is not None and index_row_val != 0:
+            return False
+        if index_col_val is not None and index_col_val != 0:
+            return False
         return src.dtype == src_dtype and dst.dtype == dst_dtype
     return _fp_constraint
 
@@ -136,7 +218,7 @@ def _make_fp_constraint(src_dtype, dst_dtype):
 @pto.ckernel(
     target="a5",
     op="pto.textract",
-    constraints=[_textract_cube_dst_is_left],
+    constraints=[_textract_cube_dst_is_left_same_fractal],
 )
 def template_textract_mat2left(src: pto.Tile,
                                 index_row: pto.i32, index_col: pto.i32,
@@ -149,13 +231,39 @@ def template_textract_mat2left(src: pto.Tile,
 @pto.ckernel(
     target="a5",
     op="pto.textract",
-    constraints=[_textract_cube_dst_is_right],
+    constraints=[_textract_cube_dst_is_left_cross_fractal],
+)
+def template_textract_mat2left_trans(src: pto.Tile,
+                                     index_row: pto.i32, index_col: pto.i32,
+                                     dst: pto.Tile):
+    m, k = dst.valid_shape
+    pto.mte_l1_l0a(src.as_ptr(), dst.as_ptr(), m, k, transpose=True)
+    return None
+
+
+@pto.ckernel(
+    target="a5",
+    op="pto.textract",
+    constraints=[_textract_cube_dst_is_right_same_fractal],
 )
 def template_textract_mat2right(src: pto.Tile,
                                  index_row: pto.i32, index_col: pto.i32,
                                  dst: pto.Tile):
     k, n = dst.valid_shape
     pto.mte_l1_l0b(src.as_ptr(), dst.as_ptr(), k, n)
+    return None
+
+
+@pto.ckernel(
+    target="a5",
+    op="pto.textract",
+    constraints=[_textract_cube_dst_is_right_cross_fractal],
+)
+def template_textract_mat2right_trans(src: pto.Tile,
+                                      index_row: pto.i32, index_col: pto.i32,
+                                      dst: pto.Tile):
+    k, n = dst.valid_shape
+    pto.mte_l1_l0b(src.as_ptr(), dst.as_ptr(), k, n, transpose=True)
     return None
 
 
