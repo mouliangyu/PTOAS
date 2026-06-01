@@ -11,6 +11,7 @@
 """Test cases for pto.tinsert Vec->Vec ND vkernel ST."""
 
 import numpy as np
+from ml_dtypes import bfloat16
 
 
 CASES = [
@@ -46,5 +47,27 @@ CASES = [
         "index_col": 0,
         "has_output": True,
         "eps": 1e-6,
+    },
+    {
+        "name": "vec2vec_nd_bf16_16x16_into_32x32_idx00",
+        "kernel": "TINSERT_vec2vec_nd_bf16_16x16_into_32x32_idx00",
+        "dtype": bfloat16,
+        "src_shape": (16, 16),
+        "dst_shape": (32, 32),
+        "index_row": 0,
+        "index_col": 0,
+        "has_output": True,
+        "eps": 1e-2,
+    },
+    {
+        "name": "vec2vec_nd_i32_16x16_into_32x32_idx00",
+        "kernel": "TINSERT_vec2vec_nd_i32_16x16_into_32x32_idx00",
+        "dtype": np.int32,
+        "src_shape": (16, 16),
+        "dst_shape": (32, 32),
+        "index_row": 0,
+        "index_col": 0,
+        "has_output": True,
+        "eps": 0,
     },
 ]
