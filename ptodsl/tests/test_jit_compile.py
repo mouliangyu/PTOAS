@@ -1393,6 +1393,8 @@ def main() -> None:
     expect(hasattr(pto.tile, "load"), "pto.tile.load should be exported from the public tile namespace")
     expect(hasattr(pto.tile, "add"), "pto.tile.add should be exported from the public tile namespace")
     expect(hasattr(pto.tile, "cmps"), "pto.tile.cmps should be exported from the public tile namespace")
+    expect(hasattr(pto.tile, "matmul"), "pto.tile.matmul should be exported from the public tile namespace")
+    expect(hasattr(pto.tile, "matmul_acc"), "pto.tile.matmul_acc should be exported from the public tile namespace")
     expect(not hasattr(pto, "tload"), "legacy pto.tload should not remain on the public pto namespace")
     expect(not hasattr(pto, "tstore"), "legacy pto.tstore should not remain on the public pto namespace")
     expect(not hasattr(pto, "tadd"), "legacy pto.tadd should not remain on the public pto namespace")

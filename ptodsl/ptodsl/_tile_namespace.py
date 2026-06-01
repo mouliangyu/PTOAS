@@ -19,6 +19,8 @@ class _TileNamespace:
     load = staticmethod(_ops.tload)
     store = staticmethod(_ops.tstore)
     mov = staticmethod(_ops.tmov)
+    matmul = staticmethod(_ops.tmatmul)
+    matmul_acc = staticmethod(_ops.tmatmul_acc)
 
     add = staticmethod(_ops.tadd)
     sub = staticmethod(_ops.tsub)
