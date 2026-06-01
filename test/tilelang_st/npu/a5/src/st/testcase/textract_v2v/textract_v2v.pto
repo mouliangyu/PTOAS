@@ -18,6 +18,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     %c1    = arith.constant 1    : index
     %c16   = arith.constant 16   : index
     %c256  = arith.constant 256  : index
+    %c0_i64    = arith.constant 0    : i64
+    %c1024_i64 = arith.constant 1024 : i64
 
     %src_view = pto.make_tensor_view %src_ptr,
       shape = [%c1, %c1, %c1, %c16, %c16],
@@ -37,9 +39,9 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
       sizes = [%c1, %c1, %c1, %c16, %c16]
       : !pto.tensor_view<1x1x1x16x16xf32> -> !pto.partition_tensor_view<1x1x1x16x16xf32>
 
-    %src_vec = pto.alloc_tile
+    %src_vec = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<vec, 16x16xf32, blayout=row_major, slayout=none_box>
-    %dst_vec = pto.alloc_tile
+    %dst_vec = pto.alloc_tile addr = %c1024_i64
       : !pto.tile_buf<vec, 16x16xf32, blayout=row_major, slayout=none_box>
 
     pto.tload ins(%src_part : !pto.partition_tensor_view<1x1x1x16x16xf32>)
