@@ -22,6 +22,10 @@ void LaunchVec2VecND_f16_16x16_into_32x32_idx816(
     uint16_t *src, uint16_t *dst, uint16_t *out, void *stream);
 void LaunchVec2VecND_f32_16x16_into_32x32_idx00(
     float *src, float *dst, float *out, void *stream);
+void LaunchVec2VecND_bf16_16x16_into_32x32_idx00(
+    uint16_t *src, uint16_t *dst, uint16_t *out, void *stream);
+void LaunchVec2VecND_i32_16x16_into_32x32_idx00(
+    int32_t *src, int32_t *dst, int32_t *out, void *stream);
 
 using LaunchFn = void (*)(void *, void *, void *, void *);
 
@@ -44,6 +48,12 @@ static const TestCase kCases[] = {
      16, 16, 32, 32, 8, 16, true, 2},
     {"vec2vec_nd_f32_16x16_into_32x32_idx00",
      reinterpret_cast<LaunchFn>(LaunchVec2VecND_f32_16x16_into_32x32_idx00),
+     16, 16, 32, 32, 0, 0, true, 4},
+    {"vec2vec_nd_bf16_16x16_into_32x32_idx00",
+     reinterpret_cast<LaunchFn>(LaunchVec2VecND_bf16_16x16_into_32x32_idx00),
+     16, 16, 32, 32, 0, 0, true, 2},
+    {"vec2vec_nd_i32_16x16_into_32x32_idx00",
+     reinterpret_cast<LaunchFn>(LaunchVec2VecND_i32_16x16_into_32x32_idx00),
      16, 16, 32, 32, 0, 0, true, 4},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
