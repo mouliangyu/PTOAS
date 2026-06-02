@@ -21,18 +21,18 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %c16_i64   = arith.constant 16   : i64
     %c32_i64   = arith.constant 32   : i64
     %c64_i64   = arith.constant 64   : i64
-    %c256_i64  = arith.constant 256  : i64
-    %c768_i64  = arith.constant 768  : i64
+    %c512_i64  = arith.constant 512  : i64
     %c1024_i64 = arith.constant 1024 : i64
+    %c1536_i64 = arith.constant 1536 : i64
     %c0_index  = arith.constant 0    : index
     %false     = arith.constant false
 
     // --- tile allocations ---
     %a_mat = pto.alloc_tile addr = %c0_i64
       : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>
-    %b_mat = pto.alloc_tile addr = %c256_i64
+    %b_mat = pto.alloc_tile addr = %c512_i64
       : !pto.tile_buf<mat, 16x16xf16, blayout=col_major, slayout=row_major>
-    %fb_mat = pto.alloc_tile addr = %c768_i64
+    %fb_mat = pto.alloc_tile addr = %c1024_i64
       : !pto.tile_buf<mat, 16x16xf32, blayout=col_major, slayout=row_major>
 
     %left_tile = pto.alloc_tile addr = %c0_i64
