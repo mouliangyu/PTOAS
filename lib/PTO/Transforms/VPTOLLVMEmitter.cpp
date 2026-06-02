@@ -7401,27 +7401,16 @@ private:
   LoweringState &state;
 };
 
-static std::string buildRepeatedInlineAsmConstraints(StringRef constraint,
-                                                     size_t count) {
+static std::string buildSimtKeepResumeFixedRegConstraints(
+    ArrayRef<int64_t> physicalRegs, bool isOutput) {
   std::string result;
   llvm::raw_string_ostream os(result);
-  for (size_t i = 0; i < count; ++i) {
-    if (i != 0)
+  for (auto [index, reg] : llvm::enumerate(physicalRegs)) {
+    if (index != 0)
       os << ",";
-    os << constraint;
-  }
-  return os.str();
-}
-
-static std::string appendSimtKeepResumeClobbers(std::string constraints,
-                                                ArrayRef<std::pair<int64_t, unsigned>> physicalRegs) {
-  llvm::raw_string_ostream os(constraints);
-  // The asm body names fixed SIMT R registers directly. Model those registers
-  // as clobbers so LLVM does not allocate a different operand/result into a
-  // slot that another keep/resume line reads or overwrites in the same asm.
-  for (auto [reg, registerCount] : physicalRegs) {
-    for (unsigned offset = 0; offset < registerCount; ++offset)
-      os << ",~{R" << (reg + offset) << "}";
+    if (isOutput)
+      os << "=";
+    os << "{R" << reg << "}";
   }
   return os.str();
 }
@@ -7548,8 +7537,6 @@ public:
     SmallVector<pto::KeepOp, 4> keepOps = collectConsecutiveOps(op);
     SmallVector<Value, 4> payloads;
     SmallVector<std::pair<int64_t, unsigned>, 4> logicalSlots;
-    std::string asmString;
-    llvm::raw_string_ostream asmOS(asmString);
     for (pto::KeepOp keep : keepOps) {
       Value payload = rewriter.getRemappedValue(keep.getPayload());
       if (!payload)
@@ -7572,26 +7559,11 @@ public:
       return rewriter.notifyMatchFailure(
           op, "keep slots must map to valid non-overlapping SIMT registers");
 
-    SmallVector<std::pair<int64_t, unsigned>, 4> clobbers;
-    for (auto [index, keep] : llvm::enumerate(keepOps)) {
-      (void)keep;
-      if (index != 0)
-        asmOS << "\n";
-      if (logicalSlots[index].second == 2)
-        asmOS << "IMAD.WIDE.u32 R" << (*physicalRegs)[index]
-              << ", RZ, RZ, $" << index << " wait:0b0000000 stall:1";
-      else
-        asmOS << "MOV R" << (*physicalRegs)[index] << ", $" << index
-              << " wait:0b0000000 stall:1";
-      clobbers.push_back({(*physicalRegs)[index], logicalSlots[index].second});
-    }
-    asmOS.flush();
-
     rewriter.setInsertionPoint(op);
     rewriter.create<LLVM::InlineAsmOp>(
-        op.getLoc(), TypeRange{}, payloads, asmString,
-        appendSimtKeepResumeClobbers(
-            buildRepeatedInlineAsmConstraints("R", payloads.size()), clobbers),
+        op.getLoc(), TypeRange{}, payloads, "",
+        buildSimtKeepResumeFixedRegConstraints(*physicalRegs,
+                                               /*isOutput=*/false),
         true, false,
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         ArrayAttr{});
@@ -7621,8 +7593,6 @@ public:
     SmallVector<pto::ResumeOp, 4> resumeOps = collectConsecutiveOps(op);
     SmallVector<std::pair<int64_t, unsigned>, 4> logicalSlots;
     SmallVector<Type, 4> asmResultTypes;
-    std::string asmString;
-    llvm::raw_string_ostream asmOS(asmString);
     for (pto::ResumeOp resume : resumeOps) {
       Type resultType = getTypeConverter()->convertType(resume.getType());
       if (!resultType || !getSimtKeepResumeBitWidth(resultType))
@@ -7643,21 +7613,6 @@ public:
       return rewriter.notifyMatchFailure(
           op, "resume slots must map to valid non-overlapping SIMT registers");
 
-    SmallVector<std::pair<int64_t, unsigned>, 4> clobbers;
-    for (auto [index, resume] : llvm::enumerate(resumeOps)) {
-      (void)resume;
-      if (index != 0)
-        asmOS << "\n";
-      if (logicalSlots[index].second == 2)
-        asmOS << "IMAD.WIDE.u32 $" << index << ", RZ, RZ, R"
-              << (*physicalRegs)[index] << " wait:0b0000000 stall:1";
-      else
-        asmOS << "MOV $" << index << ", R" << (*physicalRegs)[index]
-              << " wait:0b0000000 stall:1";
-      clobbers.push_back({(*physicalRegs)[index], logicalSlots[index].second});
-    }
-    asmOS.flush();
-
     Type asmResultType = asmResultTypes.front();
     if (asmResultTypes.size() > 1) {
       asmResultType =
@@ -7665,9 +7620,9 @@ public:
     }
     rewriter.setInsertionPoint(op);
     auto asmOp = rewriter.create<LLVM::InlineAsmOp>(
-        op.getLoc(), TypeRange{asmResultType}, ValueRange{}, asmString,
-        appendSimtKeepResumeClobbers(
-            buildRepeatedInlineAsmConstraints("=R", resumeOps.size()), clobbers),
+        op.getLoc(), TypeRange{asmResultType}, ValueRange{}, "",
+        buildSimtKeepResumeFixedRegConstraints(*physicalRegs,
+                                               /*isOutput=*/true),
         true, false,
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         ArrayAttr{});

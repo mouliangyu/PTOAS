@@ -38,8 +38,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
 }
 
 // CHECK: llvm.func @stage0
-// CHECK: MOV R4, $0
-// CHECK-SAME: IMAD.WIDE.u32 R12, RZ, RZ, $1
+// CHECK: llvm.inline_asm has_side_effects asm_dialect = att "", "{R4},{R12}"
 // CHECK: llvm.func @stage1
-// CHECK: IMAD.WIDE.u32 $0, RZ, RZ, R12
-// CHECK-NOT: IMAD.WIDE.u32 $0, RZ, RZ, R4
+// CHECK: llvm.inline_asm has_side_effects asm_dialect = att "", "={R12}"
+// CHECK-NOT: MOV
+// CHECK-NOT: IMAD.WIDE.u32
