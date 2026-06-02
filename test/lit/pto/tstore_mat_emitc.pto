@@ -34,4 +34,4 @@ module attributes {pto.target_arch = "a3"} {
 }
 
 // CHECK-LABEL: tstore_mat_f16
-// CHECK: pto.tstore
+// CHECK: TSTORE

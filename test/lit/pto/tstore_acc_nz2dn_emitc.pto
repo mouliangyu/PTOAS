@@ -6,25 +6,31 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto --mlir-print-ir-before=vpto-expand-wrapper-ops %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROUNDTRIP
+// RUN: ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
 
-// Test TSTORE.ACC NZ2DN template - ACC → GM with NZ2DN layout conversion
+// Test TSTORE.ACC NZ2DN - store ACC tile to GM in col-major (DN) format
 
-module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
- func.func @tstore_acc_nz2dn_f32(%src_acc: !pto.ptr<f32, l0c>, %dst_gm: !pto.ptr<f32, gm>) {
-  %c0 = arith.constant 0 : i64
-  %c1 = arith.constant 1 : i64
-  %c16 = arith.constant 16 : i64
-  %c32 = arith.constant 32 : i64
+module attributes {pto.target_arch = "a5"} {
+ func.func @tstore_acc_nz2dn_f32(%dst: !pto.ptr<f32>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c16 = arith.constant 16 : index
+  %c32 = arith.constant 32 : index
 
-  // Use mte_l0c_gm for NZ2DN (nz2dn requires loop0_src_stride parameter)
-  pto.mte_l0c_gm %src_acc, %dst_gm, %c16, %c32, %c32, %c32, %c0, %c0, nz2dn(%c1)
-   : !pto.ptr<f32, l0c>, !pto.ptr<f32, gm>, i64, i64, i64, i64, i64, i64, i64
+  // Allocate ACC source tile
+  %src_tile = pto.alloc_tile : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major>
 
+  // Construct destination partition view (DN format: col-major GM region)
+  %tv = pto.make_tensor_view %dst, shape = [%c32, %c16], strides = [%c16, %c1] : !pto.tensor_view<?x?xf32>
+  %sv = pto.partition_view %tv, offsets = [%c0, %c0], sizes = [%c32, %c16] : !pto.tensor_view<?x?xf32> -> !pto.partition_tensor_view<32x16xf32>
+
+  pto.tstore ins(%src_tile : !pto.tile_buf<acc, 16x32xf32, blayout=col_major, slayout=row_major>)
+             outs(%sv : !pto.partition_tensor_view<32x16xf32>)
+
+  pto.barrier #pto.pipe<PIPE_ALL>
   return
  }
 }
 
-// ROUNDTRIP-LABEL: func.func @tstore_acc_nz2dn_f32(
-// ROUNDTRIP: pto.mte_l0c_gm
-// ROUNDTRIP: nz2dn
+// CHECK-LABEL: tstore_acc_nz2dn_f32
+// CHECK: TSTORE

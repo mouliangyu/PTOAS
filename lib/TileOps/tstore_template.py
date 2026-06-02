@@ -6,7 +6,7 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 
-"""`pto.tstore` 的 TileLang DSL 模板"""
+"""TileLang DSL template for `pto.tstore`"""
 
 import tilelang_dsl as pto
 
@@ -167,8 +167,9 @@ def template_tstore_dn(src: pto.Tile, dst: pto.PartitionTensorView):
     gm_stride = s4 * elem_bytes
     ub_stride = ub_rows * elem_bytes
 
-    # UB 源 tile 是列高 `ub_rows` 的紧凑 col-major 布局，
-    # 与 `TStoreVecDN` 一样由 `g4` / `g2` / `g1` 递推出三级 stride。
+    # The UB source tile has a compact col-major layout with column height
+    # `ub_rows`. Like `TStoreVecDN`, three levels of stride are derived from
+    # `g4` / `g2` / `g1`.
     src_stride2 = ub_rows * g4
     src_stride1 = g2 * src_stride2
     src_stride0 = g1 * src_stride1
@@ -224,20 +225,22 @@ def template_tstore_nz(src: pto.Tile, dst: pto.PartitionTensorView):
     valid_rows, valid_cols = src.valid_shape
     ub_rows, ub_cols = src.shape
 
-    # 对应 C++ `C0_SIZE_BYTE`。NZ 每个 burst 始终写一个完整 C0 block。
+    # Corresponds to C++ `C0_SIZE_BYTE`. Each NZ burst always writes one
+    # complete C0 block.
     c0_size_bytes = 32
     n_burst = g1
     len_burst = valid_rows * c0_size_bytes
     gm_stride = s1 * elem_bytes
     ub_stride = ub_rows * c0_size_bytes
 
-    # 每个 g0 block 在 UB 中由 `g1` 个 NZ block 串接组成。
+    # Each g0 block in UB is composed of `g1` NZ blocks concatenated together.
     tile_stride = g1 * ub_rows * g4
 
     ub_ptr = src.as_ptr()
     gm_ptr = dst.as_ptr()
 
-    # NZ path 本身不使用 loop1/loop2，主动切回 normal mode 避免继承旧状态。
+    # NZ path itself does not use loop1/loop2; explicitly reset to normal mode
+    # to avoid inheriting stale state.
     pto.set_loop_size_ubtoout(loop1=1, loop2=1)
     for i in range(0, g0, 1):
         src_i = pto.addptr(ub_ptr, i * tile_stride)
@@ -258,33 +261,33 @@ def template_tstore_nz(src: pto.Tile, dst: pto.PartitionTensorView):
 # ============================================================================
 
 def _constraint_tstore_acc_base(src, dst) -> bool:
-    """TSTORE.ACC 基础约束检查"""
-    # src 必须是 MemorySpace.ACC
+    """TSTORE.ACC base constraint check"""
+    # src must be MemorySpace.ACC
     src_space = src.memory_space
     if src_space is None:
         return False
     src_space_value = src_space.value if hasattr(src_space, "value") else src_space
     if src_space_value not in {"acc", "ACC"}:
         return False
-    # dst 必须是 GM (通过 PartitionTensorView)
+    # dst must be GM (via PartitionTensorView)
     dst_space = dst.memory_space
     if dst_space is None:
-        dst_space_value = "gm"  # PartitionTensorView 默认是 GM
+        dst_space_value = "gm"  # PartitionTensorView defaults to GM
     else:
         dst_space_value = dst_space.value if hasattr(dst_space, "value") else dst_space
     if dst_space_value not in {"gm", "GM"}:
         return False
-    # ACC 的 dtype 必须是 f32 或 i32
+    # ACC dtype must be f32 or i32
     src_dtype = src.dtype
     if src_dtype is None:
         return False
     dtype_name = src_dtype.name if hasattr(src_dtype, "name") else str(src_dtype)
     if dtype_name not in {"f32", "i32"}:
         return False
-    # dst dtype 可以是 f32, f16, bf16, i32
+    # dst dtype can be f32, f16, bf16, i32
     dst_dtype = dst.dtype
     if dst_dtype is None:
-        return True  # 允许 dst dtype 未指定
+        return True  # allow dst dtype to be unspecified
     dst_dtype_name = dst_dtype.name if hasattr(dst_dtype, "name") else str(dst_dtype)
     supported_dst_dtypes = {"f32", "f16", "bf16", "i32"}
     if dst_dtype_name not in supported_dst_dtypes:
@@ -293,25 +296,25 @@ def _constraint_tstore_acc_base(src, dst) -> bool:
 
 
 def _constraint_tstore_acc_nz2nd(src, dst) -> bool:
-    """TSTORE.ACC NZ2ND 约束"""
+    """TSTORE.ACC NZ2ND constraint"""
     if not _constraint_tstore_acc_base(src, dst):
         return False
-    # dst 必须是 row-major layout (ND 格式)
+    # dst must be row-major layout (ND format)
     config = dst.config
     if config is None:
-        return True  # 默认是 row-major
+        return True  # default is row-major
     b_layout = config.b_layout
     if b_layout is None:
         return True
     b_layout_value = b_layout.value if hasattr(b_layout, "value") else b_layout
-    # ROW_MAJOR 对应 ND 格式
+    # ROW_MAJOR corresponds to ND format
     if b_layout_value not in {"row_major", "ROW_MAJOR"}:
         return False
     return True
 
 
 def _constraint_tstore_acc_nz2dn(src, dst) -> bool:
-    """TSTORE.ACC NZ2DN 约束"""
+    """TSTORE.ACC NZ2DN constraint"""
     if not _constraint_tstore_acc_base(src, dst):
         return False
     config = dst.config
@@ -327,14 +330,14 @@ def _constraint_tstore_acc_nz2dn(src, dst) -> bool:
 
 
 def _constraint_tstore_acc_nz2nz(src, dst) -> bool:
-    """TSTORE.ACC NZ2NZ 约束"""
+    """TSTORE.ACC NZ2NZ constraint"""
     if not _constraint_tstore_acc_base(src, dst):
         return False
-    # dst 必须是 NZ layout (fractal)
+    # dst must be NZ layout (fractal)
     config = dst.config
     if config is None:
         return False
-    # 检查是否有 fractal 或特殊的 NZ layout 标记
+    # Check for fractal or special NZ layout marking
     s_layout = config.s_layout
     if s_layout is None:
         return False
@@ -356,14 +359,15 @@ def _constraint_tstore_acc_nz2nz(src, dst) -> bool:
     constraints=[_constraint_tstore_acc_nz2nd],
     name="tstore_acc_to_gm_nz2nd",
 )
-def template_tstore_acc_to_gm_nz2nd(src: pto.Tile, dst: pto.Tile):
-    """ACC → GM (NZ2ND 模式)
+def template_tstore_acc_to_gm_nz2nd(src: pto.Tile, dst: pto.PartitionTensorView):
+    """ACC -> GM (NZ2ND mode)
 
-    将 L0C Accumulator Buffer 的 NZ 格式数据写回到 GM 的 Row-Major (ND) 格式。
+    Write NZ-format data from L0C Accumulator Buffer back to GM in
+    Row-Major (ND) format.
 
     Args:
         src: Tile with ACC memory_space, shape=(M, N), dtype=f32/i32
-        dst: Tile with GM memory_space, row-major (ND) 格式
+        dst: PartitionTensorView with GM memory_space, row-major (ND) format
 
     Uses:
         pto.mte_l0c_gm with layout="nz2nd"
@@ -374,8 +378,8 @@ def template_tstore_acc_to_gm_nz2nd(src: pto.Tile, dst: pto.Tile):
     acc_ptr = src.as_ptr()
     gm_ptr = dst.as_ptr()
 
-    # src_stride: ACC buffer 的 stride (NZ 格式下为 N)
-    # dst_stride: GM 的 stride (ND 格式下为 N)
+    # src_stride: ACC buffer stride (N under NZ format)
+    # dst_stride: GM stride (N under ND format)
     src_stride = n
     dst_stride = n
 
@@ -399,14 +403,15 @@ def template_tstore_acc_to_gm_nz2nd(src: pto.Tile, dst: pto.Tile):
     constraints=[_constraint_tstore_acc_nz2dn],
     name="tstore_acc_to_gm_nz2dn",
 )
-def template_tstore_acc_to_gm_nz2dn(src: pto.Tile, dst: pto.Tile):
-    """ACC → GM (NZ2DN 模式)
+def template_tstore_acc_to_gm_nz2dn(src: pto.Tile, dst: pto.PartitionTensorView):
+    """ACC -> GM (NZ2DN mode)
 
-    将 L0C Accumulator Buffer 的 NZ 格式数据写回到 GM 的 Col-Major (DN) 格式。
+    Write NZ-format data from L0C Accumulator Buffer back to GM in
+    Col-Major (DN) format.
 
     Args:
         src: Tile with ACC memory_space, shape=(M, N)
-        dst: Tile with GM memory_space, col-major (DN) 格式
+        dst: PartitionTensorView with GM memory_space, col-major (DN) format
 
     Uses:
         pto.mte_l0c_gm with layout="nz2dn"
@@ -416,15 +421,16 @@ def template_tstore_acc_to_gm_nz2dn(src: pto.Tile, dst: pto.Tile):
     acc_ptr = src.as_ptr()
     gm_ptr = dst.as_ptr()
 
-    # NZ2DN 需要额外的 loop0_src_stride 参数
+    # NZ2DN requires an additional loop0_src_stride parameter
     src_stride = n
-    dst_stride = m  # DN 格式下 stride 是 M
+    dst_stride = m  # Under DN format, stride is M
+    loop0_src_stride = 1  # loop0_src_stride for NZ2DN
 
     pto.mte_l0c_gm(
         acc_ptr, gm_ptr,
         m, n, src_stride, dst_stride,
         0, 0,
-        layout="nz2dn"
+        layout=("nz2dn", loop0_src_stride)
     )
 
 
@@ -440,14 +446,15 @@ def template_tstore_acc_to_gm_nz2dn(src: pto.Tile, dst: pto.Tile):
     constraints=[_constraint_tstore_acc_nz2nz],
     name="tstore_acc_to_gm_nz2nz",
 )
-def template_tstore_acc_to_gm_nz2nz(src: pto.Tile, dst: pto.Tile):
-    """ACC → GM (NZ2NZ 模式)
+def template_tstore_acc_to_gm_nz2nz(src: pto.Tile, dst: pto.PartitionTensorView):
+    """ACC -> GM (NZ2NZ mode)
 
-    将 L0C Accumulator Buffer 的 NZ 格式数据写回到 GM 的 NZ 格式 (无转换)。
+    Write NZ-format data from L0C Accumulator Buffer back to GM in NZ
+    format (no layout conversion).
 
     Args:
         src: Tile with ACC memory_space, shape=(M, N)
-        dst: Tile with GM memory_space, NZ (fractal) 格式
+        dst: PartitionTensorView with GM memory_space, NZ (fractal) format
 
     Uses:
         pto.mte_l0c_gm with layout="nz2nz"
@@ -459,12 +466,13 @@ def template_tstore_acc_to_gm_nz2nz(src: pto.Tile, dst: pto.Tile):
 
     src_stride = n
     dst_stride = n
+    split = 1  # NZ2NZ requires a split parameter
 
     pto.mte_l0c_gm(
         acc_ptr, gm_ptr,
         m, n, src_stride, dst_stride,
         0, 0,
-        layout="nz2nz"
+        layout=("nz2nz", split)
     )
 
 
@@ -473,15 +481,15 @@ def template_tstore_acc_to_gm_nz2nz(src: pto.Tile, dst: pto.Tile):
 # ============================================================================
 
 def _constraint_tstore_mat(src, dst) -> bool:
-    """TSTORE.MAT 约束检查"""
-    # src 必须是 MemorySpace.MAT
+    """TSTORE.MAT constraint check"""
+    # src must be MemorySpace.MAT
     src_space = src.memory_space
     if src_space is None:
         return False
     src_space_value = src_space.value if hasattr(src_space, "value") else src_space
     if src_space_value not in {"mat", "MAT"}:
         return False
-    # dst 必须是 GM
+    # dst must be GM
     dst_space = dst.memory_space
     if dst_space is None:
         dst_space_value = "gm"
@@ -489,7 +497,7 @@ def _constraint_tstore_mat(src, dst) -> bool:
         dst_space_value = dst_space.value if hasattr(dst_space, "value") else dst_space
     if dst_space_value not in {"gm", "GM"}:
         return False
-    # dtype 检查
+    # dtype check
     src_dtype = src.dtype
     if src_dtype is None:
         return False
@@ -512,17 +520,18 @@ def _constraint_tstore_mat(src, dst) -> bool:
     name="tstore_mat_to_gm",
 )
 def template_tstore_mat_to_gm(src: pto.Tile, dst: pto.Tile):
-    """MAT → GM 模板
+    """MAT -> GM template
 
-    将 L1 MAT Buffer 数据写回到 GM。
+    Write L1 MAT Buffer data back to GM.
 
     Args:
         src: Tile with MAT memory_space, shape=(M, K)
         dst: Tile with GM memory_space
 
     Note:
-        当前 mte_l1_ub 只支持 MAT → UB，MAT → GM 的直接路径需要提单支持 mte_l1_gm。
-        暂时使用 mte_l1_ub 写到 UB 中转。
+        There is no direct MAT -> GM DMA path (mte_l1_gm does not exist).
+        Data is written to UB via mte_l1_ub, then forwarded to GM via
+        copy_ubuf_to_gm as an intermediate step.
     """
     m, k = src.valid_shape
     dtype = src.element_type
@@ -531,8 +540,8 @@ def template_tstore_mat_to_gm(src: pto.Tile, dst: pto.Tile):
     mat_ptr = src.as_ptr()
     gm_ptr = dst.as_ptr()
 
-    # TODO: 等待 mte_l1_gm DSL surface 支持后，替换为直接 MAT → GM
-    # 当前临时使用 mte_l1_ub 写到 UB，再 copy_ubuf_to_gm 中转到 GM
+    # NOTE: There is no direct MAT -> GM DMA path. Data is written to UB via
+    # mte_l1_ub, then forwarded to GM via copy_ubuf_to_gm.
     len_burst = k * elem_bytes
 
     pto.mte_l1_ub(mat_ptr, gm_ptr, len_burst, nburst=(m, 0, 0))
@@ -543,22 +552,22 @@ def template_tstore_mat_to_gm(src: pto.Tile, dst: pto.Tile):
 # ============================================================================
 
 def _constraint_tstore_fp(src, fp, dst) -> bool:
-    """TSTORE_FP 约束检查"""
-    # src 必须是 MemorySpace.ACC
+    """TSTORE_FP constraint check"""
+    # src must be MemorySpace.ACC
     src_space = src.memory_space
     if src_space is None:
         return False
     src_space_value = src_space.value if hasattr(src_space, "value") else src_space
     if src_space_value not in {"acc", "ACC"}:
         return False
-    # fp 必须是 SCALING memory space 或特定 buffer
+    # fp must be SCALING memory space or specific buffer
     fp_space = fp.memory_space
     if fp_space is None:
         return False
     fp_space_value = fp_space.value if hasattr(fp_space, "value") else fp_space
     if fp_space_value not in {"scaling", "SCALING", "ub", "UB"}:
         return False
-    # dst 必须是 GM
+    # dst must be GM
     dst_space = dst.memory_space
     if dst_space is None:
         dst_space_value = "gm"
@@ -566,7 +575,7 @@ def _constraint_tstore_fp(src, fp, dst) -> bool:
         dst_space_value = dst_space.value if hasattr(dst_space, "value") else dst_space
     if dst_space_value not in {"gm", "GM"}:
         return False
-    # src dtype 必须是 f32
+    # src dtype must be f32
     src_dtype = src.dtype
     if src_dtype is None:
         return False
@@ -586,21 +595,23 @@ def _constraint_tstore_fp(src, fp, dst) -> bool:
     constraints=[_constraint_tstore_fp],
     name="tstore_fp_acc_to_gm",
 )
-def template_tstore_fp_acc_to_gm(src: pto.Tile, fp: pto.Tile, dst: pto.Tile):
-    """ACC + FP → GM 带浮点转换 (TSTORE_FP)
+def template_tstore_fp_acc_to_gm(src: pto.Tile, fp: pto.Tile, dst: pto.PartitionTensorView):
+    """ACC + FP -> GM with floating-point conversion (TSTORE_FP)
 
-    将 L0C Accumulator Buffer 的 f32 数据，配合 FP (scaling) 参数，
-    写回到 GM 的 f16/bf16 格式。
+    Write f32 data from L0C Accumulator Buffer, combined with FP (scaling)
+    parameters, back to GM in f16/bf16 format.
 
     Args:
         src: Tile with ACC memory_space, dtype=f32
         fp: Tile with SCALING/UB memory_space, dtype=f16/bf16
-        dst: Tile with GM memory_space, dtype=f16/bf16
+        dst: PartitionTensorView with GM memory_space, dtype=f16/bf16
 
     Note:
-        TSTORE_FP 的底层实现使用 IR 层的 pto.tstore_fp op。
-        该 op 对应硬件的 FIXPIPE 写回带量化参数。
-        TODO: 等待 pto.tstore_fp DSL surface 支持后，替换为直接调用。
+        TSTORE_FP is implemented using the IR-level pto.tstore_fp op.
+        This op corresponds to the hardware FIXPIPE write-back with
+        quantization parameters.
+        TODO: Replace with a direct tstore_fp DSL surface call once
+        available.
     """
     m, n = src.valid_shape
 
@@ -608,8 +619,17 @@ def template_tstore_fp_acc_to_gm(src: pto.Tile, fp: pto.Tile, dst: pto.Tile):
     fp_ptr = fp.as_ptr()
     gm_ptr = dst.as_ptr()
 
-    # TODO: 等待 tstore_fp DSL surface 支持后替换
-    # 当前临时使用 mte_l0c_gm + pre_quant 实现类似功能
+    # Determine pre_quant mode based on destination dtype:
+    # f16 -> "f32_f16", bf16 -> "f32_bf16"
+    dst_dtype = dst.element_type
+    dst_dtype_name = dst_dtype.name if hasattr(dst_dtype, "name") else str(dst_dtype)
+    if dst_dtype_name == "bf16":
+        quant_mode = "f32_bf16"
+    else:
+        quant_mode = "f32_f16"
+
+    # TODO: Replace with tstore_fp DSL surface once available.
+    # Currently using mte_l0c_gm + pre_quant as a temporary workaround.
     src_stride = n
     dst_stride = n
 
@@ -618,5 +638,5 @@ def template_tstore_fp_acc_to_gm(src: pto.Tile, fp: pto.Tile, dst: pto.Tile):
         m, n, src_stride, dst_stride,
         0, 0,
         layout="nz2nd",
-        pre_quant=(fp_ptr, "f32_f16")
+        pre_quant=(fp_ptr, quant_mode)
     )

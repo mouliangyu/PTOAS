@@ -36,4 +36,4 @@ module attributes {pto.target_arch = "a5"} {
 }
 
 // CHECK-LABEL: tstore_fp_f32_f16
-// CHECK: pto.tstore_fp
+// CHECK: TSTORE_FP

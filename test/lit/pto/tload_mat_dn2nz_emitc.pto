@@ -6,33 +6,31 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --emit-vpto --mlir-print-ir-before=vpto-expand-wrapper-ops %s -o /dev/null 2>&1 | FileCheck %s --check-prefix=ROUNDTRIP
+// RUN: ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
 
-// Test TLOAD.MAT DN2NZ template - GM → L1 (MAT) with DN2NZ fractal load
+// Test TLOAD.MAT DN2NZ - load col-major (DN) data from GM into MAT tile in NZ layout
 
-module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
- func.func @tload_mat_dn2nz_f16(%src_gm: memref<?xf16, #pto.address_space<gm>>,
-                                 %dst_l1: memref<?xf16, #pto.address_space<mat>>) {
-  %c0 = arith.constant 0 : i64
-  %c1 = arith.constant 1 : i64
-  %c16 = arith.constant 16 : i64
-  %c32 = arith.constant 32 : i64
-  %false = arith.constant false
+module attributes {pto.target_arch = "a5"} {
+ func.func @tload_mat_dn2nz_f16(%src: !pto.ptr<f16>) attributes {pto.kernel_kind = #pto.kernel_kind<cube>, pto.aicore} {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %c16 = arith.constant 16 : index
+  %c32 = arith.constant 32 : index
 
-  // Use mte_gm_l1_frac for DN2NZ
-  pto.mte_gm_l1_frac %src_gm, %dst_l1, dn2nz,
-   shape(%c16, %c32),
-   src_layout(%c32),
-   dst_group(%c1, %c1, %c16, %c0),
-   ctrl(%c0, %false)
-   : memref<?xf16, #pto.address_space<gm>>, memref<?xf16, #pto.address_space<mat>>, dn2nz,
-    shape i64, i64, src_layout(i64),
-    dst_group i64, i64, i64, i64, ctrl i64, i1
+  // Construct source partition view (DN format: col-major GM region)
+  %tv = pto.make_tensor_view %src, shape = [%c32, %c16], strides = [%c16, %c1] : !pto.tensor_view<?x?xf16>
+  %sv = pto.partition_view %tv, offsets = [%c0, %c0], sizes = [%c32, %c16] : !pto.tensor_view<?x?xf16> -> !pto.partition_tensor_view<32x16xf16>
 
+  // Allocate MAT destination tile (NZ layout: col_major + row_major slayout)
+  %dst_tile = pto.alloc_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>
+
+  pto.tload ins(%sv : !pto.partition_tensor_view<32x16xf16>)
+            outs(%dst_tile : !pto.tile_buf<mat, 16x32xf16, blayout=col_major, slayout=row_major>)
+
+  pto.barrier #pto.pipe<PIPE_ALL>
   return
  }
 }
 
-// ROUNDTRIP-LABEL: func.func @tload_mat_dn2nz_f16(
-// ROUNDTRIP: pto.mte_gm_l1_frac
-// ROUNDTRIP: dn2nz
+// CHECK-LABEL: tload_mat_dn2nz_f16
+// CHECK: TLOAD
