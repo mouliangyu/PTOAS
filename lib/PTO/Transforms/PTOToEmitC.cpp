@@ -2753,7 +2753,8 @@ struct FuncToEmitC : public OpConversionPattern<func::FuncOp> {
       emitcFunc.setSpecifiersAttr(
           rewriter.getStrArrayAttr({"static", "AICORE"}));
     } else {
-      emitcFunc.setSpecifiersAttr(rewriter.getStrArrayAttr({"AICORE"}));
+      emitcFunc.setSpecifiersAttr(
+          rewriter.getStrArrayAttr({"extern \"C\"", "AICORE"}));
     }
 
     std::optional<StringRef> kernelKindMacro = getKernelKindMacro(op);
