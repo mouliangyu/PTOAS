@@ -73,7 +73,6 @@ def _tmov_fp_constraint(src: pto.Tile, fp: pto.Tile, dst: pto.Tile) -> bool:
     target="a5",
     op="pto.tmov.fp",
     constraints=[_tmov_fp_constraint],
-    advanced=True,
     dtypes=[
         (pto.i32, pto.i64, pto.i8),
         (pto.f32, pto.i64, pto.f16),

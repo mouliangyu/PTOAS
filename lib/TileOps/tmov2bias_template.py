@@ -58,7 +58,6 @@ def _tmov_m2b_constraint(src: pto.Tile, dst: pto.Tile) -> bool:
     target="a5",
     op="pto.tmov",
     constraints=[_tmov_m2b_constraint],
-    advanced=True,
     dtypes=[
         (pto.f32, pto.f32),
         (pto.f16, pto.f32),

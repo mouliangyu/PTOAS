@@ -58,7 +58,6 @@ def _tmov_m2s_constraint(src: pto.Tile, dst: pto.Tile) -> bool:
     target="a5",
     op="pto.tmov",
     constraints=[_tmov_m2s_constraint],
-    advanced=True,
     dtypes=[
         (pto.i64, pto.i64),
     ],
