@@ -22,7 +22,7 @@ for case in CASES:
         a = np.random.uniform(-1.0, 1.0, size=case["shape_src"]).astype(case["dtype_src"])
         b = np.random.uniform(-1.0, 1.0, size=case["shape_src"]).astype(case["dtype_src"])
         fb = np.ones(case["shape_scaling"], dtype=case["dtype_scaling"])
-        golden = -np.matmul(a.astype(np.float32), b.astype(np.float32)).astype(np.float32)
+        golden = np.matmul(a.astype(np.float32), b.astype(np.float32)).astype(np.float32)
         save_case_data(name, {"input1": a, "input2": b, "input3": fb, "golden": golden})
 
     print(f"[INFO] gen_data: {name} done")
