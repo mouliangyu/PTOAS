@@ -76,6 +76,12 @@ struct TileHandleInfo {
 
 static std::optional<TileHandleInfo> resolveTileHandle(Value tileBuf,
                                                        Operation *user) {
+  while (auto cast = tileBuf.getDefiningOp<UnrealizedConversionCastOp>()) {
+    if (cast.getNumOperands() != 1 || cast.getNumResults() != 1)
+      break;
+    tileBuf = cast.getOperand(0);
+  }
+
   if (auto alloc = tileBuf.getDefiningOp<pto::AllocTileOp>()) {
     auto tileTy = dyn_cast<pto::TileBufType>(alloc.getResult().getType());
     if (!tileTy) {
@@ -578,6 +584,20 @@ struct FoldTileBufIntrinsicsPass
         deadCasts.push_back(castOp);
     });
     for (auto castOp : llvm::reverse(deadCasts))
+      castOp.erase();
+
+    // Clean up dead unrealized_conversion_cast ops that bridged between
+    // two tile_buf types with different configs (e.g. after
+    // PTOMaterializeTileHandles creates a new alloc_tile with default
+    // config that is bridged to the daemon-generated template type).
+    SmallVector<UnrealizedConversionCastOp, 8> deadTileBufCasts;
+    func.walk([&](UnrealizedConversionCastOp castOp) {
+      if (castOp.use_empty() && castOp.getNumOperands() == 1 &&
+          isa<pto::TileBufType>(castOp.getOperand(0).getType()) &&
+          isa<pto::TileBufType>(castOp.getResult(0).getType()))
+        deadTileBufCasts.push_back(castOp);
+    });
+    for (auto castOp : llvm::reverse(deadTileBufCasts))
       castOp.erase();
 
     while (true) {
