@@ -16,11 +16,11 @@
 
 using namespace PtoTestCommon;
 
-void LaunchTMATMUL_ACC_f16_16x32x16(uint16_t *a, uint16_t *b, float *c, void *stream);
-void LaunchTMATMUL_ACC_f16_128x128x64(uint16_t *a, uint16_t *b, float *c, void *stream);
-void LaunchTMATMUL_ACC_f16_127x128x61(uint16_t *a, uint16_t *b, float *c, void *stream);
+void LaunchTMATMUL_ACC_f16_16x32x16(void *a, void *b, void *c, void *stream);
+void LaunchTMATMUL_ACC_f16_128x128x64(void *a, void *b, void *c, void *stream);
+void LaunchTMATMUL_ACC_f16_127x128x61(void *a, void *b, void *c, void *stream);
 
-using LaunchFn = void (*)(uint16_t *, uint16_t *, float *, void *);
+using LaunchFn = void (*)(void *, void *, void *, void *);
 
 struct TestCase {
     const char *name;
@@ -93,12 +93,7 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
         aclrtMemcpy(aDevice, aBytes, aHost, aBytes, ACL_MEMCPY_HOST_TO_DEVICE);
         aclrtMemcpy(bDevice, bBytes, bHost, bBytes, ACL_MEMCPY_HOST_TO_DEVICE);
 
-        tc.launch(
-            static_cast<uint16_t *>(aDevice),
-            static_cast<uint16_t *>(bDevice),
-            static_cast<float *>(outDevice),
-            stream
-        );
+        tc.launch(aDevice, bDevice, outDevice, stream);
 
         aclrtSynchronizeStream(stream);
         aclrtMemcpy(outHost, outBytes, outDevice, outBytes, ACL_MEMCPY_DEVICE_TO_HOST);

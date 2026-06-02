@@ -15,10 +15,7 @@ import tilelang_dsl as pto
     target="a5",
     op="pto.tmatmul.bias",
     dtypes=[
-        (pto.f16, pto.f16, pto.f16, pto.f32),
-        (pto.f16, pto.f16, pto.bf16, pto.f32),
         (pto.f16, pto.f16, pto.f32, pto.f32),
-        (pto.bf16, pto.bf16, pto.bf16, pto.f32),
         (pto.bf16, pto.bf16, pto.f32, pto.f32),
         (pto.f32, pto.f32, pto.f32, pto.f32),
         (pto.i8, pto.i8, pto.i32, pto.i32),

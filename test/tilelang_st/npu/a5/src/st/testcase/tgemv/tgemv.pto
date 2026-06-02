@@ -5,15 +5,13 @@
 // Per bugfix #001: all cube dimensions must be aligned to hardware block size
 // (fp16 = 16). So M is padded to 16, A is loaded as 16xK fractal.
 // GEMV mode is enabled by omitting disable_gemv on pto.mad.
-// Case 1: basic TGEMV (no bias, no split-K).
-// Case 2: TGEMV_BIAS + TGEMV_ACC (bias + split-K accumulation).
+// NOTE: tgemv TileOp template hardcodes M=1 which is incompatible with
+// padded DMA (M=16). Keep castptr+mad until template supports padded GEMV.
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
 
   // =========================================================================
   // case1: f16 x f16 -> f32, M=1 K=300 N=60  (M_aligned=16, K_aligned=320, N_aligned=64)
-  // Basic TGEMV, no bias.
-  // L1 layout: A@0 (10240B = 16*320*2), B@10240 (40960B = 320*64*2)
   // =========================================================================
   func.func @TGEMV_f16_1x300x60(%a_gm: !pto.ptr<f16, gm>, %b_gm: !pto.ptr<f16, gm>, %c_gm: !pto.ptr<f32, gm>) attributes {pto.aicore} {
     %c0_i64  = arith.constant 0   : i64
@@ -34,10 +32,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 
     pto.mte_gm_l1_frac %a_gm, %l1_a, nd2nz,
       shape(%c16_i64, %c320_i64), src_layout(%c640_i64),
-      dst_group(%c1_i64, %c1_i64, %c16_i64, %c0_i64),
-      ctrl(%c0_i64, %false)
-      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz,
-        shape i64, i64, src_layout(i64),
+      dst_group(%c1_i64, %c1_i64, %c16_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64, src_layout(i64),
         dst_group i64, i64, i64, i64, ctrl i64, i1
     pto.set_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID0"]
@@ -46,10 +42,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 
     pto.mte_gm_l1_frac %b_gm, %l1_b, nd2nz,
       shape(%c320_i64, %c64_i64), src_layout(%c128_i64),
-      dst_group(%c1_i64, %c1_i64, %c320_i64, %c0_i64),
-      ctrl(%c0_i64, %false)
-      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz,
-        shape i64, i64, src_layout(i64),
+      dst_group(%c1_i64, %c1_i64, %c320_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64, src_layout(i64),
         dst_group i64, i64, i64, i64, ctrl i64, i1
     pto.set_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID1"]
     pto.wait_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID1"]
@@ -72,9 +66,6 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
   // =========================================================================
   // case2: f16 x f16 -> f32, M=1 K=512 N=85  (M_aligned=16, N_aligned=96)
   // Split-K with bias: BASEK=256, iter=2.
-  //   Pass 0: mad_bias  A[:,0:256] x B[0:256,:] + bias
-  //   Pass 1: mad_acc   A[:,256:512] x B[256:512,:]
-  // L1 layout: A@0 (16384B = 16*512*2), B@16384 (49152B = 256*96*2), bias@65536 (384B = 96*4)
   // =========================================================================
   func.func @TGEMV_BIAS_f16_1x512x85(%a_gm: !pto.ptr<f16, gm>, %b_gm: !pto.ptr<f16, gm>, %bias_gm: !pto.ptr<f32, gm>, %c_gm: !pto.ptr<f32, gm>) attributes {pto.aicore} {
     %c0_i64  = arith.constant 0   : i64
@@ -107,17 +98,13 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 
     pto.mte_gm_l1_frac %a0, %l1_a, nd2nz,
       shape(%c16_i64, %c256_i64), src_layout(%c1024_i64),
-      dst_group(%c1_i64, %c1_i64, %c16_i64, %c0_i64),
-      ctrl(%c0_i64, %false)
-      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz,
-        shape i64, i64, src_layout(i64),
+      dst_group(%c1_i64, %c1_i64, %c16_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64, src_layout(i64),
         dst_group i64, i64, i64, i64, ctrl i64, i1
     pto.mte_gm_l1_frac %b0, %l1_b, nd2nz,
       shape(%c256_i64, %c96_i64), src_layout(%c192_i64),
-      dst_group(%c1_i64, %c1_i64, %c256_i64, %c0_i64),
-      ctrl(%c0_i64, %false)
-      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz,
-        shape i64, i64, src_layout(i64),
+      dst_group(%c1_i64, %c1_i64, %c256_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64, src_layout(i64),
         dst_group i64, i64, i64, i64, ctrl i64, i1
     pto.mte_gm_l1 %bias_gm, %l1_bias, %c384_i64 nburst(%c1_i64, %c0_i64, %c0_i64)
       : !pto.ptr<f32, gm>, !pto.ptr<f32, l1>, i64, i64, i64, i64
@@ -140,24 +127,18 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     pto.wait_flag["PIPE_M", "PIPE_MTE2", "EVENT_ID0"]
 
     // ---- Pass 1: A[:,256:512], B[256:512,:] ----
-    // A offset = 256 f16 elements (column offset in row-major A[16,512])
-    // B offset = 256*96 = 24576 f16 elements (skip 256 rows of B[512,96])
     %a1 = pto.addptr %a_gm, %c256_index : !pto.ptr<f16, gm> -> !pto.ptr<f16, gm>
     %b1 = pto.addptr %b_gm, %c24576_index : !pto.ptr<f16, gm> -> !pto.ptr<f16, gm>
 
     pto.mte_gm_l1_frac %a1, %l1_a, nd2nz,
       shape(%c16_i64, %c256_i64), src_layout(%c1024_i64),
-      dst_group(%c1_i64, %c1_i64, %c16_i64, %c0_i64),
-      ctrl(%c0_i64, %false)
-      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz,
-        shape i64, i64, src_layout(i64),
+      dst_group(%c1_i64, %c1_i64, %c16_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64, src_layout(i64),
         dst_group i64, i64, i64, i64, ctrl i64, i1
     pto.mte_gm_l1_frac %b1, %l1_b, nd2nz,
       shape(%c256_i64, %c96_i64), src_layout(%c192_i64),
-      dst_group(%c1_i64, %c1_i64, %c256_i64, %c0_i64),
-      ctrl(%c0_i64, %false)
-      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz,
-        shape i64, i64, src_layout(i64),
+      dst_group(%c1_i64, %c1_i64, %c256_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<f16, gm>, !pto.ptr<f16, l1>, nd2nz, shape i64, i64, src_layout(i64),
         dst_group i64, i64, i64, i64, ctrl i64, i1
 
     pto.set_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID1"]

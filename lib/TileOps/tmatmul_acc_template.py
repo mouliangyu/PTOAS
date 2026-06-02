@@ -22,6 +22,6 @@ import tilelang_dsl as pto
 )
 def template_tmatmul_acc(acc_in: pto.Tile, lhs: pto.Tile, rhs: pto.Tile, dst: pto.Tile):
     m, k = lhs.valid_shape
-    n, _ = rhs.valid_shape
+    _, n = rhs.valid_shape
     pto.mad_acc(lhs.as_ptr(), rhs.as_ptr(), dst.as_ptr(), m, n, k, disable_gemv=True)
     return None

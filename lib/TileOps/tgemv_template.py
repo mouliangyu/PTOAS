@@ -28,6 +28,6 @@ import tilelang_dsl as pto
 )
 def template_tgemv(lhs: pto.Tile, rhs: pto.Tile, acc: pto.Tile):
     _, k = lhs.valid_shape
-    n, _ = rhs.valid_shape
+    _, n = rhs.valid_shape
     pto.mad(lhs.as_ptr(), rhs.as_ptr(), acc.as_ptr(), 1, n, k)
     return None

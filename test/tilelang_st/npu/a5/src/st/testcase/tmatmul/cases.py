@@ -44,7 +44,7 @@ CASES = [
         "b_dtype": np.int8,
         "c_dtype": np.int32,
         "M": 6, "K": 7, "N": 8,
-        "M_aligned": 16, "K_use": 7, "N_aligned": 32,
+        "M_aligned": 16, "K_use": 32, "N_aligned": 32,
         "eps": 1e-6,
     },
     # ---- case3: f16 x f16 -> f32, 127x128x61 (M pad→128, N pad→64, K aligned) ----

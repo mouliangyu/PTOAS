@@ -46,7 +46,7 @@ struct TestCase {
 static const TestCase kCases[] = {
     // M/K/N values match gen_data padding: K_use is K rounded up to block size.
     {"f16_40x50x60",                    LaunchTMATMUL_f16_40x50x60,                    48,  64,  64,  2, 2, 4},
-    {"i8_6x7x8",                        LaunchTMATMUL_i8_6x7x8,                        16,   7,  32,  1, 1, 4},
+    {"i8_6x7x8",                        LaunchTMATMUL_i8_6x7x8,                        16,  32,  32,  1, 1, 4},
     {"f16_127x128x61",                  LaunchTMATMUL_f16_127x128x61,                 128, 128,  64,  2, 2, 4},
     {"f32_120x110x50",                  LaunchTMATMUL_f32_120x110x50,                 128, 112,  64,  4, 4, 4},
     {"bf16_144x80x48",                  LaunchTMATMUL_bf16_144x80x48,                 144,  80,  48,  2, 2, 4},
