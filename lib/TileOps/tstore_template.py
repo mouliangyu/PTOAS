@@ -622,8 +622,8 @@ def template_tstore_fp_acc_to_gm(src: pto.Tile, fp: pto.Tile, dst: pto.Partition
     # Determine pre_quant mode based on destination dtype:
     # f16 -> "f32_f16", bf16 -> "f32_bf16"
     dst_dtype = dst.element_type
-    dst_dtype_name = dst_dtype.name if hasattr(dst_dtype, "name") else str(dst_dtype)
-    if dst_dtype_name == "bf16":
+
+    if pto.constexpr(dst_dtype == pto.bf16):
         quant_mode = "f32_bf16"
     else:
         quant_mode = "f32_f16"
