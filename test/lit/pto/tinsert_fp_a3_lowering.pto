@@ -13,4 +13,4 @@ module {
 }
 
 // CHECK-LABEL: AICORE void tinsert_fp_a3(
-// CHECK: TINSERT_FP<
+// CHECK: TINSERT_FP(

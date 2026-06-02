@@ -7991,20 +7991,10 @@ struct PTOInsertFPToEmitC : public OpConversionPattern<pto::TInsertFPOp> {
     auto fpOT  = mlir::dyn_cast<emitc::OpaqueType>(fp.getType());
 
     if (!hasMode && !reluNonDefault) {
-      // Legacy path: emit TINSERT_FP without template args.
-      ArrayAttr templateArgs;
-      if (dstOT && srcOT && fpOT) {
-        templateArgs = rewriter.getArrayAttr({
-            emitc::OpaqueAttr::get(ctx, dstOT.getValue().str()),
-            emitc::OpaqueAttr::get(ctx, srcOT.getValue().str()),
-            emitc::OpaqueAttr::get(ctx, fpOT.getValue().str()),
-        });
-      } else {
-        templateArgs = ArrayAttr{};
-      }
       rewriter.create<emitc::CallOpaqueOp>(
           loc, TypeRange{}, "TINSERT_FP",
-          /*args=*/ArrayAttr{}, templateArgs, operands);
+          /*args=*/ArrayAttr{}, /*templateArgs=*/ArrayAttr{},
+          operands);
     } else {
       // Path with accToVecMode / reluPreMode: emit TINSERT with full template args.
       SmallVector<Attribute, 5> templateArgVec;
