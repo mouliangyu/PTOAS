@@ -19,6 +19,7 @@ class _TileNamespace:
     load = staticmethod(_ops.tload)
     store = staticmethod(_ops.tstore)
     mov = staticmethod(_ops.tmov)
+    insert = staticmethod(_ops.tinsert)
     matmul = staticmethod(_ops.tmatmul)
     matmul_acc = staticmethod(_ops.tmatmul_acc)
 
