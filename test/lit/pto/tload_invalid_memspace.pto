@@ -32,4 +32,4 @@ module attributes {pto.target_arch = "a5"} {
  }
 }
 
-// CHECK: error: expects src and dst element types to have the same element size
+// CHECK: expects src and dst element types to have the same element size

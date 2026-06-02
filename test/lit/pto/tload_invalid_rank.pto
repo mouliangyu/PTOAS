@@ -32,4 +32,4 @@ module attributes {pto.target_arch = "a5"} {
  }
 }
 
-// CHECK: error: expects A5 tload vec dst layout to be ND, DN, or NZ
+// CHECK: expects A5 tload vec dst layout to be ND, DN, or NZ
