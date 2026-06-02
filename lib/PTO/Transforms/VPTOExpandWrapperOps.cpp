@@ -709,7 +709,8 @@ struct LoadCbufToCbControl {
 
 static FailureOr<LoadCbufToCbControl>
 deriveLoadCbufToCbControl(Location loc, Value k, Value n, Type elementType,
-                          bool transpose, PatternRewriter &rewriter) {
+                          Value mStart, Value kStart, bool transpose,
+                          PatternRewriter &rewriter) {
   unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
   if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
     return failure();
@@ -724,13 +725,12 @@ deriveLoadCbufToCbControl(Location loc, Value k, Value n, Type elementType,
     return rewriter.create<arith::DivUIOp>(loc, sum, constant(divisor));
   };
 
-  Value zero = constant(0);
   if (!transpose) {
     Value mStep = ceilDivConst(n, 16);
     Value kBytes = rewriter.create<arith::MulIOp>(loc, k, constant(elemBytes));
     Value kStep = ceilDivConst(kBytes, 32);
     Value stride = ceilDivConst(n, 16);
-    return LoadCbufToCbControl{zero, zero, mStep, kStep, stride, stride};
+    return LoadCbufToCbControl{mStart, kStart, mStep, kStep, stride, stride};
   }
 
   uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
@@ -743,12 +743,13 @@ deriveLoadCbufToCbControl(Location loc, Value k, Value n, Type elementType,
   Value kStep = ceilDivConst(nBytes, 32);
   Value srcStride = ceilDivConst(kAlign, 16);
   Value dstStride = ceilDivConst(nAlign, 16);
-  return LoadCbufToCbControl{zero, zero, mStep, kStep, srcStride, dstStride};
+  return LoadCbufToCbControl{mStart, kStart, mStep, kStep, srcStride, dstStride};
 }
 
 static FailureOr<LoadCbufToCbControl>
 deriveLoadCbufToCaControl(Location loc, Value m, Value k, Type elementType,
-                          bool transpose, PatternRewriter &rewriter) {
+                          Value mStart, Value kStart, bool transpose,
+                          PatternRewriter &rewriter) {
   unsigned elemBitWidth = elementType.getIntOrFloatBitWidth();
   if (elemBitWidth == 0 || (elemBitWidth % 8) != 0)
     return failure();
@@ -763,13 +764,12 @@ deriveLoadCbufToCaControl(Location loc, Value m, Value k, Type elementType,
     return rewriter.create<arith::DivUIOp>(loc, sum, constant(divisor));
   };
 
-  Value zero = constant(0);
   if (!transpose) {
     Value mStep = ceilDivConst(m, 16);
     Value kBytes = rewriter.create<arith::MulIOp>(loc, k, constant(elemBytes));
     Value kStep = ceilDivConst(kBytes, 32);
     Value stride = ceilDivConst(m, 16);
-    return LoadCbufToCbControl{zero, zero, mStep, kStep, stride, stride};
+    return LoadCbufToCbControl{mStart, kStart, mStep, kStep, stride, stride};
   }
 
   uint64_t c0Size = std::max<uint64_t>(16, 32 / elemBytes);
@@ -782,7 +782,14 @@ deriveLoadCbufToCaControl(Location loc, Value m, Value k, Type elementType,
   Value kStep = ceilDivConst(mBytes, 32);
   Value srcStride = ceilDivConst(kAlign, 16);
   Value dstStride = ceilDivConst(mAlign, 16);
-  return LoadCbufToCbControl{zero, zero, mStep, kStep, srcStride, dstStride};
+  return LoadCbufToCbControl{mStart, kStart, mStep, kStep, srcStride, dstStride};
+}
+
+static Value getCubeStageLoadStartOrZero(Location loc, Value start,
+                                         PatternRewriter &rewriter) {
+  if (start)
+    return start;
+  return rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
 }
 
 static Value extractConfigLow40(Location loc, Value packed,
@@ -1260,9 +1267,13 @@ struct ExpandLeftLoadPattern : public OpRewritePattern<pto::MteL1L0aOp> {
     auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
     if (!sourceType)
       return rewriter.notifyMatchFailure(op, "expected typed L1 source");
+    Value startRow =
+        getCubeStageLoadStartOrZero(loc, op.getStartRow(), rewriter);
+    Value startCol =
+        getCubeStageLoadStartOrZero(loc, op.getStartCol(), rewriter);
     FailureOr<LoadCbufToCbControl> control = deriveLoadCbufToCaControl(
         loc, op.getM(), op.getK(), sourceType.getElementType(),
-        op.getTranspose(), rewriter);
+        startRow, startCol, op.getTranspose(), rewriter);
     if (failed(control))
       return rewriter.notifyMatchFailure(op,
                                          "failed to derive load_cbuf_to_ca control");
@@ -1285,9 +1296,13 @@ struct ExpandRightLoadPattern : public OpRewritePattern<pto::MteL1L0bOp> {
     auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
     if (!sourceType)
       return rewriter.notifyMatchFailure(op, "expected typed L1 source");
+    Value startRow =
+        getCubeStageLoadStartOrZero(loc, op.getStartRow(), rewriter);
+    Value startCol =
+        getCubeStageLoadStartOrZero(loc, op.getStartCol(), rewriter);
     FailureOr<LoadCbufToCbControl> control = deriveLoadCbufToCbControl(
         loc, op.getK(), op.getN(), sourceType.getElementType(),
-        op.getTranspose(), rewriter);
+        startRow, startCol, op.getTranspose(), rewriter);
     if (failed(control))
       return rewriter.notifyMatchFailure(op,
                                          "failed to derive load_cbuf_to_cb control");
