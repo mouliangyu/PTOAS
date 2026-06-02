@@ -785,13 +785,6 @@ deriveLoadCbufToCaControl(Location loc, Value m, Value k, Type elementType,
   return LoadCbufToCbControl{mStart, kStart, mStep, kStep, srcStride, dstStride};
 }
 
-static Value getCubeStageLoadStartOrZero(Location loc, Value start,
-                                         PatternRewriter &rewriter) {
-  if (start)
-    return start;
-  return rewriter.create<arith::ConstantIntOp>(loc, 0, 64);
-}
-
 static Value extractConfigLow40(Location loc, Value packed,
                                 PatternRewriter &rewriter) {
   Value lowMask =
@@ -1267,13 +1260,9 @@ struct ExpandLeftLoadPattern : public OpRewritePattern<pto::MteL1L0aOp> {
     auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
     if (!sourceType)
       return rewriter.notifyMatchFailure(op, "expected typed L1 source");
-    Value startRow =
-        getCubeStageLoadStartOrZero(loc, op.getStartRow(), rewriter);
-    Value startCol =
-        getCubeStageLoadStartOrZero(loc, op.getStartCol(), rewriter);
     FailureOr<LoadCbufToCbControl> control = deriveLoadCbufToCaControl(
         loc, op.getM(), op.getK(), sourceType.getElementType(),
-        startRow, startCol, op.getTranspose(), rewriter);
+        op.getStartRow(), op.getStartCol(), op.getTranspose(), rewriter);
     if (failed(control))
       return rewriter.notifyMatchFailure(op,
                                          "failed to derive load_cbuf_to_ca control");
@@ -1296,13 +1285,9 @@ struct ExpandRightLoadPattern : public OpRewritePattern<pto::MteL1L0bOp> {
     auto sourceType = dyn_cast<pto::PtrType>(op.getSource().getType());
     if (!sourceType)
       return rewriter.notifyMatchFailure(op, "expected typed L1 source");
-    Value startRow =
-        getCubeStageLoadStartOrZero(loc, op.getStartRow(), rewriter);
-    Value startCol =
-        getCubeStageLoadStartOrZero(loc, op.getStartCol(), rewriter);
     FailureOr<LoadCbufToCbControl> control = deriveLoadCbufToCbControl(
         loc, op.getK(), op.getN(), sourceType.getElementType(),
-        startRow, startCol, op.getTranspose(), rewriter);
+        op.getStartRow(), op.getStartCol(), op.getTranspose(), rewriter);
     if (failed(control))
       return rewriter.notifyMatchFailure(op,
                                          "failed to derive load_cbuf_to_cb control");

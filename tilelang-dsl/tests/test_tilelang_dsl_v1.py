@@ -2963,11 +2963,11 @@ class TileLangDSLDescriptorTests(unittest.TestCase):
         )
         self.assertRegex(
             text,
-            r"pto\.mte_l1_l0a %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+ start\(%[A-Za-z0-9_]+, %[A-Za-z0-9_]+\) \{transpose = true\} : !pto\.ptr<f16, l1>, !pto\.ptr<f16, l0a>, i64, i64, i64, i64",
+            r"pto\.mte_l1_l0a %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+ \{transpose = true\} : !pto\.ptr<f16, l1>, !pto\.ptr<f16, l0a>, i64, i64, i64, i64",
         )
         self.assertRegex(
             text,
-            r"pto\.mte_l1_l0b %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+ : !pto\.ptr<f16, l1>, !pto\.ptr<f16, l0b>, i64, i64",
+            r"pto\.mte_l1_l0b %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+, %[A-Za-z0-9_]+ : !pto\.ptr<f16, l1>, !pto\.ptr<f16, l0b>, i64, i64, i64, i64",
         )
         self.assertRegex(
             text,

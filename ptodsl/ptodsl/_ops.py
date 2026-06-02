@@ -3019,10 +3019,6 @@ def mem_bar(barrier_type):
     _pto.MemBarOp(kind=_membar_attr(barrier_name))
 
 
-def _is_default_zero(value):
-    return isinstance(value, int) and not isinstance(value, bool) and value == 0
-
-
 @_explicit_mode_only("pto.mte_l1_l0a(...)")
 def mte_l1_l0a(
     source,
@@ -3035,16 +3031,14 @@ def mte_l1_l0a(
     transpose=False,
 ):
     """``pto.mte_l1_l0a`` – cube-side LEFT staging."""
-    kwargs = {"transpose": transpose}
-    if not (_is_default_zero(start_row) and _is_default_zero(start_col)):
-        kwargs["start_row"] = _coerce_i64(start_row, context="mte_l1_l0a start_row")
-        kwargs["start_col"] = _coerce_i64(start_col, context="mte_l1_l0a start_col")
     _pto.MteL1L0aOp(
         unwrap_surface_value(source),
         unwrap_surface_value(destination),
         _coerce_i64(m, context="mte_l1_l0a m"),
         _coerce_i64(k, context="mte_l1_l0a k"),
-        **kwargs,
+        _coerce_i64(start_row, context="mte_l1_l0a start_row"),
+        _coerce_i64(start_col, context="mte_l1_l0a start_col"),
+        transpose=transpose,
     )
 
 
@@ -3060,16 +3054,14 @@ def mte_l1_l0b(
     transpose=False,
 ):
     """``pto.mte_l1_l0b`` – cube-side RIGHT staging."""
-    kwargs = {"transpose": transpose}
-    if not (_is_default_zero(start_row) and _is_default_zero(start_col)):
-        kwargs["start_row"] = _coerce_i64(start_row, context="mte_l1_l0b start_row")
-        kwargs["start_col"] = _coerce_i64(start_col, context="mte_l1_l0b start_col")
     _pto.MteL1L0bOp(
         unwrap_surface_value(source),
         unwrap_surface_value(destination),
         _coerce_i64(k, context="mte_l1_l0b k"),
         _coerce_i64(n, context="mte_l1_l0b n"),
-        **kwargs,
+        _coerce_i64(start_row, context="mte_l1_l0b start_row"),
+        _coerce_i64(start_col, context="mte_l1_l0b start_col"),
+        transpose=transpose,
     )
 
 

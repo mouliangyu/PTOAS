@@ -21,9 +21,9 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
     %c4_i64 = arith.constant 4 : i64
     %c5_i64 = arith.constant 5 : i64
 
-    pto.mte_l1_l0a %src_mat, %dst_left, %c16_i64, %c32_i64 start(%c2_i64, %c3_i64)
+    pto.mte_l1_l0a %src_mat, %dst_left, %c16_i64, %c32_i64, %c2_i64, %c3_i64
       : memref<?xf16, #pto.address_space<mat>>, memref<?xf16, #pto.address_space<left>>, i64, i64, i64, i64
-    pto.mte_l1_l0b %src_mat, %dst_right, %c32_i64, %c16_i64 start(%c4_i64, %c5_i64) {transpose = true}
+    pto.mte_l1_l0b %src_mat, %dst_right, %c32_i64, %c16_i64, %c4_i64, %c5_i64 {transpose = true}
       : memref<?xf16, #pto.address_space<mat>>, memref<?xf16, #pto.address_space<right>>, i64, i64, i64, i64
 
     return
@@ -31,8 +31,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
 }
 
 // ROUNDTRIP-LABEL: func.func @issue_465_mte_stage_load_start_position(
-// ROUNDTRIP: pto.mte_l1_l0a %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}} start(%{{.*}}, %{{.*}})
-// ROUNDTRIP: pto.mte_l1_l0b %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}} start(%{{.*}}, %{{.*}}) {transpose = true}
+// ROUNDTRIP: pto.mte_l1_l0a %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}
+// ROUNDTRIP: pto.mte_l1_l0b %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}} {transpose = true}
 
 // EXPAND-LABEL: func.func @issue_465_mte_stage_load_start_position(
 // EXPAND-DAG: %[[LHS_ROW:.*]] = arith.constant 2 : i64

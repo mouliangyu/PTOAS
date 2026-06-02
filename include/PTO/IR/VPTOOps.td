@@ -2667,7 +2667,6 @@ def PTO_MteGmL1FracOp : PTO_Op<"mte_gm_l1_frac", [
 }
 
 def PTO_MteL1L0aOp : PTO_Op<"mte_l1_l0a", [
-    AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
@@ -2675,19 +2674,23 @@ def PTO_MteL1L0aOp : PTO_Op<"mte_l1_l0a", [
     PTO_BufferLikeType:$destination,
     I64:$m,
     I64:$k,
-    Optional<I64>:$start_row,
-    Optional<I64>:$start_col,
+    I64:$start_row,
+    I64:$start_col,
     DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
 
   let hasVerifier = 1;
-  let hasCustomAssemblyFormat = 1;
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $m `,` $k `,` $start_row `,` $start_col
+    attr-dict `:` type($source) `,` type($destination) `,` type($m) `,`
+    type($k) `,` type($start_row) `,` type($start_col)
+  }];
 }
 
 def PTO_MteL1L0bOp : PTO_Op<"mte_l1_l0b", [
-    AttrSizedOperandSegments,
     DeclareOpInterfaceMethods<MemoryEffectsOpInterface>
   ]> {
   let arguments = (ins
@@ -2695,15 +2698,20 @@ def PTO_MteL1L0bOp : PTO_Op<"mte_l1_l0b", [
     PTO_BufferLikeType:$destination,
     I64:$k,
     I64:$n,
-    Optional<I64>:$start_row,
-    Optional<I64>:$start_col,
+    I64:$start_row,
+    I64:$start_col,
     DefaultValuedAttr<BoolAttr, "false">:$transpose
   );
 
   let results = (outs);
 
   let hasVerifier = 1;
-  let hasCustomAssemblyFormat = 1;
+
+  let assemblyFormat = [{
+    $source `,` $destination `,` $k `,` $n `,` $start_row `,` $start_col
+    attr-dict `:` type($source) `,` type($destination) `,` type($k) `,`
+    type($n) `,` type($start_row) `,` type($start_col)
+  }];
 }
 
 def PTO_MteL1L0aMxOp : PTO_Op<"mte_l1_l0a_mx", [

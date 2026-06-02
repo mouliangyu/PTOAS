@@ -1818,7 +1818,7 @@ def main() -> None:
     expect("pto.vcgadd" in public_surface_text, "vcgadd(...) should lower to pto.vcgadd")
     expect("pto.vadds" in public_surface_text, "vsubs(...) should lower via scalar negation plus pto.vadds")
     expect("pto.mte_l1_l0a" in public_surface_text, "mte_l1_l0a(...) should lower to pto.mte_l1_l0a")
-    expect("start(" in public_surface_text, "mte_l1_l0a/l0b start_row/start_col should lower to start(...)")
+    expect("start(" not in public_surface_text, "mte_l1_l0a/l0b start_row/start_col should lower as operands")
     expect('pto.get_buf "PIPE_V", 0, 0' in sync_surface_text, 'get_buf(Pipe.V, 0) should lower to pto.get_buf with PIPE_V')
     expect('pto.rls_buf "PIPE_MTE2", 1, 2' in sync_surface_text, 'rls_buf(Pipe.MTE2, 1, 2) should lower to pto.rls_buf with PIPE_MTE2')
     expect('pto.set_flag["PIPE_MTE2", "PIPE_V", "EVENT_ID0"]' in sync_surface_text, "set_flag(..., event_id=0) should lower static event ids to pto.set_flag")

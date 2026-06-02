@@ -2669,24 +2669,16 @@ class _AuthoringRenderer:
         start_suffix = ""
         start_type_suffix = ""
         attr_entries: list[str] = []
-        if expr.name in {"mte_l1_l0a", "mte_l1_l0b"} and len(expr.args) >= 7:
+        if expr.name in {"mte_l1_l0a", "mte_l1_l0b"}:
+            if len(expr.args) < 7:
+                raise ValueError(f"pto.{expr.name} requires normalized start_row and start_col operands")
             start_row_expr = expr.args[cursor]
             start_col_expr = expr.args[cursor + 1]
             cursor += 2
-            try:
-                emit_start = not (
-                    self._extract_static_int(start_row_expr, context=f"pto.{expr.name} start_row") == 0
-                    and self._extract_static_int(start_col_expr, context=f"pto.{expr.name} start_col") == 0
-                )
-            except NotImplementedError:
-                emit_start = True
-            if emit_start:
-                start_row = self._lower_to_i64(start_row_expr, env, indent=indent, into=into)
-                start_col = self._lower_to_i64(start_col_expr, env, indent=indent, into=into)
-                start_suffix = f" start({start_row.name}, {start_col.name})"
-                start_type_suffix = (
-                    f", {self._render_type(start_row.type)}, {self._render_type(start_col.type)}"
-                )
+            start_row = self._lower_to_i64(start_row_expr, env, indent=indent, into=into)
+            start_col = self._lower_to_i64(start_col_expr, env, indent=indent, into=into)
+            start_suffix = f", {start_row.name}, {start_col.name}"
+            start_type_suffix = f", {self._render_type(start_row.type)}, {self._render_type(start_col.type)}"
         if len(expr.args) > cursor and self._extract_static_bool(
             expr.args[cursor], context=f"pto.{expr.name} transpose"
         ):
