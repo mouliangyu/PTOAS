@@ -11,6 +11,7 @@
 
 #include "PTO/Transforms/GraphSyncSolver/MemInfo.h"
 #include "PTO/IR/PTO.h"
+#include "PTO/IR/PTOTypeUtils.h"
 #include "../Utils.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
@@ -29,11 +30,11 @@ static std::optional<int64_t> getBufferBitSize(Value value) {
     return ShapedType::kDynamic;
   }
   Type elementType = shaped.getElementType();
-  auto bitWidth = elementType.getIntOrFloatBitWidth();
-  if (bitWidth == 0) {
+  unsigned byteSize = getPTOStorageElemByteSize(elementType);
+  if (byteSize == 0) {
     return ShapedType::kDynamic;
   }
-  return shaped.getNumElements() * bitWidth;
+  return shaped.getNumElements() * byteSize * 8;
 }
 
 llvm::SmallVector<int64_t> getAddresses(const llvm::SmallVector<Value> &addrs) {
