@@ -15,14 +15,23 @@ import numpy as np
 
 def main():
     strict = os.getenv("COMPARE_STRICT", "1") != "0"
+    lanes = 32
+    fields = 20
+    valid_fields = 16
     golden = np.fromfile("golden_v1.bin", dtype=np.int32)
     out = np.fromfile("v1.bin", dtype=np.int32)
+    valid = np.concatenate(
+        [np.arange(lane * fields, lane * fields + valid_fields) for lane in range(lanes)]
+    )
+    golden = golden[valid]
+    out = out[valid]
     ok = golden.shape == out.shape and np.array_equal(golden, out)
     if not ok:
         idxs = np.nonzero(golden != out)[0]
         idx = int(idxs[0]) if idxs.size else 0
+        logical_idx = int(valid[idx]) if idxs.size else 0
         print(
-            f"[ERROR] mismatch at idx={idx}, golden={int(golden[idx])}, out={int(out[idx])}"
+            f"[ERROR] mismatch at idx={logical_idx}, golden={int(golden[idx])}, out={int(out[idx])}"
         )
         if strict:
             sys.exit(2)

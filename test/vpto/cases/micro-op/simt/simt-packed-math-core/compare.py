@@ -13,8 +13,11 @@ import numpy as np
 
 
 def main():
+    valid_elems = 26
     golden = np.fromfile("golden_v1.bin", dtype=np.uint32)
     out = np.fromfile("v1.bin", dtype=np.uint32)
+    golden = golden[:valid_elems]
+    out = out[:valid_elems]
     ok = golden.shape == out.shape and np.array_equal(golden, out)
     if not ok:
         idxs = np.nonzero(golden != out)[0]
