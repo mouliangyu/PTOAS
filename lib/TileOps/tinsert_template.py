@@ -116,8 +116,51 @@ def _vec_to_mat_nd_constraint(src, dst) -> bool:
         and src.config.b_layout == pto.BLayout.ROW_MAJOR
         and src.config.s_layout == pto.SLayout.NONE_BOX
         and dst.memory_space == "mat"
-        and src.shape[1] * pto.bytewidth(pto.ScalarType(src.dtype)) >= BLOCK_BYTE_SIZE
+        and dst.config.s_layout == pto.SLayout.NONE_BOX
+        and src.valid_shape[1] * pto.bytewidth(pto.ScalarType(src.dtype)) >= BLOCK_BYTE_SIZE
     )
+
+
+def _pre_quant_vec_mode(src_dtype, dst_dtype):
+    if pto.constexpr(src_dtype == pto.f32):
+        if pto.constexpr(dst_dtype == pto.f16):
+            return "qf322f16_pre_vec"
+        elif pto.constexpr(dst_dtype == pto.bf16):
+            return "qf322bf16_pre_vec"
+        elif pto.constexpr(dst_dtype == pto.f32):
+            return "qf322f32_pre_vec"
+        else:
+            return "qf322b8_pre_vec"
+    else:
+        if pto.constexpr(dst_dtype == pto.f16):
+            return "deqf16_vec"
+        elif pto.constexpr(dst_dtype == pto.bf16):
+            return "qs322bf16_pre_vec"
+        elif pto.constexpr(dst_dtype == pto.i32):
+            return "deqs32_int_vec"
+        else:
+            return "req8_vec"
+
+
+def _pre_quant_scalar_mode(src_dtype, dst_dtype):
+    if pto.constexpr(src_dtype == pto.f32):
+        if pto.constexpr(dst_dtype == pto.f16):
+            return "qf322f16_pre_scalar"
+        elif pto.constexpr(dst_dtype == pto.bf16):
+            return "qf322bf16_pre_scalar"
+        elif pto.constexpr(dst_dtype == pto.f32):
+            return "qf322f32_pre_scalar"
+        else:
+            return "qf322b8_pre_scalar"
+    else:
+        if pto.constexpr(dst_dtype == pto.f16):
+            return "deqf16_scalar"
+        elif pto.constexpr(dst_dtype == pto.bf16):
+            return "qs322bf16_pre_scalar"
+        elif pto.constexpr(dst_dtype == pto.i32):
+            return "deqs32_int_scalar"
+        else:
+            return "req8_scalar"
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +190,7 @@ def template_tinsert_acc_to_mat(
     src_ptr = src.as_ptr()
     dst_ptr = dst.as_ptr()
 
+    src_elem = src.element_type
     dst_elem = dst.element_type
     elem_bytes = pto.bytewidth(dst_elem)
     c0_standard = BLOCK_BYTE_SIZE // elem_bytes
@@ -156,8 +200,8 @@ def template_tinsert_acc_to_mat(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols = src.valid_shape[1]
     n_size = (valid_cols + c0_size - 1) // c0_size * c0_size
 
     dst_rows = dst.shape[0]
@@ -179,13 +223,13 @@ def template_tinsert_acc_to_mat(
                 src_ptr, dst_ptr,
                 valid_rows, n_size, src_stride, dst_stride,
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_l1(
                 src_ptr, dst_ptr,
                 valid_rows, n_size, src_stride, dst_stride,
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(has_scalar):
         if pto.constexpr(relu_mode_name == "normal_relu"):
@@ -193,13 +237,13 @@ def template_tinsert_acc_to_mat(
                 src_ptr, dst_ptr,
                 valid_rows, n_size, src_stride, dst_stride,
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_l1(
                 src_ptr, dst_ptr,
                 valid_rows, n_size, src_stride, dst_stride,
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(relu_mode_name == "normal_relu"):
         pto.mte_l0c_l1(
@@ -222,10 +266,7 @@ def template_tinsert_acc_to_mat(
         (pto.f32, pto.i32, pto.i32, pto.f16),
         (pto.f32, pto.i32, pto.i32, pto.bf16),
         (pto.f32, pto.i32, pto.i32, pto.f32),
-        (pto.f32, pto.i32, pto.i32, pto.i8),
-        (pto.i32, pto.i32, pto.i32, pto.f16),
-        (pto.i32, pto.i32, pto.i32, pto.bf16),
-        (pto.i32, pto.i32, pto.i32, pto.i8),
+        (pto.i32, pto.i32, pto.i32, pto.i32),
     ],
     constraints=[_acc_to_mat_constraint],
 )
@@ -246,8 +287,8 @@ def template_tinsert_acc_to_mat_basic(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols = src.valid_shape[1]
     n_size = (valid_cols + c0_size - 1) // c0_size * c0_size
 
     dst_rows = dst.shape[0]
@@ -304,11 +345,13 @@ def template_tinsert_acc_to_vec_nd(
     src_ptr = src.as_ptr()
     dst_ptr = dst.as_ptr()
 
-    elem_bytes = pto.bytewidth(dst.element_type)
+    src_elem = src.element_type
+    dst_elem = dst.element_type
+    elem_bytes = pto.bytewidth(dst_elem)
     c0_size = 32 // elem_bytes
 
-    valid_rows = src.shape[0]
-    valid_cols_raw = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols_raw = src.valid_shape[1]
     valid_cols = (valid_cols_raw + c0_size - 1) // c0_size * c0_size
 
     dst_cols = dst.shape[1]
@@ -331,37 +374,39 @@ def template_tinsert_acc_to_vec_nd(
     elif pto.constexpr(acc_mode_name == "dual_mode_split_n"):
         dst_mode = "split_n"
 
-    if pto.constexpr(has_fp):
+    supports_pre_quant = acc_mode_name not in ("dual_mode_split_m", "dual_mode_split_n")
+
+    if pto.constexpr(has_fp and supports_pre_quant):
         if pto.constexpr(relu_mode_name == "normal_relu"):
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout="nz2nd",
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout="nz2nd",
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
-    elif pto.constexpr(has_scalar):
+    elif pto.constexpr(has_scalar and supports_pre_quant):
         if pto.constexpr(relu_mode_name == "normal_relu"):
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout="nz2nd",
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout="nz2nd",
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(relu_mode_name == "normal_relu"):
         pto.mte_l0c_ub(
@@ -385,8 +430,8 @@ def template_tinsert_acc_to_vec_nd(
     dtypes=[
         (pto.f32, pto.i32, pto.i32, pto.f32),
         (pto.f32, pto.i32, pto.i32, pto.f16),
+        (pto.f32, pto.i32, pto.i32, pto.bf16),
         (pto.i32, pto.i32, pto.i32, pto.i32),
-        (pto.i32, pto.i32, pto.i32, pto.f16),
     ],
     priority=10,
     constraints=[_acc_to_vec_nd_constraint],
@@ -402,8 +447,8 @@ def template_tinsert_acc_to_vec_nd_basic(
     elem_bytes = pto.bytewidth(dst.element_type)
     c0_size = 32 // elem_bytes
 
-    valid_rows = src.shape[0]
-    valid_cols_raw = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols_raw = src.valid_shape[1]
     valid_cols = (valid_cols_raw + c0_size - 1) // c0_size * c0_size
 
     dst_cols = dst.shape[1]
@@ -469,12 +514,14 @@ def template_tinsert_acc_to_vec_dn(
     src_ptr = src.as_ptr()
     dst_ptr = dst.as_ptr()
 
-    elem_bytes = pto.bytewidth(dst.element_type)
+    src_elem = src.element_type
+    dst_elem = dst.element_type
+    elem_bytes = pto.bytewidth(dst_elem)
     c0_size = 32 // elem_bytes
 
-    valid_rows_raw = src.shape[0]
+    valid_rows_raw = src.valid_shape[0]
     valid_rows = (valid_rows_raw + c0_size - 1) // c0_size * c0_size
-    valid_cols = src.shape[1]
+    valid_cols = src.valid_shape[1]
 
     dst_rows = dst.shape[0]
     dst_offset = index_col * dst_rows + index_row
@@ -491,55 +538,51 @@ def template_tinsert_acc_to_vec_dn(
     dst_mode = 0
     if pto.constexpr(acc_mode_name == "single_mode_vec1"):
         dst_mode = 1
-    elif pto.constexpr(acc_mode_name == "dual_mode_split_m"):
-        dst_mode = "split_m"
-    elif pto.constexpr(acc_mode_name == "dual_mode_split_n"):
-        dst_mode = "split_n"
 
     if pto.constexpr(has_fp):
         if pto.constexpr(relu_mode_name == "normal_relu"):
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-                layout=("nz2dn", pto.i64(0)),
+                layout=("nz2dn", pto.i64(1)),
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-                layout=("nz2dn", pto.i64(0)),
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                layout=("nz2dn", pto.i64(1)),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(has_scalar):
         if pto.constexpr(relu_mode_name == "normal_relu"):
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-                layout=("nz2dn", pto.i64(0)),
+                layout=("nz2dn", pto.i64(1)),
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-                layout=("nz2dn", pto.i64(0)),
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                layout=("nz2dn", pto.i64(1)),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(relu_mode_name == "normal_relu"):
         pto.mte_l0c_ub(
             src_ptr, dst_ptr,
             valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-            layout=("nz2dn", pto.i64(0)),
+            layout=("nz2dn", pto.i64(1)),
             pre_relu=("normal_relu", None, None),
         )
     else:
         pto.mte_l0c_ub(
             src_ptr, dst_ptr,
             valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-            layout=("nz2dn", pto.i64(0)),
+            layout=("nz2dn", pto.i64(1)),
         )
     return None
 
@@ -551,13 +594,7 @@ def template_tinsert_acc_to_vec_dn(
         (pto.f32, pto.i32, pto.i32, pto.f32),
         (pto.f32, pto.i32, pto.i32, pto.f16),
         (pto.f32, pto.i32, pto.i32, pto.bf16),
-        (pto.f32, pto.i32, pto.i32, pto.i32),
-        (pto.f32, pto.i32, pto.i32, pto.i8),
-        (pto.i32, pto.i32, pto.i32, pto.f32),
-        (pto.i32, pto.i32, pto.i32, pto.f16),
-        (pto.i32, pto.i32, pto.i32, pto.bf16),
         (pto.i32, pto.i32, pto.i32, pto.i32),
-        (pto.i32, pto.i32, pto.i32, pto.i8),
     ],
     priority=10,
     constraints=[_acc_to_vec_dn_constraint],
@@ -573,9 +610,9 @@ def template_tinsert_acc_to_vec_dn_basic(
     elem_bytes = pto.bytewidth(dst.element_type)
     c0_size = 32 // elem_bytes
 
-    valid_rows_raw = src.shape[0]
+    valid_rows_raw = src.valid_shape[0]
     valid_rows = (valid_rows_raw + c0_size - 1) // c0_size * c0_size
-    valid_cols = src.shape[1]
+    valid_cols = src.valid_shape[1]
 
     dst_rows = dst.shape[0]
     dst_offset = index_col * dst_rows + index_row
@@ -585,28 +622,24 @@ def template_tinsert_acc_to_vec_dn_basic(
     src_stride = (valid_rows + 15) // 16 * 16 * elem_bytes
 
     relu_mode_name = pto.get_op_attr("relu_pre_mode", "no_relu")
-    acc_mode_name = pto.get_op_attr("acc_to_vec_mode", "single_mode_vec0")
 
     dst_mode = 0
+    acc_mode_name = pto.get_op_attr("acc_to_vec_mode", "single_mode_vec0")
     if pto.constexpr(acc_mode_name == "single_mode_vec1"):
         dst_mode = 1
-    elif pto.constexpr(acc_mode_name == "dual_mode_split_m"):
-        dst_mode = "split_m"
-    elif pto.constexpr(acc_mode_name == "dual_mode_split_n"):
-        dst_mode = "split_n"
 
     if pto.constexpr(relu_mode_name == "normal_relu"):
         pto.mte_l0c_ub(
             src_ptr, dst_ptr,
             valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-            layout=("nz2dn", pto.i64(0)),
+            layout=("nz2dn", pto.i64(1)),
             pre_relu=("normal_relu", None, None),
         )
     else:
         pto.mte_l0c_ub(
             src_ptr, dst_ptr,
             valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
-            layout=("nz2dn", pto.i64(0)),
+            layout=("nz2dn", pto.i64(1)),
         )
     return None
 
@@ -640,6 +673,7 @@ def template_tinsert_acc_to_vec_nz(
     src_ptr = src.as_ptr()
     dst_ptr = dst.as_ptr()
 
+    src_elem = src.element_type
     dst_elem = dst.element_type
     elem_bytes = pto.bytewidth(dst_elem)
     c0_standard = BLOCK_BYTE_SIZE // elem_bytes
@@ -649,8 +683,8 @@ def template_tinsert_acc_to_vec_nz(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols_raw = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols_raw = src.valid_shape[1]
 
     if pto.constexpr(dst_elem == pto.f32):
         s_frac_bits = dst.config.s_fractal_size
@@ -691,14 +725,14 @@ def template_tinsert_acc_to_vec_nz(
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout=("nz2nz", pto.i64(0)),
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout=("nz2nz", pto.i64(0)),
-                pre_quant=(fp, "qf322f16_pre_vec"),
+                pre_quant=(fp, _pre_quant_vec_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(has_scalar):
         if pto.constexpr(relu_mode_name == "normal_relu"):
@@ -707,14 +741,14 @@ def template_tinsert_acc_to_vec_nz(
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout=("nz2nz", pto.i64(0)),
                 pre_relu=("normal_relu", None, None),
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
         else:
             pto.mte_l0c_ub(
                 src_ptr, dst_ptr,
                 valid_rows, valid_cols, src_stride, dst_stride, dst_mode,
                 layout=("nz2nz", pto.i64(0)),
-                pre_quant=(pre_quant_scalar, "qf322f16_pre_scalar"),
+                pre_quant=(pre_quant_scalar, _pre_quant_scalar_mode(src_elem, dst_elem)),
             )
     elif pto.constexpr(relu_mode_name == "normal_relu"):
         pto.mte_l0c_ub(
@@ -738,8 +772,8 @@ def template_tinsert_acc_to_vec_nz(
     dtypes=[
         (pto.f32, pto.i32, pto.i32, pto.f32),
         (pto.f32, pto.i32, pto.i32, pto.f16),
+        (pto.f32, pto.i32, pto.i32, pto.bf16),
         (pto.i32, pto.i32, pto.i32, pto.i32),
-        (pto.i32, pto.i32, pto.i32, pto.f16),
     ],
     priority=10,
     constraints=[_acc_to_vec_nz_constraint],
@@ -761,8 +795,8 @@ def template_tinsert_acc_to_vec_nz_basic(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols_raw = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols_raw = src.valid_shape[1]
 
     if pto.constexpr(dst_elem == pto.f32):
         s_frac_bits = dst.config.s_fractal_size
@@ -831,6 +865,14 @@ _VEC_TO_VEC_BASIC_DTYPES = [
     (pto.i8, pto.i32, pto.i32, pto.i8),
 ]
 
+_VEC_TO_MAT_SPLIT_DTYPES = [
+    (pto.f16, pto.i32, pto.i32, pto.f16),
+    (pto.bf16, pto.i32, pto.i32, pto.bf16),
+    (pto.f32, pto.i32, pto.i32, pto.f32),
+    (pto.i32, pto.i32, pto.i32, pto.i32),
+    (pto.i8, pto.i32, pto.i32, pto.i8),
+]
+
 
 @pto.vkernel(
     target="a5",
@@ -848,8 +890,7 @@ def template_tinsert_vec_to_vec_nd(
     elem_bytes = pto.bytewidth(dtype)
     lanes = pto.get_lanes(dtype)
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows, valid_cols = src.valid_shape
     src_stride = src.shape[1]
     dst_stride = dst.shape[1]
 
@@ -937,8 +978,7 @@ def template_tinsert_vec_to_vec_nd_basic(
     elem_bytes = pto.bytewidth(dtype)
     lanes = pto.get_lanes(dtype)
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows, valid_cols = src.valid_shape
     src_stride = src.shape[1]
     dst_stride = dst.shape[1]
 
@@ -1078,8 +1118,8 @@ def template_tinsert_vec_to_vec_nz(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols = src.valid_shape[1]
     dst_rows = dst.shape[0]
 
     src_ptr = src.as_ptr()
@@ -1127,8 +1167,8 @@ def template_tinsert_vec_to_vec_nz_basic(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols = src.valid_shape[1]
     dst_rows = dst.shape[0]
 
     src_ptr = src.as_ptr()
@@ -1198,8 +1238,8 @@ def template_tinsert_vec_to_mat_nz(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols = src.valid_shape[1]
     dst_rows = dst.shape[0]
 
     src_ptr = src.as_ptr()
@@ -1247,8 +1287,8 @@ def template_tinsert_vec_to_mat_nz_basic(
     else:
         c0_size = c0_standard
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows = src.valid_shape[0]
+    valid_cols = src.valid_shape[1]
     dst_rows = dst.shape[0]
 
     src_ptr = src.as_ptr()
@@ -1295,8 +1335,7 @@ def template_tinsert_vec_to_mat_nd(
     dtype = dst.element_type
     elem_bytes = pto.bytewidth(dtype)
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows, valid_cols = src.valid_shape
     src_cols = src.shape[1]
     dst_cols = dst.shape[1]
 
@@ -1337,8 +1376,7 @@ def template_tinsert_vec_to_mat_nd_basic(
     dtype = dst.element_type
     elem_bytes = pto.bytewidth(dtype)
 
-    valid_rows = src.shape[0]
-    valid_cols = src.shape[1]
+    valid_rows, valid_cols = src.valid_shape
     src_cols = src.shape[1]
     dst_cols = dst.shape[1]
 
@@ -1362,3 +1400,85 @@ def template_tinsert_vec_to_mat_nd_basic(
         burst_len = (total_bytes + BLOCK_BYTE_SIZE - 1) // BLOCK_BYTE_SIZE
         pto.mte_ub_l1(src_ptr, dst_ptr, burst_len, nburst=(1, 0, 0))
     return None
+
+
+# ---------------------------------------------------------------------------
+# Vec -> Mat (NZ, Split2/Split4) - O5
+# Split large-tile NZ DMA into 2/4 independent segments to reduce L1 bank
+# conflicts (mirrors pto-isa TInsertMode::SPLIT2 / SPLIT4).
+# ---------------------------------------------------------------------------
+
+
+def _make_split_template(split_count):
+    @pto.vkernel(
+        target="a5",
+        op="pto.tinsert",
+        dtypes=_VEC_TO_MAT_SPLIT_DTYPES,
+        name=f"template_tinsert_vec_to_mat_nz_split{split_count}",
+        constraints=[_vec_to_mat_nz_constraint],
+        advanced=True,
+    )
+    def _split_fn(src: pto.Tile, index_row: pto.i32, index_col: pto.i32, dst: pto.Tile):
+        dtype = dst.element_type
+        elem_bytes = pto.bytewidth(dtype)
+        c0_standard = BLOCK_BYTE_SIZE // elem_bytes
+        s_frac_bits = dst.config.s_fractal_size
+        if pto.constexpr(s_frac_bits == 2 * BLOCK_BYTE_BITS):
+            c0_size = 2 * c0_standard
+        else:
+            c0_size = c0_standard
+
+        valid_rows = src.valid_shape[0]
+        valid_cols = src.valid_shape[1]
+        dst_rows = dst.shape[0]
+        aligned_rows = (valid_rows + FRACTAL_NZ_ROW - 1) // FRACTAL_NZ_ROW * FRACTAL_NZ_ROW
+
+        src_ptr = src.as_ptr()
+
+        col_block = index_col // c0_size
+        col_mod = index_col - col_block * c0_size
+        dst_offset = dst_rows * c0_size * col_block + index_row * c0_size + col_mod
+        dst_base = pto.addptr(dst.as_ptr(), dst_offset)
+
+        total_burst_num = (valid_cols + c0_size - 1) // c0_size
+        burst_len = aligned_rows * c0_size * elem_bytes // BLOCK_BYTE_SIZE
+
+        compact = src.config.compact_mode
+        if pto.constexpr(compact == pto.CompactMode.NULL):
+            src_stride_rows = src.shape[0]
+        elif pto.constexpr(compact == pto.CompactMode.ROW_PLUS_ONE):
+            src_stride_rows = aligned_rows + 1
+        else:
+            src_stride_rows = aligned_rows
+        src_gap = src_stride_rows - aligned_rows
+        dst_gap = dst_rows - aligned_rows
+
+        part_num = total_burst_num // split_count
+        last_num = total_burst_num - part_num * (split_count - 1)
+        src_block_size = (burst_len + src_gap) * BLOCK_BYTE_SIZE // elem_bytes
+        dst_block_size = dst_rows * c0_size
+
+        pto.mte_ub_l1(src_ptr, dst_base, burst_len, nburst=(part_num, src_gap, dst_gap))
+
+        src_ptr1 = pto.addptr(src_ptr, part_num * src_block_size)
+        dst_ptr1 = pto.addptr(dst_base, part_num * dst_block_size)
+        if pto.constexpr(split_count == 2):
+            pto.mte_ub_l1(src_ptr1, dst_ptr1, burst_len, nburst=(last_num, src_gap, dst_gap))
+        else:
+            pto.mte_ub_l1(src_ptr1, dst_ptr1, burst_len, nburst=(part_num, src_gap, dst_gap))
+
+        if pto.constexpr(split_count == 4):
+            src_ptr2 = pto.addptr(src_ptr, 2 * part_num * src_block_size)
+            dst_ptr2 = pto.addptr(dst_base, 2 * part_num * dst_block_size)
+            pto.mte_ub_l1(src_ptr2, dst_ptr2, burst_len, nburst=(part_num, src_gap, dst_gap))
+
+            src_ptr3 = pto.addptr(src_ptr, 3 * part_num * src_block_size)
+            dst_ptr3 = pto.addptr(dst_base, 3 * part_num * dst_block_size)
+            pto.mte_ub_l1(src_ptr3, dst_ptr3, burst_len, nburst=(last_num, src_gap, dst_gap))
+        return None
+
+    return _split_fn
+
+
+template_tinsert_vec_to_mat_nz_split2 = _make_split_template(2)
+template_tinsert_vec_to_mat_nz_split4 = _make_split_template(4)
