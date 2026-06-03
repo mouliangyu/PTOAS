@@ -750,7 +750,7 @@ The Cube unit performs matrix multiplication. Its operands are typed pointers in
 
 ### 8.3.1 Matrix multiply: `pto.mad`
 
-#### `pto.mad(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: Literal["check_only", "check_and_set"] | None = None, disable_gemv: bool = False, sat: Literal["sat", "nosat"] | None = None, tf32_mode: Literal["round_even", "round_away"] | None = None, n_dir: bool = False) -> None`
+#### `pto.mad(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: pto.MadUnitFlagMode | None = None, disable_gemv: bool = False, sat: pto.SatMode | None = None, tf32_mode: pto.Tf32Mode | None = None, n_dir: bool = False) -> None`
 
 **Description**: Zero-initialized matrix multiply: `dst[M×N] = lhs[M×K] * rhs[K×N]`. `lhs` is an L0A pointer, `rhs` is an L0B pointer, `dst` is an L0C pointer.
 
@@ -764,41 +764,41 @@ The Cube unit performs matrix multiplication. Its operands are typed pointers in
 | `m` | `int` | M dimension size |
 | `k` | `int` | K dimension (inner/reduction dimension) |
 | `n` | `int` | N dimension size |
-| `unit_flag` | `str` or `None` | Optional producer unit-flag clause: `"check_only"` or `"check_and_set"` |
+| `unit_flag` | `pto.MadUnitFlagMode` or `None` | Optional producer unit-flag clause: `CHECK_ONLY` or `CHECK_AND_SET` |
 | `disable_gemv` | `bool` | Force normal matmul operand layout instead of GEMV specialization |
-| `sat` | `str` or `None` | Optional saturation clause: `"sat"` or `"nosat"` |
-| `tf32_mode` | `str` or `None` | Optional TF32 rounding mode for f32/f32/f32 `mad*`: `"round_even"` or `"round_away"` |
+| `sat` | `pto.SatMode` or `None` | Optional saturation clause: `ON` or `OFF` |
+| `tf32_mode` | `pto.Tf32Mode` or `None` | Optional TF32 rounding mode for f32/f32/f32 `mad*`: `ROUND_EVEN` or `ROUND_AWAY` |
 | `n_dir` | `bool` | Request N-direction production order for compatible schedules |
 
 **Returns**: None (writes to `dst` in L0C).
 
 ---
 
-#### `pto.mad_acc(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: Literal["check_only", "check_and_set"] | None = None, disable_gemv: bool = False, sat: Literal["sat", "nosat"] | None = None, tf32_mode: Literal["round_even", "round_away"] | None = None, n_dir: bool = False) -> None`
+#### `pto.mad_acc(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: pto.MadUnitFlagMode | None = None, disable_gemv: bool = False, sat: pto.SatMode | None = None, tf32_mode: pto.Tf32Mode | None = None, n_dir: bool = False) -> None`
 
 **Description**: Accumulating matrix multiply: `dst[M×N] += lhs[M×K] * rhs[K×N]`. `dst` must already hold a prior accumulation result.
 
 ---
 
-#### `pto.mad_bias(lhs: PtrType, rhs: PtrType, dst: PtrType, bias: PtrType, m: int, n: int, k: int, *, unit_flag: Literal["check_only", "check_and_set"] | None = None, disable_gemv: bool = False, sat: Literal["sat", "nosat"] | None = None, tf32_mode: Literal["round_even", "round_away"] | None = None, n_dir: bool = False) -> None`
+#### `pto.mad_bias(lhs: PtrType, rhs: PtrType, dst: PtrType, bias: PtrType, m: int, n: int, k: int, *, unit_flag: pto.MadUnitFlagMode | None = None, disable_gemv: bool = False, sat: pto.SatMode | None = None, tf32_mode: pto.Tf32Mode | None = None, n_dir: bool = False) -> None`
 
 **Description**: Bias-initialized matrix multiply: `dst[M×N] = lhs[M×K] * rhs[K×N] + bias[M×N]`. `bias` is a BIAS pointer.
 
 ---
 
-#### `pto.mad_mx(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: Literal["check_only", "check_and_set"] | None = None, disable_gemv: bool = False, sat: Literal["sat", "nosat"] | None = None, n_dir: bool = False) -> None`
+#### `pto.mad_mx(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: pto.MadUnitFlagMode | None = None, disable_gemv: bool = False, sat: pto.SatMode | None = None, n_dir: bool = False) -> None`
 
 **Description**: MX-format zero-initialized matrix multiply. This variant is intended for MX-enabled operand formats such as f8 payloads with their associated scale data already staged into cube-local buffers.
 
 ---
 
-#### `pto.mad_mx_acc(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: Literal["check_only", "check_and_set"] | None = None, disable_gemv: bool = False, sat: Literal["sat", "nosat"] | None = None, n_dir: bool = False) -> None`
+#### `pto.mad_mx_acc(lhs: PtrType, rhs: PtrType, dst: PtrType, m: int, n: int, k: int, *, unit_flag: pto.MadUnitFlagMode | None = None, disable_gemv: bool = False, sat: pto.SatMode | None = None, n_dir: bool = False) -> None`
 
 **Description**: MX-format accumulating matrix multiply: `dst[M×N] += lhs[M×K] * rhs[K×N]`.
 
 ---
 
-#### `pto.mad_mx_bias(lhs: PtrType, rhs: PtrType, dst: PtrType, bias: PtrType, m: int, n: int, k: int, *, unit_flag: Literal["check_only", "check_and_set"] | None = None, disable_gemv: bool = False, sat: Literal["sat", "nosat"] | None = None, n_dir: bool = False) -> None`
+#### `pto.mad_mx_bias(lhs: PtrType, rhs: PtrType, dst: PtrType, bias: PtrType, m: int, n: int, k: int, *, unit_flag: pto.MadUnitFlagMode | None = None, disable_gemv: bool = False, sat: pto.SatMode | None = None, n_dir: bool = False) -> None`
 
 **Description**: MX-format bias-initialized matrix multiply: `dst[M×N] = lhs[M×K] * rhs[K×N] + bias[M×N]`.
 
@@ -812,10 +812,10 @@ All `mad*` APIs accept TileLang-compatible keyword clauses. The wrapper lowers t
 
 | Keyword | Values | Lowered clause |
 |---------|--------|----------------|
-| `unit_flag` | `"check_only"`, `"check_and_set"`, or `None` | `unit_flag(check_only)` / `unit_flag(check_and_set)` |
+| `unit_flag` | `pto.MadUnitFlagMode.CHECK_ONLY`, `CHECK_AND_SET`, or `None` | `unit_flag(check_only)` / `unit_flag(check_and_set)` |
 | `disable_gemv` | `True` / `False` | `disable_gemv` when true |
-| `sat` | `"sat"`, `"nosat"`, or `None` | `sat` / `nosat` |
-| `tf32_mode` | `"round_even"`, `"round_away"`, or `None` | `tf32_mode(round_even)` / `tf32_mode(round_away)`; f32/f32/f32 non-MX only |
+| `sat` | `pto.SatMode.ON`, `OFF`, or `None` | `sat` / `nosat` |
+| `tf32_mode` | `pto.Tf32Mode.ROUND_EVEN`, `ROUND_AWAY`, or `None` | `tf32_mode(round_even)` / `tf32_mode(round_away)`; f32/f32/f32 non-MX only |
 | `n_dir` | `True` / `False` | `n_dir` when true |
 
 Example:
@@ -828,10 +828,10 @@ pto.mad(
     m,
     n,
     k,
-    unit_flag="check_only",
+    unit_flag=pto.MadUnitFlagMode.CHECK_ONLY,
     disable_gemv=True,
-    sat="nosat",
-    tf32_mode="round_even",
+    sat=pto.SatMode.OFF,
+    tf32_mode=pto.Tf32Mode.ROUND_EVEN,
     n_dir=True,
 )
 ```

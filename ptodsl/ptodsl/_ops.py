@@ -2726,6 +2726,26 @@ def _normalize_token(value, *, context: str):
     return token.strip().lower()
 
 
+def _normalize_sat_mode(sat, *, context: str, allow_preserve_nan: bool):
+    normalized = _normalize_token(sat, context=context)
+    aliases = {
+        "on": "sat",
+        "off": "nosat",
+        "preserve_nan": "sat_preserve_nan",
+        "sat": "sat",
+        "nosat": "nosat",
+        "sat_preserve_nan": "sat_preserve_nan",
+        "sat(preserve_nan)": "sat_preserve_nan",
+    }
+    token = aliases.get(normalized)
+    if token is None:
+        expected = "on/off" + ("/preserve_nan" if allow_preserve_nan else "")
+        raise ValueError(f"{context} does not support {sat!r}; expected {expected}")
+    if token == "sat_preserve_nan" and not allow_preserve_nan:
+        raise ValueError(f"{context} does not support preserve_nan saturation")
+    return token
+
+
 def _enum_attr(kind, value, *, supported: set[str], context: str):
     normalized = _normalize_token(value, context=context)
     if normalized not in supported:
@@ -2814,12 +2834,9 @@ def _acc_store_loop3(loop3):
 def _acc_store_sat_attr(sat):
     if sat is None:
         return None
-    normalized = _normalize_token(sat, context="acc store sat")
-    if normalized == "sat(preserve_nan)":
-        normalized = "sat_preserve_nan"
     return _enum_attr(
         "acc_store_sat_mode",
-        normalized,
+        _normalize_sat_mode(sat, context="acc store sat", allow_preserve_nan=True),
         supported={"sat", "nosat", "sat_preserve_nan"},
         context="acc store sat",
     )
@@ -2872,18 +2889,34 @@ def _acc_store_options(unit_flag=None, pre_quant=None, pre_relu=None, layout=Non
     }
 
 
-def _mte_l0c_ub_dst_mode(dst_mode):
-    token = getattr(dst_mode, "value", dst_mode)
+def _normalize_ub_split(split):
+    normalized = _normalize_token(split, context="mte_l0c_ub split")
+    aliases = {
+        "m": "split_m",
+        "n": "split_n",
+        "split_m": "split_m",
+        "split_n": "split_n",
+    }
+    mode = aliases.get(normalized)
+    if mode is None:
+        raise ValueError("mte_l0c_ub split expects M or N")
+    return mode
+
+
+def _mte_l0c_ub_dst_mode(sub_blockid=0, *, split=None):
+    if split is not None:
+        token = getattr(sub_blockid, "value", sub_blockid)
+        if token not in {0, None}:
+            raise ValueError("mte_l0c_ub split cannot be combined with non-default sub_blockid")
+        return _acc_store_ub_dst_mode_attr(_normalize_ub_split(split)), None
+    token = getattr(sub_blockid, "value", sub_blockid)
     if isinstance(token, str):
-        normalized = _normalize_token(token, context="mte_l0c_ub dst_mode")
-        if normalized not in {"split_m", "split_n"}:
-            raise ValueError("mte_l0c_ub dst_mode string expects split_m or split_n")
-        return _acc_store_ub_dst_mode_attr(normalized), None
+        raise TypeError("mte_l0c_ub sub_blockid expects 0 or 1; use split='M' or split='N' for dual-destination stores")
     if isinstance(token, bool):
-        raise TypeError("mte_l0c_ub dst_mode bool is not supported; use sub-block 0/1 or split_m/split_n")
+        raise TypeError("mte_l0c_ub sub_blockid bool is not supported; use sub-block 0/1 or split='M'/'N'")
     if isinstance(token, int) and token not in {0, 1}:
-        raise ValueError("mte_l0c_ub sub-block dst_mode constant must be 0 or 1")
-    return _acc_store_ub_dst_mode_attr("single"), _coerce_i64(token, context="mte_l0c_ub dst_mode")
+        raise ValueError("mte_l0c_ub sub_blockid constant must be 0 or 1")
+    return _acc_store_ub_dst_mode_attr("single"), _coerce_i64(token, context="mte_l0c_ub sub_blockid")
 
 
 def _cube_load_frac_mode_attr(mode):
@@ -2953,7 +2986,7 @@ def _mad_sat_attr(sat):
         return None
     return _enum_attr(
         "mad_sat_mode",
-        sat,
+        _normalize_sat_mode(sat, context="mad sat", allow_preserve_nan=False),
         supported={"sat", "nosat"},
         context="mad sat",
     )
@@ -3546,8 +3579,9 @@ def mte_l0c_ub(
     n,
     src_stride,
     dst_stride,
-    dst_mode,
+    sub_blockid=0,
     *,
+    split=None,
     unit_flag=None,
     pre_quant=None,
     pre_relu=None,
@@ -3556,7 +3590,7 @@ def mte_l0c_ub(
     sat=None,
 ):
     """``pto.mte_l0c_ub`` – ACC to UB store."""
-    dst_mode_attr, sub_blockid = _mte_l0c_ub_dst_mode(dst_mode)
+    dst_mode_attr, sub_blockid_value = _mte_l0c_ub_dst_mode(sub_blockid, split=split)
     options = _acc_store_options(
         unit_flag=unit_flag,
         pre_quant=pre_quant,
@@ -3575,7 +3609,7 @@ def mte_l0c_ub(
         _coerce_i64(src_stride, context="mte_l0c_ub src_stride"),
         _coerce_i64(dst_stride, context="mte_l0c_ub dst_stride"),
         dst_mode_attr,
-        sub_blockid=sub_blockid,
+        sub_blockid=sub_blockid_value,
         **options,
     )
 

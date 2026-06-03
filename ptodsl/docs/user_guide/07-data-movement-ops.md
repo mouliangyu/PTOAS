@@ -795,7 +795,7 @@ Inside `@pto.cube`, data flows through a hierarchy of private buffers: GM → L1
 
 ---
 
-#### `pto.mte_gm_l1_frac(src: PtrType, dst: PtrType, mode: Literal["nd2nz", "dn2nz"], *, shape: tuple[int, int], src_layout: tuple[int] | tuple[int, int], dst_group: tuple[int, int, int, int], ctrl: tuple[int, bool]) -> None`
+#### `pto.mte_gm_l1_frac(src: PtrType, dst: PtrType, mode: pto.FractalMode, *, shape: tuple[int, int], src_layout: tuple[int] | tuple[int, int], dst_group: tuple[int, int, int, int], ctrl: tuple[int, bool]) -> None`
 
 **Description**: Fractal GM-to-L1 load for specialized layouts (`ND2NZ`, `DN2NZ`).
 
@@ -805,7 +805,7 @@ Inside `@pto.cube`, data flows through a hierarchy of private buffers: GM → L1
 |-----------|------|-------------|
 | `src` | `PtrType` (GM) | Global Memory source pointer |
 | `dst` | `PtrType` (L1) | L1 destination pointer |
-| `mode` | `str` | `"nd2nz"` or `"dn2nz"` |
+| `mode` | `pto.FractalMode` | `pto.FractalMode.ND2NZ` or `pto.FractalMode.DN2NZ` |
 | `shape` | `tuple[int, int]` | `(n_value, d_value)` |
 | `src_layout` | `tuple[int]` or `tuple[int, int]` | `(inner_stride,)` or `(inner_stride, outer_stride)` |
 | `dst_group` | `tuple[int, int, int, int]` | `(group_count, loop2_stride, loop3_stride, loop4_stride)` |
@@ -902,7 +902,7 @@ Inside `@pto.cube`, data flows through a hierarchy of private buffers: GM → L1
 
 ### Accumulator writeback: L0C → L1 / GM / UB
 
-#### `pto.mte_l0c_l1(src: PtrType, dst: PtrType, m: int, n: int, src_stride: int, dst_stride: int, *, unit_flag: Literal["check_only", "check_and_clear"] | None = None, pre_quant: tuple[object, str] | None = None, pre_relu: tuple[str, object | None, object | None] | None = None, layout: object | None = None, loop3: tuple[int, int, int] | None = None, sat: Literal["sat", "sat(preserve_nan)", "nosat"] | None = None) -> None`
+#### `pto.mte_l0c_l1(src: PtrType, dst: PtrType, m: int, n: int, src_stride: int, dst_stride: int, *, unit_flag: pto.AccStoreUnitFlagCtrl | None = None, pre_quant: tuple[object, str] | None = None, pre_relu: tuple[str, object | None, object | None] | None = None, layout: object | None = None, loop3: tuple[int, int, int] | None = None, sat: pto.SatMode | None = None) -> None`
 
 **Description**: Structured L0C (acc) to L1 (cbuf) writeback.
 
@@ -916,18 +916,18 @@ Inside `@pto.cube`, data flows through a hierarchy of private buffers: GM → L1
 | `n` | `int` | N dimension size |
 | `src_stride` | `int` | Source stride |
 | `dst_stride` | `int` | Destination stride |
-| `unit_flag` | `str` or `None` | `"check_only"` or `"check_and_clear"` |
+| `unit_flag` | `pto.AccStoreUnitFlagCtrl` or `None` | `CHECK_ONLY` or `CHECK_AND_CLEAR` |
 | `pre_quant` | `tuple[object, str]` or `None` | Optional pre-quantization payload and mode |
 | `pre_relu` | `tuple[str, object | None, object | None]` or `None` | Optional ReLU mode, payload, and clip payload |
 | `layout` | `object` or `None` | `None`, `"nz2nd"`, or a layout tuple such as `("nz2dn", loop0_src_stride)` / `("nz2nz", split)` |
 | `loop3` | `tuple[int, int, int]` or `None` | Optional loop-3 group `(count, src_stride, dst_stride)` |
-| `sat` | `str` or `None` | `"sat"`, `"sat(preserve_nan)"`, or `"nosat"` |
+| `sat` | `pto.SatMode` or `None` | `ON`, `OFF`, or `PRESERVE_NAN` |
 
 **Returns**: None (side-effect operation).
 
 ---
 
-#### `pto.mte_l0c_gm(src: PtrType, dst: PtrType, m: int, n: int, src_stride: int, dst_stride: int, sid: int, l2_cache_ctrl: int, *, unit_flag: Literal["check_only", "check_and_clear"] | None = None, pre_quant: tuple[object, str] | None = None, pre_relu: tuple[str, object | None, object | None] | None = None, layout: object | None = None, loop3: tuple[int, int, int] | None = None, sat: Literal["sat", "sat(preserve_nan)", "nosat"] | None = None, atomic: tuple[str, str] | None = None) -> None`
+#### `pto.mte_l0c_gm(src: PtrType, dst: PtrType, m: int, n: int, src_stride: int, dst_stride: int, sid: int, l2_cache_ctrl: int, *, unit_flag: pto.AccStoreUnitFlagCtrl | None = None, pre_quant: tuple[object, str] | None = None, pre_relu: tuple[str, object | None, object | None] | None = None, layout: object | None = None, loop3: tuple[int, int, int] | None = None, sat: pto.SatMode | None = None, atomic: tuple[str, str] | None = None) -> None`
 
 **Description**: Structured L0C (acc) to GM writeback.
 
@@ -943,19 +943,19 @@ Inside `@pto.cube`, data flows through a hierarchy of private buffers: GM → L1
 | `dst_stride` | `int` | Destination stride |
 | `sid` | `int` | Stream ID |
 | `l2_cache_ctrl` | `int` | L2 cache control |
-| `unit_flag` | `str` or `None` | `"check_only"` or `"check_and_clear"` |
+| `unit_flag` | `pto.AccStoreUnitFlagCtrl` or `None` | `CHECK_ONLY` or `CHECK_AND_CLEAR` |
 | `pre_quant` | `tuple[object, str]` or `None` | Optional pre-quantization payload and mode |
 | `pre_relu` | `tuple[str, object | None, object | None]` or `None` | Optional ReLU mode, payload, and clip payload |
 | `layout` | `object` or `None` | `None`, `"nz2nd"`, or a layout tuple such as `("nz2dn", loop0_src_stride)` / `("nz2nz", split)` |
 | `loop3` | `tuple[int, int, int]` or `None` | Optional loop-3 group `(count, src_stride, dst_stride)` |
-| `sat` | `str` or `None` | `"sat"`, `"sat(preserve_nan)"`, or `"nosat"` |
+| `sat` | `pto.SatMode` or `None` | `ON`, `OFF`, or `PRESERVE_NAN` |
 | `atomic` | `tuple[str, str]` or `None` | Optional GM-only atomic `(type, op)`, e.g. `("f32", "add")` |
 
 **Returns**: None (side-effect operation).
 
 ---
 
-#### `pto.mte_l0c_ub(src: PtrType, dst: PtrType, m: int, n: int, src_stride: int, dst_stride: int, dst_mode: object, *, unit_flag: Literal["check_only", "check_and_clear"] | None = None, pre_quant: tuple[object, str] | None = None, pre_relu: tuple[str, object | None, object | None] | None = None, layout: object | None = None, loop3: tuple[int, int, int] | None = None, sat: Literal["sat", "sat(preserve_nan)", "nosat"] | None = None) -> None`
+#### `pto.mte_l0c_ub(src: PtrType, dst: PtrType, m: int, n: int, src_stride: int, dst_stride: int, sub_blockid: int = 0, *, split: pto.SplitMode | None = None, unit_flag: pto.AccStoreUnitFlagCtrl | None = None, pre_quant: tuple[object, str] | None = None, pre_relu: tuple[str, object | None, object | None] | None = None, layout: object | None = None, loop3: tuple[int, int, int] | None = None, sat: pto.SatMode | None = None) -> None`
 
 **Description**: Structured L0C (acc) directly to UB. This is the most common writeback path for cube kernels that feed results into subsequent processing.
 
@@ -969,23 +969,24 @@ Inside `@pto.cube`, data flows through a hierarchy of private buffers: GM → L1
 | `n` | `int` | N dimension size |
 | `src_stride` | `int` | Source stride |
 | `dst_stride` | `int` | Destination stride |
-| `dst_mode` | `int` or `str` | `0` / `1` for sub-block writeback, or `"split_m"` / `"split_n"` for dual-destination split |
-| `unit_flag` | `str` or `None` | `"check_only"` or `"check_and_clear"` |
+| `sub_blockid` | `int` | `0` or `1` for single-destination sub-block writeback |
+| `split` | `pto.SplitMode` or `None` | `M` or `N` for dual-destination split; cannot be combined with non-default `sub_blockid` |
+| `unit_flag` | `pto.AccStoreUnitFlagCtrl` or `None` | `CHECK_ONLY` or `CHECK_AND_CLEAR` |
 | `pre_quant` | `tuple[object, str]` or `None` | Optional pre-quantization payload and mode |
 | `pre_relu` | `tuple[str, object | None, object | None]` or `None` | Optional ReLU mode, payload, and clip payload |
 | `layout` | `object` or `None` | `None`, `"nz2nd"`, or a layout tuple such as `("nz2dn", loop0_src_stride)` / `("nz2nz", split)` |
 | `loop3` | `tuple[int, int, int]` or `None` | Optional loop-3 group `(count, src_stride, dst_stride)` |
-| `sat` | `str` or `None` | `"sat"`, `"sat(preserve_nan)"`, or `"nosat"` |
+| `sat` | `pto.SatMode` or `None` | `ON`, `OFF`, or `PRESERVE_NAN` |
 
 **Returns**: None (side-effect operation).
 
-`dst_mode` forms:
+`sub_blockid` / `split` forms:
 
 ```python
-pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, 0)          # sub-block 0
-pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, 1)          # sub-block 1
-pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, "split_m")  # split M across sub-blocks
-pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, "split_n")  # split N across sub-blocks
+pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32)                         # sub-block 0
+pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, sub_blockid=1)           # sub-block 1
+pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, split=pto.SplitMode.M)   # split M
+pto.mte_l0c_ub(acc, ub, 16, 32, 16, 32, split=pto.SplitMode.N)   # split N
 ```
 
 `atomic` is not supported on `mte_l0c_l1` or `mte_l0c_ub`; use `mte_l0c_gm(..., atomic=(type, op))` for GM atomic writeback.

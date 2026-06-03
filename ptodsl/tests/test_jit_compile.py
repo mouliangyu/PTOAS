@@ -585,15 +585,15 @@ def public_cube_surface_probe(
         m,
         n,
         k,
-        unit_flag="check_only",
+        unit_flag=pto.MadUnitFlagMode.CHECK_ONLY,
         disable_gemv=True,
-        sat="nosat",
+        sat=pto.SatMode.OFF,
         n_dir=True,
     )
-    pto.mad(lhs_l0a_f32.as_ptr(), rhs_l0b_f32.as_ptr(), acc_tile.as_ptr(), m, n, k, tf32_mode="round_even")
-    pto.mad_acc(lhs_l0a.as_ptr(), rhs_l0b.as_ptr(), acc_tile.as_ptr(), m, n, k, unit_flag="check_and_set")
-    pto.mad_bias(lhs_l0a.as_ptr(), rhs_l0b.as_ptr(), acc_tile.as_ptr(), bias_tile.as_ptr(), m, n, k, sat="sat")
-    pto.mad_mx(lhs_l0a_mx.as_ptr(), rhs_l0b_mx.as_ptr(), acc_tile.as_ptr(), m, n, k, unit_flag="check_only")
+    pto.mad(lhs_l0a_f32.as_ptr(), rhs_l0b_f32.as_ptr(), acc_tile.as_ptr(), m, n, k, tf32_mode=pto.Tf32Mode.ROUND_EVEN)
+    pto.mad_acc(lhs_l0a.as_ptr(), rhs_l0b.as_ptr(), acc_tile.as_ptr(), m, n, k, unit_flag=pto.MadUnitFlagMode.CHECK_AND_SET)
+    pto.mad_bias(lhs_l0a.as_ptr(), rhs_l0b.as_ptr(), acc_tile.as_ptr(), bias_tile.as_ptr(), m, n, k, sat=pto.SatMode.ON)
+    pto.mad_mx(lhs_l0a_mx.as_ptr(), rhs_l0b_mx.as_ptr(), acc_tile.as_ptr(), m, n, k, unit_flag=pto.MadUnitFlagMode.CHECK_ONLY)
     pto.mad_mx_acc(lhs_l0a_mx.as_ptr(), rhs_l0b_mx.as_ptr(), acc_tile.as_ptr(), m, n, k, disable_gemv=True)
     pto.mad_mx_bias(lhs_l0a_mx.as_ptr(), rhs_l0b_mx.as_ptr(), acc_tile.as_ptr(), bias_tile.as_ptr(), m, n, k, n_dir=True)
     pto.mte_l0c_l1(
@@ -603,10 +603,10 @@ def public_cube_surface_probe(
         n,
         n,
         n,
-        unit_flag="check_only",
+        unit_flag=pto.AccStoreUnitFlagCtrl.CHECK_ONLY,
         layout="nz2nd",
         loop3=(1, n, n),
-        sat="sat",
+        sat=pto.SatMode.ON,
     )
     pto.mte_l0c_gm(
         acc_tile.as_ptr(),
@@ -619,12 +619,12 @@ def public_cube_surface_probe(
         0,
         layout=("nz2dn", n),
         loop3=(1, n, n),
-        sat="nosat",
+        sat=pto.SatMode.OFF,
         atomic=("f32", "add"),
     )
     pto.mte_l0c_ub(acc_tile.as_ptr(), out_tile.as_ptr(), m, n, n, n, 0)
-    pto.mte_l0c_ub(acc_tile.as_ptr(), out_tile.as_ptr(), m, n, n, n, "split_m", layout="nz2nd")
-    pto.mte_l0c_ub(acc_tile.as_ptr(), out_tile.as_ptr(), m, n, n, n, 1, layout=("nz2nz", 1), sat="sat(preserve_nan)")
+    pto.mte_l0c_ub(acc_tile.as_ptr(), out_tile.as_ptr(), m, n, n, n, split=pto.SplitMode.M, layout="nz2nd")
+    pto.mte_l0c_ub(acc_tile.as_ptr(), out_tile.as_ptr(), m, n, n, n, 1, layout=("nz2nz", 1), sat=pto.SatMode.PRESERVE_NAN)
 
 
 @pto.jit(target="a5", mode="explicit")
@@ -991,7 +991,7 @@ def public_data_movement_surface_probe():
     pto.mte_gm_l1_frac(
         gm_src,
         l1_dst,
-        "nd2nz",
+        pto.FractalMode.ND2NZ,
         shape=(16, 16),
         src_layout=(16, 256),
         dst_group=(1, 0, 0, 0),
