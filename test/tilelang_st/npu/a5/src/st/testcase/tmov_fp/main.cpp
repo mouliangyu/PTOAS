@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You may not use this file except in compliance with the License.
+// Please refer to the License for details. You can not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
@@ -16,21 +16,23 @@
 
 using namespace PtoTestCommon;
 
-void LaunchTMOV_FP_f16_16x16x16(uint16_t *a, uint16_t *b, float *c, void *stream);
+void LaunchTMOV_FP_f16_16x16x16(uint16_t *a, uint16_t *b, float *scale, float *c, void *stream);
 
 struct TestCase {
     const char *name;
-    void (*launch)(uint16_t *, uint16_t *, float *, void *);
+    void (*launch)(uint16_t *, uint16_t *, float *, float *, void *);
     size_t lhsRows;
     size_t lhsCols;
     size_t rhsRows;
     size_t rhsCols;
+    size_t scaleRows;
+    size_t scaleCols;
     size_t outRows;
     size_t outCols;
 };
 
 static const TestCase kCases[] = {
-    {"f16_16x16x16", LaunchTMOV_FP_f16_16x16x16, 16, 16, 16, 16, 16, 16},
+    {"f16_16x16x16", LaunchTMOV_FP_f16_16x16x16, 16, 16, 16, 16, 1, 16, 16, 16},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
@@ -39,22 +41,25 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
     int rc = 0;
     size_t lhsBytes = tc.lhsRows * tc.lhsCols * sizeof(uint16_t);
     size_t rhsBytes = tc.rhsRows * tc.rhsCols * sizeof(uint16_t);
-    size_t outBytes = tc.outRows * tc.outCols * sizeof(float);
+    size_t scaleBytes = tc.scaleCols * sizeof(float);  // 16 * 4 = 64 bytes
+    size_t outBytes = tc.outRows * tc.outCols * sizeof(float);  // f32 output
 
-    std::printf("[INFO] === case: %s (lhs=%zux%zu, rhs=%zux%zu, out=%zux%zu) ===\n",
-        tc.name, tc.lhsRows, tc.lhsCols, tc.rhsRows, tc.rhsCols, tc.outRows, tc.outCols);
+    std::printf("[INFO] === case: %s (lhs=%zux%zu, rhs=%zux%zu, scale=%zux%zu, out=%zux%zu) ===\n",
+        tc.name, tc.lhsRows, tc.lhsCols, tc.rhsRows, tc.rhsCols, tc.scaleRows, tc.scaleCols, tc.outRows, tc.outCols);
 
     std::string caseDir = std::string("./") + tc.name;
 
-    void *lhsHost = nullptr, *rhsHost = nullptr, *outHost = nullptr;
-    void *lhsDevice = nullptr, *rhsDevice = nullptr, *outDevice = nullptr;
+    void *lhsHost = nullptr, *rhsHost = nullptr, *scaleHost = nullptr, *outHost = nullptr;
+    void *lhsDevice = nullptr, *rhsDevice = nullptr, *scaleDevice = nullptr, *outDevice = nullptr;
 
     aclrtMallocHost(&lhsHost, lhsBytes);
     aclrtMallocHost(&rhsHost, rhsBytes);
+    aclrtMallocHost(&scaleHost, scaleBytes);
     aclrtMallocHost(&outHost, outBytes);
 
     aclrtMalloc(&lhsDevice, lhsBytes, ACL_MEM_MALLOC_HUGE_FIRST);
     aclrtMalloc(&rhsDevice, rhsBytes, ACL_MEM_MALLOC_HUGE_FIRST);
+    aclrtMalloc(&scaleDevice, scaleBytes, ACL_MEM_MALLOC_HUGE_FIRST);
     aclrtMalloc(&outDevice, outBytes, ACL_MEM_MALLOC_HUGE_FIRST);
 
     if (!ReadFile((caseDir + "/input1.bin").c_str(), lhsBytes, lhsHost, lhsBytes)) {
@@ -65,13 +70,18 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
         std::fprintf(stderr, "[ERROR] failed to read %s/input2.bin\n", caseDir.c_str());
         rc = 1;
     }
+    if (rc == 0 && !ReadFile((caseDir + "/scale.bin").c_str(), scaleBytes, scaleHost, scaleBytes)) {
+        std::fprintf(stderr, "[ERROR] failed to read %s/scale.bin\n", caseDir.c_str());
+        rc = 1;
+    }
 
     if (rc == 0) {
         aclrtMemcpy(lhsDevice, lhsBytes, lhsHost, lhsBytes, ACL_MEMCPY_HOST_TO_DEVICE);
         aclrtMemcpy(rhsDevice, rhsBytes, rhsHost, rhsBytes, ACL_MEMCPY_HOST_TO_DEVICE);
+        aclrtMemcpy(scaleDevice, scaleBytes, scaleHost, scaleBytes, ACL_MEMCPY_HOST_TO_DEVICE);
 
         tc.launch(static_cast<uint16_t *>(lhsDevice), static_cast<uint16_t *>(rhsDevice),
-                  static_cast<float *>(outDevice), stream);
+                  static_cast<float *>(scaleDevice), static_cast<float *>(outDevice), stream);
 
         aclrtSynchronizeStream(stream);
         aclrtMemcpy(outHost, outBytes, outDevice, outBytes, ACL_MEMCPY_DEVICE_TO_HOST);
@@ -84,9 +94,11 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
 
     if (lhsDevice) aclrtFree(lhsDevice);
     if (rhsDevice) aclrtFree(rhsDevice);
+    if (scaleDevice) aclrtFree(scaleDevice);
     if (outDevice) aclrtFree(outDevice);
     if (lhsHost) aclrtFreeHost(lhsHost);
     if (rhsHost) aclrtFreeHost(rhsHost);
+    if (scaleHost) aclrtFreeHost(scaleHost);
     if (outHost) aclrtFreeHost(outHost);
 
     if (rc == 0) std::printf("[INFO] case %s done\n", tc.name);

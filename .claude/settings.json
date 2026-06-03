@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 /home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/test/tilelang_st/script/run_st.py --help)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 test/tilelang_st/npu/a5/src/st/testcase/tmov_fp/tmov_fp.pto -o /tmp/tmov_fp.o)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --emit-vpto test/tilelang_st/npu/a5/src/st/testcase/tmov_fp/tmov_fp.pto -o /tmp/tmov_fp.o)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 --emit-vpto test/tilelang_st/npu/a5/src/st/testcase/tmov_fp/tmov_fp.pto -o /tmp/tmov_fp.o)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 --emit-vpto test/tilelang_st/npu/a5/src/st/testcase/tmov2bias/tmov2bias.pto -o /tmp/tmov2bias.o)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 --emit-vpto test/tilelang_st/npu/a5/src/st/testcase/tmov2scale/tmov2scale.pto -o /tmp/tmov2scale.o)",
+      "Bash(python3 test/tilelang_st/script/run_st.py --help)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto test/tilelang_st/npu/a5/src/st/testcase/tmov2vec/tmov2vec.pto -o /tmp/tmov2vec.o)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 --emit-vpto test/tilelang_st/npu/a5/src/st/testcase/tmov2vec/tmov2vec.pto -o /tmp/tmov2vec.o)",
+      "Bash(git checkout *)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 test/tilelang_st/npu/a5/src/st/testcase/tmov2vec/tmov2vec.pto -o /tmp/tmov2vec.o)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 /home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/test/tilelang_st/npu/a5/src/st/testcase/tmov2vec/tmov2vec.pto)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 /home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/test/vpto/cases/micro-op/cv-mixed/fixpipe-quant-relu-float-payload-f16-ub-cv/kernel.pto)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --enable-tile-op-expand --pto-backend=vpto --pto-level=level3 --print-ir-after-all /home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/test/tilelang_st/npu/a5/src/st/testcase/tmov2vec/tmov2vec.pto)",
+      "Bash(/home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/build/tools/ptoas/ptoas --enable-insert-sync --pto-backend=vpto --pto-level=level3 /home/kangjiaming/llvm-workspace/PTOAS-NEW/PTOAS/test/tilelang_st/npu/a5/src/st/testcase/tmov2vec/tmov2vec.pto)"
+    ]
+  }
+}
