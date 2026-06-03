@@ -95,7 +95,12 @@ static std::optional<TileHandleInfo> resolveTileHandle(Value tileBuf,
 
   user->emitError("FoldTileBufIntrinsics: expected tile_buf to be defined by "
                   "the active materialized tile-handle bridge "
-                  "(pto.alloc_tile or pto.materialize_tile)");
+                  "(pto.alloc_tile or pto.materialize_tile)")
+      << "; got value of type: " << tileBuf.getType()
+      << "; defined by: "
+      << (tileBuf.getDefiningOp()
+              ? tileBuf.getDefiningOp()->getName().getStringRef()
+              : StringRef("block-argument"));
   return std::nullopt;
 }
 
