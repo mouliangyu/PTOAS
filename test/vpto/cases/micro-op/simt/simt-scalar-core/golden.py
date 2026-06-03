@@ -14,7 +14,8 @@ import numpy as np
 
 LANES = 32
 FIELDS = 32
-ELEMS = LANES * FIELDS
+BLOCKS = 2
+ELEMS = BLOCKS * LANES * FIELDS
 
 
 def i32_bits(value: int) -> np.int32:
@@ -28,34 +29,42 @@ def generate(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     v1 = np.full(ELEMS, -1, dtype=np.int32)
     golden_v1 = np.zeros(ELEMS, dtype=np.int32)
-    for lane in range(LANES):
-        base = lane * FIELDS
-        golden_v1[base + 0] = lane
-        golden_v1[base + 1] = lane
-        golden_v1[base + 2] = 32
-        golden_v1[base + 3] = 1
-        golden_v1[base + 4] = 1
-        golden_v1[base + 5] = 0
-        golden_v1[base + 6] = 0
-        golden_v1[base + 7] = 0
-        golden_v1[base + 8] = 0
-        golden_v1[base + 9] = i32_bits(1 << lane)
-        golden_v1[base + 10] = i32_bits((1 << (lane + 1)) - 1) if lane < 31 else np.int32(-1)
-        golden_v1[base + 11] = i32_bits((1 << lane) - 1)
-        golden_v1[base + 12] = i32_bits(0xFFFFFFFF << lane)
-        golden_v1[base + 13] = i32_bits(0xFFFFFFFF << (lane + 1)) if lane < 31 else np.int32(0)
-        golden_v1[base + 14] = 0
-        golden_v1[base + 15] = 1
-        golden_v1[base + 16] = 0
-        golden_v1[base + 17] = i32_bits(0x55555555)
-        golden_v1[base + 18] = 103
-        golden_v1[base + 19] = 100 + (lane - 2 if lane >= 2 else lane)
-        golden_v1[base + 20] = 100 + (lane + 2 if lane <= 29 else lane)
-        golden_v1[base + 21] = 100 + (lane ^ 1)
-        golden_v1[base + 22] = 528
-        golden_v1[base + 23] = 32
-        golden_v1[base + 24] = 1
-        golden_v1[base + 25] = 32
+    for block in range(BLOCKS):
+        block_base = block * LANES * FIELDS
+        for lane in range(LANES):
+            base = block_base + lane * FIELDS
+            golden_v1[base + 0] = lane
+            golden_v1[base + 1] = lane
+            golden_v1[base + 2] = 32
+            golden_v1[base + 3] = 1
+            golden_v1[base + 4] = 1
+            golden_v1[base + 5] = BLOCKS
+            golden_v1[base + 6] = 1
+            golden_v1[base + 7] = 1
+            golden_v1[base + 8] = block
+            golden_v1[base + 9] = i32_bits(1 << lane)
+            golden_v1[base + 10] = i32_bits((1 << (lane + 1)) - 1) if lane < 31 else np.int32(-1)
+            golden_v1[base + 11] = i32_bits((1 << lane) - 1)
+            golden_v1[base + 12] = i32_bits(0xFFFFFFFF << lane)
+            golden_v1[base + 13] = i32_bits(0xFFFFFFFF << (lane + 1)) if lane < 31 else np.int32(0)
+            golden_v1[base + 14] = 0
+            golden_v1[base + 15] = 1
+            golden_v1[base + 16] = 0
+            golden_v1[base + 17] = i32_bits(0x55555555)
+            golden_v1[base + 18] = 103
+            golden_v1[base + 19] = 100 + (lane - 2 if lane >= 2 else lane)
+            golden_v1[base + 20] = 100 + (lane + 2 if lane <= 29 else lane)
+            golden_v1[base + 21] = 100 + (lane ^ 1)
+            golden_v1[base + 22] = 528
+            golden_v1[base + 23] = 32
+            golden_v1[base + 24] = 1
+            golden_v1[base + 25] = 32
+            golden_v1[base + 26] = 200 + block
+            golden_v1[base + 27] = BLOCKS + lane
+            golden_v1[base + 28] = 1 + lane
+            golden_v1[base + 29] = 1 + lane
+            golden_v1[base + 30] = 1 + lane
+            golden_v1[base + 31] = 1 + lane
     v1.tofile(output_dir / "v1.bin")
     golden_v1.tofile(output_dir / "golden_v1.bin")
 

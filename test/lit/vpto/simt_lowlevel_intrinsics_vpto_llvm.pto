@@ -10,9 +10,15 @@
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<vector>} {
   func.func @simt_intrinsics_kernel(%dst_i32: !pto.ptr<i32, ub>, %dst_i64: !pto.ptr<i64, ub>, %dst_f32: !pto.ptr<f32, ub>, %dst_f16: !pto.ptr<f16, ub>) attributes {pto.aicore} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
     %dim_z = arith.constant 1 : i32
     %dim_y = arith.constant 32 : i32
     %dim_x = arith.constant 32 : i32
+    %outer_block_idx = pto.get_block_idx
+    %outer_block_num = pto.get_block_num
+    pto.store %outer_block_idx, %dst_i64[%c0] : !pto.ptr<i64, ub>, i64
+    pto.store %outer_block_num, %dst_i64[%c1] : !pto.ptr<i64, ub>, i64
     pto.store_vfsimt_info %dim_z, %dim_y, %dim_x : i32, i32, i32
     func.call @simt_intrinsics(%dst_i32, %dst_i64, %dst_f32, %dst_f16) : (!pto.ptr<i32, ub>, !pto.ptr<i64, ub>, !pto.ptr<f32, ub>, !pto.ptr<f16, ub>) -> ()
     return
@@ -52,6 +58,8 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     %c_i64 = arith.constant 42 : i64
     %c_f32 = arith.constant 1.500000e+00 : f32
     %c_f16 = arith.constant 1.500000e+00 : f16
+    %block_idx = pto.get_block_idx
+    %block_num = pto.get_block_num
     %tid_x = pto.get_tid_x : i32
     %block_dim_y = pto.get_block_dim_y : i32
     %block_dim_z = pto.get_block_dim_z : i32
@@ -128,24 +136,36 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     pto.store %shfl_f16, %dst_f16[%c1] : !pto.ptr<f16, ub>, f16
     pto.store %clock64, %dst_i64[%c0] : !pto.ptr<i64, ub>, i64
     pto.store %shfl_i64, %dst_i64[%c1] : !pto.ptr<i64, ub>, i64
+    pto.store %block_idx, %dst_i64[%c2] : !pto.ptr<i64, ub>, i64
+    pto.store %block_num, %dst_i64[%c3] : !pto.ptr<i64, ub>, i64
     return
   }
 }
 
 // CHECK-LABEL: llvm.func @simt_intrinsics_kernel_mix_aiv
+// CHECK-DAG: llvm.call @llvm.hivm.GET.BLOCK.IDX
+// CHECK-DAG: llvm.call @llvm.hivm.GET.BLOCK.NUM
 // CHECK-DAG: llvm.call @llvm.hivm.store.vfsimt.info
 // CHECK-LABEL: llvm.func @simt_intrinsics
-// CHECK-DAG: llvm.call @llvm.hivm.get.TID.X
+// CHECK: llvm.call @llvm.hivm.tpe.get.BLOCK.IDX
+// CHECK: llvm.zext
+// CHECK: llvm.call @llvm.hivm.tpe.get.BLOCK.NUM
+// CHECK: llvm.zext
+// CHECK: llvm.call @llvm.hivm.get.TID.X
 // CHECK-DAG: llvm.call @llvm.hivm.get.BLOCK.DIM.X
 // CHECK-DAG: llvm.call @llvm.hivm.get.BLOCK.DIM.Y
 // CHECK-DAG: llvm.call @llvm.hivm.get.BLOCK.DIM.Z
-// CHECK-DAG: llvm.call @llvm.hivm.get.GRID.DIM.X
-// CHECK-DAG: llvm.call @llvm.hivm.get.GRID.DIM.Y
-// CHECK-DAG: llvm.call @llvm.hivm.get.GRID.DIM.Z
-// CHECK-DAG: llvm.call @llvm.hivm.get.BLOCK.IDX.X
-// CHECK-DAG: llvm.call @llvm.hivm.get.BLOCK.IDX.Y
-// CHECK-DAG: llvm.call @llvm.hivm.get.BLOCK.IDX.Z
-// CHECK-DAG: llvm.call @llvm.hivm.tpe.get.VECCOREID
+// CHECK: llvm.call @llvm.hivm.tpe.get.BLOCK.NUM
+// CHECK: llvm.mlir.constant(1 : i32)
+// CHECK: llvm.mlir.constant(1 : i32)
+// CHECK: llvm.call @llvm.hivm.tpe.get.BLOCK.IDX
+// CHECK: llvm.mlir.constant(0 : i32)
+// CHECK: llvm.mlir.constant(0 : i32)
+// CHECK-NOT: llvm.call @llvm.hivm.get.GRID.DIM
+// CHECK-NOT: llvm.call @llvm.hivm.get.BLOCK.IDX.X
+// CHECK-NOT: llvm.call @llvm.hivm.get.BLOCK.IDX.Y
+// CHECK-NOT: llvm.call @llvm.hivm.get.BLOCK.IDX.Z
+// CHECK: llvm.call @llvm.hivm.tpe.get.VECCOREID
 // CHECK-DAG: llvm.call @llvm.hivm.get.laneID
 // CHECK-DAG: llvm.call @llvm.hivm.get.CLOCK32
 // CHECK-DAG: llvm.call @llvm.hivm.get.CLOCK64

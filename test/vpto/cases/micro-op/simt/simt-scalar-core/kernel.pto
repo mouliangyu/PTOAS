@@ -3,6 +3,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     %c0_i64 = arith.constant 0 : i64
     %c32_i64 = arith.constant 32 : i64
     %c128_i64 = arith.constant 128 : i64
+    %c1024 = arith.constant 1024 : index
     %dim_z = arith.constant 1 : i32
     %dim_y = arith.constant 1 : i32
     %dim_x = arith.constant 32 : i32
@@ -13,7 +14,11 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
 
     pto.set_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
     pto.wait_flag["PIPE_V", "PIPE_MTE3", "EVENT_ID0"]
-    pto.mte_ub_gm %ub_out, %arg0, %c128_i64
+    %block = pto.get_block_idx
+    %block_idx = arith.index_cast %block : i64 to index
+    %gm_offset = arith.muli %block_idx, %c1024 : index
+    %gm_out = pto.addptr %arg0, %gm_offset : !pto.ptr<i32, gm> -> !pto.ptr<i32, gm>
+    pto.mte_ub_gm %ub_out, %gm_out, %c128_i64
       nburst(%c32_i64, %c128_i64, %c128_i64)
       : !pto.ptr<i32, ub>, !pto.ptr<i32, gm>, i64, i64, i64, i64
     pto.barrier #pto.pipe<PIPE_ALL>
@@ -27,6 +32,7 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     %c3_i32 = arith.constant 3 : i32
     %c32_i32 = arith.constant 32 : i32
     %c100_i32 = arith.constant 100 : i32
+    %c200_i32 = arith.constant 200 : i32
     %c_fields_i32 = arith.constant 32 : i32
 
     %tid_x = pto.get_tid_x : i32
@@ -170,6 +176,36 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     %idx25_i32 = arith.addi %base_i32, %c25_i32 : i32
     %idx25 = arith.index_castui %idx25_i32 : i32 to index
     pto.store %redux_f32_i32, %dst[%idx25] : !pto.ptr<i32, ub>, i32
+    %c26_i32 = arith.constant 26 : i32
+    %idx26_i32 = arith.addi %base_i32, %c26_i32 : i32
+    %idx26 = arith.index_castui %idx26_i32 : i32 to index
+    %block_idx_tag = arith.addi %block_idx_x, %c200_i32 : i32
+    pto.store %block_idx_tag, %dst[%idx26] : !pto.ptr<i32, ub>, i32
+    %c27_i32 = arith.constant 27 : i32
+    %idx27_i32 = arith.addi %base_i32, %c27_i32 : i32
+    %idx27 = arith.index_castui %idx27_i32 : i32 to index
+    %grid_x_lane = arith.addi %grid_dim_x, %laneid : i32
+    pto.store %grid_x_lane, %dst[%idx27] : !pto.ptr<i32, ub>, i32
+    %c28_i32 = arith.constant 28 : i32
+    %idx28_i32 = arith.addi %base_i32, %c28_i32 : i32
+    %idx28 = arith.index_castui %idx28_i32 : i32 to index
+    %grid_y_lane = arith.addi %grid_dim_y, %laneid : i32
+    pto.store %grid_y_lane, %dst[%idx28] : !pto.ptr<i32, ub>, i32
+    %c29_i32 = arith.constant 29 : i32
+    %idx29_i32 = arith.addi %base_i32, %c29_i32 : i32
+    %idx29 = arith.index_castui %idx29_i32 : i32 to index
+    %grid_z_lane = arith.addi %grid_dim_z, %laneid : i32
+    pto.store %grid_z_lane, %dst[%idx29] : !pto.ptr<i32, ub>, i32
+    %c30_i32 = arith.constant 30 : i32
+    %idx30_i32 = arith.addi %base_i32, %c30_i32 : i32
+    %idx30 = arith.index_castui %idx30_i32 : i32 to index
+    %block_dim_y_lane = arith.addi %block_dim_y, %laneid : i32
+    pto.store %block_dim_y_lane, %dst[%idx30] : !pto.ptr<i32, ub>, i32
+    %c31_i32 = arith.constant 31 : i32
+    %idx31_i32 = arith.addi %base_i32, %c31_i32 : i32
+    %idx31 = arith.index_castui %idx31_i32 : i32 to index
+    %block_dim_z_lane = arith.addi %block_dim_z, %laneid : i32
+    pto.store %block_dim_z_lane, %dst[%idx31] : !pto.ptr<i32, ub>, i32
     return
   }
 }

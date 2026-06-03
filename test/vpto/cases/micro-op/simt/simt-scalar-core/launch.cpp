@@ -14,5 +14,5 @@
 #endif
 extern "C" __global__ [aicore] void simt_scalar_core_kernel(__gm__ int *v1);
 void LaunchSimt_scalar_core_kernel(int *v1, void *stream) {
-  simt_scalar_core_kernel<<<1, nullptr, stream>>>((__gm__ int *)v1);
+  simt_scalar_core_kernel<<<2, nullptr, stream>>>((__gm__ int *)v1);
 }

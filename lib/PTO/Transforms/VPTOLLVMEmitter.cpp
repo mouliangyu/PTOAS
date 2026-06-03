@@ -2090,32 +2090,12 @@ StringRef buildRuntimeQueryCallee<pto::GetBlockDimZOp>(MLIRContext *context) {
 
 template <>
 StringRef buildRuntimeQueryCallee<pto::GetGridDimXOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.get.GRID.DIM.X").getValue();
-}
-
-template <>
-StringRef buildRuntimeQueryCallee<pto::GetGridDimYOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.get.GRID.DIM.Y").getValue();
-}
-
-template <>
-StringRef buildRuntimeQueryCallee<pto::GetGridDimZOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.get.GRID.DIM.Z").getValue();
+  return StringAttr::get(context, "llvm.hivm.tpe.get.BLOCK.NUM").getValue();
 }
 
 template <>
 StringRef buildRuntimeQueryCallee<pto::GetBlockIdxXOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.get.BLOCK.IDX.X").getValue();
-}
-
-template <>
-StringRef buildRuntimeQueryCallee<pto::GetBlockIdxYOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.get.BLOCK.IDX.Y").getValue();
-}
-
-template <>
-StringRef buildRuntimeQueryCallee<pto::GetBlockIdxZOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.get.BLOCK.IDX.Z").getValue();
+  return StringAttr::get(context, "llvm.hivm.tpe.get.BLOCK.IDX").getValue();
 }
 
 template <>
@@ -3704,23 +3684,113 @@ template <typename QueryOp>
 static StringRef buildRuntimeQueryCallee(MLIRContext *context);
 
 template <>
-StringRef buildRuntimeQueryCallee<pto::GetBlockIdxOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.GET.BLOCK.IDX").getValue();
-}
-
-template <>
 StringRef buildRuntimeQueryCallee<pto::GetSubBlockIdxOp>(MLIRContext *context) {
   return StringAttr::get(context, "llvm.hivm.GET.SUBBLOCKID").getValue();
 }
 
 template <>
-StringRef buildRuntimeQueryCallee<pto::GetBlockNumOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.GET.BLOCK.NUM").getValue();
+StringRef buildRuntimeQueryCallee<pto::GetSubBlockNumOp>(MLIRContext *context) {
+  return StringAttr::get(context, "llvm.hivm.GET.SUBBLOCKDIM").getValue();
+}
+
+static bool isInsideSimtEntry(Operation *op) {
+  auto funcOp = op->getParentOfType<func::FuncOp>();
+  return funcOp && funcOp->hasAttr(pto::kPTOSimtEntryAttrName);
+}
+
+template <typename QueryOp>
+static Value buildRuntimeQueryCall(QueryOp op, Type resultType,
+                                   StringRef calleeName,
+                                   ConversionPatternRewriter &rewriter,
+                                   LoweringState &state) {
+  auto funcType = rewriter.getFunctionType(TypeRange{}, TypeRange{resultType});
+  auto call = rewriter.create<func::CallOp>(op.getLoc(), calleeName,
+                                            TypeRange{resultType}, ValueRange{});
+  state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
+  return call.getResult(0);
+}
+
+template <typename QueryOp>
+static Value buildRuntimeQueryValue(QueryOp op, Type resultType,
+                                    ConversionPatternRewriter &rewriter,
+                                    LoweringState &state) {
+  return buildRuntimeQueryCall(
+      op, resultType, buildRuntimeQueryCallee<QueryOp>(op.getContext()),
+      rewriter, state);
 }
 
 template <>
-StringRef buildRuntimeQueryCallee<pto::GetSubBlockNumOp>(MLIRContext *context) {
-  return StringAttr::get(context, "llvm.hivm.GET.SUBBLOCKDIM").getValue();
+Value buildRuntimeQueryValue<pto::GetGridDimYOp>(
+    pto::GetGridDimYOp op, Type resultType, ConversionPatternRewriter &rewriter,
+    LoweringState &state) {
+  (void)resultType;
+  (void)state;
+  return getI32Constant(rewriter, op.getLoc(), 1);
+}
+
+template <>
+Value buildRuntimeQueryValue<pto::GetGridDimZOp>(
+    pto::GetGridDimZOp op, Type resultType, ConversionPatternRewriter &rewriter,
+    LoweringState &state) {
+  (void)resultType;
+  (void)state;
+  return getI32Constant(rewriter, op.getLoc(), 1);
+}
+
+template <>
+Value buildRuntimeQueryValue<pto::GetBlockIdxYOp>(
+    pto::GetBlockIdxYOp op, Type resultType,
+    ConversionPatternRewriter &rewriter, LoweringState &state) {
+  (void)resultType;
+  (void)state;
+  return getI32Constant(rewriter, op.getLoc(), 0);
+}
+
+template <>
+Value buildRuntimeQueryValue<pto::GetBlockIdxZOp>(
+    pto::GetBlockIdxZOp op, Type resultType,
+    ConversionPatternRewriter &rewriter, LoweringState &state) {
+  (void)resultType;
+  (void)state;
+  return getI32Constant(rewriter, op.getLoc(), 0);
+}
+
+template <>
+Value buildRuntimeQueryValue<pto::GetBlockIdxOp>(
+    pto::GetBlockIdxOp op, Type resultType,
+    ConversionPatternRewriter &rewriter, LoweringState &state) {
+  bool inSimtEntry = isInsideSimtEntry(op.getOperation());
+  StringRef calleeName =
+      StringAttr::get(op.getContext(), inSimtEntry
+                                           ? "llvm.hivm.tpe.get.BLOCK.IDX"
+                                           : "llvm.hivm.GET.BLOCK.IDX")
+          .getValue();
+  if (!inSimtEntry)
+    return buildRuntimeQueryCall(op, resultType, calleeName, rewriter, state);
+
+  Value value =
+      buildRuntimeQueryCall(op, rewriter.getI32Type(), calleeName, rewriter,
+                            state);
+  return rewriter.create<arith::ExtUIOp>(op.getLoc(), resultType, value);
+}
+
+template <>
+Value buildRuntimeQueryValue<pto::GetBlockNumOp>(
+    pto::GetBlockNumOp op, Type resultType, ConversionPatternRewriter &rewriter,
+    LoweringState &state) {
+  bool inSimtEntry = isInsideSimtEntry(op.getOperation());
+  StringRef calleeName =
+      StringAttr::get(op.getContext(), inSimtEntry
+                                           ? "llvm.hivm.tpe.get.BLOCK.NUM"
+                                           : "llvm.hivm.GET.BLOCK.NUM")
+          .getValue();
+  if (!inSimtEntry)
+    return buildRuntimeQueryCall(op, resultType, calleeName, rewriter, state);
+
+  Value value =
+      buildRuntimeQueryCall(op, rewriter.getI32Type(), calleeName, rewriter,
+                            state);
+  return rewriter.create<arith::ExtUIOp>(op.getLoc(), resultType, value);
 }
 
 static LogicalResult
@@ -7995,12 +8065,9 @@ public:
       return rewriter.notifyMatchFailure(op,
                                          "failed to convert runtime-query result type");
 
-    StringRef calleeName = buildRuntimeQueryCallee<QueryOp>(op.getContext());
-    auto funcType = rewriter.getFunctionType(TypeRange{}, TypeRange{resultType});
-    auto call = rewriter.create<func::CallOp>(op.getLoc(), calleeName,
-                                              TypeRange{resultType}, ValueRange{});
-    state.plannedDecls.push_back(PlannedDecl{calleeName.str(), funcType});
-    rewriter.replaceOp(op, call.getResults());
+    Value replacement =
+        buildRuntimeQueryValue(op, resultType, rewriter, state);
+    rewriter.replaceOp(op, replacement);
     return success();
   }
 
