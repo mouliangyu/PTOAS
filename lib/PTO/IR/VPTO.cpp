@@ -2625,12 +2625,21 @@ static ParseResult parseStructuredAccStoreClauses(
     if (seenClause) {
       if (failed(parser.parseOptionalComma()))
         return success();
+    } else {
+      // First iteration: optionally consume the comma between operands and
+      // clauses. For some callers (MteL0cUbOp after dst_mode parsing with
+      // parseOptionalComma already consumed), the comma may already be gone.
+      (void)parser.parseOptionalComma();
     }
     StringRef keyword;
-    if (parser.parseKeyword(&keyword)) {
+    if (failed(parser.parseOptionalKeyword(&keyword))) {
+      // No keyword found. If this is the first iteration (no clauses yet),
+      // that means there are zero clauses — return success without error.
+      // On subsequent iterations, a keyword is expected after the comma.
       if (!seenClause)
         return success();
-      return failure();
+      return parser.emitError(parser.getCurrentLocation(),
+                              "expected mte_l0c clause keyword");
     }
     seenClause = true;
 
@@ -6996,7 +7005,7 @@ ParseResult MteL0cL1Op::parse(OpAsmParser &parser, OperationState &result) {
       parseRequiredOperandWithComma(parser, m) ||
       parseRequiredOperandWithComma(parser, n) ||
       parseRequiredOperandWithComma(parser, srcStride) ||
-      parseRequiredOperandWithComma(parser, dstStride) ||
+      parser.parseOperand(dstStride) ||
       parseStructuredAccStoreClauses(parser, state) ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon())
     return failure();
@@ -7164,7 +7173,7 @@ ParseResult MteL0cGmOp::parse(OpAsmParser &parser, OperationState &result) {
       parseRequiredOperandWithComma(parser, srcStride) ||
       parseRequiredOperandWithComma(parser, dstStride) ||
       parseRequiredOperandWithComma(parser, sid) ||
-      parseRequiredOperandWithComma(parser, l2CacheCtrl) ||
+      parser.parseOperand(l2CacheCtrl) ||
       parseStructuredAccStoreClauses(parser, state) ||
       parser.parseOptionalAttrDict(result.attributes) || parser.parseColon())
     return failure();
