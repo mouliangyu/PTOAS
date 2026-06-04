@@ -31,11 +31,13 @@ Fix-pipe path (Acc -> Mat with FP quantization):
 
 Vector path (Vec -> Vec):
   - Vec -> Vec ND : PIPE_V, uses pto.vlds/vsts subscript syntax
+  Note: Uses vector load/store instead of DMA (copy_ubuf_to_ubuf) because
+  textract requires arbitrary offset support (index_row/index_col), which
+  DMA block copy cannot provide.
 
 Blocked paths:
   - Mat -> ScaleLeft/ScaleRight : mte_l1_l0a_mx/l0b_mx reject memory_space="scaling" dst
   - Vec -> Mat                  : now available via pto.mte_ub_l1 (PR #405)
-  - Vec -> Vec DMA              : needs copy_ubuf_to_ubuf surface (not yet available)
 """
 
 import tilelang_dsl as pto
