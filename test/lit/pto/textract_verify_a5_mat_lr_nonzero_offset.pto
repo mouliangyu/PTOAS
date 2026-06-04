@@ -5,7 +5,12 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
-// RUN: not ptoas --pto-arch=a5 %s 2>&1 | FileCheck %s
+// RUN: ptoas --pto-arch=a5 %s -o /dev/null 2>&1 | FileCheck %s --allow-empty
+
+// Verify that non-zero offset extraction is now accepted at PTO IR level
+// (previously rejected, now supported via PR #469 start_row/start_col).
+
+// CHECK-NOT: error
 
 
 
@@ -31,6 +36,3 @@ module attributes {"pto.target_arch" = "a5"} {
 
 }
 
-
-
-// CHECK: error: 'pto.textract' op expects A5 mat->left/right textract to have indexRow=0 and indexCol=0 (offset extraction not yet supported)

@@ -5,17 +5,18 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
-// RUN: not ptoas --pto-arch=a5 --pto-backend=vpto %s -o - 2>&1 | FileCheck %s
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --enable-tile-op-expand --emit-vpto %s -o - 2>/dev/null | FileCheck %s
 
+// Verify that non-zero offset extraction is supported via start_row/start_col.
 
-
-// CHECK: expects A5 mat->left/right textract to have indexRow=0 and indexCol=0
+// CHECK-LABEL: func.func @TEXTRACT_M2L_OFFSET
+// CHECK: pto.load_cbuf_to_ca {{.*}}, {{.*}}, %c4_i64, %c0_i64
 
 
 
 module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cube>} {
 
-  func.func @TEXTRACT_M2L_OFFSET_REJECTED() attributes {pto.aicore} {
+  func.func @TEXTRACT_M2L_OFFSET() attributes {pto.aicore} {
 
     %c4 = arith.constant 4 : index
 

@@ -5166,15 +5166,8 @@ mlir::LogicalResult mlir::pto::TExtractOp::verify() {
         return emitOpError("expects A5 textract src to use a supported mat blayout/slayout combination");
       if (*dstSpace == pto::AddressSpace::LEFT ||
           *dstSpace == pto::AddressSpace::RIGHT) {
-        auto indexRowVal = getConstantIntegerValueEx(
-            getIndexRow(), /*includeIndexAndIntOpsInConstFold=*/true);
-        auto indexColVal = getConstantIntegerValueEx(
-            getIndexCol(), /*includeIndexAndIntOpsInConstFold=*/true);
-        if (!indexRowVal || !indexColVal || *indexRowVal != 0 ||
-            *indexColVal != 0)
-          return emitOpError(
-              "expects A5 mat->left/right textract to have indexRow=0 and "
-              "indexCol=0 (offset extraction not yet supported)");
+        // Non-zero indexRow/indexCol is supported via start_row/start_col
+        // on mte_l1_l0a/l0b (PR #469).
       }
       if (*dstSpace == pto::AddressSpace::LEFT) {
         if (dstTb.getBLayoutValueI32() != static_cast<int32_t>(pto::BLayout::ColMajor) ||
