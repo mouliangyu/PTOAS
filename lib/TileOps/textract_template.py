@@ -19,8 +19,8 @@ Cube path (Mat -> Left/Right):
       transpose=False — direct extraction (TExtractToA / TExtractToACompact)
     - Cross fractal (src.row_major blayout + src.col_major slayout):
       transpose=True — transposed extraction (TExtractToATransCompact / TExtractToA<true>)
-  Offset extraction (indexRow/indexCol != 0) is currently blocked by
-  constraint check pending Issue #403 P2 support.
+  Offset extraction (indexRow/indexCol != 0) is supported via start_row/start_col
+  keywords on mte_l1_l0a/l0b (PR #469).
 
 Fix-pipe path (Acc -> Mat with FP quantization):
   - textract_fp   : PIPE_FIX, uses pto.mte_l0c_l1 with pre_quant keyword
@@ -74,12 +74,6 @@ def _textract_cube_dst_is_left_same_fractal(src, index_row, index_col, dst) -> b
         return False
     if not _is_same_fractal_as_left(src):
         return False
-    index_row_val = index_row.value if hasattr(index_row, 'value') else None
-    index_col_val = index_col.value if hasattr(index_col, 'value') else None
-    if index_row_val is not None and index_row_val != 0:
-        return False
-    if index_col_val is not None and index_col_val != 0:
-        return False
     return True
 
 
@@ -89,12 +83,6 @@ def _textract_cube_dst_is_left_cross_fractal(src, index_row, index_col, dst) -> 
             else dst_ms.value == "left"):
         return False
     if not _is_cross_fractal_as_left(src):
-        return False
-    index_row_val = index_row.value if hasattr(index_row, 'value') else None
-    index_col_val = index_col.value if hasattr(index_col, 'value') else None
-    if index_row_val is not None and index_row_val != 0:
-        return False
-    if index_col_val is not None and index_col_val != 0:
         return False
     return True
 
@@ -120,12 +108,6 @@ def _textract_cube_dst_is_right_same_fractal(src, index_row, index_col, dst) -> 
         return False
     if not _is_same_fractal_as_right(src):
         return False
-    index_row_val = index_row.value if hasattr(index_row, 'value') else None
-    index_col_val = index_col.value if hasattr(index_col, 'value') else None
-    if index_row_val is not None and index_row_val != 0:
-        return False
-    if index_col_val is not None and index_col_val != 0:
-        return False
     return True
 
 
@@ -135,12 +117,6 @@ def _textract_cube_dst_is_right_cross_fractal(src, index_row, index_col, dst) ->
             else dst_ms.value == "right"):
         return False
     if not _is_cross_fractal_as_right(src):
-        return False
-    index_row_val = index_row.value if hasattr(index_row, 'value') else None
-    index_col_val = index_col.value if hasattr(index_col, 'value') else None
-    if index_row_val is not None and index_row_val != 0:
-        return False
-    if index_col_val is not None and index_col_val != 0:
         return False
     return True
 
@@ -224,7 +200,8 @@ def template_textract_mat2left(src: pto.Tile,
                                 index_row: pto.i32, index_col: pto.i32,
                                 dst: pto.Tile):
     m, k = dst.valid_shape
-    pto.mte_l1_l0a(src.as_ptr(), dst.as_ptr(), m, k)
+    pto.mte_l1_l0a(src.as_ptr(), dst.as_ptr(), m, k,
+                    start_row=index_row, start_col=index_col)
     return None
 
 
@@ -234,10 +211,11 @@ def template_textract_mat2left(src: pto.Tile,
     constraints=[_textract_cube_dst_is_left_cross_fractal],
 )
 def template_textract_mat2left_trans(src: pto.Tile,
-                                     index_row: pto.i32, index_col: pto.i32,
-                                     dst: pto.Tile):
+                                      index_row: pto.i32, index_col: pto.i32,
+                                      dst: pto.Tile):
     m, k = dst.valid_shape
-    pto.mte_l1_l0a(src.as_ptr(), dst.as_ptr(), m, k, transpose=True)
+    pto.mte_l1_l0a(src.as_ptr(), dst.as_ptr(), m, k,
+                    start_row=index_row, start_col=index_col, transpose=True)
     return None
 
 
@@ -250,7 +228,8 @@ def template_textract_mat2right(src: pto.Tile,
                                  index_row: pto.i32, index_col: pto.i32,
                                  dst: pto.Tile):
     k, n = dst.valid_shape
-    pto.mte_l1_l0b(src.as_ptr(), dst.as_ptr(), k, n)
+    pto.mte_l1_l0b(src.as_ptr(), dst.as_ptr(), k, n,
+                    start_row=index_row, start_col=index_col)
     return None
 
 
@@ -260,10 +239,11 @@ def template_textract_mat2right(src: pto.Tile,
     constraints=[_textract_cube_dst_is_right_cross_fractal],
 )
 def template_textract_mat2right_trans(src: pto.Tile,
-                                      index_row: pto.i32, index_col: pto.i32,
-                                      dst: pto.Tile):
+                                       index_row: pto.i32, index_col: pto.i32,
+                                       dst: pto.Tile):
     k, n = dst.valid_shape
-    pto.mte_l1_l0b(src.as_ptr(), dst.as_ptr(), k, n, transpose=True)
+    pto.mte_l1_l0b(src.as_ptr(), dst.as_ptr(), k, n,
+                    start_row=index_row, start_col=index_col, transpose=True)
     return None
 
 
