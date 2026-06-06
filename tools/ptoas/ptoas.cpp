@@ -546,12 +546,13 @@ static bool hasUnexpandedTileOps(ModuleOp module) {
   return found;
 }
 
-static bool hasTilelangInlineHelpers(ModuleOp module) {
+static bool hasBackendInlineHelpers(ModuleOp module) {
   bool found = false;
   module.walk([&](func::FuncOp func) {
     if (found)
       return;
-    if (func->hasAttr("pto.tilelang.inline_proc"))
+    if (func->hasAttr("pto.tilelang.inline_proc") ||
+        func->hasAttr("pto.ptodsl.subkernel_helper"))
       found = true;
   });
   return found;
@@ -1229,7 +1230,7 @@ static void lowerPTOToVPTOBackend(PassManager &pm, int argc, char **argv) {
   kernelModulePM.addPass(mlir::createCanonicalizerPass());
 }
 
-static void inlineTilelangHelpersOnVPTOInput(PassManager &pm) {
+static void inlineBackendHelpersOnVPTOInput(PassManager &pm) {
   auto &kernelModulePM = pm.nest<ModuleOp>();
   kernelModulePM.addPass(pto::createPTOInlineLibCallPass());
   kernelModulePM.addPass(mlir::createSCCPPass());
@@ -1280,14 +1281,14 @@ static int emitVPTOBackendResult(ModuleOp module, PTOASCompileResult &result,
 static LogicalResult runVPTOBackendPipeline(OwningOpRef<ModuleOp> &module,
                                             int argc, char **argv,
                                             bool hasTileOpsToExpand,
-                                            bool hasTilelangHelpers) {
+                                            bool hasBackendHelpersToInline) {
   PassManager pm(module->getContext());
   pm.enableVerifier();
   pm.addPass(pto::createPTONormalizeUncoveredTileSectionsPass());
   pm.addPass(pto::createVPTOSplitCVModulePass());
   pm.addPass(pto::createVPTONormalizeContainerPass());
-  if (!hasTileOpsToExpand && hasTilelangHelpers)
-    inlineTilelangHelpersOnVPTOInput(pm);
+  if (!hasTileOpsToExpand && hasBackendHelpersToInline)
+    inlineBackendHelpersOnVPTOInput(pm);
   if (hasTileOpsToExpand)
     lowerPTOToVPTOBackend(pm, argc, argv);
   prepareVPTOForEmission(pm);
@@ -1402,7 +1403,7 @@ int mlir::pto::compilePTOASModule(
   }
 
   const bool hasTileOpsToExpand = hasUnexpandedTileOps(*module);
-  const bool hasTilelangHelpers = hasTilelangInlineHelpers(*module);
+  const bool hasBackendHelpersToInline = hasBackendInlineHelpers(*module);
 
   if (effectiveBackend == PTOBackend::VPTO && !hasTileOpsToExpand) {
     if (ptoPrintSeamIR || !ptoSeamIRFile.empty()) {
@@ -1411,7 +1412,7 @@ int mlir::pto::compilePTOASModule(
       return 1;
     }
     if (failed(runVPTOBackendPipeline(module, argc, argv, hasTileOpsToExpand,
-                                      hasTilelangHelpers)))
+                                      hasBackendHelpersToInline)))
       return 1;
     return emitVPTOBackendResult(*module, result, emitVPTOHostStub);
   }
@@ -1495,7 +1496,7 @@ int mlir::pto::compilePTOASModule(
       return 1;
 
     if (failed(runVPTOBackendPipeline(module, argc, argv, hasTileOpsToExpand,
-                                      hasTilelangHelpers)))
+                                      hasBackendHelpersToInline)))
       return 1;
     return emitVPTOBackendResult(*module, result, emitVPTOHostStub);
   }
