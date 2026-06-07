@@ -667,6 +667,8 @@ class TileConfig:
     @property
     def s_fractal_size(self) -> int:
         value = dict(self.fields).get("s_fractal_size", 512)
+        if value == 0:
+            value = 512
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError("TileConfig.s_fractal_size must be an integer")
         return value

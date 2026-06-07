@@ -1969,6 +1969,19 @@ struct PTOViewToMemrefPass
             op.getReluPreModeAttr());
       }
 
+      // --- TInsertOp ---
+      SmallVector<mlir::pto::TInsertOp, 8> tinsertOps;
+      func.walk([&](mlir::pto::TInsertOp op) { tinsertOps.push_back(op); });
+      for (auto op : tinsertOps) {
+        IRRewriter rewriter(ctx);
+        rewriter.setInsertionPoint(op);
+        rewriter.replaceOpWithNewOp<pto::TInsertOp>(
+            op, TypeRange{}, op.getSrc(), op.getIndexRow(), op.getIndexCol(),
+            op.getDst(), op.getFp(), op.getPreQuantScalar(),
+            op.getAccToVecModeAttr(), op.getReluPreModeAttr(),
+            op.getTinsertModeAttr());
+      }
+
       SmallVector<mlir::pto::TAbsOp, 8> abseops;
       func.walk([&](mlir::pto::TAbsOp op) { abseops.push_back(op); });
 
@@ -3123,6 +3136,18 @@ struct PTOViewToMemrefPass
             src,
             fp,
             dst);
+      }
+
+      // --- TInsertFPOp ---
+      SmallVector<mlir::pto::TInsertFPOp, 8> tinsertFpOps;
+      func.walk([&](mlir::pto::TInsertFPOp op) { tinsertFpOps.push_back(op); });
+      for (auto op : tinsertFpOps) {
+        IRRewriter rewriter(ctx);
+        rewriter.setInsertionPoint(op);
+        rewriter.replaceOpWithNewOp<pto::TInsertFPOp>(
+            op, TypeRange{}, op.getSrc(), op.getFp(),
+            op.getIndexRow(), op.getIndexCol(), op.getDst(),
+            op.getAccToVecModeAttr(), op.getReluPreModeAttr());
       }
 
       SmallVector<mlir::pto::TQuantOp, 8> quantops;
