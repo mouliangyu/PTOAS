@@ -22,7 +22,8 @@ jobs:
   rerun-self-hosted-git-failure:
     if: >-
       ${{
-        github.repository == 'hw-native-sys/PTOAS' &&
+        (github.repository == 'hw-native-sys/PTOAS' ||
+         github.repository == 'mouliangyu/PTOAS') &&
         github.event.workflow_run.event == 'pull_request' &&
         github.event.workflow_run.conclusion == 'failure' &&
         github.event.workflow_run.run_attempt == 1
