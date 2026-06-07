@@ -5324,9 +5324,29 @@ mlir::LogicalResult mlir::pto::TInsertOp::verify() {
       return success();
     }
 
+    // A5 acc->vec path (L0C->UB, ND/NZ modes in pto-isa).
+    if (*srcSpace == pto::AddressSpace::ACC && *dstSpace == pto::AddressSpace::VEC) {
+      if (!isColMajorRowMajorNZ(srcTb))
+        return emitOpError(
+            "expects A5 acc->vec tinsert src to use blayout=col_major and slayout=row_major");
+      bool dstIsND = isRowMajorNoneBoxND(dstTb);
+      bool dstIsNZ = isColMajorRowMajorNZ(dstTb);
+      if (!dstIsND && !dstIsNZ)
+        return emitOpError(
+            "expects A5 acc->vec tinsert dst to use ND (row_major/none_box) or NZ (col_major/row_major) layout");
+      bool okTypes = (srcElem.isF32() &&
+                      (dstElem.isF16() || dstElem.isBF16() || dstElem.isF32())) ||
+                     (srcElem.isInteger(32) && dstElem.isInteger(32));
+      if (!okTypes)
+        return emitOpError(
+            "expects A5 acc->vec tinsert element types to be "
+            "(src=f32,dst=f16/bf16/f32) or (src=i32,dst=i32)");
+      return success();
+    }
+
     return emitOpError(
         "expects A5 tinsert to use a supported src/dst loc pair: "
-        "acc->mat, vec->mat, or vec->vec");
+        "acc->mat, acc->vec, vec->mat, or vec->vec");
   };
   return dispatchVerifierByArch(getOperation(), verifyA2A3, verifyA5);
 }
