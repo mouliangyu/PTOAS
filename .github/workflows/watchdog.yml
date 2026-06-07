@@ -38,6 +38,24 @@ jobs:
           set -euo pipefail
 
           echo "Inspecting CI workflow run ${RUN_ID} in ${REPO}"
+          pr_number="${{ github.event.workflow_run.pull_requests[0].number }}"
+          run_head_sha="${{ github.event.workflow_run.head_sha }}"
+
+          if [[ -z "${pr_number}" ]]; then
+            echo "No pull request number found for workflow run ${RUN_ID}; skip rerun."
+            exit 0
+          fi
+
+          current_head_sha="$(
+            gh api "repos/${REPO}/pulls/${pr_number}" --jq '.head.sha'
+          )"
+          if [[ "${run_head_sha}" != "${current_head_sha}" ]]; then
+            echo "Workflow run ${RUN_ID} is stale for PR #${pr_number}; skip rerun."
+            echo "Run head SHA: ${run_head_sha}"
+            echo "Current PR head SHA: ${current_head_sha}"
+            exit 0
+          fi
+
           mapfile -t job_ids < <(
             gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?filter=latest&per_page=100" \
               --jq '.jobs[] | select(.name == "vpto-sim-validation" and .conclusion == "failure") | .id'
@@ -48,7 +66,7 @@ jobs:
             exit 0
           fi
 
-          git_failure_pattern='(fatal:|error: RPC failed|unable to access|Operation timed out|Connection timed out|Failed to connect|Could not resolve host|early EOF|fetch-pack|remote end hung up|index\.lock|GnuTLS recv error|TLS connection|HTTP/2 stream|exit code 128)'
+          git_failure_pattern='(error: RPC failed|Operation timed out|Connection timed out|Failed to connect|Could not resolve host|early EOF|fetch-pack|remote end hung up|GnuTLS recv error|TLS connection|HTTP/2 stream)'
           rerun_count=0
 
           for job_id in "${job_ids[@]}"; do
