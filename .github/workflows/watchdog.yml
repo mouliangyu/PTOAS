@@ -37,9 +37,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "Watchdog is running in observe-only mode; skip rerun."
-          exit 0
-
           echo "Inspecting CI workflow run ${RUN_ID} in ${REPO}"
           mapfile -t job_ids < <(
             gh api "repos/${REPO}/actions/runs/${RUN_ID}/jobs?filter=latest&per_page=100" \
