@@ -393,6 +393,36 @@ static Value makeIndexConstant(IRRewriter &rewriter, Location loc,
                                             rewriter.getIndexAttr(value));
 }
 
+static Value buildFlattenedPtrLikeMemRefView(IRRewriter &rewriter, Location loc,
+                                             Value sourceMemref,
+                                             MemRefType targetType,
+                                             Operation *anchorOp) {
+  auto sourceType = dyn_cast<BaseMemRefType>(sourceMemref.getType());
+  if (!sourceType) {
+    anchorOp->emitError(
+        "tile_buf_addr ptr-like lowering expects the source to be memref-backed");
+    return Value();
+  }
+
+  Value totalElems = makeIndexConstant(rewriter, loc, 1);
+  for (int64_t dim = 0; dim < sourceType.getRank(); ++dim) {
+    Value extent;
+    if (sourceType.isDynamicDim(dim))
+      extent = rewriter.create<memref::DimOp>(loc, sourceMemref, dim);
+    else
+      extent = makeIndexConstant(rewriter, loc, sourceType.getDimSize(dim));
+    totalElems = rewriter.create<arith::MulIOp>(loc, totalElems, extent);
+  }
+
+  SmallVector<OpFoldResult, 1> sizes{totalElems};
+  SmallVector<OpFoldResult, 1> strides{rewriter.getIndexAttr(1)};
+  return rewriter
+      .create<memref::ReinterpretCastOp>(loc, targetType, sourceMemref,
+                                         rewriter.getIndexAttr(0), sizes,
+                                         strides)
+      .getResult();
+}
+
 static SmallVector<int64_t> computeCompactStrides(ArrayRef<int64_t> shape) {
   SmallVector<int64_t> strides(shape.size(), 1);
   int64_t stride = 1;
@@ -832,6 +862,38 @@ static void markForceDynamicValidShape(Operation *op, bool force,
   return success();
 }
 
+static LogicalResult lowerPtrLikeTileBufAddrOps(func::FuncOp func,
+                                                MLIRContext *ctx) {
+  SmallVector<mlir::pto::TileBufAddrOp, 8> addrOps;
+  func.walk([&](mlir::pto::TileBufAddrOp op) { addrOps.push_back(op); });
+
+  for (auto op : addrOps) {
+    if (!isa<mlir::pto::PtrType>(op.getDst().getType()))
+      continue;
+
+    auto targetType =
+        dyn_cast<MemRefType>(convertPTOTypeToMemRef(op.getDst().getType()));
+    if (!targetType) {
+      op.emitError("failed to convert tile_buf_addr pointer result to memref");
+      return failure();
+    }
+
+    Value source = op.getSrc();
+    if (!isa<BaseMemRefType>(source.getType()))
+      continue;
+
+    IRRewriter rewriter(ctx);
+    rewriter.setInsertionPoint(op);
+    Value replacement =
+        buildFlattenedPtrLikeMemRefView(rewriter, op.getLoc(), source,
+                                        targetType, op.getOperation());
+    if (!replacement)
+      return failure();
+    rewriter.replaceOp(op, replacement);
+  }
+  return success();
+}
+
 [[maybe_unused]] static LogicalResult lowerTensorViewDimOps(func::FuncOp func, MLIRContext *ctx) {
   SmallVector<mlir::pto::GetTensorViewDimOp, 8> tvDims;
   func.walk([&](mlir::pto::GetTensorViewDimOp op) { tvDims.push_back(op); });
@@ -1174,9 +1236,6 @@ struct PTOViewToMemrefPass
     MLIRContext *ctx = &getContext();
 
     for (auto func : mod.getOps<func::FuncOp>()) {
-      if (func.isExternal()) continue;
-
-      Block &entry = func.front();
       auto fnTy = func.getFunctionType();
 
       // ------------------------------------------------------------------
@@ -1188,15 +1247,17 @@ struct PTOViewToMemrefPass
       SmallVector<Type> newResults;
       for (Type t : fnTy.getResults()) newResults.push_back(convertPTOTypeToMemRef(t));
 
+      func.setFunctionType(FunctionType::get(ctx, newInputs, newResults));
+      if (func.isExternal()) continue;
+
+      Block &entry = func.front();
+
       // Update entry block arguments
       for (unsigned i = 0; i < entry.getNumArguments(); ++i) {
         if (entry.getArgument(i).getType() != newInputs[i]) {
             entry.getArgument(i).setType(newInputs[i]);
         }
       }
-
-      // Update function type
-      func.setFunctionType(FunctionType::get(ctx, newInputs, newResults));
 
       // ------------------------------------------------------------------
       // Stage 0.25: Insert pto.bind_tile for function args that were tile_buf
@@ -1417,6 +1478,17 @@ struct PTOViewToMemrefPass
             rewriter.create<pto::TAssignOp>(op.getLoc(), targetTy, op.getTile(),
                                             op.getAddr());
         rewriter.replaceOp(op, normalized.getResult());
+      }
+
+      // ------------------------------------------------------------------
+      // Stage 0.9: Lower ptr-like pto.tile_buf_addr -> memref<?xT>.
+      // The original authoring surface is pointer-like, so shape information
+      // is intentionally discarded here and only the linear address view is
+      // preserved for later memref-based rewriting.
+      // ------------------------------------------------------------------
+      if (failed(lowerPtrLikeTileBufAddrOps(func, ctx))) {
+        signalPassFailure();
+        return;
       }
 
       // ------------------------------------------------------------------

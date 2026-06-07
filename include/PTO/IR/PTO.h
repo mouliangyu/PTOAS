@@ -180,11 +180,19 @@ private:
 /// Function attribute that marks an explicit PTO kernel entry.
 inline constexpr llvm::StringLiteral kPTOEntryAttrName = "pto.entry";
 inline constexpr llvm::StringLiteral kLegacyHACCEntryAttrName = "hacc.entry";
+inline constexpr llvm::StringLiteral kPTOKernelAttrName = "pto.kernel";
+inline constexpr llvm::StringLiteral kLegacyPTOAICoreAttrName = "pto.aicore";
 inline constexpr llvm::StringLiteral kPTOSimtEntryAttrName = "pto.simt_entry";
 inline constexpr llvm::StringLiteral kPTOSimtMaxThreadsAttrName =
     "pto.simt_max_threads";
 inline constexpr llvm::StringLiteral kPTOSimtMaxRegistersAttrName =
     "pto.simt_max_regs";
+
+/// Return true if the operation carries a PTO kernel marker.
+bool hasPTOKernelAttr(Operation *op);
+
+/// Return true if the function is a PTO kernel definition.
+bool isPTOKernelFunction(func::FuncOp func);
 
 /// Return true if the function carries an explicit entry marker.
 bool hasExplicitPTOEntryAttr(func::FuncOp func);
@@ -197,6 +205,16 @@ LogicalResult validatePTOEntryFunctions(ModuleOp module);
 
 /// Materialize the effective PTO entry selection onto function attributes.
 void annotatePTOEntryFunctions(ModuleOp module);
+
+/// Look up a peer function for import_reserved_buffer-style cross-kernel links.
+/// This first honors ordinary nearest symbol lookup, then falls back to the
+/// outer backend-partitioned container and PTODSL ABI-specialized public
+/// helper symbols when needed.
+func::FuncOp lookupPeerFuncAcrossContainer(Operation *op,
+                                           FlatSymbolRefAttr peerAttr);
+
+/// Find one reserve_buffer by logical name inside a function.
+ReserveBufferOp findReserveBufferByName(func::FuncOp funcOp, StringRef name);
 
 } // namespace pto
 } // namespace mlir

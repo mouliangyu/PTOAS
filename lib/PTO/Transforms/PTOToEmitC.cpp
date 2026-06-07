@@ -437,11 +437,11 @@ public:
         return std::nullopt;
       }
 
-      std::string qualifier = "__gm__";
+      std::string qualifier =
+          addrSpaceQualifier(type.getMemorySpace().getAddressSpace());
 
-      std::string finalTypeStr = qualifier + " " + elemTypeStr;
-      return emitc::PointerType::get(
-          emitc::OpaqueType::get(Ctx, finalTypeStr));
+      std::string finalTypeStr = qualifier + " " + elemTypeStr + "*";
+      return emitc::OpaqueType::get(Ctx, finalTypeStr);
     });
 
     addConversion([Ctx](pto::PipeType type) -> Type {
@@ -600,16 +600,16 @@ static FailureOr<std::string>
 getTPipeDirectionToken(bool isL2G2L, int8_t dirMask, PTOArch targetArch) {
   if (dirMask == 1) {
     if (isL2G2L && targetArch == PTOArch::A5)
-      return std::string("Direction::DIR_C2V_GM");
-    return std::string("Direction::DIR_C2V");
+      return std::string("DIR_C2V_GM");
+    return std::string("DIR_C2V");
   }
   if (dirMask == 2) {
     if (isL2G2L && targetArch == PTOArch::A5)
-      return std::string("Direction::DIR_V2C_GM");
-    return std::string("Direction::DIR_V2C");
+      return std::string("DIR_V2C_GM");
+    return std::string("DIR_V2C");
   }
   if (dirMask == 3)
-    return std::string("Direction::DIR_BOTH");
+    return std::string("DIR_BOTH");
   return failure();
 }
 
@@ -722,6 +722,66 @@ static Value materializeAddressAsPointer(ConversionPatternRewriter &rewriter,
                                    ArrayAttr{}, castTyAttr,
                                    ValueRange{addr})
       .getResult(0);
+}
+
+static bool isEmitCTileLikeType(Type ty) {
+  auto opaqueTy = dyn_cast<emitc::OpaqueType>(ty);
+  if (!opaqueTy)
+    return false;
+  StringRef value = opaqueTy.getValue();
+  return value.contains("Tile<") || value.contains("ConvTile<");
+}
+
+static FailureOr<Value>
+adaptCallOperandForEmitC(const TypeConverter *typeConverter,
+                         ConversionPatternRewriter &rewriter, Location loc,
+                         Type originalCalleeArgTy, Value originalOperand,
+                         Value loweredOperand) {
+  Type elemTy;
+  std::optional<pto::AddressSpace> as;
+  if (auto ptrTy = dyn_cast<pto::PtrType>(originalCalleeArgTy)) {
+    elemTy = ptrTy.getElementType();
+    as = ptrTy.getMemorySpace().getAddressSpace();
+  } else if (auto memrefTy = dyn_cast<MemRefType>(originalCalleeArgTy)) {
+    elemTy = memrefTy.getElementType();
+    if (auto asAttr =
+            dyn_cast_or_null<pto::AddressSpaceAttr>(memrefTy.getMemorySpace()))
+      as = asAttr.getAddressSpace();
+    else
+      as = pto::AddressSpace::GM;
+  }
+
+  if (elemTy && as) {
+    std::string elemTokStorage = getEmitCScalarTypeToken(elemTy);
+    StringRef elemTok(elemTokStorage);
+
+    auto materializeForCall = [&](Value tileLike) -> FailureOr<Value> {
+      Value extracted =
+          materializeTileDataValue(rewriter, loc, tileLike, *as, elemTok);
+      if (!typeConverter)
+        return extracted;
+      Type targetTy = typeConverter->convertType(originalCalleeArgTy);
+      if (!targetTy)
+        return failure();
+      if (extracted.getType() == targetTy)
+        return extracted;
+      return rewriter.create<emitc::CastOp>(loc, targetTy, extracted)
+          .getResult();
+    };
+
+    if (auto tileBufAddr = originalOperand.getDefiningOp<pto::TileBufAddrOp>()) {
+      Value tileValue = loweredOperand;
+      if (!isEmitCTileLikeType(tileValue.getType()) && tileBufAddr.getSrc())
+        tileValue = tileBufAddr.getSrc();
+      if (isEmitCTileLikeType(tileValue.getType()))
+        return materializeForCall(tileValue);
+    }
+
+    if (isEmitCTileLikeType(loweredOperand.getType()))
+      return materializeForCall(loweredOperand);
+  }
+
+  return loweredOperand;
 }
 
 struct InterCoreSyncCallDesc {
@@ -2740,19 +2800,21 @@ struct FuncToEmitC : public OpConversionPattern<func::FuncOp> {
     }
 
     if (op.isDeclaration()) {
-      emitcFunc.setSpecifiersAttr(rewriter.getStrArrayAttr({"extern"}));
+      emitcFunc.setSpecifiersAttr(
+          rewriter.getStrArrayAttr({"extern \"C\"", "AICORE"}));
       rewriter.eraseOp(op);
       return success();
     }
 
     if (pto::isPTOEntryFunction(op)) {
       emitcFunc.setSpecifiersAttr(
-          rewriter.getStrArrayAttr({"__global__ AICORE"}));
+          rewriter.getStrArrayAttr({"extern \"C\"", "__global__ AICORE"}));
     } else if (op.isPrivate()) {
       emitcFunc.setSpecifiersAttr(
           rewriter.getStrArrayAttr({"static", "AICORE"}));
     } else {
-      emitcFunc.setSpecifiersAttr(rewriter.getStrArrayAttr({"AICORE"}));
+      emitcFunc.setSpecifiersAttr(
+          rewriter.getStrArrayAttr({"extern \"C\"", "AICORE"}));
     }
 
     std::optional<StringRef> kernelKindMacro = getKernelKindMacro(op);
@@ -3043,24 +3105,22 @@ struct SubviewToEmitCPattern : public OpConversionPattern<memref::SubViewOp> {
     {
       auto resTy = mlir::cast<MemRefType>(op.getResult().getType());
       Type elemTy = resTy.getElementType();
-      if (elemTy.isInteger(16)) {
-        std::string castElemTypeStr = "int16_t";
-        if (cast<IntegerType>(elemTy).isUnsigned())
-          castElemTypeStr = "uint16_t";
+      std::string castElemTypeStr = getEmitCScalarTypeToken(elemTy);
 
-        std::string qualifier = "__gm__";
-        if (Attribute ms = srcType.getMemorySpace()) {
-          if (auto ptoAttr = dyn_cast<pto::AddressSpaceAttr>(ms)) {
-            qualifier = addrSpaceQualifier(ptoAttr.getAddressSpace());
-          }
-        }
-
-        auto typedPtrTy = emitc::OpaqueType::get(ctx, qualifier + " " + castElemTypeStr + "*");
-        Value typedSourcePtr = rewriter.create<emitc::CastOp>(loc, typedPtrTy, sourcePtr);
-        newPtr = rewriter.create<emitc::AddOp>(loc, typedPtrTy, typedSourcePtr, totalOffset);
-      } else {
-        newPtr = rewriter.create<emitc::AddOp>(loc, sourcePtr.getType(), sourcePtr, totalOffset);
+      std::string qualifier = "__gm__";
+      if (Attribute ms = srcType.getMemorySpace()) {
+        if (auto ptoAttr = dyn_cast<pto::AddressSpaceAttr>(ms))
+          qualifier = addrSpaceQualifier(ptoAttr.getAddressSpace());
       }
+
+      auto typedPtrTy =
+          emitc::OpaqueType::get(ctx, qualifier + " " + castElemTypeStr + "*");
+      Value typedSourcePtr = sourcePtr;
+      if (typedSourcePtr.getType() != typedPtrTy)
+        typedSourcePtr =
+            rewriter.create<emitc::CastOp>(loc, typedPtrTy, typedSourcePtr);
+      newPtr = rewriter.create<emitc::AddOp>(loc, typedPtrTy, typedSourcePtr,
+                                             totalOffset);
     }
 
 
@@ -4468,9 +4528,27 @@ struct CallToEmitC : public OpConversionPattern<func::CallOp> {
       return rewriter.notifyMatchFailure(op,
                                          "failed to convert call result types");
 
+    SmallVector<Value> operands;
+    operands.reserve(adaptor.getOperands().size());
+    auto calleeType = op.getCalleeType();
+    unsigned originalArgCount = calleeType.getNumInputs();
+    if (originalArgCount != adaptor.getOperands().size())
+      return rewriter.notifyMatchFailure(
+          op, "call operand count mismatch after type conversion");
+
+    for (auto [index, loweredOperand] : llvm::enumerate(adaptor.getOperands())) {
+      FailureOr<Value> adapted = adaptCallOperandForEmitC(
+          getTypeConverter(), rewriter, op.getLoc(), calleeType.getInput(index),
+          op.getOperand(index),
+          loweredOperand);
+      if (failed(adapted))
+        return rewriter.notifyMatchFailure(op,
+                                           "failed to adapt call operand for EmitC ABI");
+      operands.push_back(*adapted);
+    }
+
     rewriter.replaceOpWithNewOp<emitc::CallOp>(op, op.getCalleeAttr(),
-                                               resultTypes,
-                                               adaptor.getOperands());
+                                               resultTypes, operands);
     return success();
   }
 };
@@ -6881,6 +6959,17 @@ struct ReinterpretCastToEmitC : public OpConversionPattern<memref::ReinterpretCa
     return success();
   }
 };
+
+struct MemRefCastToEmitC : public OpConversionPattern<memref::CastOp> {
+  using OpConversionPattern<memref::CastOp>::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(memref::CastOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+    rewriter.replaceOp(op, peelUnrealized(adaptor.getSource()));
+    return success();
+  }
+};
+
 //===----------------------------------------------------------------------===//
 // pto.taddc lowering -> TADDC(dst, src0, src1, src2)
 //===----------------------------------------------------------------------===//
@@ -10805,6 +10894,33 @@ struct PTOBitcastToEmitC : public OpConversionPattern<pto::BitcastOp> {
   }
 };
 
+struct PTOTileBufAddrToEmitC : public OpConversionPattern<pto::TileBufAddrOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult matchAndRewrite(pto::TileBufAddrOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override {
+    auto ptrTy = dyn_cast<pto::PtrType>(op.getResult().getType());
+    if (!ptrTy)
+      return failure();
+
+    Value src = peelUnrealized(adaptor.getSrc());
+
+    if (isEmitCTileLikeType(src.getType())) {
+      rewriter.replaceOpWithNewOp<emitc::CallOpaqueOp>(
+          op,
+          TypeRange{getTypeConverter()->convertType(op.getResult().getType())},
+          "PTOAS__TILE_DATA", ArrayAttr{}, ArrayAttr{}, ValueRange{src});
+      return success();
+    }
+
+    Type dstTy = getTypeConverter()->convertType(op.getResult().getType());
+    if (!dstTy)
+      return failure();
+    rewriter.replaceOpWithNewOp<emitc::CastOp>(op, dstTy, src);
+    return success();
+  }
+};
+
 struct PTOMaterializeTileToEmitC
     : public OpConversionPattern<pto::MaterializeTileOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -11657,6 +11773,7 @@ static void populatePTOToEmitCPatterns(RewritePatternSet &patterns,
   patterns.add<ArithCmpIToEmitC>(typeConverter, ctx);
   patterns.add<PTOAllocTileToEmitC>(typeConverter, ctx);
   patterns.add<PTOMaterializeTileToEmitC>(typeConverter, ctx);
+  patterns.add<PTOTileBufAddrToEmitC>(typeConverter, ctx);
   patterns.add<PTOBindTileToEmitC>(typeConverter, ctx);
   patterns.add<PTOSetFlagToEmitC>(typeConverter, ctx);
   patterns.add<PTOSyncFlagDynToEmitC>(typeConverter, ctx, "pto.set_flag_dyn",
@@ -11839,6 +11956,7 @@ static void populatePTOToEmitCPatterns(RewritePatternSet &patterns,
   patterns.add<PTOTMatmulAccToTMATMULACC>(typeConverter, ctx);
   patterns.add<PTOTGemvToTGEMV>(typeConverter, ctx);
   patterns.add<PTOTGemvAccToTGEMVACC>(typeConverter, ctx);
+  patterns.add<MemRefCastToEmitC>(typeConverter, ctx);
   patterns.add<ReinterpretCastToEmitC>(typeConverter, ctx);
   patterns.add<PTOTAbsToTABS>(typeConverter, ctx);
   patterns.add<PTOTAddToTADD>(typeConverter, ctx);
@@ -11998,6 +12116,14 @@ struct EmitPTOManualPass
 	    auto loc = mop->getLoc();
 	    OpBuilder builder(ctx);
 	    builder.setInsertionPointToStart(mop.getBody());
+	    if (targetArch == PTOArch::A5) {
+	      builder.create<emitc::VerbatimOp>(
+	          loc, builder.getStringAttr(R"cpp(
+#ifndef PTO_NPU_ARCH_A5
+#define PTO_NPU_ARCH_A5
+#endif
+)cpp"));
+	    }
 	    builder.create<emitc::IncludeOp>(
 	        loc, "pto/pto-inst.hpp", /*is_standard_include=*/false);
         if (needsCommInclude) {
@@ -12288,6 +12414,18 @@ static AICORE inline void ptoas_auto_sync_tail(
         return;
       }
 
+      // Tile-backed pointer extraction must lower via PTOAS__TILE_DATA rather
+      // than a raw C-style cast from `Tile<...>` to `__ubuf__ T*`.
+      if (isEmitCTileLikeType(inTy) && isEmitCPointerLikeType(outTy)) {
+        OpBuilder builder(cast);
+        auto extracted = builder.create<emitc::CallOpaqueOp>(
+            cast.getLoc(), outTy, "PTOAS__TILE_DATA", ArrayAttr{},
+            ArrayAttr{}, ValueRange{input});
+        output.replaceAllUsesWith(extracted.getResult(0));
+        castsToErase.push_back(cast);
+        return;
+      }
+
       if (emitc::isSupportedEmitCType(inTy) && emitc::isSupportedEmitCType(outTy)) {
         OpBuilder builder(cast);
         auto c = builder.create<emitc::CastOp>(cast.getLoc(), outTy, input);
@@ -12339,6 +12477,43 @@ static AICORE inline void ptoas_auto_sync_tail(
         }
 
         castOp.erase();
+      }
+    }
+
+    // --- Step A3: Sink PTOAS__TILE_DATA reads of emitc.variable to use sites ---
+    //
+    // Tile-like emitc.variable values are mutable handles whose backing address
+    // is typically established by a later `TASSIGN`. If we materialize
+    // `PTOAS__TILE_DATA(tileVar)` right after declaration, we snapshot an
+    // uninitialized/stale address. Re-materialize each read at the use site so
+    // it observes the post-TASSIGN state of the tile variable.
+    {
+      SmallVector<emitc::CallOpaqueOp> tileDataReadsToSink;
+      mop.walk([&](emitc::CallOpaqueOp callOp) {
+        if (callOp.getCallee() != "PTOAS__TILE_DATA")
+          return;
+        if (callOp.getNumOperands() != 1 || callOp.getNumResults() != 1)
+          return;
+        if (callOp.getOperand(0).getDefiningOp<emitc::VariableOp>())
+          tileDataReadsToSink.push_back(callOp);
+      });
+
+      for (emitc::CallOpaqueOp callOp : tileDataReadsToSink) {
+        Value src = callOp.getOperand(0);
+        Type dstTy = callOp.getResult(0).getType();
+        Value oldRes = callOp.getResult(0);
+
+        for (OpOperand &use : llvm::make_early_inc_range(oldRes.getUses())) {
+          Operation *user = use.getOwner();
+          OpBuilder b(user);
+          b.setInsertionPoint(user);
+          auto newRead = b.create<emitc::CallOpaqueOp>(
+              callOp.getLoc(), dstTy, "PTOAS__TILE_DATA", ArrayAttr{},
+              ArrayAttr{}, ValueRange{src});
+          use.set(newRead.getResult(0));
+        }
+
+        callOp.erase();
       }
     }
 

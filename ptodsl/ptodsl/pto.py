@@ -35,8 +35,6 @@ from ._types import (           # noqa: F401
 )
 from ._surface_types import (   # noqa: F401
     constexpr,
-    tensor_spec,
-    TensorSpec,
     BarrierType,
     Pipe,
     MemorySpace,
@@ -48,6 +46,12 @@ from ._surface_types import (   # noqa: F401
     DeinterleaveDist,
     InterleaveDist,
     PostUpdate,
+    PartMode,
+    PositionMode,
+    VPackPart,
+    VcvtRoundMode,
+    VcvtSatMode,
+    VcvtPartMode,
     AlignType,
     TensorView,
     PartitionTensorView,
@@ -68,6 +72,7 @@ from ._ops import (             # noqa: F401
     make_mask, bytewidth, elements_per_vreg,
     pand, por, pxor, pnot, psel,
     pbitcast,
+    vcvt, vpack, vmulscvt,
     ppack, punpack,
     pintlv_b8, pintlv_b16, pintlv_b32,
     pdintlv_b8, pdintlv_b16, pdintlv_b32,
@@ -95,19 +100,25 @@ from ._ops import (             # noqa: F401
     get_buf, rls_buf,
     set_cross_flag, wait_cross_flag, set_intra_flag, wait_intra_flag,
     set_flag, wait_flag,
+    reserve_buffer, import_reserved_buffer,
 )
 
 # ── Control flow ──────────────────────────────────────────────────────────────
 from ._control_flow import (    # noqa: F401
-    for_, if_, yield_,
+    for_, if_, yield_, return_,
     LoopHandle, BranchHandle,
 )
 
 # ── Decorator ─────────────────────────────────────────────────────────────────
 from ._jit import jit, KernelHandle, merge_jit_modules      # noqa: F401
 from ._subkernels import cube, simd, simt     # noqa: F401
+from ._pipe_namespace import pipe  # noqa: F401
 
 # ── Shorthand dtype aliases ───────────────────────────────────────────────────
+def gm_ptr(elem):
+    return ptr(elem, "gm")
+
+
 f32 = float32
 f16 = float16
 i1 = int1
@@ -121,6 +132,6 @@ mask_b32 = mask_type("b32")
 
 
 def __getattr__(name):
-    if name in {"ukernel", "tile_buf_type", "vecscope", "as_ptr", "vbrc_load", "vsts_1pt"}:
+    if name in {"ukernel", "tile_buf_type", "vecscope", "as_ptr", "vbrc_load", "vsts_1pt", "tensor_spec", "TensorSpec"}:
         raise unsupported_public_surface_error(name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

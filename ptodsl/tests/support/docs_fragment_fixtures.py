@@ -75,13 +75,14 @@ FRAGMENT_FIXTURES = {
         f"""
         @pto.jit(target="a5")
         def type_system_tensor_view_probe(
-            A: pto.tensor_spec(rank=2, dtype=pto.f32),
+            A_ptr: pto.ptr(pto.f32, "gm"),
+            rows: pto.i32,
+            cols: pto.i32,
             *,
             BLOCK: pto.constexpr = 128,
         ):
-            rows = A.shape[0]
-            cols = A.shape[1]
             N = rows
+            A = pto.make_tensor_view(A_ptr, shape=[rows, cols], strides=[cols, 1])
             {SNIPPET_PLACEHOLDER}
         """
     ),
@@ -132,6 +133,17 @@ FRAGMENT_FIXTURES = {
             {SNIPPET_PLACEHOLDER}
         """
     ),
+    "type_system.tile_reshape": _fixture(
+        f"""
+        @pto.jit(target="a5")
+        def type_system_tile_reshape_probe(
+            *,
+            BR: pto.constexpr = 8,
+            BC: pto.constexpr = 64,
+        ):
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
     "type_system.vreg_bitcast": _fixture(
         f"""
         @pto.jit(target="a5")
@@ -179,7 +191,9 @@ FRAGMENT_FIXTURES = {
         f"""
         @pto.jit(target="a5")
         def quick_start_make_tensor_view_probe(
-            A: pto.tensor_spec(rank=2, dtype=pto.f32),
+            A_ptr: pto.ptr(pto.f32, "gm"),
+            rows: pto.i32,
+            cols: pto.i32,
         ):
             {SNIPPET_PLACEHOLDER}
         """
@@ -198,11 +212,11 @@ FRAGMENT_FIXTURES = {
         f"""
         @pto.jit(target="a5")
         def quick_start_partition_view_probe(
-            A: pto.tensor_spec(rank=2, dtype=pto.f32),
+            A_ptr: pto.ptr(pto.f32, "gm"),
+            rows: pto.i32,
+            cols: pto.i32,
         ):
-            rows = A.shape[0]
-            cols = A.shape[1]
-            a_view = pto.make_tensor_view(A, shape=A.shape, strides=A.strides)
+            a_view = pto.make_tensor_view(A_ptr, shape=[rows, cols], strides=[cols, 1])
             {SNIPPET_PLACEHOLDER}
         """
     ),
@@ -610,13 +624,13 @@ FRAGMENT_FIXTURES = {
         f"""
         @pto.jit(target="a5", mode="explicit")
         def kernel_entry_inline_explicit_scope_probe(
-            A: pto.tensor_spec(rank=2, dtype=pto.f32),
-            O: pto.tensor_spec(rank=2, dtype=pto.f32),
+            A_ptr: pto.ptr(pto.f32, "gm"),
+            O_ptr: pto.ptr(pto.f32, "gm"),
             *,
             BLOCK: pto.constexpr = 16,
         ):
-            a_view = pto.make_tensor_view(A, shape=A.shape, strides=A.strides)
-            o_view = pto.make_tensor_view(O, shape=O.shape, strides=O.strides)
+            a_view = pto.make_tensor_view(A_ptr, shape=[1, BLOCK], strides=[BLOCK, 1])
+            o_view = pto.make_tensor_view(O_ptr, shape=[1, BLOCK], strides=[BLOCK, 1])
             part = pto.partition_view(a_view, offsets=[0, 0], sizes=[1, BLOCK])
             out_part = pto.partition_view(o_view, offsets=[0, 0], sizes=[1, BLOCK])
             tile = pto.alloc_tile(shape=[1, BLOCK], dtype=pto.f32, valid_shape=[1, BLOCK])
@@ -1801,6 +1815,210 @@ FRAGMENT_FIXTURES = {
 
 
         {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_global_declaration": _fixture(
+        f"""
+        @pto.jit(target="a3")
+        def pipe_communication_c2v_global_declaration_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+        ):
+            gm_slots = pto.make_tensor_view(gm_slot_buffer, shape=[16, 16], strides=[16, 1])
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_global_producer": _fixture(
+        f"""
+        @pto.jit(target="a3")
+        def pipe_communication_c2v_global_producer_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+            src: pto.gm_ptr(pto.f32),
+        ):
+            gm_view = pto.make_tensor_view(gm_slot_buffer, shape=[16, 16], strides=[16, 1])
+            c2v_buf = pto.reserve_buffer("c2v_fifo", size=8192, location="vec")
+            c2v = pto.pipe.c2v(
+                gm_slot_tensor=gm_view,
+                gm_slot_buffer=gm_slot_buffer,
+                consumer_buf=c2v_buf,
+                id=0,
+            )
+
+            a_part = pto.partition_view(
+                pto.make_tensor_view(src, shape=[16, 16], strides=[16, 1]),
+                offsets=[0, 0], sizes=[16, 16])
+            a_tile = pto.alloc_tile(shape=[16, 16], dtype=pto.f32)
+
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_global_consumer": _fixture(
+        f"""
+        @pto.jit(target="a3")
+        def pipe_communication_c2v_global_consumer_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+            dst: pto.gm_ptr(pto.f32),
+        ):
+            gm_view = pto.make_tensor_view(gm_slot_buffer, shape=[16, 16], strides=[16, 1])
+            c2v_buf = pto.reserve_buffer("c2v_fifo", size=8192, location="vec")
+            c2v = pto.pipe.c2v(
+                gm_slot_tensor=gm_view,
+                gm_slot_buffer=gm_slot_buffer,
+                consumer_buf=c2v_buf,
+                id=0,
+            )
+
+            b_tile = pto.alloc_tile(shape=[16, 16], dtype=pto.f32)
+            b_part = pto.partition_view(
+                pto.make_tensor_view(dst, shape=[16, 16], strides=[16, 1]),
+                offsets=[0, 0], sizes=[16, 16])
+
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.v2c_global_declaration": _fixture(
+        f"""
+        @pto.jit(target="a3")
+        def pipe_communication_v2c_global_declaration_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+        ):
+            gm_slots = pto.make_tensor_view(gm_slot_buffer, shape=[16, 16], strides=[16, 1])
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.v2c_global_producer": _fixture(
+        f"""
+        @pto.jit(target="a3")
+        def pipe_communication_v2c_global_producer_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+            src: pto.gm_ptr(pto.f32),
+        ):
+            gm_view = pto.make_tensor_view(gm_slot_buffer, shape=[16, 16], strides=[16, 1])
+            v2c_buf = pto.reserve_buffer("v2c_fifo", size=8192, location="mat")
+            v2c = pto.pipe.v2c(
+                gm_slot_tensor=gm_view,
+                gm_slot_buffer=gm_slot_buffer,
+                consumer_buf=v2c_buf,
+                id=0,
+            )
+
+            src_tile = pto.alloc_tile(shape=[16, 16], dtype=pto.f32)
+
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.v2c_global_consumer": _fixture(
+        f"""
+        @pto.jit(target="a3")
+        def pipe_communication_v2c_global_consumer_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+            dst: pto.gm_ptr(pto.f32),
+        ):
+            gm_view = pto.make_tensor_view(gm_slot_buffer, shape=[16, 16], strides=[16, 1])
+            v2c_buf = pto.reserve_buffer("v2c_fifo", size=8192, location="mat")
+            v2c = pto.pipe.v2c(
+                gm_slot_tensor=gm_view,
+                gm_slot_buffer=gm_slot_buffer,
+                consumer_buf=v2c_buf,
+                id=0,
+            )
+
+            dst_tile = pto.alloc_tile(shape=[16, 16], dtype=pto.f32)
+
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_local_declaration": _fixture(
+        f"""
+        @pto.jit(target="a5")
+        def pipe_communication_c2v_local_declaration_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+        ):
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_local_import": _fixture(
+        f"""
+        @pto.simt
+        def vector_kernel():
+            c2v_buf = pto.reserve_buffer("c2v_fifo", size=8192, location="vec")
+
+
+        @pto.jit(target="a5")
+        def pipe_communication_c2v_local_import_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+        ):
+            vector_kernel()
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_local_producer": _fixture(
+        f"""
+        @pto.simt
+        def vector_kernel():
+            c2v_buf = pto.reserve_buffer("c2v_fifo", size=8192, location="vec")
+
+
+        @pto.jit(target="a5")
+        def pipe_communication_c2v_local_producer_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+            src: pto.gm_ptr(pto.f32),
+        ):
+            vector_kernel()
+            c2v_buf = pto.import_reserved_buffer("c2v_fifo", peer_func="vector_kernel")
+            c2v_peer = pto.pipe.c2v(
+                slot_size=1024,
+                consumer_buf=c2v_buf,
+                id=0,
+            )
+            src_tile = pto.alloc_tile(shape=[16, 16], dtype=pto.f32)
+
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_local_consumer": _fixture(
+        f"""
+        @pto.jit(target="a5")
+        def pipe_communication_c2v_local_consumer_probe(
+            dst: pto.gm_ptr(pto.f32),
+        ):
+            c2v_buf = pto.reserve_buffer("c2v_fifo", size=8192, location="vec")
+            c2v = pto.pipe.c2v(
+                slot_size=1024,
+                consumer_buf=c2v_buf,
+                id=0,
+            )
+            dst_part = pto.partition_view(
+                pto.make_tensor_view(dst, shape=[16, 16], strides=[16, 1]),
+                offsets=[0, 0], sizes=[16, 16])
+            dst_tile = pto.alloc_tile(shape=[16, 16], dtype=pto.f32)
+
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.bidirectional_local_declaration": _fixture(
+        f"""
+        @pto.jit(target="a5")
+        def pipe_communication_bidirectional_local_declaration_probe(
+            gm_slot_buffer: pto.gm_ptr(pto.f32),
+        ):
+            c2v_buf = pto.reserve_buffer("c2v_fifo", size=8192, location="vec")
+            v2c_buf = pto.reserve_buffer("v2c_fifo", size=8192, location="mat")
+            {SNIPPET_PLACEHOLDER}
+        """
+    ),
+    "pipe_communication.c2v_global": _fixture(
+        f"""
+        {SNIPPET_PLACEHOLDER}
+
+
+        class _PipeCommunicationC2VGlobalProbe:
+            def compile(self, **kwargs):
+                cube_compiled = cube_producer.compile(**kwargs)
+                cube_compiled.verify()
+                return vector_consumer.compile(**kwargs)
+
+
+        pipe_communication_c2v_global_probe = _PipeCommunicationC2VGlobalProbe()
         """
     ),
 }

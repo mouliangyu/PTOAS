@@ -82,6 +82,7 @@ private:
  
   // --- 核心：处理计算/搬运指令 (生成 Compound 节点) ---
   void UpdatePTOOpInfo(Operation *op);
+  void UpdatePTODSLSubkernelCallInfo(func::CallOp callOp);
  
   // --- 辅助函数 ---
   

@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 from .active import activate_runtime, activate_session, require_active_session
+from .._control_flow import _ExplicitReturnSignal
 from .module_builder import create_kernel_module
 from .session import TraceSession
+from .._diagnostics import kernel_module_return_value_error
 from .._bootstrap import make_context
 from .._types import _resolve
 
@@ -62,11 +64,14 @@ class TracingRuntime:
     def dispatch_subkernel_call(self, subkernel, *args, **kwargs):
         """Dispatch a decorated PTODSL subkernel call in the active trace."""
         session = require_active_session(f"@pto.{subkernel.spec.role.value}")
-        if subkernel.spec.role.value in {"cube", "simd"}:
-            return session.lower_inline_subkernel(subkernel, *args, **kwargs)
-        if subkernel.spec.role.value == "simt":
-            return session.lower_simt_helper_subkernel(subkernel, *args, **kwargs)
+        if subkernel.spec.role.value in {"cube", "simd", "simt"}:
+            return session.lower_helper_subkernel(subkernel, *args, **kwargs)
         return subkernel.emit_body(*args, **kwargs)
+
+    def dispatch_kernel_module_call(self, kernel_handle, *args, **kwargs):
+        """Dispatch one ``@pto.jit(entry=False)`` kernel-module call in the active trace."""
+        session = require_active_session("@pto.jit(entry=False)")
+        return session.lower_kernel_module_call(kernel_handle, *args, **kwargs)
 
     def build_module(self):
         """Materialize the full MLIR module for this runtime."""
@@ -79,13 +84,18 @@ class TracingRuntime:
             with InsertionPoint(entry), activate_runtime(self), activate_session(session):
                 self.initialize_session(session, entry)
                 args = self.bind_entry_arguments(entry.arguments)
-                self.trace_entry(*args)
+                returned_early = False
+                try:
+                    self.trace_entry(*args)
+                except _ExplicitReturnSignal:
+                    returned_early = True
                 self.validate_trace_state()
-                self.emit_return()
+                if not returned_early:
+                    self.emit_return()
                 self.finalize_session(session)
                 session.validate_final_state()
             self.verify_module(module)
-            return module
+            return module, {"kernel_module_graph": session.snapshot_kernel_module_graph()}
 
 
 class CallbackTracingRuntime(TracingRuntime):
@@ -121,7 +131,9 @@ class SignatureTracingRuntime(TracingRuntime):
     def trace_entry(self, *args):
         kwargs = self._kernel_signature.default_constexpr_bindings()
         kwargs.update(self._constexpr_bindings)
-        self._callback(*args, **kwargs)
+        result = self._callback(*args, **kwargs)
+        if self.module_spec.entry is False and result is not None:
+            raise kernel_module_return_value_error(result)
 
 
 __all__ = [

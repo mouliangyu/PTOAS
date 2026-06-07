@@ -19,6 +19,10 @@ class _TileNamespace:
     load = staticmethod(_ops.tload)
     store = staticmethod(_ops.tstore)
     mov = staticmethod(_ops.tmov)
+    extract = staticmethod(_ops.textract)
+    insert = staticmethod(_ops.tinsert)
+    matmul = staticmethod(_ops.tmatmul)
+    matmul_acc = staticmethod(_ops.tmatmul_acc)
 
     add = staticmethod(_ops.tadd)
     sub = staticmethod(_ops.tsub)
@@ -80,6 +84,7 @@ class _TileNamespace:
     cmps = staticmethod(_ops.tcmps)
 
     expands = staticmethod(_ops.texpands)
+    reshape = staticmethod(_ops.treshape)
     rowexpand = staticmethod(_ops.trowexpand)
     colexpand = staticmethod(_ops.tcolexpand)
 
