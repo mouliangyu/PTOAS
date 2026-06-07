@@ -292,7 +292,7 @@ jobs:
         github.event_name == 'pull_request'
       }}
     env:
-      LLVM_REPO: https://github.com/vpto-dev/llvm-project.git
+      LLVM_REPO: https://github.invalid/vpto-dev/llvm-project.git
       LLVM_REF: feature-vpto
       VPTO_SIM_WORKSPACE: ${{ github.workspace }}/.work/vpto-sim-ci
       TILELANG_DSL_WORKSPACE: ${{ github.workspace }}/.work/tilelang-dsl-ci
