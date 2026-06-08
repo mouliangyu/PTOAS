@@ -19,6 +19,40 @@ permissions:
   contents: read
 
 jobs:
+  pr-context:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Write PR context
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p pr-context
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          context = {
+              "number": int(os.environ["PR_NUMBER"]),
+              "head_sha": os.environ["PR_HEAD_SHA"],
+          }
+          Path("pr-context/pr-context.json").write_text(
+              json.dumps(context, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload PR context
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-context
+          path: pr-context/pr-context.json
+          if-no-files-found: error
+
   vpto-sim-validation:
     runs-on: [self-hosted, Linux, X64, label-1]
     timeout-minutes: 120

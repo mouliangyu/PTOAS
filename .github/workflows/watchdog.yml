@@ -39,24 +39,57 @@ jobs:
 
           echo "Inspecting CI workflow run ${RUN_ID} in ${REPO}"
           run_head_sha="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.head_sha')"
-          pr_number="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}" --jq '.pull_requests[0].number // ""')"
 
-          if [[ -z "${pr_number}" ]]; then
-            echo "No pull request number found for workflow run ${RUN_ID}; skip rerun."
+          artifact_id="$(
+            gh api "repos/${REPO}/actions/runs/${RUN_ID}/artifacts" \
+              --jq 'map(select(.name == "pr-context" and (.expired | not))) | .[0].id // ""'
+          )"
+
+          if [[ -z "${artifact_id}" ]]; then
+            echo "No pr-context artifact found for workflow run ${RUN_ID}; skip rerun."
+            exit 0
+          fi
+
+          echo "Downloading pr-context artifact ${artifact_id}"
+          gh api "repos/${REPO}/actions/artifacts/${artifact_id}/zip" > pr-context.zip
+          python3 - <<'PY'
+          import json
+          import zipfile
+
+          with zipfile.ZipFile("pr-context.zip") as archive:
+              with archive.open("pr-context.json") as handle:
+                  context = json.load(handle)
+
+          with open("pr-context.env", "w", encoding="utf-8") as handle:
+              handle.write(f"PR_NUMBER={int(context['number'])}\n")
+              handle.write(f"PR_HEAD_SHA={context['head_sha']}\n")
+          PY
+          # shellcheck disable=SC1091
+          source pr-context.env
+
+          if [[ -z "${PR_NUMBER:-}" || -z "${PR_HEAD_SHA:-}" ]]; then
+            echo "Invalid pr-context artifact for workflow run ${RUN_ID}; skip rerun."
+            exit 0
+          fi
+
+          if [[ "${PR_HEAD_SHA}" != "${run_head_sha}" ]]; then
+            echo "Workflow run ${RUN_ID} does not match pr-context head sha; skip rerun."
+            echo "Run head SHA: ${run_head_sha}"
+            echo "PR context head SHA: ${PR_HEAD_SHA}"
             exit 0
           fi
 
           read -r pr_state current_head_sha < <(
-            gh api "repos/${REPO}/pulls/${pr_number}" \
+            gh api "repos/${REPO}/pulls/${PR_NUMBER}" \
               --jq '[.state, .head.sha] | @tsv'
           )
           if [[ "${pr_state}" != "open" ]]; then
-            echo "PR #${pr_number} is ${pr_state}; skip rerun."
+            echo "PR #${PR_NUMBER} is ${pr_state}; skip rerun."
             exit 0
           fi
 
           if [[ "${run_head_sha}" != "${current_head_sha}" ]]; then
-            echo "Workflow run ${RUN_ID} is stale for PR #${pr_number}; skip rerun."
+            echo "Workflow run ${RUN_ID} is stale for PR #${PR_NUMBER}; skip rerun."
             echo "Run head SHA: ${run_head_sha}"
             echo "Current PR head SHA: ${current_head_sha}"
             exit 0
