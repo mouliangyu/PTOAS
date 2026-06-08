@@ -36,6 +36,8 @@ constexpr int8_t kBidirectionalDirMask = 3;
 constexpr int32_t kSingleDirectionSlotNum = 8;
 constexpr int32_t kBidirectionalSlotNum = 4;
 constexpr llvm::StringLiteral kFrontendPipeIdAttrName = "__pto.frontend_id";
+constexpr llvm::StringLiteral kGlobalTensorEntryTypeAttrName =
+    "__pto.globaltensor_entry_type";
 constexpr llvm::StringLiteral kGlobalTensorStridesAttrName =
     "__pto.globaltensor_strides";
 
@@ -47,7 +49,14 @@ struct FrontendPipeHandles {
   Operation *anchorOp = nullptr;
 };
 
-using FrontendPipeHandleMap = llvm::DenseMap<int32_t, FrontendPipeHandles>;
+static int64_t frontendPipeHandleKey(int32_t id, FunctionKernelKind side) {
+  // The same logical pipe id may be initialized on both Cube and Vector sides.
+  // Handle lookup and duplicate detection are side-specific.
+  return static_cast<int64_t>(id) * 2 +
+         (side == FunctionKernelKind::Cube ? 0 : 1);
+}
+
+using FrontendPipeHandleMap = llvm::DenseMap<int64_t, FrontendPipeHandles>;
 
 template <typename InitOpT>
 static LogicalResult requireFrontendGmSlotBuffer(InitOpT initOp) {
@@ -124,11 +133,21 @@ static FailureOr<Value> createFrontendPipe(InitOpT initOp, IRRewriter &rewriter,
     if (arch == PTOArch::A5)
       return initOp.emitOpError(
           "globaltensor pipe entries are supported for a2/a3 l2g2l pipes");
+    if (failed(requireFrontendGmSlotBuffer(initOp)))
+      return failure();
+    if (!localAddr)
+      return initOp.emitOpError(
+          "requires local consumer buffer operands for globaltensor pipe lowering");
 
+    IntegerAttr localSlotNumAttr = initOp.getLocalSlotNumAttr();
+    if (!localSlotNumAttr)
+      localSlotNumAttr = rewriter.getI32IntegerAttr(slotNum);
     auto pipe = rewriter.create<InitializeL2G2LPipeOp>(
-        loc, pipeTy, dirAttr, slotSizeAttr, slotNumAttr, IntegerAttr{},
-        IntegerAttr{}, noSplitAttr, initOp.getGmSlotTensor(), Value{},
-        Value{});
+        loc, pipeTy, dirAttr, slotSizeAttr, slotNumAttr, localSlotNumAttr,
+        IntegerAttr{}, noSplitAttr, initOp.getGmSlotBuffer(), localAddr,
+        peerLocalAddr);
+    pipe->setAttr(kGlobalTensorEntryTypeAttrName,
+                  TypeAttr::get(initOp.getGmSlotTensor().getType()));
     propagateFrontendIdAttr(initOp, pipe.getOperation(), rewriter);
     return pipe.getPipe();
   }
@@ -269,31 +288,31 @@ static FailureOr<FrontendPipeHandleMap> lowerInitIfPresent(func::FuncOp funcOp,
                                                            IRRewriter &rewriter) {
   FrontendPipeHandleMap handlesById;
   SmallVector<Operation *> frontendInitOps;
-  llvm::DenseMap<int32_t, Operation *> initOpById;
+  llvm::DenseMap<int64_t, Operation *> initOpByKey;
   bool hasDuplicateId = false;
-  bool hasAicInit = false;
-  bool hasAivInit = false;
 
   funcOp.walk([&](Operation *op) {
     if (auto init = dyn_cast<AicInitializePipeOp>(op)) {
-      hasAicInit = true;
       frontendInitOps.push_back(op);
-      auto [it, inserted] = initOpById.try_emplace(init.getId(), op);
+      int64_t key =
+          frontendPipeHandleKey(init.getId(), FunctionKernelKind::Cube);
+      auto [it, inserted] = initOpByKey.try_emplace(key, op);
       if (!inserted) {
         op->emitOpError()
-            << "requires unique initialize_pipe id in function (duplicate id = "
+            << "requires unique same-side initialize_pipe id in function (duplicate id = "
             << init.getId() << ")";
         hasDuplicateId = true;
       }
       return WalkResult::advance();
     }
     if (auto init = dyn_cast<AivInitializePipeOp>(op)) {
-      hasAivInit = true;
       frontendInitOps.push_back(op);
-      auto [it, inserted] = initOpById.try_emplace(init.getId(), op);
+      int64_t key =
+          frontendPipeHandleKey(init.getId(), FunctionKernelKind::Vector);
+      auto [it, inserted] = initOpByKey.try_emplace(key, op);
       if (!inserted) {
         op->emitOpError()
-            << "requires unique initialize_pipe id in function (duplicate id = "
+            << "requires unique same-side initialize_pipe id in function (duplicate id = "
             << init.getId() << ")";
         hasDuplicateId = true;
       }
@@ -305,19 +324,14 @@ static FailureOr<FrontendPipeHandleMap> lowerInitIfPresent(func::FuncOp funcOp,
   if (hasDuplicateId)
     return failure();
 
-  if (hasAicInit && hasAivInit) {
-    funcOp.emitOpError("cannot mix pto.aic_initialize_pipe and "
-                       "pto.aiv_initialize_pipe in one function");
-    return failure();
-  }
-
   for (Operation *op : frontendInitOps) {
     if (auto init = dyn_cast<AicInitializePipeOp>(op)) {
       int32_t id = init.getId();
       auto loweredOr = lowerAndEraseFrontendInit(init, rewriter);
       if (failed(loweredOr))
         return failure();
-      handlesById.try_emplace(id, *loweredOr);
+      handlesById.try_emplace(
+          frontendPipeHandleKey(id, FunctionKernelKind::Cube), *loweredOr);
       continue;
     }
 
@@ -326,7 +340,8 @@ static FailureOr<FrontendPipeHandleMap> lowerInitIfPresent(func::FuncOp funcOp,
     auto loweredOr = lowerAndEraseFrontendInit(init, rewriter);
     if (failed(loweredOr))
       return failure();
-    handlesById.try_emplace(id, *loweredOr);
+    handlesById.try_emplace(
+        frontendPipeHandleKey(id, FunctionKernelKind::Vector), *loweredOr);
   }
 
   return handlesById;
@@ -357,12 +372,13 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
       frontendOps.push_back(op);
   });
 
-  auto lookupHandles = [&](Operation *op, int32_t id)
+  auto lookupHandles = [&](Operation *op, int32_t id,
+                           FunctionKernelKind side)
       -> FailureOr<const FrontendPipeHandles *> {
-    auto it = handlesById.find(id);
+    auto it = handlesById.find(frontendPipeHandleKey(id, side));
     if (it == handlesById.end()) {
       op->emitOpError()
-          << "requires matching frontend initialize_pipe(id = " << id
+          << "requires matching same-side frontend initialize_pipe(id = " << id
           << ") in the same function";
       return failure();
     }
@@ -379,7 +395,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     rewriter.setInsertionPoint(op);
 
     if (auto alloc = dyn_cast<TAllocToAivOp>(op)) {
-      auto handlesOr = lookupHandles(op, alloc.getId());
+      auto handlesOr =
+          lookupHandles(op, alloc.getId(), FunctionKernelKind::Cube);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -398,7 +415,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     if (auto alloc = dyn_cast<TAllocToAicOp>(op)) {
-      auto handlesOr = lookupHandles(op, alloc.getId());
+      auto handlesOr =
+          lookupHandles(op, alloc.getId(), FunctionKernelKind::Vector);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -417,7 +435,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     if (auto push = dyn_cast<TPushToAivOp>(op)) {
-      auto handlesOr = lookupHandles(op, push.getId());
+      auto handlesOr =
+          lookupHandles(op, push.getId(), FunctionKernelKind::Cube);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -432,7 +451,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     if (auto push = dyn_cast<TPushToAicOp>(op)) {
-      auto handlesOr = lookupHandles(op, push.getId());
+      auto handlesOr =
+          lookupHandles(op, push.getId(), FunctionKernelKind::Vector);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -447,7 +467,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     if (auto pop = dyn_cast<TPopFromAicOp>(op)) {
-      auto handlesOr = lookupHandles(op, pop.getId());
+      auto handlesOr =
+          lookupHandles(op, pop.getId(), FunctionKernelKind::Vector);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -478,7 +499,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     if (auto pop = dyn_cast<TPopFromAivOp>(op)) {
-      auto handlesOr = lookupHandles(op, pop.getId());
+      auto handlesOr =
+          lookupHandles(op, pop.getId(), FunctionKernelKind::Cube);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -509,7 +531,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     if (auto free = dyn_cast<TFreeFromAicOp>(op)) {
-      auto handlesOr = lookupHandles(op, free.getId());
+      auto handlesOr =
+          lookupHandles(op, free.getId(), FunctionKernelKind::Vector);
       if (failed(handlesOr))
         return failure();
       const FrontendPipeHandles &handles = **handlesOr;
@@ -525,7 +548,8 @@ static LogicalResult lowerFrontendDataOps(func::FuncOp funcOp,
     }
 
     auto free = cast<TFreeFromAivOp>(op);
-    auto handlesOr = lookupHandles(op, free.getId());
+    auto handlesOr =
+        lookupHandles(op, free.getId(), FunctionKernelKind::Cube);
     if (failed(handlesOr))
       return failure();
     const FrontendPipeHandles &handles = **handlesOr;
