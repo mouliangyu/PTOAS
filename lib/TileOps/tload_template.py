@@ -6,7 +6,7 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 
-"""`pto.tload` 的 TileLang DSL 模板"""
+"""TileLang DSL template for `pto.tload`"""
 
 import tilelang_dsl as pto
 
@@ -175,7 +175,7 @@ def template_tload_dn2dn(src: pto.PartitionTensorView, dst: pto.Tile):
     if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
         pto.set_mov_pad_val(dst.pad_value.eval())
 
-    # rank-5 partition view 元信息。
+    # rank-5 partition view metadata.
     g0, g1, g2, g3, g4 = src.shape
     s0, s1, s2, s3, s4 = src.strides
 
@@ -187,13 +187,14 @@ def template_tload_dn2dn(src: pto.PartitionTensorView, dst: pto.Tile):
     gm_stride = s4 * elem_bytes
     ub_stride = tile_rows * elem_bytes
 
-    # UB 目标 tile 是列高为 `tile_rows` 的紧凑 col-major 布局，
-    # 从最内层 `g4 × tile_rows` 块递推出三层阶梯 stride。
+    # The UB destination tile has a compact col-major layout with column
+    # height `tile_rows`. From the innermost `g4 × tile_rows` block, three
+    # levels of stride are derived recursively.
     dst_stride2 = g4 * tile_rows
     dst_stride1 = g2 * dst_stride2
     dst_stride0 = g1 * dst_stride1
 
-    # loop1 ↔ g2（内层），loop2 ↔ g1（外层），软件 for ↔ g0。
+    # loop1 <-> g2 (inner), loop2 <-> g1 (outer), software for <-> g0.
     loop1 = g2
     loop2 = g1
     loop1_src_stride = s2 * elem_bytes
@@ -254,8 +255,9 @@ def template_tload_nz2nz(src: pto.PartitionTensorView, dst: pto.Tile):
     if pto.constexpr(dst.pad_value != pto.PadValue.NULL):
         pto.set_mov_pad_val(dst.pad_value.eval())
 
-    # rank-5 partition view 元信息。NZ 静态分块约束（g3/g4 与 dtype 的关系）
-    # 由更高层 schema/static-check 保证，这里只保留运行时搬运公式。
+    # rank-5 partition view metadata. NZ static tile constraints (g3/g4 vs
+    # dtype relationship) are enforced by higher-layer schema / static checks;
+    # here we only keep the runtime DMA formula.
     g0, g1, g2, g3, g4 = src.shape
     s0, s1, s2, s3, s4 = src.strides
 
@@ -268,13 +270,13 @@ def template_tload_nz2nz(src: pto.PartitionTensorView, dst: pto.Tile):
     gm_stride = s1 * elem_bytes
     ub_stride = tile_rows * c0_size_bytes
 
-    # 每个 g0 block 在 UB 中包含 `g1` 个 NZ 小块；每块的列宽是 `g4` elems。
+    # Each g0 block in UB contains `g1` NZ sub-blocks; each sub-block has `g4` columns.
     tile_stride = g1 * tile_rows * g4
 
     gm_ptr = src.as_ptr()
     ub_ptr = dst.as_ptr()
 
-    # NZ2NZ 对应实现始终走 normal mode，不复用 loop1/loop2 寄存器。
+    # NZ2NZ always uses normal mode; do not reuse loop1/loop2 registers.
     pto.set_loop_size_outtoub(loop1=1, loop2=1)
     for i in range(0, g0, 1):
         src_i = pto.addptr(gm_ptr, i * s0)
@@ -300,3 +302,171 @@ def template_tload_nz2nz(src: pto.PartitionTensorView, dst: pto.Tile):
                 enable_ub_pad=False,
             )
     return
+
+
+# ============================================================================
+# Cube Matrix Templates: TLOAD.MAT (GM → L1)
+# ============================================================================
+
+def _constraint_tload_mat_base(src, dst) -> bool:
+    """TLOAD.MAT base constraint check"""
+    # dst must be MemorySpace.MAT
+    dst_space = dst.memory_space
+    if dst_space is None:
+        return False
+    dst_space_value = dst_space.value if hasattr(dst_space, "value") else dst_space
+    if dst_space_value not in {"mat", "MAT"}:
+        return False
+    # dst must be a 2D Tile
+    if dst.rank != 2:
+        return False
+    # dtype check
+    dst_dtype = dst.dtype
+    if dst_dtype is None:
+        return False
+    dtype_name = dst_dtype.name if hasattr(dst_dtype, "name") else str(dst_dtype)
+    supported_dtypes = {"f16", "bf16", "f32", "i8", "si8", "ui8", "i16", "si16", "ui16", "i32", "si32"}
+    if dtype_name not in supported_dtypes:
+        return False
+    return True
+
+
+def _constraint_tload_mat_nd2nz(src, dst) -> bool:
+    """TLOAD.MAT ND2NZ fractal load constraint"""
+    if not _constraint_tload_mat_base(src, dst):
+        return False
+    # dst layout must be col_major (NZ format)
+    config = dst.config
+    if config is None:
+        return False
+    b_layout = config.b_layout
+    if b_layout is None:
+        return False
+    b_layout_value = b_layout.value if hasattr(b_layout, "value") else b_layout
+    # COL_MAJOR corresponds to NZ format
+    if b_layout_value not in {"col_major", "COL_MAJOR"}:
+        return False
+    return True
+
+
+def _constraint_tload_mat_dn2nz(src, dst) -> bool:
+    """TLOAD.MAT DN2NZ fractal load constraint"""
+    if not _constraint_tload_mat_base(src, dst):
+        return False
+    config = dst.config
+    if config is None:
+        return False
+    b_layout = config.b_layout
+    if b_layout is None:
+        return False
+    b_layout_value = b_layout.value if hasattr(b_layout, "value") else b_layout
+    if b_layout_value not in {"col_major", "COL_MAJOR"}:
+        return False
+    return True
+
+
+@pto.ckernel(
+    target="a5",
+    op="pto.tload",
+    dtypes=[
+        (pto.f16,),
+        (pto.bf16,),
+        (pto.f32,),
+    ],
+    constraints=[_constraint_tload_mat_nd2nz],
+    name="tload_gm_to_mat_nd2nz",
+)
+def template_tload_gm_to_mat_nd2nz(src: pto.Tile, dst: pto.Tile):
+    """GM -> MAT ND2NZ fractal load template
+
+    Load Row-Major (ND) format data from GM into L1 MAT Buffer in NZ format.
+
+    Args:
+        src: Tile with GM memory_space, PartitionTensorView
+        dst: Tile with MAT memory_space, shape=(M, K), col_major layout
+
+    Uses:
+        pto.mte_gm_l1_frac with mode="nd2nz"
+    """
+    m, k = dst.valid_shape
+    dtype = dst.element_type
+    elem_bytes = pto.bytewidth(dtype)
+
+    gm_ptr = src.as_ptr()
+    mat_ptr = dst.as_ptr()
+
+    # ND2NZ parameter calculation
+    # n_value = M (row count), d_value = K (column count)
+    n_value = m
+    d_value = k
+
+    # src_layout: inner stride = K (number of elements per row)
+    src_inner_stride = k
+
+    # dst_group: (group_count, loop2_stride, loop3_stride, loop4_stride)
+    # For simple single-block case: (1, 1, m, 0)
+    dst_group = (1, 1, m, 0)
+
+    # ctrl: (l2_cache_ctrl, smallc0_en)
+    ctrl = (0, False)
+
+    pto.mte_gm_l1_frac(
+        gm_ptr, mat_ptr, "nd2nz",
+        shape=(n_value, d_value),
+        src_layout=(src_inner_stride,),
+        dst_group=dst_group,
+        ctrl=ctrl
+    )
+
+
+@pto.ckernel(
+    target="a5",
+    op="pto.tload",
+    dtypes=[
+        (pto.f16,),
+        (pto.bf16,),
+        (pto.f32,),
+    ],
+    constraints=[_constraint_tload_mat_dn2nz],
+    name="tload_gm_to_mat_dn2nz",
+)
+def template_tload_gm_to_mat_dn2nz(src: pto.Tile, dst: pto.Tile):
+    """GM -> MAT DN2NZ fractal load template
+
+    Load Col-Major (DN) format data from GM into L1 MAT Buffer in NZ format.
+    The output is still logically N x D; only the memory layout changes to NZ
+    (fractal). No logical shape conversion is needed.
+
+    Args:
+        src: Tile with GM memory_space, col-major source layout
+        dst: Tile with MAT memory_space, shape=(M, K), col_major layout
+
+    Uses:
+        pto.mte_gm_l1_frac with mode="dn2nz"
+    """
+    m, k = dst.valid_shape
+    dtype = dst.element_type
+
+    gm_ptr = src.as_ptr()
+    mat_ptr = dst.as_ptr()
+
+    # DN2NZ parameter calculation
+    # For DN format, the original shape is (K, M) -- no logical conversion
+    # needed. dn2nz writes the same logical N x D result into NZ layout.
+    # n_value = K, d_value = M
+    n_value = k
+    d_value = m
+
+    # src_layout: inner stride = M (number of elements per column)
+    src_inner_stride = m
+
+    dst_group = (1, 1, k, 0)
+    ctrl = (0, False)
+
+    pto.mte_gm_l1_frac(
+        gm_ptr, mat_ptr, "dn2nz",
+        shape=(n_value, d_value),
+        src_layout=(src_inner_stride,),
+        dst_group=dst_group,
+        ctrl=ctrl
+    )
