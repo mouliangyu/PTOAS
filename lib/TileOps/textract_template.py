@@ -160,12 +160,6 @@ def _textract_fp_acc2mat_constraint(src, fp, index_row, index_col, dst) -> bool:
     if not (dst_ms == "mat" if isinstance(dst_ms, str)
             else dst_ms.value == "mat"):
         return False
-    index_row_val = index_row.value if hasattr(index_row, 'value') else None
-    index_col_val = index_col.value if hasattr(index_col, 'value') else None
-    if index_row_val is not None and index_row_val != 0:
-        return False
-    if index_col_val is not None and index_col_val != 0:
-        return False
     return (src.dtype, dst.dtype) in _FP_QUANT_MODE_MAP
 
 
@@ -182,12 +176,6 @@ def _make_fp_constraint(src_dtype, dst_dtype):
             return False
         if not (dst_ms == "mat" if isinstance(dst_ms, str)
                 else dst_ms.value == "mat"):
-            return False
-        index_row_val = index_row.value if hasattr(index_row, 'value') else None
-        index_col_val = index_col.value if hasattr(index_col, 'value') else None
-        if index_row_val is not None and index_row_val != 0:
-            return False
-        if index_col_val is not None and index_col_val != 0:
             return False
         return src.dtype == src_dtype and dst.dtype == dst_dtype
     return _fp_constraint
