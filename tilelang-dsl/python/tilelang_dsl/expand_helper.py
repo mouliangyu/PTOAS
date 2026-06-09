@@ -73,6 +73,7 @@ _populate_dtype_map()
 
 _MEMSPACE_MAP = {
     "ub": MemorySpace.UB,
+    "vec": MemorySpace.UB,  # MLIR uses "vec" for UB (Unified Buffer)
     "gm": MemorySpace.GM,
     "mat": MemorySpace.MAT,
     "left": MemorySpace.LEFT,

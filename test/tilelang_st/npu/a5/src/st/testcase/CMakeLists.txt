@@ -194,6 +194,12 @@ set(ALL_TESTCASES
     tfmods
     tcmps
     tmatmul
+    tmov2left
+    tmov2right
+    tmov2bias
+    tmov2scale
+    tmov2vec
+    tmov_fp
 )
 
 if((TEST_CASE IN_LIST ALL_TESTCASES) OR (TEST_CASE STREQUAL "all"))
