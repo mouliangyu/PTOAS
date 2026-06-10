@@ -87,7 +87,7 @@ jobs:
             exit 0
           fi
 
-          git_failure_pattern='(error: RPC failed|Operation timed out|Connection timed out|Failed to connect|Could not resolve host|early EOF|fetch-pack|remote end hung up|GnuTLS recv error|TLS connection|HTTP/2 stream)'
+          git_failure_pattern='(error: RPC failed|Operation timed out|Connection timed out|connection timeout|Failed to connect|Could not resolve host|early EOF|fetch-pack|remote end hung up|GnuTLS recv error|TLS connection|HTTP/2 stream)'
           log_file="failed.log"
           step_log_file="failed-git-steps.log"
 
