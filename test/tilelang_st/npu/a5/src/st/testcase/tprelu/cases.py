@@ -80,4 +80,11 @@ CASES = [
         "valid_shape": (2048, 8),
         "eps": 1e-6,
     },
+    {
+        "name": "f16_merge_axis_16x144",
+        "dtype": np.float16,
+        "shape": (16, 144),
+        "valid_shape": (16, 144),
+        "eps": 1e-3,
+    },
 ]

@@ -9,6 +9,7 @@
 """TileLang DSL template for pto.tlog"""
 
 import tilelang_dsl as pto
+from merge_axis import emit_binary_merge_axis, emit_unary_merge_axis, full_axis_constraint
 
 
 @pto.inline_proc
@@ -47,6 +48,53 @@ def _tlog_default(src: pto.Tile, dst: pto.Tile, dtype, valid_rows, valid_cols):
             result = pto.vln(vinput, mask)
             pto.vsts(result, dst[row, col:], mask)
     return None
+
+
+@pto.vkernel(
+    target="a5",
+    op="pto.tlog",
+    constraints=[full_axis_constraint],
+    priority=100,
+    advanced=True,
+)
+def template_tlog_merge_axis(src: pto.Tile, dst: pto.Tile):
+    dtype = dst.element_type
+    valid_rows, valid_cols = dst.valid_shape
+    total_elems = valid_rows * valid_cols
+    lanes = pto.get_lanes(dtype)
+    with pto.strict_vecscope(dst, src, total_elems, 0, total_elems, lanes) as (
+        out_tile,
+        in_tile,
+        area,
+        lb,
+        ub,
+        step,
+    ):
+        precision_mode = pto.get_op_attr("precision_mode", "DEFAULT")
+        if pto.constexpr(precision_mode == "HIGH_PRECISION"):
+            if pto.constexpr(out_tile.element_type == pto.f16):
+                subnormal_threshold = pto.f16("0x03FF")
+                mul_factor = pto.f16("0x6400")
+                compensation = pto.f16(-6.931471805599453094172)
+            elif pto.constexpr(out_tile.element_type == pto.f32):
+                subnormal_threshold = pto.f32("0x007FFFFF")
+                mul_factor = pto.f32("0x4B000000")
+                compensation = pto.f32(-15.9423851528787421)
+        remained = area
+        for lane in range(lb, ub, step):
+            mask, remained = pto.make_mask(out_tile.element_type, remained)
+            vec = pto.vlds(in_tile, lane)
+            if pto.constexpr(precision_mode == "HIGH_PRECISION"):
+                cmp_mask = pto.vcmps(vec, subnormal_threshold, mask, pto.CmpMode.LT)
+                scaled = pto.vmuls(vec, mul_factor, mask)
+                selected_input = pto.vsel(scaled, vec, cmp_mask)
+                log_result = pto.vln(selected_input, mask)
+                compensated = pto.vadds(log_result, compensation, mask)
+                result = pto.vsel(compensated, log_result, cmp_mask)
+            else:
+                result = pto.vln(vec, mask)
+            pto.vsts(result, out_tile, lane, mask)
+    return
 
 
 @pto.vkernel(

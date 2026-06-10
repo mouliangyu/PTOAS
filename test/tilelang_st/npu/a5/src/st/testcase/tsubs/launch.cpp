@@ -56,3 +56,10 @@ extern "C" __global__ AICORE void TSUBS_f32_256x16(__gm__ float *src, __gm__ flo
 void LaunchTSUBS_f32_256x16(float *src, float *dst, void *stream) {
     TSUBS_f32_256x16<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst, TSUBS_SCALAR_F32);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TSUBS_f32_merge_axis_16x72(__gm__ float *src, __gm__ float *dst, float scalar);
+
+void LaunchTSUBS_f32_merge_axis_16x72(float *src, float *dst, void *stream) {
+    TSUBS_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)src, (__gm__ float *)dst, TSUBS_SCALAR_F32);
+}

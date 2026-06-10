@@ -32,3 +32,10 @@ extern "C" __global__ AICORE void TRELU_f32_64x64_v60x60(__gm__ float *input, __
 void LaunchTRELU_f32_64x64_v60x60(float *input, float *output, void *stream) {
     TRELU_f32_64x64_v60x60<<<1, nullptr, stream>>>((__gm__ float *)input, (__gm__ float *)output);
 }
+
+// Merge-axis case: int32 merge axis 16x72
+extern "C" __global__ AICORE void TRELU_int32_merge_axis_16x72(__gm__ int32_t *input, __gm__ int32_t *output);
+
+void LaunchTRELU_int32_merge_axis_16x72(int32_t *input, int32_t *output, void *stream) {
+    TRELU_int32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ int32_t *)input, (__gm__ int32_t *)output);
+}

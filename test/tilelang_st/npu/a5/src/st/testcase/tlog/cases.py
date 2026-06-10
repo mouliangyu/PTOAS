@@ -84,4 +84,11 @@ CASES = [
         "eps": 1e-3,
         "precision_mode": "HIGH_PRECISION",
     },
+{
+        "name": "f32_merge_axis_16x72",
+        "dtype": np.float32,
+        "shape": (16, 72),
+        "valid_shape": (16, 72),
+        "eps": 1e-6,
+    },
 ]

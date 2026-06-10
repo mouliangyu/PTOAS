@@ -66,4 +66,11 @@ CASES = [
         "valid_shape": (60, 60), 
         "eps": 0
     },
+    {
+        "name": "int8_merge_axis_32x288",
+        "dtype": np.int8,
+        "shape": (32, 288),
+        "valid_shape": (32, 288),
+        "eps": 0,
+    },
 ]

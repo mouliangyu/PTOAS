@@ -39,3 +39,10 @@ extern "C" __global__ AICORE void TXORS_i16_15x192(__gm__ int16_t *src, __gm__ i
 void LaunchTXORS_i16_15x192(int16_t *src, int16_t *dst, void *stream) {
     TXORS_i16_15x192<<<1, nullptr, stream>>>((__gm__ int16_t *)src, (__gm__ int16_t *)dst, (int16_t)3);
 }
+
+// Merge-axis case: i32 merge axis 16x72
+extern "C" __global__ AICORE void TXORS_i32_merge_axis_16x72(__gm__ int32_t *src, __gm__ int32_t *dst, int32_t scalar);
+
+void LaunchTXORS_i32_merge_axis_16x72(int32_t *src, int32_t *dst, void *stream) {
+    TXORS_i32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ int32_t *)src, (__gm__ int32_t *)dst, (int32_t)3);
+}

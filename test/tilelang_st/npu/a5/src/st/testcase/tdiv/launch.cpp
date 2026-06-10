@@ -131,3 +131,10 @@ extern "C" __global__ AICORE void TDIV_f16_2x32_hp(__gm__ void *a, __gm__ void *
 void LaunchTDIV_f16_2x32_hp(void *a, void *b, void *c, void *stream) {
     TDIV_f16_2x32_hp<<<1, nullptr, stream>>>(a, b, c);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TDIV_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b, __gm__ float *c);
+
+void LaunchTDIV_f32_merge_axis_16x72(float *a, float *b, float *c, void *stream) {
+    TDIV_f32_merge_axis_16x72<<<1, nullptr, stream>>>(a, b, c);
+}

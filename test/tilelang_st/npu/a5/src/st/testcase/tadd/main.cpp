@@ -22,6 +22,7 @@
 using namespace PtoTestCommon;
 
 // Kernel launch wrappers (defined in launch.cpp)
+void LaunchTADD_f32_merge_axis_16x72(float *a, float *b, float *c, void *stream);
 void LaunchTADD_f32_16x64(float *a, float *b, float *c, void *stream);
 void LaunchTADD_f32_32x32(float *a, float *b, float *c, void *stream);
 
@@ -38,6 +39,7 @@ struct TestCase {
 };
 
 static const TestCase kCases[] = {
+    {"f32_merge_axis_16x72", LaunchTADD_f32_merge_axis_16x72, 16, 72, 16, 72, sizeof(float)},
     {"f32_16x64", LaunchTADD_f32_16x64, 16, 64, 16, 64, sizeof(float)},
     {"f32_32x32", LaunchTADD_f32_32x32, 32, 32, 32, 32, sizeof(float)},
 };

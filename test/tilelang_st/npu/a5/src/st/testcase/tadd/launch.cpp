@@ -12,14 +12,21 @@
 #define AICORE [aicore]
 #endif
 
-// Case 0: f32 16x64
+// Case 0: f32 merge-axis full-axis 16x68
+extern "C" __global__ AICORE void TADD_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b, __gm__ float *c);
+
+void LaunchTADD_f32_merge_axis_16x72(float *a, float *b, float *c, void *stream) {
+    TADD_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b, (__gm__ float *)c);
+}
+
+// Case 1: f32 16x64
 extern "C" __global__ AICORE void TADD_f32_16x64(__gm__ float *a, __gm__ float *b, __gm__ float *c);
 
 void LaunchTADD_f32_16x64(float *a, float *b, float *c, void *stream) {
     TADD_f32_16x64<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b, (__gm__ float *)c);
 }
 
-// Case 1: f32 32x32
+// Case 2: f32 32x32
 extern "C" __global__ AICORE void TADD_f32_32x32(__gm__ float *a, __gm__ float *b, __gm__ float *c);
 
 void LaunchTADD_f32_32x32(float *a, float *b, float *c, void *stream) {

@@ -67,3 +67,10 @@ extern "C" __global__ AICORE void TMIN_i16_20x512_v16x200(__gm__ int16_t *a, __g
 void LaunchTMIN_i16_20x512_v16x200(void *a, void *b, void *c, void *stream) {
     TMIN_i16_20x512_v16x200<<<1, nullptr, stream>>>((__gm__ int16_t *)a, (__gm__ int16_t *)b, (__gm__ int16_t *)c);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TMIN_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b, __gm__ float *c);
+
+void LaunchTMIN_f32_merge_axis_16x72(void *a, void *b, void *c, void *stream) {
+    TMIN_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b, (__gm__ float *)c);
+}

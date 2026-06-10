@@ -25,3 +25,10 @@ extern "C" __global__ AICORE void TSUB_f32_32x32(__gm__ float *a, __gm__ float *
 void LaunchTSUB_f32_32x32(float *a, float *b, float *c, void *stream) {
     TSUB_f32_32x32<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b, (__gm__ float *)c);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TSUB_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b, __gm__ float *c);
+
+void LaunchTSUB_f32_merge_axis_16x72(float *a, float *b, float *c, void *stream) {
+    TSUB_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b, (__gm__ float *)c);
+}

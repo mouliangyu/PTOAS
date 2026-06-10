@@ -9,6 +9,37 @@
 """TileLang DSL template for pto.tabs"""
 
 import tilelang_dsl as pto
+from merge_axis import emit_binary_merge_axis, emit_unary_merge_axis, full_axis_constraint
+
+
+@pto.vkernel(
+    target="a5",
+    op="pto.tabs",
+    constraints=[full_axis_constraint],
+    priority=100,
+    advanced=True,
+)
+def template_tabs_merge_axis(src: pto.Tile, dst: pto.Tile):
+    dtype = dst.element_type
+    valid_rows, valid_cols = dst.valid_shape
+    total_elems = valid_rows * valid_cols
+    lanes = pto.get_lanes(dtype)
+
+    with pto.strict_vecscope(dst, src, total_elems, 0, total_elems, lanes) as (
+        out_tile,
+        in_tile,
+        area,
+        lb,
+        ub,
+        step,
+    ):
+        remained = area
+        for lane in range(lb, ub, step):
+            mask, remained = pto.make_mask(out_tile.element_type, remained)
+            vec = pto.vlds(in_tile, lane)
+            result = pto.vabs(vec, mask)
+            pto.vsts(result, out_tile, lane, mask)
+    return
 
 
 @pto.vkernel(

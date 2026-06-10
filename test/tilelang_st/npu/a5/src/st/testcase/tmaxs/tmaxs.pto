@@ -253,4 +253,47 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<ve
     return
   }
 
+
+
+
+
+  // Merge-axis case: f32 full-axis 16x72 (1152 elements)
+  func.func @TMAXS_f32_merge_axis_16x72(%src_ptr: !pto.ptr<f32>, %dst_ptr: !pto.ptr<f32>, %scalar: f32) attributes {pto.aicore} {
+    %c0    = arith.constant 0    : index
+    %c1    = arith.constant 1    : index
+    %c32   = arith.constant 16   : index
+    %c64   = arith.constant 72   : index
+    %c2048 = arith.constant 1152 : index
+
+    %src_view = pto.make_tensor_view %src_ptr,
+      shape = [%c1, %c1, %c1, %c32, %c64],
+      strides = [%c2048, %c2048, %c2048, %c64, %c1]
+      : !pto.tensor_view<1x1x1x16x72xf32>
+    %dst_view = pto.make_tensor_view %dst_ptr,
+      shape = [%c1, %c1, %c1, %c32, %c64],
+      strides = [%c2048, %c2048, %c2048, %c64, %c1]
+      : !pto.tensor_view<1x1x1x16x72xf32>
+
+    %src_part = pto.partition_view %src_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c32, %c64]
+      : !pto.tensor_view<1x1x1x16x72xf32> -> !pto.partition_tensor_view<1x1x1x16x72xf32>
+    %dst_part = pto.partition_view %dst_view,
+      offsets = [%c0, %c0, %c0, %c0, %c0],
+      sizes = [%c1, %c1, %c1, %c32, %c64]
+      : !pto.tensor_view<1x1x1x16x72xf32> -> !pto.partition_tensor_view<1x1x1x16x72xf32>
+
+    %src = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x72xf32>
+    %dst = pto.alloc_tile
+      : !pto.tile_buf<vec, 16x72xf32>
+
+    pto.tload ins(%src_part : !pto.partition_tensor_view<1x1x1x16x72xf32>)
+              outs(%src : !pto.tile_buf<vec, 16x72xf32>)
+    pto.tmaxs ins(%src, %scalar : !pto.tile_buf<vec, 16x72xf32>, f32)
+              outs(%dst : !pto.tile_buf<vec, 16x72xf32>)
+    pto.tstore ins(%dst : !pto.tile_buf<vec, 16x72xf32>)
+               outs(%dst_part : !pto.partition_tensor_view<1x1x1x16x72xf32>)
+    return
+  }
 }

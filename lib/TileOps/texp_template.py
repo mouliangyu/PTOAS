@@ -9,6 +9,7 @@
 """TileLang DSL template for pto.texp"""
 
 import tilelang_dsl as pto
+from merge_axis import emit_binary_merge_axis, emit_unary_merge_axis, full_axis_constraint
 from exp_hp import _tl_exp_precision
 
 @pto.inline_proc
@@ -38,6 +39,69 @@ def template_texp_impl(src: pto.Tile, dst: pto.Tile):
             result = pto.vexp(vinput, mask)
             pto.vsts(result, dst[row, col:], mask)
     return
+
+@pto.inline_proc
+def template_texp_merge_axis_hp_impl(src: pto.Tile, dst: pto.Tile):
+    dtype = dst.element_type
+    valid_rows, valid_cols = dst.valid_shape
+    total_elems = valid_rows * valid_cols
+    lanes = pto.get_lanes(dtype)
+
+    with pto.strict_vecscope(dst, src, total_elems, 0, total_elems, lanes) as (
+        out_tile,
+        in_tile,
+        area,
+        lb,
+        ub,
+        step,
+    ):
+        remained = area
+        for lane in range(lb, ub, step):
+            mask, remained = pto.make_mask(out_tile.element_type, remained)
+            vec = pto.vlds(in_tile, lane)
+            result = _tl_exp_precision(vec, mask, out_tile.element_type)
+            pto.vsts(result, out_tile, lane, mask)
+    return
+
+
+@pto.inline_proc
+def template_texp_merge_axis_impl(src: pto.Tile, dst: pto.Tile):
+    dtype = dst.element_type
+    valid_rows, valid_cols = dst.valid_shape
+    total_elems = valid_rows * valid_cols
+    lanes = pto.get_lanes(dtype)
+
+    with pto.strict_vecscope(dst, src, total_elems, 0, total_elems, lanes) as (
+        out_tile,
+        in_tile,
+        area,
+        lb,
+        ub,
+        step,
+    ):
+        remained = area
+        for lane in range(lb, ub, step):
+            mask, remained = pto.make_mask(out_tile.element_type, remained)
+            result = pto.vexp(pto.vlds(in_tile, lane), mask)
+            pto.vsts(result, out_tile, lane, mask)
+    return
+
+
+@pto.vkernel(
+    target="a5",
+    op="pto.texp",
+    constraints=[full_axis_constraint],
+    priority=100,
+    advanced=True,
+)
+def template_texp_merge_axis(src: pto.Tile, dst: pto.Tile):
+    hp_mode = pto.get_op_attr("precision_mode")
+    if pto.constexpr(hp_mode == "HIGH_PRECISION"):
+        template_texp_merge_axis_hp_impl(src, dst)
+    else:
+        template_texp_merge_axis_impl(src, dst)
+    return
+
 
 @pto.vkernel(
     target="a5",

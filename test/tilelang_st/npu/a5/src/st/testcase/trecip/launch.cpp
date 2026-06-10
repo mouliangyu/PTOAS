@@ -53,3 +53,10 @@ extern "C" __global__ AICORE void TRECIP_f32_58x70(__gm__ float *a, __gm__ float
 void LaunchTRECIP_f32_58x70(void *a, void *b, void *stream) {
     TRECIP_f32_58x70<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
 }
+
+// Merge-axis case: f32 merge axis 16x72
+extern "C" __global__ AICORE void TRECIP_f32_merge_axis_16x72(__gm__ float *a, __gm__ float *b);
+
+void LaunchTRECIP_f32_merge_axis_16x72(void *a, void *b, void *stream) {
+    TRECIP_f32_merge_axis_16x72<<<1, nullptr, stream>>>((__gm__ float *)a, (__gm__ float *)b);
+}
