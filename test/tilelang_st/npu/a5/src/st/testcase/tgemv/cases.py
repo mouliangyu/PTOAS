@@ -25,7 +25,7 @@ CASES = [
         "b_dtype": np.float16,
         "c_dtype": np.float32,
         "M": 1, "K": 300, "N": 60,
-        "M_aligned": 16, "K_use": 320, "N_aligned": 64,
+        "K_use": 320, "N_aligned": 64,
         "eps": 1e-2,
     },
     {
@@ -35,7 +35,7 @@ CASES = [
         "bias_dtype": np.float32,
         "c_dtype": np.float32,
         "M": 1, "K": 512, "N": 85,
-        "M_aligned": 16, "K_use": 512, "N_aligned": 96,
+        "K_use": 512, "N_aligned": 96,
         "eps": 1e-2,
         "is_bias": True,
         "is_split_k": True,

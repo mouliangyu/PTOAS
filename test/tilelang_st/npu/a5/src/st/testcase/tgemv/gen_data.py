@@ -21,7 +21,6 @@ for case in CASES:
     b_dtype = case["b_dtype"]
     c_dtype = case["c_dtype"]
     M, K, N = case["M"], case["K"], case["N"]
-    M_aligned = case.get("M_aligned", M)
     N_aligned = case.get("N_aligned", N)
     K_use = case.get("K_use", K)
 
@@ -36,11 +35,11 @@ for case in CASES:
     else:
         golden = np.matmul(a.astype(np.float64), b.astype(np.float64)).astype(c_dtype)
 
-    a_save = np.zeros((M_aligned, K_use), dtype=a_dtype)
+    a_save = np.zeros((M, K_use), dtype=a_dtype)
     a_save[:M, :K] = a
     b_save = np.zeros((K_use, N_aligned), dtype=b_dtype)
     b_save[:K, :N] = b
-    golden_save = np.zeros((M_aligned, N_aligned), dtype=c_dtype)
+    golden_save = np.zeros((M, N_aligned), dtype=c_dtype)
     golden_save[:M, :N] = golden
 
     data = {"input1": a_save, "input2": b_save}
@@ -52,5 +51,5 @@ for case in CASES:
 
     save_case_data(case["name"], data)
     print(f"[INFO] gen_data: {case['name']} M={M} K={K} N={N} "
-          f"padded_A=({M_aligned}x{K_use}) padded_B=({K_use}x{N_aligned}) "
+          f"padded_A=({M}x{K_use}) padded_B=({K_use}x{N_aligned}) "
           f"a={a_dtype.__name__} b={b_dtype.__name__} c={c_dtype.__name__}")

@@ -38,8 +38,8 @@ struct TestCase {
 };
 
 static const TestCase kCases[] = {
-    {"gemv_f16_1x300x60",       false, LaunchTGEMV_f16_1x300x60,       nullptr,  16, 320,  64, 2, 2, 0, 4},
-    {"gemv_bias_f16_1x512x85",  true,  nullptr,                       LaunchTGEMV_BIAS_f16_1x512x85,  16, 512,  96, 2, 2, 4, 4},
+    {"gemv_f16_1x300x60",       false, LaunchTGEMV_f16_1x300x60,       nullptr,   1, 320,  64, 2, 2, 0, 4},
+    {"gemv_bias_f16_1x512x85",  true,  nullptr,                       LaunchTGEMV_BIAS_f16_1x512x85,   1, 512,  96, 2, 2, 4, 4},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
