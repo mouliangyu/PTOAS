@@ -783,7 +783,10 @@ static bool isSupportedMovPadScalarType(Type type) {
   return false;
 }
 
-static bool isMxElementType(Type type) { return isa<Float8E4M3FNType>(type); }
+static bool isMxElementType(Type type) {
+  return isa<Float8E4M3FNType, Float8E5M2Type>(type) ||
+         isa<pto::F4E1M2x2Type, pto::F4E2M1x2Type>(type);
+}
 
 static std::optional<StringRef> getVdupMaskGranularity(Type elementType) {
   if (auto intType = dyn_cast<IntegerType>(elementType)) {
@@ -3712,7 +3715,8 @@ static LogicalResult verifyMadMxCommon(Operation *op, Type lhsTy, Type rhsTy,
   if (!isMxElementType(lhsType.getElementType()) ||
       !isMxElementType(rhsType.getElementType())) {
     return op->emitOpError(
-        "requires MX lhs/rhs element types (currently f8E4M3FN)");
+        "requires MX lhs/rhs element types (f8E4M3FN, f8E5M2, f4E1M2x2, or "
+        "f4E2M1x2)");
   }
   return success();
 }

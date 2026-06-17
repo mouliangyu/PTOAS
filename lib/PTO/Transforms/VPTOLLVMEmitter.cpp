@@ -290,6 +290,8 @@ static Value getI32Constant(OpBuilder &builder, Location loc, uint64_t value) {
 static bool isMxElementType(Type ty) {
   if (auto floatType = dyn_cast<FloatType>(ty))
     return floatType.getWidth() == 8;
+  if (isa<pto::F4E1M2x2Type, pto::F4E2M1x2Type>(ty))
+    return true;
   std::string typeText;
   llvm::raw_string_ostream os(typeText);
   ty.print(os);
@@ -367,6 +369,10 @@ static bool isMadE4M3ElementType(Type type) {
          type.isFloat8E4M3FNUZ() || type.isFloat8E4M3B11FNUZ();
 }
 
+static bool isMadE5M2ElementType(Type type) {
+  return type.isFloat8E5M2() || type.isFloat8E5M2FNUZ();
+}
+
 static std::string getMadDstFragment(Type type) {
   if (type.isF16())
     return "f16";
@@ -400,6 +406,15 @@ static FailureOr<StringRef> buildMadTypedCalleeName(MLIRContext *context,
   if (isMadE4M3ElementType(lhsElem) && isMadE4M3ElementType(rhsElem) &&
       dst == "f32")
     return StringAttr::get(context, "llvm.hivm.MAD.e4m3e4m3.c310").getValue();
+  if (isMadE4M3ElementType(lhsElem) && isMadE5M2ElementType(rhsElem) &&
+      dst == "f32")
+    return StringAttr::get(context, "llvm.hivm.MAD.e4m3e5m2.c310").getValue();
+  if (isMadE5M2ElementType(lhsElem) && isMadE4M3ElementType(rhsElem) &&
+      dst == "f32")
+    return StringAttr::get(context, "llvm.hivm.MAD.e5m2e4m3.c310").getValue();
+  if (isMadE5M2ElementType(lhsElem) && isMadE5M2ElementType(rhsElem) &&
+      dst == "f32")
+    return StringAttr::get(context, "llvm.hivm.MAD.e5m2e5m2.c310").getValue();
   if (pto::isPTOHiFloat8Type(lhsElem) && pto::isPTOHiFloat8Type(rhsElem) &&
       dst == "f32")
     return StringAttr::get(context, "llvm.hivm.MAD.e4m3e4m3.c310").getValue();
@@ -598,7 +613,9 @@ static std::string getL0LoadElementFragment(Type type) {
   if (StringRef(lower).contains("e4m3") ||
       StringRef(lower).contains("e5m2") ||
       StringRef(lower).contains("e8m0") ||
-      StringRef(lower).contains("hif8"))
+      StringRef(lower).contains("hif8") ||
+      StringRef(lower).contains("e1m2x2") ||
+      StringRef(lower).contains("e2m1x2"))
     return "s8";
   return {};
 }
@@ -798,6 +815,8 @@ static std::string getCopyElementFragment(Type elementType) {
     return "e8m0";
   if (StringRef(lower).contains("hif8"))
     return "hif8";
+  if (StringRef(lower).contains("e1m2x2") || StringRef(lower).contains("e2m1x2"))
+    return "u8";
   if (auto intType = dyn_cast<IntegerType>(elementType)) {
     switch (intType.getWidth()) {
     case 8:
@@ -823,6 +842,8 @@ static std::string getNd2NzCopyElementFragment(Type elementType) {
   std::string lower = StringRef(typeText).lower();
   if (StringRef(lower).contains("e4m3") || StringRef(lower).contains("e5m2") ||
       StringRef(lower).contains("e8m0") || StringRef(lower).contains("hif8"))
+    return "U8";
+  if (StringRef(lower).contains("e1m2x2") || StringRef(lower).contains("e2m1x2"))
     return "U8";
 
   if (elementType.isF16() || elementType.isBF16())
