@@ -4640,8 +4640,33 @@ static LogicalResult verifyA5MxMatScaleTile(Operation *op, Type scaleTy,
   if (failed(checkDims(getShapeVec(scaleTy), getShapeVec(lhsTy), getShapeVec(rhsTy),
                        "shape")))
     return failure();
-  return checkDims(getValidShapeVec(scaleTy), getValidShapeVec(lhsTy),
-                   getValidShapeVec(rhsTy), "valid_shape");
+  if (failed(checkDims(getValidShapeVec(scaleTy), getValidShapeVec(lhsTy),
+                       getValidShapeVec(rhsTy), "valid_shape")))
+    return failure();
+
+  auto scaleTb = dyn_cast<pto::TileBufType>(scaleTy);
+  if (!scaleTb)
+    return success();
+  if (scaleTb.getBLayoutValueI32() !=
+      static_cast<int32_t>(isLeftScale ? pto::BLayout::RowMajor
+                                       : pto::BLayout::ColMajor)) {
+    return op->emitOpError()
+           << "expects " << scaleName << " to use the "
+           << (isLeftScale ? "row_major" : "col_major")
+           << " blayout on A5";
+  }
+  if (scaleTb.getSLayoutValueI32() !=
+      static_cast<int32_t>(isLeftScale ? pto::SLayout::RowMajor
+                                       : pto::SLayout::ColMajor)) {
+    return op->emitOpError()
+           << "expects " << scaleName << " to use the "
+           << (isLeftScale ? "row_major" : "col_major")
+           << " slayout on A5";
+  }
+  if (scaleTb.getSFractalSizeI32() != 32)
+    return op->emitOpError() << "expects " << scaleName
+                             << " to use fractal=32 on A5";
+  return success();
 }
 
 static LogicalResult verifyA5MxMatScaleTiles(Operation *op, Type lhsScaleTy,
@@ -7566,10 +7591,9 @@ LogicalResult TGemvMxOp::verify() {
     return emitOpError("tgemv.mx is only supported on A5 targets");
   };
   auto verifyA5 = [&]() -> LogicalResult {
-    if (failed(verifyScaleTileMatchesOperand(*this, getAScale().getType(),
-                                             getA().getType(), "a_scale", "a")) ||
-        failed(verifyScaleTileMatchesOperand(*this, getBScale().getType(),
-                                             getB().getType(), "b_scale", "b")) ||
+    if (failed(verifyA5MxMatScaleTiles(*this, getAScale().getType(),
+                                       getBScale().getType(),
+                                       getA().getType(), getB().getType())) ||
         failed(verifyA5MxGemvTileOperands(*this, getA().getType(), getB().getType(),
                                           getDst().getType())))
       return failure();
@@ -7588,10 +7612,9 @@ LogicalResult TGemvMxAccOp::verify() {
   };
   auto verifyA5 = [&]() -> LogicalResult {
     if (failed(verifyAccTileCommon(*this, getCIn().getType(), "c_in")) ||
-        failed(verifyScaleTileMatchesOperand(*this, getAScale().getType(),
-                                             getA().getType(), "a_scale", "a")) ||
-        failed(verifyScaleTileMatchesOperand(*this, getBScale().getType(),
-                                             getB().getType(), "b_scale", "b")) ||
+        failed(verifyA5MxMatScaleTiles(*this, getAScale().getType(),
+                                       getBScale().getType(),
+                                       getA().getType(), getB().getType())) ||
         failed(verifyA5MxGemvTileOperands(*this, getA().getType(), getB().getType(),
                                           getDst().getType())))
       return failure();
@@ -7614,10 +7637,9 @@ LogicalResult TGemvMxBiasOp::verify() {
     return emitOpError("tgemv.mx.bias is only supported on A5 targets");
   };
   auto verifyA5 = [&]() -> LogicalResult {
-    if (failed(verifyScaleTileMatchesOperand(*this, getAScale().getType(),
-                                             getA().getType(), "a_scale", "a")) ||
-        failed(verifyScaleTileMatchesOperand(*this, getBScale().getType(),
-                                             getB().getType(), "b_scale", "b")) ||
+    if (failed(verifyA5MxMatScaleTiles(*this, getAScale().getType(),
+                                       getBScale().getType(),
+                                       getA().getType(), getB().getType())) ||
         failed(verifyA5MxGemvTileOperands(*this, getA().getType(), getB().getType(),
                                           getDst().getType())) ||
         failed(verifyMatBiasTile(*this, getBias().getType(), getDst().getType(),
