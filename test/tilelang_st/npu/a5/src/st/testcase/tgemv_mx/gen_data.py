@@ -72,10 +72,69 @@ def convert_scale_b_format(scale, block_size=16, c0_size_mx=2):
     return result
 
 
+def convert_scale_a_nd(scale):
+    return scale.copy()
+
+
+def convert_scale_b_nd(scale):
+    return scale.reshape((scale.shape[0] // 2, 2, scale.shape[1])).transpose(0, 2, 1).copy()
+
+
+def convert_scale_b_raw(scale):
+    return scale.copy()
+
+
+def convert_scale_b_pair_groups(scale):
+    # Raw micro-op tgemv_mx consumes right MX scale as linear bytes, but the
+    # effective logical order groups K/32 rows in pairs before flattening.
+    return scale.reshape((scale.shape[0] // 2, 2, scale.shape[1])).transpose(0, 2, 1).reshape(scale.shape[0], scale.shape[1]).copy()
+
+
+def convert_scale_b_gemv_micro(scale, block_size=16, c0_size_mx=2):
+    # Raw micro-op mte_l1_l0b_mx for the 1x128x62 GEMV case does not consume
+    # the right MX scale in the same flattened order as tile-op style packing.
+    # The closest simulator-observed contract is:
+    #   1. pair adjacent K/32 scale groups,
+    #   2. within each N16 block, emit the second group of each pair first,
+    #   3. group two adjacent N16 blocks into one N32 super-block before
+    #      advancing to the next pair of N16 blocks.
+    k, n = scale.shape
+    pad_n = (block_size - n % block_size) % block_size
+    pad_k = (c0_size_mx - k % c0_size_mx) % c0_size_mx
+    if pad_n > 0 or pad_k > 0:
+        padded = np.pad(scale, ((0, pad_k), (0, pad_n)), mode='constant', constant_values=0)
+    else:
+        padded = scale
+    k_padded, n_padded = padded.shape
+    k_pairs = k_padded // c0_size_mx
+    n_blocks = n_padded // block_size
+    paired = padded.reshape(k_pairs, c0_size_mx, n_blocks, block_size)
+    lane_major = paired.transpose(1, 2, 0, 3)[::-1]
+    if n_blocks % 2 != 0:
+        return lane_major.reshape(k_padded, n_padded).copy()
+    return lane_major.reshape(c0_size_mx, n_blocks // 2, 2, k_pairs, block_size) \
+        .transpose(1, 0, 2, 3, 4).reshape(k_padded, n_padded).copy()
+
+
+def convert_scale_b_nn(scale, block_size=16, c0_size_mx=2):
+    k, n = scale.shape
+    pad_n = (block_size - n % block_size) % block_size
+    pad_k = (c0_size_mx - k % c0_size_mx) % c0_size_mx
+    if pad_n > 0 or pad_k > 0:
+        padded = np.pad(scale, ((0, pad_k), (0, pad_n)), mode='constant', constant_values=0)
+    else:
+        padded = scale
+    k_padded, n_padded = padded.shape
+    return padded.reshape(1, n_padded // 16, k_padded // 2, 16, 2).copy()
+
+
 def gen_golden(case):
     atype = case["atype"]
     btype = case["btype"]
     m, k, n = case["m"], case["k"], case["n"]
+    m_padded = case["m_padded"]
+    n_storage = case["n_storage"]
+    n_padded = case["n_padded"]
     is_bias = case["is_bias"]
     is_fp4 = case["is_fp4"]
 
@@ -96,17 +155,17 @@ def gen_golden(case):
         x2 = np.random.randint(-10, 10, [k, n]).astype(btype)
 
     if is_fp4:
-        x1_padded = np.zeros([m, k_aligned], dtype=atype)
-        x1_padded[:, :k] = x1
-        x2_padded = np.zeros([k_aligned, n], dtype=btype)
-        x2_padded[:k, :] = x2
+        x1_padded = np.zeros([m_padded, k_aligned], dtype=atype)
+        x1_padded[:m, :k] = x1
+        x2_padded = np.zeros([k_aligned, n_storage], dtype=btype)
+        x2_padded[:k, :n] = x2
         x1_bin = pack_two_fp4(x1_padded)
         x2_bin = pack_two_fp4(x2_padded)
     else:
-        x1_padded = np.zeros([m, k_aligned], dtype=atype)
-        x1_padded[:, :k] = x1
-        x2_padded = np.zeros([k_aligned, n], dtype=btype)
-        x2_padded[:k, :] = x2
+        x1_padded = np.zeros([m_padded, k_aligned], dtype=atype)
+        x1_padded[:m, :k] = x1
+        x2_padded = np.zeros([k_aligned, n_storage], dtype=btype)
+        x2_padded[:k, :n] = x2
         x1_bin = x1_padded
         x2_bin = x2_padded
 
@@ -127,13 +186,20 @@ def gen_golden(case):
     x2_float = x2_full[:k, :]
 
     x1_scale_gm = convert_scale_a_format(x1_scale, 16, 2)
-    x2_scale_gm = convert_scale_b_format(x2_scale, 16, 2)
+    if case["name"] == "gemv_mx_fp4_e1m2_1x128x62":
+        x2_scale_gm = convert_scale_b_gemv_micro(x2_scale)
+    else:
+        x2_scale_gm = convert_scale_b_format(x2_scale, 16, 2)
 
     if is_bias:
         bias = np.random.randint(1, 10, [n]).astype(np.float32)
-        golden = np.matmul(x1_float, x2_float).astype(np.float32) + bias
+        golden_valid = np.matmul(x1_float, x2_float).astype(np.float32) + bias
+        golden = np.zeros([m_padded, n_padded], dtype=np.float32)
+        golden[:m, :n] = golden_valid
     else:
-        golden = np.matmul(x1_float, x2_float).astype(np.float32)
+        golden_valid = np.matmul(x1_float, x2_float).astype(np.float32)
+        golden = np.zeros([m_padded, n_padded], dtype=np.float32)
+        golden[:m, :n] = golden_valid
 
     return x1_bin, x2_bin, x1_scale_gm, x2_scale_gm, bias if is_bias else None, golden
 

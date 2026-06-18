@@ -49,8 +49,6 @@ struct TestCase {
     size_t m_padded;
     size_t n_padded;
     size_t k_aligned;
-    size_t scale_rows_a;
-    size_t scale_rows_b;
     LaunchFnNoBias launch_no_bias;
     LaunchFnBias launch_bias;
 };
@@ -63,26 +61,36 @@ static constexpr size_t ceil_div(size_t num, size_t div) {
     return (num + div - 1) / div;
 }
 
+static constexpr size_t packedScaleABytes(size_t m, size_t k_aligned) {
+    const size_t kGroups = ceil_div(k_aligned, 32);
+    return ceil_div(m, 16) * ceil_div(kGroups, 2) * 32;
+}
+
+static constexpr size_t packedScaleBBytes(size_t n, size_t k_aligned) {
+    const size_t kGroups = ceil_div(k_aligned, 32);
+    return ceil_align(n, 16) * kGroups;
+}
+
 static const TestCase kCases[] = {
-    {"fp8_e5m2_128x64x64", false, false, 128, 64, 64, 128, 64, 64, 128, 64, LaunchTMATMUL_MX_fp8_e5m2_128x64x64, nullptr},
-    {"fp8_e4m3_127x72x64", false, false, 127, 72, 64, 128, 64, 128, 128, 64, LaunchTMATMUL_MX_fp8_e4m3_127x72x64, nullptr},
-    {"fp8_e4m3_e5m2_128x110x63", false, false, 128, 110, 63, 128, 64, 128, 128, 64, LaunchTMATMUL_MX_fp8_e4m3_e5m2_128x110x63, nullptr},
-    {"fp4_e2m1_128x64x64", false, true, 128, 64, 64, 128, 64, 64, 128, 64, LaunchTMATMUL_MX_fp4_e2m1_128x64x64, nullptr},
-    {"fp4_e1m2_e2m1_117x64x60", false, true, 117, 64, 60, 128, 64, 64, 128, 64, LaunchTMATMUL_MX_fp4_e1m2_e2m1_117x64x60, nullptr},
-    {"fp4_e2m1_e1m2_128x118x64", false, true, 128, 118, 64, 128, 64, 128, 128, 64, LaunchTMATMUL_MX_fp4_e2m1_e1m2_128x118x64, nullptr},
-    {"fp4_e2m1_e1m2_115x64x30", false, true, 115, 64, 30, 128, 64, 64, 128, 64, LaunchTMATMUL_MX_fp4_e2m1_e1m2_115x64x30, nullptr},
-    {"fp8_e4m3_16x32x16", false, false, 16, 32, 16, 16, 16, 64, 16, 16, LaunchTMATMUL_MX_fp8_e4m3_16x32x16, nullptr},
-    {"fp8_e4m3_e5m2_10x50x54", false, false, 10, 50, 54, 16, 64, 64, 16, 64, LaunchTMATMUL_MX_fp8_e4m3_e5m2_10x50x54, nullptr},
-    {"fp4_e2m1_4x30x8", false, true, 4, 30, 8, 16, 64, 64, 16, 16, LaunchTMATMUL_MX_fp4_e2m1_4x30x8, nullptr},
-    {"gemv_fp4_e1m2_1x128x62", false, true, 1, 128, 62, 16, 64, 128, 16, 64, LaunchTMATMUL_MX_gemv_fp4_e1m2_1x128x62, nullptr},
-    {"gemv_fp8_e4m3_e5m2_1x256x20", false, false, 1, 256, 20, 16, 64, 256, 16, 64, LaunchTMATMUL_MX_gemv_fp8_e4m3_e5m2_1x256x20, nullptr},
-    {"bias_fp8_e5m2_e4m3_115x64x30", true, false, 115, 64, 30, 128, 32, 64, 128, 64, nullptr, LaunchTMATMUL_MX_bias_fp8_e5m2_e4m3_115x64x30},
-    {"bias_fp8_e4m3_200x192x95", true, false, 200, 192, 95, 208, 128, 192, 208, 128, nullptr, LaunchTMATMUL_MX_bias_fp8_e4m3_200x192x95},
-    {"bias_fp4_e2m1_e1m2_35x128x56", true, true, 35, 128, 56, 48, 64, 128, 48, 64, nullptr, LaunchTMATMUL_MX_bias_fp4_e2m1_e1m2_35x128x56},
-    {"bias_fp4_e1m2_47x128x62", true, true, 47, 128, 62, 48, 64, 128, 48, 64, nullptr, LaunchTMATMUL_MX_bias_fp4_e1m2_47x128x62},
-    {"bias_fp8_e4m3_e5m2_64x192x64", true, false, 64, 192, 64, 64, 64, 192, 64, 64, nullptr, LaunchTMATMUL_MX_bias_fp8_e4m3_e5m2_64x192x64},
-    {"bias_gemv_fp4_e1m2_1x64x62", true, true, 1, 64, 62, 16, 64, 64, 16, 64, nullptr, LaunchTMATMUL_MX_bias_gemv_fp4_e1m2_1x64x62},
-    {"bias_gemv_fp4_e1m2_1x2048x64", true, true, 1, 2048, 64, 16, 64, 2048, 16, 64, nullptr, LaunchTMATMUL_MX_bias_gemv_fp4_e1m2_1x2048x64},
+    {"fp8_e5m2_128x64x64", false, false, 128, 64, 64, 128, 64, 64, LaunchTMATMUL_MX_fp8_e5m2_128x64x64, nullptr},
+    {"fp8_e4m3_127x72x64", false, false, 127, 72, 64, 128, 64, 128, LaunchTMATMUL_MX_fp8_e4m3_127x72x64, nullptr},
+    {"fp8_e4m3_e5m2_128x110x63", false, false, 128, 110, 63, 128, 64, 128, LaunchTMATMUL_MX_fp8_e4m3_e5m2_128x110x63, nullptr},
+    {"fp4_e2m1_128x64x64", false, true, 128, 64, 64, 128, 64, 64, LaunchTMATMUL_MX_fp4_e2m1_128x64x64, nullptr},
+    {"fp4_e1m2_e2m1_117x64x60", false, true, 117, 64, 60, 128, 64, 64, LaunchTMATMUL_MX_fp4_e1m2_e2m1_117x64x60, nullptr},
+    {"fp4_e2m1_e1m2_128x118x64", false, true, 128, 118, 64, 128, 64, 128, LaunchTMATMUL_MX_fp4_e2m1_e1m2_128x118x64, nullptr},
+    {"fp4_e2m1_e1m2_115x64x30", false, true, 115, 64, 30, 128, 64, 64, LaunchTMATMUL_MX_fp4_e2m1_e1m2_115x64x30, nullptr},
+    {"fp8_e4m3_16x32x16", false, false, 16, 32, 16, 16, 16, 64, LaunchTMATMUL_MX_fp8_e4m3_16x32x16, nullptr},
+    {"fp8_e4m3_e5m2_10x50x54", false, false, 10, 50, 54, 16, 64, 64, LaunchTMATMUL_MX_fp8_e4m3_e5m2_10x50x54, nullptr},
+    {"fp4_e2m1_4x30x8", false, true, 4, 30, 8, 16, 64, 64, LaunchTMATMUL_MX_fp4_e2m1_4x30x8, nullptr},
+    {"gemv_fp4_e1m2_1x128x62", false, true, 1, 128, 62, 16, 64, 128, LaunchTMATMUL_MX_gemv_fp4_e1m2_1x128x62, nullptr},
+    {"gemv_fp8_e4m3_e5m2_1x256x20", false, false, 1, 256, 20, 16, 64, 256, LaunchTMATMUL_MX_gemv_fp8_e4m3_e5m2_1x256x20, nullptr},
+    {"bias_fp8_e5m2_e4m3_115x64x30", true, false, 115, 64, 30, 128, 32, 64, nullptr, LaunchTMATMUL_MX_bias_fp8_e5m2_e4m3_115x64x30},
+    {"bias_fp8_e4m3_200x192x95", true, false, 200, 192, 95, 208, 128, 192, nullptr, LaunchTMATMUL_MX_bias_fp8_e4m3_200x192x95},
+    {"bias_fp4_e2m1_e1m2_35x128x56", true, true, 35, 128, 56, 48, 64, 128, nullptr, LaunchTMATMUL_MX_bias_fp4_e2m1_e1m2_35x128x56},
+    {"bias_fp4_e1m2_47x128x62", true, true, 47, 128, 62, 48, 64, 128, nullptr, LaunchTMATMUL_MX_bias_fp4_e1m2_47x128x62},
+    {"bias_fp8_e4m3_e5m2_64x192x64", true, false, 64, 192, 64, 64, 64, 192, nullptr, LaunchTMATMUL_MX_bias_fp8_e4m3_e5m2_64x192x64},
+    {"bias_gemv_fp4_e1m2_1x64x62", true, true, 1, 64, 62, 16, 64, 64, nullptr, LaunchTMATMUL_MX_bias_gemv_fp4_e1m2_1x64x62},
+    {"bias_gemv_fp4_e1m2_1x2048x64", true, true, 1, 2048, 64, 16, 64, 2048, nullptr, LaunchTMATMUL_MX_bias_gemv_fp4_e1m2_1x2048x64},
 };
 static constexpr size_t kNumCases = sizeof(kCases) / sizeof(kCases[0]);
 
@@ -91,14 +99,12 @@ static int RunCase(const TestCase &tc, int deviceId, aclrtStream stream) {
     int rc = 0;
     const size_t aElems = tc.is_fp4 ? ceil_div(tc.m_padded * tc.k_aligned, 2) : tc.m_padded * tc.k_aligned;
     const size_t bElems = tc.is_fp4 ? ceil_div(tc.k_aligned * tc.n_padded, 2) : tc.k_aligned * tc.n_padded;
-    const size_t scaleAElems = tc.scale_rows_a * ceil_div(tc.k_aligned, 32);
-    const size_t scaleBElems = tc.scale_rows_b * ceil_div(tc.k_aligned, 32);
+    const size_t scaleABytes = packedScaleABytes(tc.m, tc.k_aligned);
+    const size_t scaleBBytes = packedScaleBBytes(tc.n, tc.k_aligned);
     const size_t biasElems = tc.is_bias ? tc.n_padded : 0;
     const size_t outElems = tc.m_padded * tc.n_padded;
     const size_t aBytes = aElems * sizeof(uint8_t);
     const size_t bBytes = bElems * sizeof(uint8_t);
-    const size_t scaleABytes = scaleAElems * sizeof(uint8_t);
-    const size_t scaleBBytes = scaleBElems * sizeof(uint8_t);
     const size_t biasBytes = biasElems * sizeof(float);
     const size_t outBytes = outElems * sizeof(float);
 

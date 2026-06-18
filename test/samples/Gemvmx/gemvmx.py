@@ -191,11 +191,6 @@ def build():
                 sv_out_mx_acc = pto.PartitionViewOp(tile_view_c, tv_out_mx_acc, offsets=[c0, c0], sizes=[cM, cN]).result
                 sv_out_mx_bias = pto.PartitionViewOp(tile_view_c, tv_out_mx_bias, offsets=[c0, c0], sizes=[cM, cN]).result
 
-                a_mat = pto.AllocTileOp(tile_buf_a_mat).result
-                b_mat = pto.AllocTileOp(tile_buf_b_mat).result
-                as_mat = pto.AllocTileOp(tile_buf_as_mat).result
-                bs_mat = pto.AllocTileOp(tile_buf_bs_mat).result
-                bias_mat = pto.AllocTileOp(tile_buf_bias_mat).result
                 a_tile = pto.AllocTileOp(tile_buf_a).result
                 b_tile = pto.AllocTileOp(tile_buf_b).result
                 as_tile = pto.AllocTileOp(tile_buf_as).result
@@ -205,17 +200,11 @@ def build():
                 c_mx_acc_tile = pto.AllocTileOp(tile_buf_c).result
                 c_mx_bias_tile = pto.AllocTileOp(tile_buf_c).result
 
-                pto.TLoadOp(None, sv_a, a_mat)
-                pto.TLoadOp(None, sv_b, b_mat)
-                pto.TLoadOp(None, sv_as, as_mat)
-                pto.TLoadOp(None, sv_bs, bs_mat)
-                pto.TLoadOp(None, sv_bias, bias_mat)
-
-                pto.TExtractOp(a_mat, c0, c0, a_tile)
-                pto.TMovOp(None, b_mat, b_tile)
-                pto.TMovOp(None, as_mat, as_tile)
-                pto.TMovOp(None, bs_mat, bs_tile)
-                pto.TMovOp(None, bias_mat, bias_tile)
+                pto.TLoadOp(None, sv_a, a_tile)
+                pto.TLoadOp(None, sv_b, b_tile)
+                pto.TLoadOp(None, sv_as, as_tile)
+                pto.TLoadOp(None, sv_bs, bs_tile)
+                pto.TLoadOp(None, sv_bias, bias_tile)
 
                 pto.TGemvMxOp(None, a_tile, as_tile, b_tile, bs_tile, c_mx_tile)
                 pto.TGemvMxAccOp(None, c_mx_tile, a_tile, as_tile, b_tile, bs_tile, c_mx_acc_tile)

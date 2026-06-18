@@ -1340,14 +1340,19 @@ struct ExpandRightLoadMxPattern : public OpRewritePattern<pto::MteL1L0bMxOp> {
     };
 
     Value zero = constant(0);
-    Value one = constant(1);
+    Value kMx = ceilDivConst(op.getK(), 32);
+    Value xStep = ceilDivConst(op.getN(), 16);
+
+    // Right-side MX payload is organized by K/32 scale rows and 16-column
+    // right fragments. The compact-right bridge used by GEMV/MX consumes one
+    // scale row every 2 bytes in the MX path.
     Value yStep = ceilDivConst(
-        rewriter.create<arith::MulIOp>(loc, op.getK(), constant(elemBytes)), 32);
-    Value stride = ceilDivConst(op.getN(), 16);
+        rewriter.create<arith::MulIOp>(loc, kMx, constant(elemBytes)), 2);
+    Value stride = ceilDivConst(kMx, 2);
 
     rewriter.create<pto::LoadCbufToCbMxOp>(
-        loc, op.getSource(), op.getDestination(), zero, zero, one, yStep, stride,
-        stride);
+        loc, op.getSource(), op.getDestination(), zero, zero, xStep, yStep,
+        stride, stride);
     rewriter.eraseOp(op);
     return success();
   }

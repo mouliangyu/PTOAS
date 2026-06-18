@@ -5077,9 +5077,11 @@ public:
     };
     Value zero = constant(0);
     Value mStep = ceilDivConst(adaptor.getM(), 16);
-    Value kBytes =
-        rewriter.create<arith::MulIOp>(loc, adaptor.getK(), constant(elemBytes));
-    Value kStep = ceilDivConst(kBytes, 32);
+    Value kGroups = ceilDivConst(adaptor.getK(), 32);
+    // Left-side MX payload packs two K/32 scale groups into one 32B fragment
+    // for each 16-row M block, matching convert_scale_a_format().
+    Value kStep = ceilDivConst(
+        rewriter.create<arith::MulIOp>(loc, kGroups, constant(elemBytes)), 2);
     Value stride = ceilDivConst(adaptor.getM(), 16);
     FailureOr<Value> config0 =
         packLoadCbufToCaConfig0(op, zero, zero, mStep, kStep);
