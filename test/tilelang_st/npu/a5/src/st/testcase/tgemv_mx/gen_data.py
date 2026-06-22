@@ -80,6 +80,15 @@ def convert_scale_b_nd(scale):
     return scale.reshape((scale.shape[0] // 2, 2, scale.shape[1])).transpose(0, 2, 1).copy()
 
 
+def convert_scale_b_nd_padded(scale, block_size=16, c0_size_mx=2):
+    k, n = scale.shape
+    pad_n = (block_size - n % block_size) % block_size
+    pad_k = (c0_size_mx - k % c0_size_mx) % c0_size_mx
+    if pad_n > 0 or pad_k > 0:
+        scale = np.pad(scale, ((0, pad_k), (0, pad_n)), mode='constant', constant_values=0)
+    return scale.reshape((scale.shape[0] // c0_size_mx, c0_size_mx, scale.shape[1])).transpose(0, 2, 1).copy()
+
+
 def convert_scale_b_raw(scale):
     return scale.copy()
 
@@ -187,7 +196,7 @@ def gen_golden(case):
 
     x1_scale_gm = convert_scale_a_format(x1_scale, 16, 2)
     if case["name"] == "gemv_mx_fp4_e1m2_1x128x62":
-        x2_scale_gm = convert_scale_b_gemv_micro(x2_scale)
+        x2_scale_gm = convert_scale_b_nd_padded(x2_scale)
     else:
         x2_scale_gm = convert_scale_b_format(x2_scale, 16, 2)
 

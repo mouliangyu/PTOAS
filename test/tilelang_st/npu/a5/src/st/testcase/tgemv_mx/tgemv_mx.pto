@@ -19,21 +19,31 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
       %c_gm: !pto.ptr<f32, gm>) attributes {pto.aicore} {
     %c0_i64  = arith.constant 0    : i64
     %c1_i64  = arith.constant 1    : i64
+    %false = arith.constant false
     %c16_i64 = arith.constant 16   : i64
     %c4_i64 = arith.constant 4 : i64
+    %c8_i64 = arith.constant 8 : i64
+    %c32_i64 = arith.constant 32   : i64
     %c62_i64 = arith.constant 62   : i64
     %c64_i64 = arith.constant 64   : i64
     %c128_i64 = arith.constant 128 : i64
     %c256_i64 = arith.constant 256 : i64
     %c1024_i64 = arith.constant 1024 : i64
+    %c1056_i64 = arith.constant 1056 : i64
     %c1088_i64 = arith.constant 1088 : i64
+    %c3136_i64 = arith.constant 3136 : i64
     %c5184_i64 = arith.constant 5184 : i64
+    %c5312_i64 = arith.constant 5312 : i64
     %c2_i64 = arith.constant 2 : i64
 
     %l1_a_data  = pto.castptr %c0_i64    : i64 -> !pto.ptr<!pto.f4E1M2x2, l1>
+    %l1_a_data_hi  = pto.castptr %c32_i64    : i64 -> !pto.ptr<!pto.f4E1M2x2, l1>
     %l1_a_scale = pto.castptr %c1024_i64  : i64 -> !pto.ptr<f8E4M3FN, l1>
+    %l1_a_scale_hi = pto.castptr %c1056_i64  : i64 -> !pto.ptr<f8E4M3FN, l1>
     %l1_b_data  = pto.castptr %c1088_i64  : i64 -> !pto.ptr<!pto.f4E1M2x2, l1>
+    %l1_b_data_hi  = pto.castptr %c3136_i64  : i64 -> !pto.ptr<!pto.f4E1M2x2, l1>
     %l1_b_scale = pto.castptr %c5184_i64  : i64 -> !pto.ptr<f8E4M3FN, l1>
+    %l1_b_scale_hi = pto.castptr %c5312_i64  : i64 -> !pto.ptr<f8E4M3FN, l1>
     %l0a = pto.castptr %c0_i64 : i64 -> !pto.ptr<!pto.f4E1M2x2, l0a>
     %l0b = pto.castptr %c0_i64 : i64 -> !pto.ptr<!pto.f4E1M2x2, l0b>
     %l0c = pto.castptr %c0_i64 : i64 -> !pto.ptr<f32, l0c>
@@ -42,27 +52,48 @@ module attributes {pto.target_arch = "a5", pto.kernel_kind = #pto.kernel_kind<cu
       : !pto.ptr<!pto.f4E1M2x2, gm>, !pto.ptr<!pto.f4E1M2x2, l1>, i64, i64, i64, i64
     pto.mte_gm_l1 %a_scale_gm, %l1_a_scale, %c64_i64 nburst(%c1_i64, %c0_i64, %c0_i64)
       : !pto.ptr<f8E4M3FN, gm>, !pto.ptr<f8E4M3FN, l1>, i64, i64, i64, i64
-    pto.mte_gm_l1 %b_gm, %l1_b_data, %c1024_i64 nburst(%c4_i64, %c0_i64, %c0_i64)
-      : !pto.ptr<!pto.f4E1M2x2, gm>, !pto.ptr<!pto.f4E1M2x2, l1>, i64, i64, i64, i64
+    pto.mte_gm_l1_frac %b_gm, %l1_b_data, nd2nz,
+      shape(%c128_i64, %c32_i64), src_layout(%c32_i64),
+      dst_group(%c1_i64, %c1_i64, %c128_i64, %c0_i64), ctrl(%c0_i64, %false)
+      : !pto.ptr<!pto.f4E1M2x2, gm>, !pto.ptr<!pto.f4E1M2x2, l1>, nd2nz,
+        shape i64, i64, src_layout(i64), dst_group i64, i64, i64, i64, ctrl i64, i1
     pto.mte_gm_l1 %b_scale_gm, %l1_b_scale, %c256_i64 nburst(%c1_i64, %c0_i64, %c0_i64)
       : !pto.ptr<f8E4M3FN, gm>, !pto.ptr<f8E4M3FN, l1>, i64, i64, i64, i64
 
     pto.set_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE2", "PIPE_MTE1", "EVENT_ID0"]
 
-    pto.mte_l1_l0a %l1_a_data, %l0a, %c1_i64, %c128_i64, %c0_i64, %c0_i64
-      : !pto.ptr<!pto.f4E1M2x2, l1>, !pto.ptr<!pto.f4E1M2x2, l0a>, i64, i64, i64, i64
-    pto.mte_l1_l0b %l1_b_data, %l0b, %c128_i64, %c64_i64, %c0_i64, %c0_i64 {transpose = true}
-      : !pto.ptr<!pto.f4E1M2x2, l1>, !pto.ptr<!pto.f4E1M2x2, l0b>, i64, i64, i64, i64
-    pto.mte_l1_l0a_mx %l1_a_scale, %l0a, %c1_i64, %c128_i64
+    pto.load_cbuf_to_ca_s4 %l1_a_data, %l0a, %c0_i64, %c0_i64, %c1_i64, %c1_i64, %c1_i64, %c1_i64, %c0_i64
+      : !pto.ptr<!pto.f4E1M2x2, l1>, !pto.ptr<!pto.f4E1M2x2, l0a>, i64, i64, i64, i64, i64, i64, i64
+    pto.load_cbuf_to_cb_s4 %l1_b_data, %l0b, %c0_i64, %c0_i64, %c4_i64, %c1_i64, %c8_i64, %c4_i64, %c1_i64
+      : !pto.ptr<!pto.f4E1M2x2, l1>, !pto.ptr<!pto.f4E1M2x2, l0b>, i64, i64, i64, i64, i64, i64, i64
+    pto.mte_l1_l0a_mx %l1_a_scale, %l0a, %c1_i64, %c64_i64
       : !pto.ptr<f8E4M3FN, l1>, !pto.ptr<!pto.f4E1M2x2, l0a>, i64, i64
-    pto.mte_l1_l0b_mx %l1_b_scale, %l0b, %c128_i64, %c64_i64
+    pto.mte_l1_l0b_mx %l1_b_scale, %l0b, %c64_i64, %c64_i64
       : !pto.ptr<f8E4M3FN, l1>, !pto.ptr<!pto.f4E1M2x2, l0b>, i64, i64
 
     pto.set_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID0"]
     pto.wait_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID0"]
 
-    pto.mad_mx %l0a, %l0b, %l0c, %c1_i64, %c62_i64, %c128_i64 unit_flag(check_only) sat
+    pto.mad_mx %l0a, %l0b, %l0c, %c1_i64, %c62_i64, %c64_i64 unit_flag(check_only) sat
+      : !pto.ptr<!pto.f4E1M2x2, l0a>, !pto.ptr<!pto.f4E1M2x2, l0b>, !pto.ptr<f32, l0c>, i64, i64, i64
+
+    pto.set_flag["PIPE_M", "PIPE_MTE1", "EVENT_ID1"]
+    pto.wait_flag["PIPE_M", "PIPE_MTE1", "EVENT_ID1"]
+
+    pto.load_cbuf_to_ca_s4 %l1_a_data_hi, %l0a, %c0_i64, %c0_i64, %c1_i64, %c1_i64, %c1_i64, %c1_i64, %c0_i64
+      : !pto.ptr<!pto.f4E1M2x2, l1>, !pto.ptr<!pto.f4E1M2x2, l0a>, i64, i64, i64, i64, i64, i64, i64
+    pto.load_cbuf_to_cb_s4 %l1_b_data_hi, %l0b, %c0_i64, %c0_i64, %c4_i64, %c1_i64, %c8_i64, %c4_i64, %c1_i64
+      : !pto.ptr<!pto.f4E1M2x2, l1>, !pto.ptr<!pto.f4E1M2x2, l0b>, i64, i64, i64, i64, i64, i64, i64
+    pto.mte_l1_l0a_mx %l1_a_scale_hi, %l0a, %c1_i64, %c64_i64
+      : !pto.ptr<f8E4M3FN, l1>, !pto.ptr<!pto.f4E1M2x2, l0a>, i64, i64
+    pto.mte_l1_l0b_mx %l1_b_scale_hi, %l0b, %c64_i64, %c64_i64
+      : !pto.ptr<f8E4M3FN, l1>, !pto.ptr<!pto.f4E1M2x2, l0b>, i64, i64
+
+    pto.set_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID1"]
+    pto.wait_flag["PIPE_MTE1", "PIPE_M", "EVENT_ID1"]
+
+    pto.mad_mx_acc %l0a, %l0b, %l0c, %c1_i64, %c62_i64, %c64_i64 unit_flag(check_and_set) nosat
       : !pto.ptr<!pto.f4E1M2x2, l0a>, !pto.ptr<!pto.f4E1M2x2, l0b>, !pto.ptr<f32, l0c>, i64, i64, i64
 
     pto.set_flag["PIPE_M", "PIPE_FIX", "EVENT_ID1"]
