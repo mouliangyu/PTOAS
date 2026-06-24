@@ -1,0 +1,124 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// ===----------------------------------------------------------------------=== //
+//
+// Design-reference IR (NOT executable).
+//
+// Captures the target `pto.vmi` lowering for the SimdVF per-token cast-to-FP8
+// kernel, verbatim from
+//   PTO-Gym/docs/simtvf-per-token-cast-to-fp8-pto-vmi-mapping.md
+//
+// Original TileLang SimdVF source (md section 1):
+//   source: tilelang-deepseek/examples/ascend/example_simdvf_per_token_cast_to_fp8.py
+//   dtype = T.float, group_size = 128, fp8_max = 448.0,
+//   X_fp8 = float8_e4m3fn, X_amax stores scale = amax / 448.0
+//
+//   with T.SimdVF():
+//       mask_f32 = T.simd.pset(32)
+//
+//       eps = T.simd.vdup(1e-4, "float32", mask_f32)
+//       fp8_max_reg = T.simd.vdup(fp8_max, "float32", mask_f32)
+//
+//       for i in range(blk_m):
+//           for j in range(group_block):
+//               col = j * group_size
+//               x0 = T.simd.vld(y_ub[i, col])
+//               x1 = T.simd.vld(y_ub[i, col + 64])
+//               abs0 = T.simd.vabs(x0, mask_f32)
+//               abs1 = T.simd.vabs(x1, mask_f32)
+//               amax_0 = T.simd.vmax(abs0, abs1, mask_f32)
+//               amax_1 = T.simd.vcmax(amax_0, mask_f32)
+//               amax = T.simd.vmax(amax_1, eps, mask_f32)
+//               scale = T.simd.vdiv(amax, fp8_max_reg, mask_f32)
+//               scale_brc = T.simd.vdupv(scale, mask_f32)
+//               T.simd.vsts(y_s_ub[i, j], scale, mask_f32, dist="ONEPT_B32")
+//
+//               q0 = T.simd.vdiv(x0, scale_brc, mask_f32)
+//               q0_fp8 = T.simd.vcvt(q0, mask_f32, "float8_e4m3fn")
+//               T.simd.vsts(y_q_ub_fp8[i, col], q0_fp8, mask_f32, dist="PK4_B32")
+//
+//               q1 = T.simd.vdiv(x1, scale_brc, mask_f32)
+//               q1_fp8 = T.simd.vcvt(q1, mask_f32, "float8_e4m3fn")
+//               T.simd.vsts(y_q_ub_fp8[i, col + 64], q1_fp8, mask_f32, dist="PK4_B32")
+//
+// This is design-level pseudo MLIR. It uses surface ops that are NOT yet
+// implemented in the PTOAS VMI dialect, so it cannot be parsed by ptoas/pto-test-opt:
+//   - pto.vmi.vlds / pto.vmi.vsts           (use pto.vmi.load / pto.vmi.store)
+//   - pto.vmi.pset_b32 "PAT_ALL"            (use pto.vmi.create_mask)
+//   - pto.vmi.vreduce_max {sub_group = 2}   (no group max-reduce exists; only
+//                                            group_reduce_addf/addi exist)
+//   - pto.vmi.vbr {to = 256, sub_group = 2} (use pto.vmi.group_broadcast {num_groups = N})
+//   - pto.vmi.vcvt {to = ..., rnd = "R", sat = "SAT"} (use pto.vmi.truncf)
+//   - pto.vmi.vsts {mode = "ONE_PER_SUB_GROUP"}  (not yet implemented)
+//
+// Kept as-is as a forward-looking spec. See the upstream doc's section 8
+// ("需要 PTO/VMI surface 补齐的点") for the full list of missing surface points.
+//
+// RUN: true
+//
+// ===----------------------------------------------------------------------=== //
+
+// f32 data mask。完整 tile 路径全 active。
+%m256 = pto.vmi.pset_b32 "PAT_ALL" : !pto.vmi.mask<256xb32>
+
+// compact scalar constants, one scalar per 128-token sub-group。
+%eps2 = pto.vmi.vbr %cst_1e_4 : f32 -> !pto.vmi.vreg<2xf32>
+%fp8_max2 = pto.vmi.vbr %cst_448 : f32 -> !pto.vmi.vreg<2xf32>
+
+scf.for %i = %c0 to %blk_m step %c1 {
+  scf.for %j_pair = %c0 to %group_block_div_2 step %c1 {
+    // 原 SimdVF: j = 2 * j_pair; col = j * 128
+    // VMI: 一次覆盖两个相邻 128-token group, 即 256 个 f32。
+    %token_off = arith.muli %j_pair, %c256 : index
+    %scale_off = arith.muli %j_pair, %c2 : index
+
+    // Step 1: load 256 contiguous f32.
+    %x = pto.vmi.vlds %y_ub[%i, %token_off]
+        : !pto.ptr<f32, ub> -> !pto.vmi.vreg<256xf32>
+    // layout: chunk(4), each physical chunk is !pto.mi.vreg<64xf32>.
+
+    // Step 2: abs, then per-128-token max-reduce.
+    %abs = pto.vmi.vabs %x, %m256
+        : !pto.vmi.vreg<256xf32>, !pto.vmi.mask<256xb32> -> !pto.vmi.vreg<256xf32>
+
+    %amax_raw = pto.vmi.vreduce_max %abs, %m256 {sub_group = 2}
+        : !pto.vmi.vreg<256xf32>, !pto.vmi.mask<256xb32> -> !pto.vmi.vreg<2xf32>
+
+    // Step 3: clamp and compute scale = max(amax, 1e-4) / 448.0.
+    %amax = pto.vmi.vmax %amax_raw, %eps2
+        : !pto.vmi.vreg<2xf32> -> !pto.vmi.vreg<2xf32>
+
+    %scale = pto.vmi.vdiv %amax, %fp8_max2
+        : !pto.vmi.vreg<2xf32> -> !pto.vmi.vreg<2xf32>
+
+    // 原 SimdVF: vsts(..., dist="ONEPT_B32") for each 128-token group.
+    // VMI: store one f32 scale per sub-group.
+    pto.vmi.vsts %scale, %y_s_ub[%i, %scale_off] {mode = "ONE_PER_SUB_GROUP"}
+        : !pto.vmi.vreg<2xf32>, !pto.ptr<f32, ub>
+
+    // Step 4: broadcast scale back to data lanes.
+    // lanes [0..127] use scale[0], lanes [128..255] use scale[1].
+    %scale_brc = pto.vmi.vbr %scale {to = 256, sub_group = 2}
+        : !pto.vmi.vreg<2xf32> -> !pto.vmi.vreg<256xf32>
+
+    // Step 5: q = x / scale.
+    %q = pto.vmi.vdiv %x, %scale_brc, %m256
+        : !pto.vmi.vreg<256xf32>, !pto.vmi.vreg<256xf32>, !pto.vmi.mask<256xb32>
+       -> !pto.vmi.vreg<256xf32>
+
+    // Step 6: f32 -> FP8 E4M3. No user-visible P0/P1/P2/P3.
+    %q_fp8 = pto.vmi.vcvt %q, %m256 {to = "float8_e4m3fn", rnd = "R", sat = "SAT"}
+        : !pto.vmi.vreg<256xf32>, !pto.vmi.mask<256xb32> -> !pto.vmi.vreg<256xfp8>
+    // layout after lowering: 4 sparse fp8 physical regs, each filled in P0 only.
+
+    // Step 7: store 256 FP8. No user-visible PK4_B32.
+    pto.vmi.vsts %q_fp8, %y_q_ub_fp8[%i, %token_off]
+        : !pto.vmi.vreg<256xfp8>, !pto.ptr<fp8, ub>
+  }
+}
