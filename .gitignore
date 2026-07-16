@@ -99,3 +99,13 @@ test/samples/**/npu_validation/*
 .planning/
 .work/
 .local/
+build-llvm21/*
+install-llvm21/*
+mlir_core/
+log/*
+tasks/*
+scripts/*
+docs/*
+VMI_VF_Fusion_工作计划_20260713.md
+.claude/*
+VMI-VF-fusion-before-after-analysis.md

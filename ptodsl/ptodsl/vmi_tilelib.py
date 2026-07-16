@@ -19,6 +19,7 @@ from ._tile_template_tracing import (
     _Value,
     _VectorValue,
     f16,
+    bf16,
     f32,
     for_,
     index_add,
@@ -266,9 +267,156 @@ def emit_row_expand_sub_vmi(
             vmi_vstore(result, dst, coordinate, full_mask)
 
 
+def _validate_col_reduce_tiles(
+    src: _TileProxy, dst: _TileProxy
+) -> CanonicalBlockMap:
+    """Validate tiles for a ColReduce (tcolmax / tcolsum) VMI candidate.
+
+    Mirror of `_validate_row_reduce_tiles` but the surviving axis is the column
+    dimension: src is [rows, cols] row-major, dst is [1, cols] row-major, and the
+    reduction runs across all rows. First slice only supports a single VL block
+    wide tile (cols == VL), matching the pto-isa `TColReduceInstr_NoPostUpdate`
+    one-repeat layout.
+    """
+    if src.element_type != f32 or dst.element_type != f32:
+        raise ValueError("col-reduce VMI candidates currently support only f32")
+    if src._spec.b_layout != "row_major" or dst._spec.b_layout != "row_major":
+        raise ValueError("col-reduce source and destination must be row-major")
+    rows, cols = src._spec.shape
+    if dst._spec.shape != (1, cols):
+        raise ValueError("col-reduce destination must be a row-major [1, cols] tile")
+    if cols != f32.lanes:
+        raise ValueError(
+            "col-reduce VMI candidates currently support only cols == VL(f32) "
+            f"(got cols={cols}, VL={f32.lanes})"
+        )
+    return CanonicalBlockMap.from_tile(src, logical_lanes=f32.lanes)
+
+
+def emit_col_reduce_vmi(
+    src: _TileProxy,
+    dst: _TileProxy,
+    *,
+    kind: str,
+) -> None:
+    """Emit a ColReduce (tcolmax / tcolsum) VMI candidate.
+
+    Mirrors pto-isa `TColReduceInstr_NoPostUpdate` with a single VL block:
+      acc = load(row 0)                       # VL-wide, column axis preserved
+      for row in 1..rows: acc = op(acc, load(row))   # runtime scf.for, NOT unrolled
+      store(acc, dst)
+
+    The accumulator stays VL-wide for the whole reduction (the column axis is
+    the surviving axis). This intentionally avoids `vmi_vreduce_max`/`vmi_vcmax`,
+    which collapse to a 1-lane scalar — wrong for a column-preserving ColMax.
+
+    The cross-row reduction is a runtime ``scf.for`` carrying the VL-wide
+    accumulator as loop state (one ``vmi.vmax``/``vmi.vadd`` per iteration),
+    matching the pto-isa repeat loop. It must NOT be a Python ``range`` here:
+    a trace-time ``range`` would statically unroll one merge per row (e.g. 127
+    for ``rows=128``), producing a flat vmax chain with no surrounding loop.
+    """
+    block_map = _validate_col_reduce_tiles(src, dst)
+    merge_op = vmi_vmax if kind == "max" else vmi_vadd
+
+    vmi_prepare_tile_access(src, dst)
+    full_mask = vmi_create_mask(block_map, f32)
+    # Row 0 seeds the VL-wide accumulator (column axis preserved). It is also
+    # the initial loop-carried state passed into the scf.for below.
+    accumulator = vmi_vload(src, block_map.coordinate(0))
+    # Remaining rows form a runtime scf.for carrying the VL-wide accumulator;
+    # each iteration does one element-wise merge (VL stays full). Row r maps to
+    # logical block r*blocks_per_row (row r, first VL block of that row).
+    with for_(1, block_map.rows, step=1, state={"acc": accumulator}) as loop:
+        row_block_base = index_mul(loop.iv, block_map.blocks_per_row)
+        loaded = vmi_vload(src, block_map.coordinate(row_block_base))
+        merged = merge_op(loop.state.acc, loaded, full_mask)
+        loop.yield_state(acc=merged)
+    accumulator = loop.results[0]
+    # dst [1, cols] is a single VL block; store via linear offset to avoid the
+    # src/dst shape mismatch in CanonicalBlockCoordinate validation (src is
+    # [rows, cols], dst is [1, cols]).
+    vmi_vstore_linear(accumulator, dst, 0, full_mask)
+
+
+def _validate_col_expand_binary_tiles(
+    src: _TileProxy, col_values: _TileProxy, dst: _TileProxy
+) -> CanonicalBlockMap:
+    """Validate tiles for a ColExpandBinary (tcolexpandsub/...) VMI candidate.
+
+    src is [rows, cols] row-major, col_values is [1, cols] row-major (one VL
+    block of surviving reduce result), dst is [rows, cols] row-major. cols must
+    equal VL(f32) so the single broadcast loads exactly one VL block.
+    """
+    if (
+        src.element_type != f32
+        or col_values.element_type != f32
+        or dst.element_type != f32
+    ):
+        raise ValueError("col-expand-binary VMI candidates currently support only f32")
+    if src._spec.shape != dst._spec.shape:
+        raise ValueError("col-expand-binary source and destination shapes must match")
+    if src._spec.b_layout != "row_major" or dst._spec.b_layout != "row_major":
+        raise ValueError("col-expand-binary source and destination must be row-major")
+    rows, cols = src._spec.shape
+    if (
+        col_values._spec.shape != (1, cols)
+        or col_values._spec.b_layout != "row_major"
+    ):
+        raise ValueError(
+            "col-expand-binary col_values must be a row-major [1, cols] tile"
+        )
+    if cols != f32.lanes:
+        raise ValueError(
+            "col-expand-binary VMI candidates currently support only cols == VL(f32)"
+        )
+    return CanonicalBlockMap.from_tile(src, logical_lanes=f32.lanes)
+
+
+def emit_col_expand_binary_vmi(
+    src: _TileProxy,
+    col_values: _TileProxy,
+    dst: _TileProxy,
+    *,
+    binop: str,
+) -> None:
+    """Emit a ColExpandBinary (tcolexpandsub/add/mul/div) VMI candidate.
+
+    Mirrors pto-isa `TColExpandBinOp`: the single VL block of col_values is
+    broadcast to every row, then a binary op is applied per row block.
+    """
+    binop_dispatch = {
+        "sub": vmi_vsub,
+        "add": vmi_vadd,
+        "mul": vmi_vmul,
+        "div": vmi_vdiv,
+    }
+    if binop not in binop_dispatch:
+        raise ValueError(
+            f"col-expand-binary VMI candidate does not support op {binop!r}; "
+            f"expected one of {sorted(binop_dispatch)}"
+        )
+    op_fn = binop_dispatch[binop]
+    block_map = _validate_col_expand_binary_tiles(src, col_values, dst)
+
+    vmi_prepare_tile_access(src, col_values, dst)
+    full_mask = vmi_create_mask(block_map, f32)
+    # pto-isa TColExpandBinOp broadcasts by reloading the same col_values VL
+    # block per row (vlds with fixed offset), NOT a 1-lane vbrc. col_values is
+    # [1, cols] (one VL block); every row re-loads the same VL block.
+    with for_(0, block_map.rows, step=1) as row:
+        coordinate = block_map.coordinate(index_mul(row, block_map.blocks_per_row))
+        value = vmi_vload(src, coordinate)
+        broadcast = vmi_vload_linear(col_values, 0, lanes=f32.lanes)
+        result = op_fn(value, broadcast, full_mask)
+        vmi_vstore(result, dst, coordinate, full_mask)
+
+
 def emit_convert_vmi(src: _TileProxy, dst: _TileProxy) -> None:
-    if src.element_type != f32 or dst.element_type != f16:
-        raise ValueError("tcvt VMI candidate currently supports f32 to f16")
+    if src.element_type != f32:
+        raise ValueError("tcvt VMI candidate currently supports f32 source")
+    if dst.element_type not in (f16, bf16):
+        raise ValueError("tcvt VMI candidate currently supports f32 -> f16/bf16")
     if src._spec.shape != dst._spec.shape:
         raise ValueError("tcvt source and destination shapes must match")
     if src._spec.b_layout != "row_major" or dst._spec.b_layout != "row_major":
@@ -276,10 +424,10 @@ def emit_convert_vmi(src: _TileProxy, dst: _TileProxy) -> None:
     block_map = CanonicalBlockMap.from_tile(src, logical_lanes=f32.lanes)
 
     vmi_prepare_tile_access(src, dst)
-    dst_mask = vmi_create_mask_lanes(f32.lanes, f32.lanes, f16)
+    dst_mask = vmi_create_mask_lanes(f32.lanes, f32.lanes, dst.element_type)
     with for_(0, block_map.logical_block_count, step=1) as logical_block:
         coordinate = block_map.coordinate(logical_block)
-        converted = vmi_vcvt(vmi_vload(src, coordinate), f16)
+        converted = vmi_vcvt(vmi_vload(src, coordinate), dst.element_type)
         vmi_vstore(converted, dst, coordinate, dst_mask)
 
 
@@ -385,8 +533,39 @@ def vmi_trowexpandsub(src: Tile, row_values: Tile, dst: Tile):
     emit_row_expand_sub_vmi(src, row_values, dst)
 
 
-@canonical_vmi_template(target="a5", op="tcvt", name="vmi_tcvt_f32_f16")
-def vmi_tcvt_f32_f16(src: Tile, dst: Tile):
+@canonical_vmi_template(target="a5", op="tcolmax", name="vmi_tcolmax")
+def vmi_tcolmax(src: Tile, dst: Tile):
+    emit_col_reduce_vmi(src, dst, kind="max")
+
+
+@canonical_vmi_template(target="a5", op="tcolsum", name="vmi_tcolsum")
+def vmi_tcolsum(src: Tile, dst: Tile):
+    emit_col_reduce_vmi(src, dst, kind="add")
+
+
+
+@canonical_vmi_template(target="a5", op="tcolexpandsub", name="vmi_tcolexpandsub")
+def vmi_tcolexpandsub(src: Tile, col_values: Tile, dst: Tile):
+    emit_col_expand_binary_vmi(src, col_values, dst, binop="sub")
+
+
+@canonical_vmi_template(target="a5", op="tcolexpandadd", name="vmi_tcolexpandadd")
+def vmi_tcolexpandadd(src: Tile, col_values: Tile, dst: Tile):
+    emit_col_expand_binary_vmi(src, col_values, dst, binop="add")
+
+
+@canonical_vmi_template(target="a5", op="tcolexpandmul", name="vmi_tcolexpandmul")
+def vmi_tcolexpandmul(src: Tile, col_values: Tile, dst: Tile):
+    emit_col_expand_binary_vmi(src, col_values, dst, binop="mul")
+
+
+@canonical_vmi_template(target="a5", op="tcolexpanddiv", name="vmi_tcolexpanddiv")
+def vmi_tcolexpanddiv(src: Tile, col_values: Tile, dst: Tile):
+    emit_col_expand_binary_vmi(src, col_values, dst, binop="div")
+
+
+@canonical_vmi_template(target="a5", op="tcvt", name="vmi_tcvt")
+def vmi_tcvt(src: Tile, dst: Tile):
     emit_convert_vmi(src, dst)
 
 
@@ -408,5 +587,11 @@ __all__ = [
     "vmi_trowmax",
     "vmi_trowsum",
     "vmi_trowexpandsub",
-    "vmi_tcvt_f32_f16",
+    "vmi_tcvt",
+    "vmi_tcolmax",
+    "vmi_tcolsum",
+    "vmi_tcolexpandsub",
+    "vmi_tcolexpandadd",
+    "vmi_tcolexpandmul",
+    "vmi_tcolexpanddiv",
 ]
