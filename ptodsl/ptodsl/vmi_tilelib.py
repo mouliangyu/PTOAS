@@ -403,11 +403,13 @@ def emit_col_expand_binary_vmi(
     full_mask = vmi_create_mask(block_map, f32)
     # pto-isa TColExpandBinOp broadcasts by reloading the same col_values VL
     # block per row (vlds with fixed offset), NOT a 1-lane vbrc. col_values is
-    # [1, cols] (one VL block); every row re-loads the same VL block.
+    # [1, cols] (one VL block), so the broadcast load is loop-invariant: hoist
+    # it out of the row loop so a later mem2reg (Stage C) can forward the
+    # ColMax result directly to the consumer without a per-row reload.
+    broadcast = vmi_vload_linear(col_values, 0, lanes=f32.lanes)
     with for_(0, block_map.rows, step=1) as row:
         coordinate = block_map.coordinate(index_mul(row, block_map.blocks_per_row))
         value = vmi_vload(src, coordinate)
-        broadcast = vmi_vload_linear(col_values, 0, lanes=f32.lanes)
         result = op_fn(value, broadcast, full_mask)
         vmi_vstore(result, dst, coordinate, full_mask)
 

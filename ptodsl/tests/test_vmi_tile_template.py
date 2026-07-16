@@ -476,7 +476,21 @@ def check_col_expand_candidate() -> None:
         expect("pto.vmi.vbrc" not in text, f"{op_name} must reload the VL block, not 1-lane vbrc")
         expect(
             text.count("pto.vmi.vload") == 2,
-            f"{op_name} should load one source row plus the broadcast VL block per iteration",
+            f"{op_name} should load one source row plus the broadcast VL block",
+        )
+        # The broadcast VL block is loop-invariant (col_values is [1, VL]); it
+        # must be hoisted out of the row loop so a later mem2reg can forward the
+        # ColMax result straight to the consumer without a per-row reload. So
+        # exactly one vload precedes scf.for (the broadcast) and one sits inside
+        # (the source row).
+        for_pos = text.find("scf.for")
+        expect(
+            for_pos > 0 and text[:for_pos].count("pto.vmi.vload") == 1,
+            f"{op_name} should hoist the broadcast vload out of the row loop",
+        )
+        expect(
+            text[for_pos:].count("pto.vmi.vload") == 1,
+            f"{op_name} should keep only the source-row vload inside the loop",
         )
 
 
