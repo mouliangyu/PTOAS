@@ -160,11 +160,18 @@ static LogicalResult inlineCall(func::CallOp call, func::FuncOp callee) {
     return call.emitOpError("callee return/result arity mismatch during inlining");
 
   OpBuilder builder(call);
-  // Wrap the inlined TileOp body in one pto.fusion_scope so subsequent fusion
-  // passes have a clean region granularity (one scope per expanded TileOp).
-  // The scope is erased uniformly right before VMIToVPTO.
-  auto fusionScope = builder.create<pto::FusionScopeOp>(call.getLoc());
-  builder.createBlock(&fusionScope.getBody());
+  // Wrap the inlined VMI compute-op body in one pto.fusion_scope so subsequent
+  // fusion passes have a clean region granularity (one scope per expanded
+  // compute TileOp). The scope is erased uniformly right before VMIToVPTO.
+  // tload/tstore and other tilelang-backed DMA templates are NOT wrapped: they
+  // are memory-traffic boundaries (F3) that never fuse, so a scope around them
+  // would be meaningless load on the planner and the strip pass.
+  const bool wrapInFusionScope = isTileOpProviderFunc(callee);
+  pto::FusionScopeOp fusionScope;
+  if (wrapInFusionScope) {
+    fusionScope = builder.create<pto::FusionScopeOp>(call.getLoc());
+    builder.createBlock(&fusionScope.getBody());
+  }
 
   IRMapping mapping;
   for (auto [arg, operand] :
