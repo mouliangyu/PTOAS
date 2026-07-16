@@ -1737,6 +1737,23 @@ def FusionRegionOp : PTO_Op<"fusion_region", [SingleBlock]> {
   }];
 }
 
+def FusionScopeOp : PTO_Op<"fusion_scope", [SingleBlock, NoTerminator]> {
+  let summary = "One VMI fusion region container; erased before VMIToVPTO";
+  let description = [{
+    `pto.fusion_scope` is the granularity marker for VMI fusion optimizations.
+    ExpandTileOp/Inline wraps each expanded TileOp's VMI body in one
+    `pto.fusion_scope`. Subsequent passes operate at this region granularity
+    (e.g. fusion planning, mem2reg). Right before `VMIToVPTO` lowers VMI to
+    the physical VPTO layer, all `pto.fusion_scope` ops are erased uniformly
+    (their body inlined back into the parent region). Unlike `pto.fusion_region`,
+    it carries no `yield`/outputs: DPS TileOps keep their UB inside the scope
+    and nothing escapes unless a later pass promotes it to SSA.
+  }];
+  let regions = (region SizedRegion<1>:$body);
+  let hasVerifier = 1;
+  let assemblyFormat = "$body attr-dict";
+}
+
 def YieldOp : PTO_Op<"yield", [Terminator, ParentOneOf<["FusionRegionOp"]>]> {
   let summary = "Terminate a pto.fusion_region and return its visible outputs";
   let description = [{

@@ -61,6 +61,7 @@ add_mlir_dialect_library(PTOTransforms
   FoldTileBufIntrinsics.cpp
   PTOLowerToOpLibCalls.cpp
   PTOInstantiateAndInlineOpLib.cpp
+  PTOStripFusionScope.cpp
   PTOToEmitC.cpp
   CppPostprocess.cpp
   Utils.cpp

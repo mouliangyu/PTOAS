@@ -638,6 +638,20 @@ def PTOInlineLibCall : Pass<"pto-inline-libcall", "ModuleOp"> {
       "Enable verbose debug logging for OP-Lib instantiation/inlining">];
 }
 
+def PTOStripFusionScope : Pass<"pto-strip-fusion-scope", "ModuleOp"> {
+  let summary = "Erase all pto.fusion_scope regions before VMIToVPTO";
+  let description = [{
+    `pto.fusion_scope` is the granularity marker wrapped around each expanded
+    TileOp body by OP-Lib inlining. Subsequent fusion passes operate at this
+    region granularity. Right before `VMIToVPTO` lowers VMI to the physical
+    VPTO layer, this pass erases all `pto.fusion_scope` ops by inlining their
+    body back into the parent region, leaving clean VMI IR for lowering.
+  }];
+  let constructor = "mlir::pto::createPTOStripFusionScopePass()";
+  let dependentDialects = ["mlir::pto::PTODialect"];
+}
+
+
 def PTOInlineBackendHelpers
     : Pass<"pto-inline-backend-helpers", "ModuleOp"> {
   let summary = "Inline backend helper functions shared by VPTO and EmitC";

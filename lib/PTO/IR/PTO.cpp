@@ -2402,6 +2402,17 @@ LogicalResult mlir::pto::FusionRegionOp::verify() {
   return success();
 }
 
+LogicalResult mlir::pto::FusionScopeOp::verify() {
+  Region &bodyRegion = getBody();
+  if (bodyRegion.empty())
+    return emitOpError("expects a non-empty body region");
+  Block &body = bodyRegion.front();
+  if (body.getNumArguments() != 0)
+    return emitOpError() << "expects body block to have no arguments, got "
+                         << body.getNumArguments();
+  return success();
+}
+
 LogicalResult mlir::pto::YieldOp::verify() {
   auto parent = dyn_cast_or_null<FusionRegionOp>(getOperation()->getParentOp());
   if (!parent)

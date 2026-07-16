@@ -2804,6 +2804,10 @@ static void appendVMISemanticPipeline(OpPassManager &pm) {
   pm.addPass(createCSEPass());
   pm.addPass(pto::createVMILegalizeArithSelectPass());
   pm.addPass(pto::createPTOValidateVMILayoutIRPass());
+  // Erase all pto.fusion_scope markers (one per expanded TileOp) right before
+  // VMIToVPTO so VMI lowering sees clean IR. Fusion passes above this point
+  // operate at the fusion_scope granularity.
+  pm.addPass(pto::createPTOStripFusionScopePass());
   pm.addPass(pto::createVMIToVPTOPass());
 }
 

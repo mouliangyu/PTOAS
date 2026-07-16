@@ -1,0 +1,45 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software; you can redistribute it and/or modify it under the terms of the
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// Fusion-scope region lifecycle for the ptodsl-vmi path.
+//
+// ExpandTileOp lowers `pto.tcolmax` to a canonical VMI template call, and
+// PTOInlineLibCall inlines each template body back into the kernel while
+// wrapping it in one `pto.fusion_scope` (one scope per expanded TileOp body).
+// PTOStripFusionScope then erases every scope right before VMIToVPTO so the
+// VMI lowering sees clean IR. This test pins both halves of that lifecycle:
+//   INLINE — one pto.fusion_scope wraps the tcolmax body (scf.for + vmax + vstore)
+//   STRIP — no pto.fusion_scope remains; the body is spliced into the parent
+
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --tile-lib-backend=ptodsl-vmi --emit-vpto %s -o /dev/null --mlir-print-ir-after=pto-inline-libcall 2>&1 | FileCheck %s --check-prefix=INLINE
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --tile-lib-backend=ptodsl-vmi --emit-vpto %s -o /dev/null --mlir-print-ir-after=pto-strip-fusion-scope 2>&1 | FileCheck %s --check-prefix=STRIP
+
+module {
+  func.func @fusion_scope_lifecycle() {
+    %src = pto.alloc_tile : !pto.tile_buf<vec, 32x64xf32>
+    %dst = pto.alloc_tile : !pto.tile_buf<vec, 1x64xf32>
+    pto.tcolmax ins(%src : !pto.tile_buf<vec, 32x64xf32>) outs(%dst : !pto.tile_buf<vec, 1x64xf32>)
+    return
+  }
+}
+
+// The inlined tcolmax body lives inside exactly one fusion_scope.
+// INLINE-LABEL: func.func @fusion_scope_lifecycle
+// INLINE: pto.fusion_scope {
+// INLINE: scf.for
+// INLINE: pto.vmi.vmax
+// INLINE: pto.vmi.vstore
+// INLINE: }
+
+// After stripping the scope is gone and the body is spliced back into the
+// function block (still VMI-level ops — VMIToVPTO runs after this pass).
+// STRIP-LABEL: func.func @fusion_scope_lifecycle
+// STRIP-NOT: pto.fusion_scope
+// STRIP: scf.for
+// STRIP: pto.vmi.maxf
+// STRIP: pto.vmi.masked_store

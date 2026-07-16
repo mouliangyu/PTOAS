@@ -160,6 +160,12 @@ static LogicalResult inlineCall(func::CallOp call, func::FuncOp callee) {
     return call.emitOpError("callee return/result arity mismatch during inlining");
 
   OpBuilder builder(call);
+  // Wrap the inlined TileOp body in one pto.fusion_scope so subsequent fusion
+  // passes have a clean region granularity (one scope per expanded TileOp).
+  // The scope is erased uniformly right before VMIToVPTO.
+  auto fusionScope = builder.create<pto::FusionScopeOp>(call.getLoc());
+  builder.createBlock(&fusionScope.getBody());
+
   IRMapping mapping;
   for (auto [arg, operand] :
        llvm::zip(entry.getArguments(), call.getOperands()))
