@@ -1,0 +1,44 @@
+// Copyright (c) 2026 Huawei Technologies Co., Ltd.
+// This program is free software; you can redistribute it and/or modify it under the terms of the
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
+
+// PTOPlanFusionScope: merge adjacent pto.fusion_scope into VMI fusion groups.
+//
+// Inline wraps each expanded TileOp body in one pto.fusion_scope (one per
+// TileOp). The planner merges adjacent compute scopes whose UB sets are
+// identical-or-disjoint (rule 1) and never merges a scope carrying a DMA/sync
+// (F3). Two in-place tmuls on the same UB tile share the same UB set
+// (identical), so they must merge into one scope.
+
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --tile-lib-backend=ptodsl-vmi --emit-vpto %s -o /dev/null --mlir-print-ir-after=pto-inline-libcall 2>&1 | FileCheck %s --check-prefix=INLINE
+// RUN: ptoas --pto-arch=a5 --pto-backend=vpto --tile-lib-backend=ptodsl-vmi --emit-vpto %s -o /dev/null --mlir-print-ir-after=pto-plan-fusion-scope 2>&1 | FileCheck %s --check-prefix=PLAN
+
+module {
+  func.func @fusion_scope_plan_groups() {
+    %cst = arith.constant 1.250000e-01 : f32
+    %cst2 = arith.constant 2.500000e-01 : f32
+    %x = pto.alloc_tile : !pto.tile_buf<vec, 1x64xf32>
+    pto.tmuls ins(%x, %cst : !pto.tile_buf<vec, 1x64xf32>, f32) outs(%x : !pto.tile_buf<vec, 1x64xf32>)
+    pto.tmuls ins(%x, %cst2 : !pto.tile_buf<vec, 1x64xf32>, f32) outs(%x : !pto.tile_buf<vec, 1x64xf32>)
+    return
+  }
+}
+
+// Two in-place tmuls => two fusion_scope after inline (one per TileOp body).
+// INLINE-LABEL: func.func @fusion_scope_plan_groups
+// INLINE: pto.fusion_scope {
+// INLINE: pto.vmi.vmuls
+// INLINE: pto.fusion_scope {
+// INLINE: pto.vmi.vmuls
+
+// Same UB set => merged into one fusion_scope by the planner; both vmuls are
+// now inside the single scope.
+// PLAN-LABEL: func.func @fusion_scope_plan_groups
+// PLAN: pto.fusion_scope {
+// PLAN: pto.vmi.vmuls
+// PLAN: pto.vmi.vmuls
+// PLAN-NOT: pto.fusion_scope {

@@ -2777,6 +2777,11 @@ static LogicalResult runVPTOBackendPipeline(OwningOpRef<ModuleOp> &module,
 }
 
 static void appendVMISemanticPipeline(OpPassManager &pm) {
+  // Merge adjacent pto.fusion_scope (one per expanded TileOp) into VMI fusion
+  // groups per the VF Fusion rules. Runs before VMILowerUnifiedToLegacy so the
+  // planner sees vmi.* ops, and before PTOStripFusionScope which erases the
+  // scopes at the end of the pipeline.
+  pm.addPass(pto::createPTOPlanFusionScopePass());
   // Expand unified VMI ops to legacy ops before layout assignment,
   // so downstream passes only see legacy ops.
   pm.addPass(pto::createVMILowerUnifiedToLegacyPass());

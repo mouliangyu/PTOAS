@@ -638,6 +638,25 @@ def PTOInlineLibCall : Pass<"pto-inline-libcall", "ModuleOp"> {
       "Enable verbose debug logging for OP-Lib instantiation/inlining">];
 }
 
+def PTOPlanFusionScope : Pass<"pto-plan-fusion-scope", "ModuleOp"> {
+  let summary = "Merge adjacent pto.fusion_scope into VMI fusion groups";
+  let description = [{
+    `pto.fusion_scope` is wrapped around each expanded TileOp body by OP-Lib
+    inlining (one scope per TileOp). This pass merges adjacent scopes into VMI
+    fusion groups following the VF Fusion rules: F1 (fusible VMI ops share one
+    scope), F2 (a ColReduce result is complete only after its region, so the
+    reduce loop and a consumer element-wise loop stay as separate for-row but
+    may share one scope), F3 (mte/set_flag/wait_flag/barrier/vecscope/unknown
+    ops close the current group), and rule 1 (a candidate scope's UB set must
+    be identical-to or disjoint-from every UB already in the group; partial
+    overlap rejects). The pass never builds `pto.vecscope`; that remains
+    `PTOInferVPTOVecScope`'s job. It runs in the VMI semantic pipeline before
+    `VMILowerUnifiedToLegacy` and before `PTOStripFusionScope`.
+  }];
+  let constructor = "mlir::pto::createPTOPlanFusionScopePass()";
+  let dependentDialects = ["mlir::pto::PTODialect"];
+}
+
 def PTOStripFusionScope : Pass<"pto-strip-fusion-scope", "ModuleOp"> {
   let summary = "Erase all pto.fusion_scope regions before VMIToVPTO";
   let description = [{
