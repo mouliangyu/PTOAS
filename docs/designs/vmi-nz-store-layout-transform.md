@@ -69,6 +69,42 @@ NZ:  ...[n1=0 block for m].........[n1=1 block for m].........[n1=2 block for m]
 That "same value, contiguous in ND, strided-by-`M1*M0*N0` in NZ" is exactly what a
 **block-strided store** expresses: hand it a contiguous vreg and a per-block stride.
 
+### 0.2 The 3D `(M, N1, N0=C0)` view — where the `M*C0` stride lives
+
+Drop `M0`/`M1` for a moment and read the tensor as **`(M, N1, N0)`** with
+`N0 = C0`. ND is **M-major** (each row's `N1` C0-blocks are contiguous); the
+Cube-input NZ is **N1-major** (all `M` rows of one `n1` sit together as a "slab",
+then the next `n1`). The transform is the `M ↔ N1` axis swap:
+
+```
+ND source  (M-major: a row is contiguous)            addresses grow →
+                 N0=C0 elems inside each block
+        n1=0        n1=1        n1=2        n1=3
+      ┌─────────┬─────────┬─────────┬─────────┐
+ m=0  │ C0      │ C0      │ C0      │ C0      │   ← row 0 fully contiguous (N elems)
+      ├─────────┼─────────┼─────────┼─────────┤
+ m=1  │ C0      │ C0      │ C0      │ C0      │
+      ├─────────┼─────────┼─────────┼─────────┤
+ ...  │         │         │         │         │
+ m=M-1│ C0      │ C0      │ C0      │ C0      │
+      └─────────┴─────────┴─────────┴─────────┘
+
+                    ── ND→NZ = swap M ↔ N1 ──▼
+
+NZ dest  (N1-major: a whole n1 "slab" of all M rows is contiguous)
+ |◄─────── slab n1=0 = M*C0 ───────►|◄─────── slab n1=1 = M*C0 ───────►| ...
+ ┌────┬────┬─── ─┬────┐              ┌────┬────┬─── ─┬────┐
+ │m=0 │m=1 │ ... │mM-1│              │m=0 │m=1 │ ... │mM-1│               (each cell = one C0)
+ └────┴────┴─────┴────┘              └────┴────┴─────┴────┘
+  ▲                                   ▲
+  base + n1=0 slab                    base + 1·(M*C0)     ← the N1 stride = M·C0 bytes
+                                                            (= M1*M0 in C0 units)
+```
+
+**So the `M*C0` stride *is* the size of one `n1` slab** = `M` rows × `C0` =
+`M1*M0*N0` elements. That is precisely the `vsstb` `block_stride` (§1): stepping one
+block in the vreg (`n1 → n1+1`) jumps a whole `M*C0` slab in UB.
+
 ---
 
 ## 1. Baseline: `vsstb` block-strided scatter (one store = 8 C0 blocks)
@@ -92,6 +128,25 @@ vreg (ND, one m-row):   [C0 n1=0][C0 n1=1][C0 n1=2][C0 n1=3] ...  (up to 8 block
 UB (NZ):  blk0 @ base+0 ; blk1 @ base+M1*M0 ; blk2 @ base+2*M1*M0 ; ...   (C0 units)
 ```
 
+Placed on the `(M, N1, N0=C0)` slab picture from §0.2, one `vsstb` (for a fixed `m`)
+drops **one C0 into each `n1` slab, all at the same `m` offset**, stepping by the
+`M*C0` slab stride:
+
+```
+                  block_stride = M*C0 (one whole n1 slab)
+              ┌───────────────►┬───────────────►┬───────────────►┐
+ vreg[m]:  [C0 n1=0]        [C0 n1=1]        [C0 n1=2]        [C0 n1=3]
+              │                │                │                │
+              ▼                ▼                ▼                ▼
+ NZ:  |◄─ slab n1=0 (M*C0) ─►|◄─ slab n1=1 ─►|◄─ slab n1=2 ─►|◄─ slab n1=3 ─►|
+      [..|m|..............]   [..|m|........]  [..|m|........]  [..|m|........]
+          ▲ base+m*C0             ▲ +1·M*C0        ▲ +2·M*C0        ▲ +3·M*C0
+       (repeat_stride = m*C0 picks the m offset inside every slab)
+```
+
+So `block_stride = M*C0` = the N1 slab size, and `repeat_stride = m*C0` selects
+which row inside each slab this store writes. One `vsstb` = one `m`, all `N1` blocks.
+
 **Bandwidth rule.** `vsstb` is one 9-cycle op that moves up to **8 C0-blocks**. It
 runs at full store bandwidth only when all 8 blocks are live, i.e. when the number
 of C0-blocks the store scatters is **8**. The efficiency question below is entirely
@@ -109,6 +164,18 @@ blocks → **50% store bandwidth wasted**:
 one m-row = 4 C0 (128B)          vsstb capacity = 8 C0 (256B)
 vreg:  [C0 n1=0][C0 n1=1][C0 n1=2][C0 n1=3][  --  ][  --  ][  --  ][  --  ]
         \_______________ 4 live blocks _______________/ \___ 4 idle blocks ___/
+```
+
+On the slab picture (only `N1 = 4` slabs exist), one `vsstb` touches all 4 — but
+that is only half the store's 8-block capacity:
+
+```
+            block_stride = M*C0
+        ┌────────►┬────────►┬────────►┐        (only 4 slabs ⇒ only 4 blocks emitted)
+ vreg[m]: [n1=0]  [n1=1]   [n1=2]   [n1=3]  ·· 4 idle lanes ··
+            ▼        ▼        ▼        ▼
+ NZ:  |◄ slab0 M*C0 ►|◄ slab1 ►|◄ slab2 ►|◄ slab3 ►|
+      [..|m|.......]  [..|m|..] [..|m|..] [..|m|..]
 ```
 
 Any dtype/shape with `N1 < 8` hits this: bf16 N<128, fp32 N<64, etc. The store is
@@ -138,6 +205,17 @@ vreg (2 rows x 4 n1, packed):
         │       │       │        │          │        │      │       │
  vsstb  ▼       ▼       ▼        ▼          ▼        ▼      ▼       ▼   (stride M1_half*M0)
 UB(NZ): all 8 blocks live  →  100% store bandwidth
+```
+
+On the slab picture: reblocking makes each slab **half-height** — `M1_half*M0*C0 =
+(M/M2)*C0` instead of `M*C0` — and there are now `M2*N1 = 8` such slabs. So the
+`block_stride` shrinks from `M` to `M/M2` (C0 units), and one `vsstb` writes one C0
+into all 8 half-slabs at once:
+
+```
+ |◄ m2=0,n1=0 (M/M2·C0) ►|◄ m2=0,n1=1 ►|◄ m2=0,n1=2 ►|◄ m2=0,n1=3 ►|◄ m2=1,n1=0 ►| ... |
+   b=0                     b=1            b=2            b=3            b=4        ... b=7
+   ▲ +0                    ▲ +1·(M/M2·C0) ...  uniform block_stride = M/M2 (C0 units) ...
 ```
 
 **Pros.** Doubles store bandwidth for the small-N case; still one `vsstb` per
