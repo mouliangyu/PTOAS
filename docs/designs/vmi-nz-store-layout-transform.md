@@ -105,6 +105,32 @@ NZ dest  (N1-major: a whole n1 "slab" of all M rows is contiguous)
 `M1*M0*N0` elements. That is precisely the `vsstb` `block_stride` (§1): stepping one
 block in the vreg (`n1 → n1+1`) jumps a whole `M*C0` slab in UB.
 
+### 0.3 Why it is called **NZ** — the Z-order inside one `n1` slab
+
+Zoom into a single `n1` slab. Its contiguous address runs **down the `M*C0`
+dimension**: within each `m` row you go **right** across the `N0 = C0` lanes, then
+drop **down** to the next `m` and go right again — a raster "Z" sweep. That
+`N`-outer / `Z`-inner shape is what **NZ** names.
+
+```
+one n1 slab  (contiguous address ↓ runs along the M*C0 dimension)
+                N0 = C0 lanes  (n0: 0 → C0-1)
+              ┌───────────────────────────►┐
+       m0=0   │  a0  a1  a2  ...      aC0-1 │──┐   go right across C0 …
+              ├────────────────────────────┤  │
+       m0=1   │  b0  b1  b2  ...      bC0-1 │◄─┘   … then down to next m (the "Z")
+              ├────────────────────────────┤
+       m0=2   │  c0  c1  ...                │
+              │        ...                  │
+       m0=M-1 │                             │
+              └────────────────────────────┘
+  address(m0, n0) = m0*C0 + n0      ← contiguous down the slab = the M*C0 run
+```
+
+So "go right `C0`, go down `m`" is the inner Z; stacking `N1` such slabs
+side-by-side (each `M*C0` apart, §0.2) is the outer **N**. The vector store's job is
+to feed each slab's `m*C0` column while hopping `N1` by the `M*C0` slab stride.
+
 ---
 
 ## 1. Baseline: `vsstb` block-strided scatter (one store = 8 C0 blocks)
@@ -151,6 +177,23 @@ which row inside each slab this store writes. One `vsstb` = one `m`, all `N1` bl
 runs at full store bandwidth only when all 8 blocks are live, i.e. when the number
 of C0-blocks the store scatters is **8**. The efficiency question below is entirely
 *"can we keep all 8 blocks busy for this dtype/shape?"*
+
+**Remark — UB bank-conflict padding.** The exact `block_stride = M*C0` (`= M1*M0`
+C0 units) is a power-of-two-ish multiple, so the 8 concurrent C0 writes of one
+`vsstb` tend to land on the **same UB banks** → a store bank conflict that serializes
+the 8 blocks. The standard fix is to **pad each `n1` slab by one C0** so the stride
+becomes odd relative to the bank count:
+
+```
+padded slab stride = (M1*M0 + 1)·C0   =  (16·M1 + 1)·C0        (M0 = 16)
+                   = M*C0  +  one C0 of padding per n1 slab
+```
+
+i.e. the mat tile is allocated with a **padded leading dimension** `(M + 1)` rows
+(in C0 units) instead of `M`, and `block_stride = 16·M1 + 1`. This costs `N1` extra
+C0 of UB per tile but removes the bank conflict. The `+1` padding applies wherever a
+slab stride is used — including §3's half-height slabs (`block_stride = M1_half*M0 +
+1`). The consumer's mat-tile descriptor must use the same padded leading dimension.
 
 ---
 
@@ -345,6 +388,10 @@ Static-shape strategy the compiler selects (all on `vsstb`):
 - **O-NZ.7** Interaction with `repeat_stride`: can a single `vsstb` also stride the
   `m0` rows (using `repeat_stride`) to emit more than one m0 per op, or is that a
   separate loop?
+- **O-NZ.8** UB bank-conflict padding (§1 remark): is the `+1·C0` slab pad
+  (`block_stride = 16·M1 + 1`) always applied, or only when the unpadded stride
+  aliases a bank? Confirm the exact bank count / padding rule, and make the padded
+  leading dimension part of the mat-tile descriptor so the Cube consumer agrees.
 
 ---
 
