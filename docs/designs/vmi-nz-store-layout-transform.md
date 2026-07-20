@@ -279,25 +279,42 @@ group; no register shuffles.
 
 ---
 
-## 4. The `pto.vmi` interface question: who expresses the M2-reblock?
+## 4. The `pto.vmi` interface: default store + opt-in reblock optimization
 
-The interesting design question for §3 is **not** the store lowering (that is just
-`vsstb` with the right `block_stride`) — it is **how the user expresses the
-optimization, and how much the compiler can infer.** The M2-reblock only pays off if
-the register holds `M2` rows so the store can fill 8 blocks. Bringing `M2` rows into
-one register is a **tiling decision**, and per the nxVL philosophy (programmer owns
-the schedule; compiler owns *local* layout) that decision should be **user-visible**,
-while the block scatter / predicate / mask stay **compiler-inferred**. That splits
-the design into two proposals.
+Framing matters here. §4.1 is the **default the surface must support** — the user
+writes the natural per-row store and always gets correct NZ output (possibly at
+half bandwidth). §4.2 is an **opt-in optimization add-on** layered on top for full
+store bandwidth. The design question is only about the add-on: since packing `M2`
+rows is a **tiling decision** (programmer owns the schedule; compiler owns *local*
+layout, per the nxVL philosophy), the user must express it, while the block scatter
+/ predicate / tail stay **compiler-inferred**.
 
-### Proposal A — user assembles a wide logical nxVL; compiler infers the NZ store
+### 4.1 Default (the surface MUST support this) — single-row store
 
-The user loads `M2 = 2` rows into **one wider logical value** and computes on it as
-if it were a flat `128×f32`; the `K = 2` physical fan-out and the NZ store scatter
-are inferred.
+The baseline every kernel gets for free: write the natural per-row value
+(`64×f32`, one m-row) into a `store_nz`, and the compiler emits the NZ `vsstb` — at
+bf16 N=64 that is a 4-block store (**50% BW**), but it is **always correct**, needs
+**no M2 awareness**, and needs **no `tinsert` merge**. This is not a "proposal"; it
+is the mandatory default path. (There is *no* compiler trick that reaches 8 blocks
+from a single 4-block row — an "unpack/deinterleave" only reshuffles the 4 live
+blocks; it cannot invent a second row — so the single-row path is genuinely the
+half-BW one, and that is fine as the default.)
 
 ```mlir
-// User expresses the M2 assembly as a strided group load (a tiling knob):
+%x = pto.vmi.load %ub_src[%off]      : !pto.ptr<f32,ub> -> !pto.vmi.vreg<64xf32>
+%y = pto.vmi.truncf (pto.vmi.mulf %x, %scale) : ... -> !pto.vmi.vreg<64xbf16>
+pto.vmi.store_nz %y, %ub_dst {M, N, ...}     // → 4-block vsstb, 50% BW, no tinsert merge
+```
+
+### 4.2 Optimization add-on (opt-in) — user-assembled M2-reblock
+
+On top of the default, a user who wants full bandwidth **opts in** by assembling
+`M2 = 2` rows into **one wider logical value** and computing on it as a flat
+`128×f32`; the `K = 2` physical fan-out and the NZ store scatter are then inferred.
+Omitting this add-on falls straight back to §4.1.
+
+```mlir
+// User OPTS IN by expressing the M2 assembly as a strided group load (a tiling knob):
 //   2 groups (m2 = 0,1), each 64xf32 = 1 VL, group stride = M1_half*M0*N in UB.
 %x = pto.vmi.group_load %ub_src[%off], %m2_stride {num_groups = 2}
      : !pto.ptr<f32, ub> -> !pto.vmi.vreg<128xf32>          // K=2, two m2 rows
@@ -316,26 +333,11 @@ pto.vmi.store_nz %y, %ub_dst {M, N, m0 = 16, c0 = 32B}
 - **Compiler-inferred (local layout):** the `K = 2` fan-out of the compute/`cvt`, the
   8-block `block_stride`, the per-block predicate, and the tail. The `cvt` and
   elementwise ops never mention M2 — they just see a `128×T` value.
-- **Still user-aware at UB→L1:** because the result is laid down as `M2` vecTile
-  pieces, the programmer merges them into one Cube-input mat tile with `M2`
-  `pto.tinsert` calls (§3 caveat).
+- **Extra cost the add-on introduces:** the result lands as `M2` vecTile pieces, so
+  the programmer merges them into one Cube-input mat tile with `M2` `pto.tinsert`
+  calls (§3 caveat). This bookkeeping only exists *because* the user opted in.
 
-### Proposal B — user stays single-row; compiler does the simple half-BW store
-
-If the user writes the natural per-row value (`64×f32`, one m-row), the compiler
-just emits the 4-block `vsstb` (bf16 N=64) at **50% store bandwidth** — correct and
-simplest, no M2 awareness, no `tinsert` merge. There is *no* compiler trick that
-reaches 8 blocks from a single 4-block row (an "unpack/deinterleave" only reshuffles
-within the 4 live blocks; it cannot invent a second row), so B is genuinely the
-half-BW path.
-
-```mlir
-%x = pto.vmi.load %ub_src[%off]      : !pto.ptr<f32,ub> -> !pto.vmi.vreg<64xf32>
-%y = pto.vmi.truncf (pto.vmi.mulf %x, %scale) : ... -> !pto.vmi.vreg<64xbf16>
-pto.vmi.store_nz %y, %ub_dst {M, N, ...}     // → 4-block vsstb, 50% BW, no tinsert merge
-```
-
-### Division of labor (the recommendation)
+### 4.3 Division of labor
 
 | Concern | Owner | Why |
 |---|---|---|
@@ -344,21 +346,21 @@ pto.vmi.store_nz %y, %ub_dst {M, N, ...}     // → 4-block vsstb, 50% BW, no ti
 | block scatter (`block_stride`), predicate, tail | **compiler** | derived from the value shape + NZ params |
 | UB→L1 mat-tile merge (`tinsert`) | **user** (with sugar) | crosses the C↔V boundary; see O-NZ.3 |
 
-So the interface is: **a strided/grouped load (user picks `M2`) + a `store_nz` that
-carries the NZ params (compiler infers the scatter).** Proposal A is opt-in for the
-full-BW path; omitting the M2 grouping falls back to Proposal B automatically. This
-keeps the "static shape ⇒ inferred branch" property — the compiler selects the
-`block_stride` and 4-vs-8-block form from the logical value's static width and the
-NZ params — **without** the user hand-writing any `PART`/`INTLV`/`block_stride`
-token. The store never needs a register transpose (Appendix A).
+So the interface is: **a `store_nz` that carries the NZ params is the default
+(§4.1); a strided/grouped load (user picks `M2`) is the opt-in add-on (§4.2).**
+Omitting the M2 grouping falls back to the default automatically. This keeps the
+"static shape ⇒ inferred branch" property — the compiler selects the `block_stride`
+and 4-vs-8-block form from the logical value's static width and the NZ params —
+**without** the user hand-writing any `PART`/`INTLV`/`block_stride` token. The store
+never needs a register transpose (Appendix A).
 
 Static-shape strategy the compiler selects (all on `vsstb`):
 
 | Static condition | Strategy | Store |
 |---|---|---|
 | `N1 == 8` (e.g. fp8 N=256, fp32 N=64) | per-row scatter | `vsstb`, `block_stride = M1*M0`, 100% BW |
-| `N1 < 8`, user grouped `M2·N1 == 8` (Prop A) | M2-reblock | `vsstb`, `block_stride = M1_half*M0`, 100% BW |
-| `N1 < 8`, no grouping (Prop B) | single-row | `vsstb`, 4 blocks, 50% BW |
+| `N1 < 8`, user opted into `M2·N1 == 8` grouping (§4.2 add-on) | M2-reblock | `vsstb`, `block_stride = M1_half*M0`, 100% BW |
+| `N1 < 8`, no grouping (§4.1 default) | single-row | `vsstb`, 4 blocks, 50% BW |
 | `M1*M0` overflows `i16` (`M > 32767`) | tile `M`, scalar base advance | `vsstb` per M-tile |
 
 ---
