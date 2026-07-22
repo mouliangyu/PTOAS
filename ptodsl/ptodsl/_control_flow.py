@@ -21,7 +21,6 @@ Public API
 ``const_expr(value)``     – trace-time ``if`` escape hatch for AST rewrite
 """
 
-from ._bootstrap import make_context  # noqa: F401
 from ._runtime_index_ops import coerce_runtime_index
 from ._scalar_coercion import coerce_scalar_to_type
 from ._surface_types import const_expr
