@@ -186,19 +186,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source "${ASCEND_HOME_PATH}/bin/setenv.bash"
-
-          has_ci_third_party_packages() {
-            "$1" - <<'PY'
-          import importlib.util
-
-          missing = [
-              name for name in ("torch", "torch_npu")
-              if importlib.util.find_spec(name) is None
-          ]
-          raise SystemExit(1 if missing else 0)
-          PY
-          }
 
           if [[ ! -x "${CI_SIM_BASE_PYTHON_BIN}" ]]; then
             echo "ERROR: CI_SIM_BASE_PYTHON_BIN is not executable: ${CI_SIM_BASE_PYTHON_BIN}" >&2
@@ -206,11 +193,7 @@ jobs:
           fi
 
           CI_BASE_PYTHON="$(readlink -f "${CI_SIM_BASE_PYTHON_BIN}")"
-          echo "Probing configured CI base Python: ${CI_BASE_PYTHON}"
-          if ! has_ci_third_party_packages "${CI_BASE_PYTHON}"; then
-            echo "ERROR: configured CI base Python must provide torch and torch_npu: ${CI_BASE_PYTHON}" >&2
-            exit 1
-          fi
+          echo "Using configured CI base Python: ${CI_BASE_PYTHON}"
 
           PYTHON_ABI_TAG="$("${CI_BASE_PYTHON}" - <<'PY'
           import sys
