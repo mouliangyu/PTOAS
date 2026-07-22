@@ -115,6 +115,7 @@ jobs:
       CI_SIM_VENV: ${{ github.workspace }}/.work/ci-sim-venv
       CI_PYTHON: ${{ github.workspace }}/.work/ci-sim-venv/bin/python
       CI_BIN_DIR: ${{ github.workspace }}/.work/ci-sim-venv/bin
+      CI_SIM_BASE_PYTHON_BIN: ${{ vars.CI_SIM_BASE_PYTHON_BIN || '/home/mouliangyu/miniconda3/envs/torchnpu310/bin/python' }}
       PIP_REQUIRE_VIRTUALENV: "true"
       VPTO_SIM_WORKSPACE: ${{ github.workspace }}/.work/vpto-sim-ci
       TILELANG_DSL_WORKSPACE: ${{ github.workspace }}/.work/tilelang-dsl-ci
@@ -187,23 +188,6 @@ jobs:
           set -euo pipefail
           source "${ASCEND_HOME_PATH}/bin/setenv.bash"
 
-          add_python_candidate() {
-            local candidate="$1"
-            local resolved
-            [[ -n "${candidate}" ]] || return 0
-            if [[ "${candidate}" != */* ]]; then
-              resolved="$(command -v "${candidate}" 2>/dev/null || true)"
-            else
-              resolved="${candidate}"
-            fi
-            [[ -n "${resolved}" && -x "${resolved}" ]] || return 0
-            resolved="$(readlink -f "${resolved}")"
-            case ":${PYTHON_CANDIDATES[*]}:" in
-              *":${resolved}:"*) return 0 ;;
-            esac
-            PYTHON_CANDIDATES+=("${resolved}")
-          }
-
           has_ci_third_party_packages() {
             "$1" - <<'PY'
           import importlib.util
@@ -216,52 +200,27 @@ jobs:
           PY
           }
 
-          PYTHON_CANDIDATES=()
-          REQUESTED_BASE_PYTHON="${CI_SIM_BASE_PYTHON_BIN:-${PTO_DSL_ST_PYTHON_BIN:-}}"
-          if [[ -n "${REQUESTED_BASE_PYTHON}" ]]; then
-            add_python_candidate "${REQUESTED_BASE_PYTHON}"
-          else
-            add_python_candidate python3
-            shopt -s nullglob
-            for candidate in \
-              /home/*/miniconda3/bin/python3 \
-              /home/*/miniconda3/bin/python \
-              /home/*/anaconda3/bin/python3 \
-              /home/*/anaconda3/bin/python \
-              /home/*/miniconda3/envs/*/bin/python \
-              /home/*/anaconda3/envs/*/bin/python \
-              /opt/conda/envs/*/bin/python
-            do
-              add_python_candidate "${candidate}"
-            done
-            shopt -u nullglob
-          fi
-
-          SELECTED_BASE_PYTHON=""
-          for candidate in "${PYTHON_CANDIDATES[@]}"; do
-            echo "Probing CI base Python package presence: ${candidate}"
-            if has_ci_third_party_packages "${candidate}"; then
-              SELECTED_BASE_PYTHON="${candidate}"
-              break
-            fi
-          done
-
-          if [[ -z "${SELECTED_BASE_PYTHON}" ]]; then
-            echo "ERROR: ci-sim requires an existing Python runtime with torch and torch_npu." >&2
-            echo "ERROR: this workflow intentionally treats them as runner-provided third-party dependencies." >&2
-            echo "ERROR: set CI_SIM_BASE_PYTHON_BIN to a compatible pre-installed interpreter." >&2
+          if [[ ! -x "${CI_SIM_BASE_PYTHON_BIN}" ]]; then
+            echo "ERROR: CI_SIM_BASE_PYTHON_BIN is not executable: ${CI_SIM_BASE_PYTHON_BIN}" >&2
             exit 1
           fi
 
-          PYTHON_ABI_TAG="$("${SELECTED_BASE_PYTHON}" - <<'PY'
+          CI_BASE_PYTHON="$(readlink -f "${CI_SIM_BASE_PYTHON_BIN}")"
+          echo "Probing configured CI base Python: ${CI_BASE_PYTHON}"
+          if ! has_ci_third_party_packages "${CI_BASE_PYTHON}"; then
+            echo "ERROR: configured CI base Python must provide torch and torch_npu: ${CI_BASE_PYTHON}" >&2
+            exit 1
+          fi
+
+          PYTHON_ABI_TAG="$("${CI_BASE_PYTHON}" - <<'PY'
           import sys
           print(f"py{sys.version_info.major}{sys.version_info.minor}")
           PY
           )"
-          BASE_HASH="$(printf '%s' "${SELECTED_BASE_PYTHON}" | sha256sum | cut -c1-12)"
+          BASE_HASH="$(printf '%s' "${CI_BASE_PYTHON}" | sha256sum | cut -c1-12)"
           CI_PYTHON_TAG="${PYTHON_ABI_TAG}-${BASE_HASH}"
 
-          echo "CI_BASE_PYTHON=${SELECTED_BASE_PYTHON}" >> "${GITHUB_ENV}"
+          echo "CI_BASE_PYTHON=${CI_BASE_PYTHON}" >> "${GITHUB_ENV}"
           echo "CI_PYTHON_TAG=${CI_PYTHON_TAG}" >> "${GITHUB_ENV}"
 
       - name: Resolve LLVM directories
