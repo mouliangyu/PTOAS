@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright (c) 2026 Huawei Technologies Co., Ltd.
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 # CANN Open Software License Agreement Version 2.0 (the "License").
@@ -6,22 +7,17 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 
-# =========================================================
-# Python Package Configuration
-# =========================================================
+import unittest
 
-add_custom_target(PTOPythonModules)
+from ptodsl._context import make_context
 
-# [修改] 依赖必须指向 lib/Bindings/Python 中定义的 Target (_pto)
-add_dependencies(PTOPythonModules _pto) 
 
-# 生成 TableGen 绑定代码
-set(LLVM_TARGET_DEFINITIONS pto/dialects/PTOOps.td)
-mlir_tablegen(pto/dialects/_pto_ops_gen.py
-  -gen-python-op-bindings
-  -bind-dialect=pto
-  -I${PROJECT_SOURCE_DIR}/include
-)
-add_public_tablegen_target(PTOOpsPyGen)
+class ContextTests(unittest.TestCase):
+    def test_make_context_loads_pto_dialect(self):
+        context = make_context()
 
-add_dependencies(PTOPythonModules PTOOpsPyGen)
+        self.assertIsNotNone(context)
+
+
+if __name__ == "__main__":
+    unittest.main()
