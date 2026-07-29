@@ -40,6 +40,9 @@
 //   vload  → dispatch by dist_mode/group/block_stride to
 //            load / deinterleave_load / group_broadcast_load{num_groups=1} / ...
 //   vstore → dispatch to store / masked_store / interleave_store / group_store / ...
+//   A full-active continuous store of a compact reduction result is normalized
+//   to a unit-stride group_store.  A full reduction is one logical group, so
+//   its producer is normalized to group=1 before legacy lowering.
 //   Skipped: dist_mode "unpack" (physical widening, no legacy equivalent).
 //
 // Category C4 — static mask creation (3 ops):
@@ -52,11 +55,12 @@
 //   pge  → create_mask(N lanes)
 //   plt  → create_mask(min(rem, L))
 //
-// Category C5 — vector-scalar ops, one-step to legacy (6 ops):
-//   vadds/vmuls/vmaxs/vmins/vshls/vshrs
+// Category C5 — vector-scalar ops, one-step to legacy (5 ops):
+//   vadds/vmaxs/vmins/vshls/vshrs
 //     → broadcast scalar → legacy binary
 //   vshrs selects shrui for unsigned/signless elements and shrsi for
 //   explicitly signed elements.
+//   vmuls is kept unified for direct VMI-to-VPTO lowering.
 //
 // Category C3 — unified load/store (2 ops, dispatch by dist_mode/group):
 //   vload → load / deinterleave_load / group_load
@@ -81,8 +85,8 @@
 //   vprelu  → maxf + minf + mulf + addf
 //   Category C7/C8/C9 bypass mask/pmode synthesis here and skip pmode="merge".
 //
-// Category D — no legacy equivalent (explicitly skipped, 5 ops):
-//   vintlv vdintlv vselr vgatherb vmull
+// Category D — no legacy equivalent (explicitly skipped, 6 ops):
+//   vmuls vintlv vdintlv vselr vgatherb vmull
 //
 //===----------------------------------------------------------------------===//
 
@@ -317,6 +321,35 @@ static bool isAllActiveSeed(Value seed) {
         return ia.getInt() >= maskTy.getElementCount();
   }
   return false;
+}
+
+/// Prepare a direct reduction result for a unit-stride group store.
+///
+/// Explicit grouped reductions already produce one scalar per group.  A full
+/// reduction has the same semantics as a one-group reduction; when the store
+/// is its only consumer, attach group=1 so the producer and store share the
+/// existing group-slot lowering.  The one-use condition avoids changing the
+/// representation expected by unrelated consumers.
+static bool prepareReductionForUnitStrideGroupStore(Value value,
+                                                    int64_t numGroups,
+                                                    OpBuilder &builder) {
+  Operation *producer = value.getDefiningOp();
+  if (!producer || !isa<VMIvcaddOp, VMIvcmaxOp, VMIvcminOp>(producer))
+    return false;
+
+  if (auto group = producer->getAttrOfType<IntegerAttr>("group"))
+    return group.getInt() == numGroups;
+
+  if (numGroups != 1 || !value.hasOneUse())
+    return false;
+
+  auto valueType = cast<VMIVRegType>(value.getType());
+  if (VMILayoutAttr layout = valueType.getLayoutAttr())
+    if (!layout.isGroupSlots() || layout.getNumGroups() != 1)
+      return false;
+
+  producer->setAttr("group", builder.getI64IntegerAttr(1));
+  return true;
 }
 
 /// Lower vcmp to cmpf/cmpi + mask_and.
@@ -644,6 +677,32 @@ static LogicalResult lowerVStore(VMIvStoreOp op, OpBuilder &builder) {
     if (values.empty())
       return failure();
     Value mask = op.getMask().empty() ? Value() : op.getMask().front();
+    auto valueType = cast<VMIVRegType>(values[0].getType());
+    int64_t numGroups = valueType.getElementCount();
+
+    // A compact reduction result contains one scalar per logical group.  A
+    // continuous store of those scalars is therefore a group_store with unit
+    // row stride, which lets the legacy lowering select point-store modes.
+    // Keep masked stores unchanged unless their mask is provably all-active:
+    // group_store writes every group and cannot preserve dynamic predication.
+    bool allActive = !mask || isAllActiveSeed(mask);
+    bool compact = numGroups > 0 && numGroups <= 8;
+
+    // Do not replace an explicitly assigned, incompatible representation;
+    // layout assignment will choose group slots when the type is unassigned.
+    bool layoutCompatible =
+        !valueType.getLayoutAttr() ||
+        (valueType.getLayoutAttr().isGroupSlots() &&
+         valueType.getLayoutAttr().getNumGroups() == numGroups);
+    if (compact && allActive && layoutCompatible &&
+        prepareReductionForUnitStrideGroupStore(values[0], numGroups,
+                                                builder)) {
+      Value unitStride = builder.create<arith::ConstantIndexOp>(loc, 1);
+      builder.create<VMIGroupStoreOp>(loc, values[0], dest, offset, unitStride,
+                                      builder.getI64IntegerAttr(numGroups));
+      op->erase();
+      return success();
+    }
     if (mask) {
       // Masked store path.
       builder.create<VMIMaskedStoreOp>(loc, values[0], dest, offset, mask);
@@ -740,7 +799,7 @@ static LogicalResult lowerPge(VMIPgeOp op, OpBuilder &builder) {
 // Category C5 helpers: vector-scalar ops (one-step to legacy)
 //===----------------------------------------------------------------------===//
 
-/// Lower a unified vector-scalar op (vadds, vmuls, ...) to a legacy chain:
+/// Lower a unified vector-scalar op (vadds, vmaxs, ...) to a legacy chain:
 ///   %brc  = vmi.broadcast %scalar
 ///   %raw  = legacy.op %src, %brc
 template <typename VecScalarOp>
@@ -1165,8 +1224,7 @@ void VMILowerUnifiedToLegacyPass::runOnOperation() {
         // Category C4
         isa<VMIPsetOp, VMIPgeOp, VMIPltOp>(op) ||
         // Category C5
-        isa<VMIAddSOp, VMIMulSOp, VMIMaxSOp, VMIMinSOp, VMIShlSOp,
-            VMIShrSOp>(op) ||
+        isa<VMIAddSOp, VMIMaxSOp, VMIMinSOp, VMIShlSOp, VMIShrSOp>(op) ||
         // Category C6 — unified reduce (partial coverage)
         isa<VMIvcaddOp, VMIvcmaxOp, VMIvcminOp>(op) ||
         // Category C7 — fused multiply-add family → legacy fma
@@ -1178,16 +1236,19 @@ void VMILowerUnifiedToLegacyPass::runOnOperation() {
       worklist.push_back(op);
 
     // Category D — no legacy equivalent (require direct VMIToVPTO lowering):
-    //   plt, vintlv, vdintlv, vselr, vgatherb, vmull
+    //   plt, vmuls, vintlv, vdintlv, vselr, vgatherb, vmull
     // These are intentionally NOT added to the worklist — they flow through
     // to VMIToVPTO which must provide direct 1:N lowering patterns.
-    if (isa<VMIVintlvOp, VMIVdintlvOp, VMIVselrOp,
+    if (isa<VMIMulSOp, VMIVintlvOp, VMIVdintlvOp, VMIVselrOp,
             VMIVgatherbOp, VMIVmullOp>(op)) {
       op->emitRemark("VMI unified op has no legacy equivalent — "
                      "requires direct VMIToVPTO 1:N lowering");
     }
   });
 
+  // Process consumers before producers.  Besides avoiding stale producer
+  // uses, this lets a compact reduction-result vstore normalize a full
+  // reduction to group=1 before the reduction itself is lowered.
   for (Operation *op : llvm::reverse(worklist)) {
     if (!op->getBlock())
       continue;
@@ -1316,17 +1377,6 @@ void VMILowerUnifiedToLegacyPass::runOnOperation() {
         if (isFloatType(elemType))
           return builder.create<VMIAddFOp>(loc, ty, lhs, rhs).getResult();
         return builder.create<VMIAddIOp>(loc, ty, lhs, rhs).getResult();
-      };
-      (void)lowerVecScalar(vop, builder, createLegacy);
-      continue;
-    }
-
-    if (auto vop = dyn_cast<VMIMulSOp>(op)) {
-      Type elemType = getVMIElementType(vop.getSrc());
-      auto createLegacy = [&](Location loc, Type ty, Value lhs, Value rhs) -> Value {
-        if (isFloatType(elemType))
-          return builder.create<VMIMulFOp>(loc, ty, lhs, rhs).getResult();
-        return builder.create<VMIMulIOp>(loc, ty, lhs, rhs).getResult();
       };
       (void)lowerVecScalar(vop, builder, createLegacy);
       continue;

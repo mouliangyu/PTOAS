@@ -1114,6 +1114,10 @@ static FailureOr<std::string> getTileSplitToken(int64_t split) {
     return std::string("TileSplitAxis::TILE_UP_DOWN");
   case 2:
     return std::string("TileSplitAxis::TILE_LEFT_RIGHT");
+  case 3:
+    return std::string("TileSplitAxis::TILE_UP_DOWN_ODD");
+  case 4:
+    return std::string("TileSplitAxis::TILE_LEFT_RIGHT_ODD");
   default:
     return failure();
   }
@@ -5739,6 +5743,17 @@ static void emitConservativeGmFencePipeDrains(
   emitPipeBarrier(rewriter, loc, "PIPE_FIX");
 }
 
+static bool isInVectorKernel(Operation *op) {
+  for (Operation *parent = op->getParentOp(); parent;
+       parent = parent->getParentOp()) {
+    auto kernelKindAttr = parent->getAttrOfType<FunctionKernelKindAttr>(
+        FunctionKernelKindAttr::name);
+    if (kernelKindAttr)
+      return kernelKindAttr.getKernelKind() == FunctionKernelKind::Vector;
+  }
+  return false;
+}
+
 struct PTOBarrierToEmitC : public OpConversionPattern<pto::BarrierOp> {
   using OpConversionPattern<pto::BarrierOp>::OpConversionPattern;
 
@@ -5791,7 +5806,10 @@ struct PTOFenceToEmitC : public OpConversionPattern<FenceOp> {
         op.getScope().getScope() != pto::FenceScope::All)
       return rewriter.notifyMatchFailure(op, "unsupported fence scope");
 
-    emitConservativeGmFencePipeDrains(rewriter, op.getLoc());
+    if (isInVectorKernel(op))
+      emitPipeBarrier(rewriter, op.getLoc(), "PIPE_ALL");
+    else
+      emitConservativeGmFencePipeDrains(rewriter, op.getLoc());
     emitDsbDdr(rewriter, op.getLoc());
     rewriter.eraseOp(op);
     return success();
