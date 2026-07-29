@@ -6461,7 +6461,7 @@ struct PTOSyncSetToEmitC : public OpConversionPattern<mlir::pto::SyncSetOp> {
     return success();
   }
 
-  [[maybe_unused]] PTOArch targetArch;
+  PTOArch targetArch;
 };
 
 struct PTOSyncWaitToEmitC : public OpConversionPattern<mlir::pto::SyncWaitOp> {
@@ -6496,7 +6496,7 @@ struct PTOSyncWaitToEmitC : public OpConversionPattern<mlir::pto::SyncWaitOp> {
     return success();
   }
 
-  [[maybe_unused]] PTOArch targetArch;
+  PTOArch targetArch;
 };
 
 // GetBlockIdxOp Lowering (pto.get_block_idx -> get_block_idx())
