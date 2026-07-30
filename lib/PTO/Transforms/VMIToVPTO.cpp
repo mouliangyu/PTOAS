@@ -3352,6 +3352,19 @@ std::optional<std::string> getPointStoreDistToken(Type elementType) {
   return (Twine("1PT_B") + Twine(elementBits)).str();
 }
 
+/// Size-1 VMI stores must lower to ``1PT_B*`` (4B/2B/1B natural align), not
+/// default NORM ``vsts`` (32B align). Camodel rejects unaligned NORM/VLDS.
+static StringAttr getContiguousStoreDistAttr(ConversionPatternRewriter &rewriter,
+                                             VMIVRegType valueVMIType) {
+  if (valueVMIType.getElementCount() != 1)
+    return nullptr;
+  std::optional<std::string> point =
+      getPointStoreDistToken(valueVMIType.getElementType());
+  if (!point)
+    return nullptr;
+  return rewriter.getStringAttr(*point);
+}
+
 struct VPTOCmpMode {
   StringRef mode;
   std::optional<IntegerType::SignednessSemantics> signedness;
@@ -6981,9 +6994,10 @@ struct OneToNVMIStoreOpPattern : OpConversionPattern<VMIStoreOp> {
             op, "unsupported element type for store mask");
       Value chunkOffset = createChunkOffset(op.getLoc(), *offset,
                                             index * *lanesPerPart, rewriter);
-      rewriter.create<VstsOp>(op.getLoc(),
-                              /*updated_base=*/Type{}, value, *destination,
-                              chunkOffset, /*dist=*/nullptr, *mask);
+      rewriter.create<VstsOp>(
+          op.getLoc(),
+          /*updated_base=*/Type{}, value, *destination, chunkOffset,
+          getContiguousStoreDistAttr(rewriter, valueVMIType), *mask);
     }
 
     rewriter.eraseOp(op);
@@ -7774,9 +7788,10 @@ struct OneToNVMIMaskedStoreOpPattern
             op, "failed to materialize masked_store predicate");
       Value chunkOffset = createChunkOffset(op.getLoc(), *offset,
                                             index * *lanesPerPart, rewriter);
-      rewriter.create<VstsOp>(op.getLoc(),
-                              /*updated_base=*/Type{}, value, *destination,
-                              chunkOffset, /*dist=*/nullptr, *storeMask);
+      rewriter.create<VstsOp>(
+          op.getLoc(),
+          /*updated_base=*/Type{}, value, *destination, chunkOffset,
+          getContiguousStoreDistAttr(rewriter, valueVMIType), *storeMask);
     }
 
     rewriter.eraseOp(op);
