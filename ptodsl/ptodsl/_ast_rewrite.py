@@ -1147,7 +1147,15 @@ class _ControlFlowRewriter:
         dynamic_body.extend(
             ast.Assign(
                 targets=[_name(name, ast.Store())],
-                value=ast.Attribute(value=_name(branch_name), attr=name, ctx=ast.Load()),
+                value=ast.Call(
+                    func=ast.Attribute(
+                        value=_name(branch_name),
+                        attr="get",
+                        ctx=ast.Load(),
+                    ),
+                    args=[ast.Constant(value=name)],
+                    keywords=[],
+                ),
             )
             for name in merge_names
         )

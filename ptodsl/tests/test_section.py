@@ -120,6 +120,18 @@ def lexical_section_rebinding_probe():
         pto.wait_flag("MTE2", "S", event_id=event_id)
 
 
+@pto.jit(target="a5", mode="explicit")
+def lexical_section_conditional_rebinding_probe():
+    one = pto.const(1, dtype=pto.i32)
+    with pto.section("cube"):
+        value = pto.const(0, dtype=pto.i32)
+        if pto.get_block_idx() < one:
+            value = one
+        else:
+            value = pto.const(2, dtype=pto.i32)
+        pto.wait_flag("S", "MTE2", event_id=value)
+
+
 @pto.jit(target="a5", mode="explicit", ast_rewrite=False)
 def lexical_section_rebinding_no_rewrite_probe():
     event_id = pto.const(1, dtype=pto.i32)
@@ -197,6 +209,10 @@ def main() -> None:
     lexical_text = lexical_section_rebinding_probe.compile().mlir_text()
     assert lexical_text.count("pto.section.cube {") == 1
     assert lexical_text.count("pto.section.vector {") == 1
+
+    conditional_lexical_text = lexical_section_conditional_rebinding_probe.compile().mlir_text()
+    assert conditional_lexical_text.count("pto.section.cube {") == 1
+    assert "scf.if" in conditional_lexical_text
 
     no_rewrite_text = lexical_section_rebinding_no_rewrite_probe.compile().mlir_text()
     vector_start = no_rewrite_text.index("pto.section.vector {")
