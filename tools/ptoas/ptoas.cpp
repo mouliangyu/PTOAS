@@ -2746,6 +2746,10 @@ static void prepareVPTOForEmission(PassManager &pm) {
       pto::createPTOUnrollSIMTForPass());
   kernelModulePM.addPass(createSCCPPass());
   kernelModulePM.addPass(createCanonicalizerPass());
+  // Complete inference for direct VPTO input and VPTO operations introduced
+  // after the early VMI inference. Existing pto.vecscope regions are skipped.
+  kernelModulePM.addNestedPass<func::FuncOp>(
+      pto::createPTOInferVPTOVecScopePass());
   if (enableVecScopeMemBar)
     kernelModulePM.addNestedPass<func::FuncOp>(
         pto::createPTOInsertVecScopeMemBarPass());

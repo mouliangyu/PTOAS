@@ -8,7 +8,7 @@
 
 //===- PTOInferVPTOVecScope.cpp ------------------------------------------===//
 //
-// VPTO automatic vecscope inference.
+// VMI/VPTO automatic vecscope inference.
 //
 //===----------------------------------------------------------------------===//
 
@@ -62,7 +62,8 @@ static LogicalResult inferVecScopesInRegion(Region &region,
                                             MLIRContext *context);
 
 static bool isVecScopeType(Type type) {
-  return isa<pto::VRegType, pto::MaskType, pto::AlignType>(type);
+  return isa<pto::VRegType, pto::MaskType, pto::AlignType,
+             pto::VMIVRegType, pto::VMIMaskType>(type);
 }
 
 static bool isPTOOperation(Operation *op) {
@@ -90,18 +91,25 @@ static bool isCloneableMaskProducer(Operation *op) {
   return isa<pto::PsetB8Op, pto::PsetB16Op, pto::PsetB32Op, pto::PgeB8Op,
              pto::PgeB16Op, pto::PgeB32Op, pto::PltB8Op, pto::PltB16Op,
              pto::PltB32Op, pto::PandOp, pto::PorOp, pto::PnotOp,
-             pto::PintlvB8Op, pto::PintlvB16Op, pto::PintlvB32Op>(op);
+             pto::PintlvB8Op, pto::PintlvB16Op, pto::PintlvB32Op,
+             pto::VMIPsetOp, pto::VMIPgeOp, pto::VMIPltOp,
+             pto::VMIMaskAndOp, pto::VMIMaskOrOp, pto::VMIMaskXOrOp,
+             pto::VMIMaskNotOp, pto::VMICreateMaskOp,
+             pto::VMICreateGroupMaskOp, pto::VMIConstantMaskOp>(op);
 }
 
 static bool isCloneableScalarBroadcastProducer(Operation *op) {
   if (isa<pto::VbrOp>(op))
+    return true;
+  if (isa<pto::VMIVbrcOp, pto::VMIBroadcastOp>(op))
     return true;
   auto vdup = dyn_cast<pto::VdupOp>(op);
   return vdup && !isa<pto::VRegType>(vdup.getInput().getType());
 }
 
 static bool isIndexedVectorMemoryConsumer(Operation *op) {
-  return isa<pto::Vgather2Op, pto::Vgather2BcOp, pto::VscatterOp>(op);
+  return isa<pto::Vgather2Op, pto::Vgather2BcOp, pto::VscatterOp,
+             pto::VMIGatherOp, pto::VMIScatterOp>(op);
 }
 
 static bool hasOnlyIndexedVectorMemoryUsers(Operation *op) {
@@ -119,7 +127,8 @@ static bool hasOnlyIndexedVectorMemoryUsers(Operation *op) {
 }
 
 static bool isCloneableIndexedMemoryIndexProducer(Operation *op) {
-  return isa<pto::VciOp, pto::VandOp>(op) &&
+  return isa<pto::VciOp, pto::VandOp, pto::VMIVciOp,
+             pto::VMIMaskAndOp>(op) &&
          hasOnlyIndexedVectorMemoryUsers(op);
 }
 
@@ -135,7 +144,9 @@ static bool isCloneableSharedProducer(Operation *op) {
 }
 
 static bool isVectorScopeBoundaryOperation(Operation *op) {
-  return isa<pto::BarrierOp, pto::BarrierSyncOp>(op);
+  return isa<pto::SetFlagOp, pto::WaitFlagOp, pto::SetFlagDynOp,
+             pto::WaitFlagDynOp, pto::BarrierOp, pto::BarrierSyncOp,
+             pto::MteOpInterface>(op);
 }
 
 static bool isPureAddressOperation(Operation *op) {
@@ -388,7 +399,8 @@ static bool isSeparatedByInferenceBoundary(Operation *producer,
 
 static bool shouldCloneSharedResult(OpResult result) {
   Type type = result.getType();
-  return isa<pto::MaskType, pto::VRegType>(type);
+  return isa<pto::MaskType, pto::VRegType, pto::VMIMaskType,
+             pto::VMIVRegType>(type);
 }
 
 static void cloneSharedProducers(Block &block, MLIRContext *context) {
@@ -517,7 +529,7 @@ emitEscapingVectorScopeValueError(const EscapingMovedValue &escapingValue) {
 
   InFlightDiagnostic diag = producer->emitOpError()
                             << "cannot infer resultless pto.vecscope because "
-                               "VPTO vector-scope data cannot have external "
+                               "VMI/VPTO vector-scope data cannot have external "
                                "users";
   if (escapingValue.value)
     diag << "; escaping value type is " << escapingValue.value.getType();
