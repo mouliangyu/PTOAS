@@ -723,6 +723,18 @@ public:
   FailureOr<SmallVector<VMILoadLayoutFact, mlir::pto::kValue4>>
   getLoadLayoutFacts(VMIVRegType resultType,
                      std::string *reason = nullptr) const;
+
+  /// Every dense store layout the store table admits for \p valueType's element
+  /// type and count, in table order, deduplicated by layout.  Reconstructed
+  /// from getStoreLayoutFact over upstream's kDenseStoreLayoutPatterns without
+  /// requiring an assigned value layout.  The fork's three extra preferred
+  /// "full-width contiguous" rows are deliberately not injected: for this
+  /// enumeration they are duplicates of upstream's {8,16,32}-bit contiguous row,
+  /// and upstream's own getPreferredStoreLayoutFact is the only query they would
+  /// change.
+  FailureOr<SmallVector<VMIStoreLayoutFact, mlir::pto::kValue4>>
+  getStoreLayoutFacts(VMIVRegType valueType,
+                      std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto

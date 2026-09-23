@@ -57,4 +57,40 @@ VMILayoutSupport::getLoadLayoutFacts(VMIVRegType resultType,
   return facts;
 }
 
+FailureOr<SmallVector<VMIStoreLayoutFact, mlir::pto::kValue4>>
+VMILayoutSupport::getStoreLayoutFacts(VMIVRegType valueType,
+                                      std::string *reason) const {
+  auto fail = [&](const Twine &message)
+      -> FailureOr<SmallVector<VMIStoreLayoutFact, 4>> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+
+  SmallVector<VMIStoreLayoutFact, mlir::pto::kValue4> facts;
+  for (const DenseMemoryLayoutPattern &pattern : kDenseStoreLayoutPatterns) {
+    if (!matchesElementBitsPattern(pattern.elementBits,
+                                   valueType.getElementType())) {
+      continue;
+    }
+    if (!matchesElementCountPattern(pattern.elementCounts,
+                                    valueType.getElementCount())) {
+      continue;
+    }
+    VMILayoutAttr layout =
+        materializeLayoutPattern(valueType.getContext(), pattern.layout);
+    if (!layout || llvm::any_of(facts, [&](const VMIStoreLayoutFact &fact) {
+          return fact.valueLayout == layout;
+        })) {
+      continue;
+    }
+    facts.push_back(VMIStoreLayoutFact{layout});
+  }
+  if (facts.empty()) {
+    return fail("value type does not match a supported dense store table row");
+  }
+  return facts;
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC
