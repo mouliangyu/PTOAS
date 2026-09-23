@@ -1429,6 +1429,25 @@ VMILayoutRelationProvider::enumerateRelations(
       }
     }
 
+    // The cast is queried from both sides, exactly as the pass' own
+    // mask-granularity transfer does: a relation is also legal when a consumer
+    // pins the *result* layout and the table row is reached through it.  The
+    // shared table is asymmetric on purpose - for mb32 -> mb16 at 128 lanes the
+    // rows are {mb32, mb16, d(2), c()}, {mb32, mb16, c(), ls(2)} and
+    // {mb32, mb16, d(4), d(2)} - so a consumer that can only take a contiguous
+    // b16 predicate is reachable solely through the result side.  Querying the
+    // source side alone leaves that consumer unsatisfiable.
+    SmallVector<VMILayoutAttr, mlir::pto::kValue4> resultCandidates;
+    if (explicitResult) {
+      resultCandidates.push_back(explicitResult);
+    } else {
+      for (VMILayoutAttr layout : polymorphicLayouts) {
+        if (layout && !llvm::is_contained(resultCandidates, layout)) {
+          resultCandidates.push_back(layout);
+        }
+      }
+    }
+
     SmallVector<VMILayoutOpRelation, mlir::pto::kValue4> relations;
     for (VMILayoutAttr sourceLayout : sourceCandidates) {
       auto facts = supports.getMaskGranularityCastLayoutFactsForLayout(
@@ -1438,6 +1457,24 @@ VMILayoutRelationProvider::enumerateRelations(
       }
       for (const auto &fact : *facts) {
         if (explicitResult && fact.resultLayout != explicitResult) {
+          continue;
+        }
+        VMILayoutOpRelation relation{op,
+                                     {operandPort(0, fact.sourceLayout),
+                                      resultPort(0, fact.resultLayout)},
+                                     false,
+                                     fact.intrinsicRearrangementCost};
+        appendReachableUniqueRelation(relations, std::move(relation), supports);
+      }
+    }
+    for (VMILayoutAttr resultLayout : resultCandidates) {
+      auto facts = supports.getMaskGranularityCastLayoutFactsForLayout(
+          source, result, VMICastLayoutPort::Result, resultLayout);
+      if (failed(facts)) {
+        continue;
+      }
+      for (const auto &fact : *facts) {
+        if (explicitSource && fact.sourceLayout != explicitSource) {
           continue;
         }
         VMILayoutOpRelation relation{op,
