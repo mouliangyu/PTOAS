@@ -457,4 +457,58 @@ VMILayoutSupport::getPreferredVchistLayoutFact(VMIVchistOp op,
                                              "vchist", reason);
 }
 
+/// True when the scalar broadcast load path can read this element width.  A
+/// slots = 1 group slot holds one group value that a consumer broadcasts, so it
+/// materializes as one scalar broadcast load per slot.  The lowering gates on the
+/// same element-width rule; keep it in one place.
+static bool isScalarBroadcastLoadElementType(Type elementType) {
+  unsigned elementBits = pto::getPTOStorageElemBitWidth(elementType);
+  return elementBits == 8 || elementBits == 16 || elementBits == 32;
+}
+
+FailureOr<VMIGroupSlotLayoutFact>
+VMILayoutSupport::getGroupSlotLoadLayoutFact(VMIVRegType resultType,
+                                             Value sourceGroupStride,
+                                             int64_t numGroups,
+                                             std::string *reason) const {
+  auto fail = [&](const Twine &message) -> FailureOr<VMIGroupSlotLayoutFact> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+
+  VMILayoutAttr layout = resultType.getLayoutAttr();
+  if (!layout) {
+    return fail("requires assigned result layout");
+  }
+
+  if (!isSupportedGroupSlotMemoryLayout(layout, numGroups)) {
+    return fail("result layout does not match a supported group_slot_load "
+                "table row");
+  }
+
+  std::optional<int64_t> stride = getConstantIndexValue(sourceGroupStride);
+  if (layout.getSlots() == 8) {
+    if (sourceGroupStride && (!stride || *stride != 1)) {
+      return fail("slots=8 group_slot_load requires constant unit "
+                  "source_group_stride");
+    }
+  } else if (layout.getSlots() == 1 && sourceGroupStride) {
+    if (!isScalarBroadcastLoadElementType(resultType.getElementType())) {
+      return fail("slots=1 group_slot_load requires an 8/16/32-bit element "
+                  "type so each slot can be read by a scalar broadcast load");
+    }
+    // Each slot is read from its own element address, so the group stride has
+    // to be a known positive constant.  A scalar broadcast load has no 32B
+    // block-alignment requirement, so no divisibility rule applies here.
+    if (!stride || *stride <= 0) {
+      return fail("slots=1 group_slot_load requires constant positive "
+                  "source_group_stride");
+    }
+  }
+
+  return VMIGroupSlotLayoutFact{layout, numGroups, layout.getSlots()};
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC

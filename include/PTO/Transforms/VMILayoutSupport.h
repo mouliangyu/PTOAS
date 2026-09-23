@@ -841,6 +841,23 @@ public:
   FailureOr<VMIHistogramLayoutFact>
   getPreferredVchistLayoutFact(VMIVchistOp op,
                                std::string *reason = nullptr) const;
+
+  /// Stride-aware group_slot_load fact, the fork's signature.  Upstream's
+  /// getGroupSlotLoadLayoutFact(resultType, numGroups, reason) is left untouched;
+  /// this overload adds the source_group_stride checks the fork needs and that
+  /// upstream's query does not make, so no upstream caller's acceptance changes:
+  /// every added check is guarded by "the stride operand is present", so the two
+  /// queries agree wherever upstream calls them, and only the solver -- which
+  /// always has the operand -- sees the stricter fork rule.
+  ///
+  /// slots = 8 reads one whole group per block load and therefore requires a
+  /// constant unit stride; slots = 1 reads each slot from its own element address
+  /// with a scalar broadcast load, which needs an 8/16/32-bit element type and a
+  /// constant positive stride but has no block-alignment requirement.
+  FailureOr<VMIGroupSlotLayoutFact>
+  getGroupSlotLoadLayoutFact(VMIVRegType resultType, Value sourceGroupStride,
+                             int64_t numGroups,
+                             std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto
