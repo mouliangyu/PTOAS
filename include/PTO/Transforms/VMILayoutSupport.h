@@ -703,6 +703,26 @@ public:
   LogicalResult
   getSameLayoutRelationSupport(Operation *op, VMILayoutAttr layout,
                                std::string *reason = nullptr) const;
+
+  //===--------------------------------------------------------------------===//
+  // Queries the costed layout solver drives.
+  //
+  // The planner enumerates *candidate* relations instead of validating one
+  // assigned relation, so it needs the full fact set of a table (every row the
+  // shape admits) rather than the single row an assigned layout selects.  These
+  // queries are additive: no upstream pass calls them, so they cannot widen or
+  // narrow any decision upstream's own layout path takes.  Where upstream has a
+  // per-layout entry point the body below is reconstructed from it, so the set
+  // of legal relations stays defined by upstream's tables and pattern DSL.
+  //===--------------------------------------------------------------------===//
+
+  /// Every dense load layout the load table admits for \p resultType's element
+  /// type and count, in table order, deduplicated by layout.  Reconstructed
+  /// from getLoadLayoutFact over the same kDenseLoadLayoutPatterns rows without
+  /// requiring an assigned result layout.
+  FailureOr<SmallVector<VMILoadLayoutFact, mlir::pto::kValue4>>
+  getLoadLayoutFacts(VMIVRegType resultType,
+                     std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto

@@ -2366,11 +2366,13 @@ VMILayoutSupport::getVchistSupport(VMIVchistOp op, std::string *reason) const {
 // Textual include units that keep this file under the source-size gate: the
 // width-changing bitcast queries, the direction-spine-scoped cast layout
 // queries, the op-qualified relation support queries the layout cost model
-// reads, and the vexpdif layout queries.
+// reads, the vexpdif layout queries, and the candidate-enumerating queries the
+// costed layout solver drives.
 #include "VMILayoutSupportBitcast.inc"
 #include "VMILayoutSupportSpineScoped.inc"
 #include "VMILayoutSupportRelationQueries.inc"
 #include "VMILayoutSupportVexpdifQueries.inc"
+#include "VMILayoutSupportSolverQueries.inc"
 
 } // namespace pto
 } // namespace mlir
