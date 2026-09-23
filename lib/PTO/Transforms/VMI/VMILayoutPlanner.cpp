@@ -1368,6 +1368,76 @@ VMILayoutRelationProvider::enumerateRelations(
                                    sourceType.getElementCount(),
                                    sourceType.getElementType(), layout));
     }
+    VMILayoutAttr annotatedSource = sourceType.getLayoutAttr();
+    VMILayoutAttr annotatedResult = resultType.getLayoutAttr();
+    // A pair the IR states is the relation of record for its operation while
+    // the table has a row for it: it is not a pair the solver invented, so the
+    // solver's own relation gate has no authority over it, and it must not be
+    // out-competed either - it inserts no ensure_layout, so under our own layer
+    // ordering it is strictly cheaper than any alternative that materializes
+    // one.  Every other pair keeps going through the gate unchanged.
+    if (annotatedSource && annotatedResult) {
+      bool annotatedPairIsLive = sameWidthNumericCast;
+      if (!annotatedPairIsLive) {
+        std::string annotatedReason;
+        annotatedPairIsLive = succeeded(supports.getCastLayoutFactForLayouts(
+            sourceType, resultType, annotatedSource, annotatedResult,
+            &annotatedReason));
+      }
+      if (annotatedPairIsLive) {
+        SmallVector<VMILayoutOpRelation, mlir::pto::kValue4> annotated;
+        appendReachableUniqueRelation(
+            annotated,
+            VMILayoutOpRelation{op,
+                                {operandPort(0, annotatedSource),
+                                 resultPort(0, annotatedResult)},
+                                /*directProducer=*/false},
+            supports);
+        if (!annotated.empty()) {
+          return annotated;
+        }
+      }
+    }
+    // A cast is also reachable from its result: the pass' own cast transfer
+    // queries the table for whichever side changed, so an annotated result
+    // states which rows apply.  Those rows are the IR's own consequence rather
+    // than a solver choice, so the solver's gate is not applied to them.
+    if (!sameWidthNumericCast) {
+      SmallVector<VMILayoutAttr, mlir::pto::kValue4> resultCandidates;
+      rememberLayout(annotatedResult, resultCandidates);
+      for (VMILayoutAttr layout : polymorphicLayouts) {
+        rememberLayout(layout, resultCandidates);
+      }
+      for (VMILayoutAttr resultLayout : resultCandidates) {
+        auto facts = supports.getCastLayoutFactsForLayout(
+            sourceType, resultType, VMICastLayoutPort::Result, resultLayout);
+        if (failed(facts)) {
+          continue;
+        }
+        for (const VMICastLayoutFact &fact : *facts) {
+          if (!annotatedResult &&
+              failed(supports.validateCastOperationRelation(
+                  op, fact.sourceLayout, fact.resultLayout))) {
+            continue;
+          }
+          uint64_t preferencePenalty =
+              succeeded(preferred) &&
+                      (fact.sourceLayout != preferred->sourceLayout ||
+                       fact.resultLayout != preferred->resultLayout)
+                  ? 1
+                  : 0;
+          appendReachableUniqueRelation(
+              relations,
+              VMILayoutOpRelation{op,
+                                  {operandPort(0, fact.sourceLayout),
+                                   resultPort(0, fact.resultLayout)},
+                                  /*directProducer=*/false,
+                                  fact.intrinsicRearrangementCost,
+                                  preferencePenalty},
+              supports);
+        }
+      }
+    }
     if (relations.empty()) {
       return failure();
     }
