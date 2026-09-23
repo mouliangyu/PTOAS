@@ -93,4 +93,91 @@ VMILayoutSupport::getStoreLayoutFacts(VMIVRegType valueType,
   return facts;
 }
 
+FailureOr<SmallVector<VMICastLayoutFact, mlir::pto::kValue4>>
+VMILayoutSupport::getCastLayoutFacts(VMIVRegType sourceType,
+                                     VMIVRegType resultType,
+                                     std::string *reason) const {
+  auto fail = [&](const Twine &message)
+      -> FailureOr<SmallVector<VMICastLayoutFact, 4>> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+
+  auto [sourceBits, resultBits] = getCastElementBits(sourceType, resultType);
+  MLIRContext *ctx = sourceType.getContext();
+
+  // A group-slot cast carries its group count on the type; the enumeration has
+  // no single assigned layout to read it from, so it comes from whichever side
+  // is a group-slot layout.  Upstream's per-layout entry point derives the same
+  // count from its port layout, which is a materialized source layout here.
+  int64_t numGroups = 0;
+  if (VMILayoutAttr sourceLayout = sourceType.getLayoutAttr();
+      sourceLayout && sourceLayout.isGroupSlots()) {
+    numGroups = sourceLayout.getNumGroups();
+  }
+  if (VMILayoutAttr resultLayout = resultType.getLayoutAttr();
+      resultLayout && resultLayout.isGroupSlots()) {
+    if (numGroups != 0 && numGroups != resultLayout.getNumGroups()) {
+      return fail("source/result group-slot layouts require matching "
+                  "num_groups");
+    }
+    numGroups = resultLayout.getNumGroups();
+  }
+
+  // The shared funnel filters by port layout, so drive it once per source
+  // layout this width pair can materialize.  Two rows that agree on the source
+  // layout are answered together by one call, so no relation is returned twice.
+  SmallVector<VMILayoutAttr, mlir::pto::kValue4> sourceLayouts;
+  for (const LegalCastLayoutPattern &pattern : kLegalCastLayoutPatterns) {
+    if (!matchesElementBitsPattern(pattern.sourceBits, sourceBits) ||
+        !matchesElementBitsPattern(pattern.resultBits, resultBits) ||
+        !matchesCastTypeClass(pattern.typeClass, sourceType.getElementType(),
+                              resultType.getElementType())) {
+      continue;
+    }
+    VMILayoutAttr sourceLayout =
+        materializeLayoutPattern(ctx, pattern.sourceLayout, numGroups);
+    if (!sourceLayout ||
+        llvm::any_of(sourceLayouts, [&](VMILayoutAttr seen) {
+          return seen == sourceLayout;
+        })) {
+      continue;
+    }
+    sourceLayouts.push_back(sourceLayout);
+  }
+
+  SmallVector<VMICastLayoutFact, mlir::pto::kValue4> facts;
+  for (VMILayoutAttr sourceLayout : sourceLayouts) {
+    FailureOr<SmallVector<VMICastLayoutFact, mlir::pto::kValue4>> rowFacts =
+        getCastLayoutFactsForLayout(sourceType, resultType,
+                                    VMICastLayoutPort::Source, sourceLayout,
+                                    /*reason=*/nullptr);
+    if (failed(rowFacts)) {
+      continue;
+    }
+    for (const VMICastLayoutFact &fact : *rowFacts) {
+      // A row whose intrinsic rearrangement cost cannot be derived is not a
+      // candidate for the costed planner: every candidate is priced.  This is
+      // the fork's own rule (fork VMILayoutSupport.cpp:2315-2319) and it lives
+      // here, in the solver-driven enumeration, never in the shared funnel,
+      // where dropping a row would narrow upstream's own decisions (plan 11.5).
+      FailureOr<int64_t> intrinsicCost = getCastIntrinsicRearrangementCost(
+          sourceType, resultType, fact.sourceLayout, fact.resultLayout);
+      if (failed(intrinsicCost)) {
+        continue;
+      }
+      VMICastLayoutFact priced = fact;
+      priced.intrinsicRearrangementCost = *intrinsicCost;
+      facts.push_back(priced);
+    }
+  }
+
+  if (facts.empty()) {
+    return fail("requires a legal cast relation for the source/result types");
+  }
+  return facts;
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC

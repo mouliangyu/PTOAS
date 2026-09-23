@@ -735,6 +735,21 @@ public:
   FailureOr<SmallVector<VMIStoreLayoutFact, mlir::pto::kValue4>>
   getStoreLayoutFacts(VMIVRegType valueType,
                       std::string *reason = nullptr) const;
+
+  /// Every legal cast relation for the source/result element types, keyed on the
+  /// source side.  Reconstructed from getCastLayoutFactsForLayout by driving it
+  /// once per source layout the legal cast table can materialize for the width
+  /// pair, so the relations are exactly the ones upstream's shared cast funnel
+  /// defines (including its CastTypeClass constraint) and upstream's table stays
+  /// the single source of truth.
+  ///
+  /// Two fork behaviours are preserved because this entry point belongs to the
+  /// solver, not to a shared funnel (plan 11.5): the group count is taken from
+  /// whichever side carries a group-slot layout, and a row whose intrinsic
+  /// rearrangement cost cannot be derived is not a candidate.
+  FailureOr<SmallVector<VMICastLayoutFact, mlir::pto::kValue4>>
+  getCastLayoutFacts(VMIVRegType sourceType, VMIVRegType resultType,
+                     std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto
