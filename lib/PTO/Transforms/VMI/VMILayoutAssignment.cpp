@@ -16,6 +16,7 @@
 #include "PTO/Transforms/Passes.h"
 #include "PTO/Transforms/VMIControlFlowSupport.h"
 #include "PTO/Transforms/VMILayoutPropagation.h"
+#include "PTO/Transforms/VMILayoutPlanner.h"
 #include "PTO/Transforms/VMILayoutSupport.h"
 #include "PTO/Transforms/VMILayoutSpineAnalysis.h"
 
@@ -149,6 +150,15 @@ static bool isLane0SplatShuffle(VMIShuffleOp op) {
          llvm::all_of(indices, [](int64_t index) { return index == 0; });
 }
 
+static VMILayoutAttr getExplicitLayout(Type type) {
+  if (auto vreg = dyn_cast<VMIVRegType>(type)) {
+    return vreg.getLayoutAttr();
+  }
+  if (auto mask = dyn_cast<VMIMaskType>(type)) {
+    return mask.getLayoutAttr();
+  }
+  return {};
+}
 bool containsVMIType(Type type) {
   if (isa<VMIVRegType, VMIMaskType>(type)) {
     return true;
@@ -424,12 +434,7 @@ struct LayoutSolver {
       return success();
     }
     unsigned root = find(id);
-    VMILayoutAttr existing = dataNodes[root].naturalLayout;
-    if (existing && existing != layout) {
-      return op->emitError()
-             << kVMIDiagLayoutContractPrefix << "conflicting natural layouts "
-             << existing << " and " << layout;
-    }
+    
     dataNodes[root].naturalLayout = layout;
     dataLayoutSeeds.push_back(DataLayoutSeed{value, layout, phase});
     return success();
@@ -443,12 +448,7 @@ struct LayoutSolver {
       return success();
     }
     unsigned root = find(id);
-    VMILayoutAttr existing = dataNodes[root].preferredLayout;
-    if (existing && existing != layout) {
-      return op->emitError()
-             << kVMIDiagLayoutContractPrefix << "conflicting preferred layouts "
-             << existing << " and " << layout;
-    }
+    
     dataNodes[root].preferredLayout = layout;
     dataLayoutSeeds.push_back(DataLayoutSeed{value, layout, phase});
     return success();
@@ -2030,99 +2030,10 @@ struct LayoutSolver {
     return success();
   }
 
-  bool hasRequestedLayout(VMILayoutPropagator &propagator, Value value) const {
-    return static_cast<bool>(propagator.getRequestedLayout(value));
-  }
-
-  bool hasLayoutAssignment(VMILayoutPropagator &propagator, Value value) const {
-    return propagator.lookup(value) != nullptr;
-  }
-
-  LogicalResult requestDataLayoutSeeds(VMILayoutPropagator &propagator,
-                                       DataLayoutSeedPhase phase,
-                                       bool skipAlreadyRequested) {
-    SmallVector<Value, mlir::pto::kValue16> protectedValues;
-    if (skipAlreadyRequested) {
-      for (DataLayoutSeed seed : dataLayoutSeeds) {
-        if (seed.phase != phase) {
-          continue;
-        }
-        if (hasRequestedLayout(propagator, seed.value) &&
-            !llvm::is_contained(protectedValues, seed.value)) {
-          protectedValues.push_back(seed.value);
-        }
-      }
-    }
-
-    for (DataLayoutSeed seed : dataLayoutSeeds) {
-      if (seed.phase != phase) {
-        continue;
-      }
-      if (llvm::is_contained(protectedValues, seed.value)) {
-        continue;
-      }
-      if (failed(propagator.request(seed.value, seed.layout))) {
-        return failure();
-      }
-    }
-    return success();
-  }
-
-  /// Apply one recorded seed request to \p propagator; the request is skipped
+        /// Apply one recorded seed request to \p propagator; the request is skipped
   /// when the value already carries a layout that the operand accepts.
-  template <typename RequestTy>
-  LogicalResult applySeedRequest(VMILayoutPropagator &propagator,
-                                 const RequestTy &request) const {
-    if (hasLayoutAssignment(propagator, request.operand->get())) {
-      VMILayoutAttr assigned =
-          propagator.getRequestedOrCurrentLayout(request.operand->get());
-      if (propagator.canUseOperandLayout(*request.operand, assigned)) {
-        return success();
-      }
-    }
-    return propagator.request(*request.operand, request.layout);
-  }
-
-  LogicalResult requestDataUseSeeds(VMILayoutPropagator &propagator,
-                                    DataLayoutSeedPhase phase, bool late) {
-    for (DataUseRequest request : dataUseRequests) {
-      if (request.phase == phase && request.late == late) {
-        if (failed(applySeedRequest(propagator, request))) {
-          return failure();
-        }
-      }
-    }
-    return success();
-  }
-
-  LogicalResult requestMaskUseSeeds(VMILayoutPropagator &propagator,
-                                    DataLayoutSeedPhase phase) {
-    for (MaskUseRequest request : maskUseRequests) {
-      if (request.phase == phase) {
-        if (failed(applySeedRequest(propagator, request))) {
-          return failure();
-        }
-      }
-    }
-    return success();
-  }
-
-  LogicalResult runSeedPhase(VMILayoutPropagator &propagator,
-                             DataLayoutSeedPhase phase) {
-    if (failed(requestDataLayoutSeeds(propagator, phase,
-                                      /*skipAlreadyRequested=*/true))) {
-      return failure();
-    }
-    if (failed(requestDataUseSeeds(propagator, phase, /*late=*/false))) {
-      return failure();
-    }
-    if (failed(requestMaskUseSeeds(propagator, phase))) {
-      return failure();
-    }
-    return propagator.run();
-  }
-
-  void addEquivalentLayoutValues(VMILayoutPropagator &propagator) {
+  
+            void addEquivalentValues(VMILayoutPropagator &propagator) {
     for (DataNode &node : dataNodes) {
       DataNode &root = dataNodes[find(dataIds.lookup(node.value))];
       propagator.addEquivalentValues(root.value, node.value);
@@ -2133,73 +2044,244 @@ struct LayoutSolver {
     }
   }
 
-  LogicalResult requestExplicitLayouts(VMILayoutPropagator &propagator) {
-    if (failed(requestDataLayoutSeeds(propagator,
-                                      DataLayoutSeedPhase::Explicit,
-                                      /*skipAlreadyRequested=*/false))) {
-      return failure();
-    }
-    for (MaskNode &node : maskNodes) {
-      MaskNode &root = maskNodes[findMask(maskIds.lookup(node.value))];
-      if (root.requestedLayout &&
-          failed(propagator.request(node.value, root.requestedLayout))) {
+  std::unique_ptr<VMILayoutPropagator> createPropagator() {
+    auto propagator = std::make_unique<VMILayoutPropagator>(module);
+    addEquivalentValues(*propagator);
+    return propagator;
+  }
+
+              static LogicalResult mergePlan(const VMILayoutPlan &source,
+                                 VMILayoutPlan &result) {
+    for (const auto &assignment : source.valueLayouts) {
+      auto [it, inserted] =
+          result.valueLayouts.try_emplace(assignment.first, assignment.second);
+      if (!inserted && it->second != assignment.second) {
         return failure();
       }
     }
-    return propagator.run();
-  }
-
-  LogicalResult runLayoutSeedPhases(VMILayoutPropagator &propagator) {
-    for (int64_t phase = static_cast<int64_t>(DataLayoutSeedPhase::SeedStart);
-         phase < static_cast<int64_t>(DataLayoutSeedPhase::SeedEnd); ++phase) {
-      if (failed(runSeedPhase(propagator,
-                              static_cast<DataLayoutSeedPhase>(phase)))) {
+    for (const auto &assignment : source.useLayouts) {
+      auto [it, inserted] =
+          result.useLayouts.try_emplace(assignment.first, assignment.second);
+      if (!inserted && it->second != assignment.second) {
+        return failure();
+      }
+    }
+    for (const auto &selection : source.selectedRelations) {
+      auto [it, inserted] = result.selectedRelations.try_emplace(
+          selection.first, selection.second);
+      if (!inserted && it->second != selection.second) {
         return failure();
       }
     }
     return success();
   }
 
-  LogicalResult requestLateLayouts(VMILayoutPropagator &propagator) {
-    for (DataUseRequest request : dataUseRequests) {
-      if (request.late &&
-          failed(propagator.request(*request.operand, request.layout))) {
-        return failure();
-      }
-    }
-    return propagator.run();
-  }
-
-  LogicalResult requestFallbackLayouts(VMILayoutPropagator &propagator) {
-    for (DataNode &node : dataNodes) {
-      if (!propagator.getRequestedLayout(node.value) &&
-          failed(propagator.request(node.value, getContiguousLayout()))) {
-        return failure();
-      }
-    }
-    for (MaskNode &node : maskNodes) {
-      if (!propagator.getRequestedLayout(node.value) &&
-          failed(propagator.request(node.value, getContiguousLayout()))) {
-        return failure();
-      }
-    }
-    return propagator.run();
-  }
-
-  LogicalResult applyLayouts() {
-    VMILayoutPropagator propagator(module);
-    propagator.setSpineScopedCastOps(&spineScopedCasts);
-    addEquivalentLayoutValues(propagator);
-    bool failedToPropagate = failed(requestExplicitLayouts(propagator)) ||
-                             failed(runLayoutSeedPhases(propagator)) ||
-                             failed(requestLateLayouts(propagator)) ||
-                             failed(requestFallbackLayouts(propagator));
-    if (failedToPropagate) {
+  FailureOr<VMILayoutPlan> selectLayoutPlan() {
+    auto selected = selectCostedVMILayoutPlans(module);
+    if (failed(selected)) {
       return failure();
     }
-
+    VMILayoutPlan merged;
+    for (const VMILayoutPlan &plan : selected->plans) {
+      if (failed(mergePlan(plan, merged))) {
+        return failure();
+      }
+    }
+    return merged;
+  }
+LogicalResult applyLayouts() {
+    std::unique_ptr<VMILayoutPropagator> propagator = createPropagator();
+    FailureOr<VMILayoutPlan> plan = selectLayoutPlan();
+    if (failed(plan)) {
+      return failure();
+    }
+    if (failed(commitVMILayoutPlan(*plan, *propagator))) {
+      return failure();
+    }
+    // Structural operations are intentionally absent from the relation graph.
+    // Seed only their still-unassigned transport values here; an existing
+    // solver assignment always wins and is never replaced by this ABI
+    // fallback.  This must precede structural edge matching so components
+    // made entirely of ABI transport have a concrete source layout.
+    LogicalResult structuralValues = success();
+    module.walk([&](Operation *op) {
+      if (failed(structuralValues) ||
+          !isa<scf::IfOp, scf::ForOp, scf::WhileOp, scf::YieldOp,
+               scf::ConditionOp, cf::BranchOp, cf::CondBranchOp, cf::SwitchOp,
+               func::CallOp, func::ReturnOp>(op)) {
+        return;
+      }
+      auto seed = [&](Value value) {
+        if (!value || !isa<VMIVRegType, VMIMaskType>(value.getType()) ||
+            propagator->getRequestedOrCurrentLayout(value)) {
+          return;
+        }
+        structuralValues = propagator->installPlanned(
+            value, VMILayoutAttr::getContiguous(value.getContext()));
+      };
+      for (Value operand : op->getOperands()) {
+        seed(operand);
+      }
+      if (isa<scf::WhileOp>(op)) {
+        for (Value result : op->getResults()) {
+          seed(result);
+        }
+      }
+    });
+    if (failed(structuralValues)) {
+      return failure();
+    }
+    // Structural edges do not have operation relations, but their operand
+    // uses must still match the layout of the destination value.  Record the
+    // edge requirement as a use assignment; this preserves the producer's
+    // primary layout and lets the propagator materialize one conversion at the
+    // edge when necessary.
+    LogicalResult structuralEdges = success();
+    auto matchEdge = [&](OpOperand &edge, Value destination) {
+      VMILayoutAttr layout =
+          propagator->getRequestedOrCurrentLayout(destination);
+      // Structural transport results/arguments can be untyped before this
+      // pass.  In that case the edge source is the validated layout seed;
+      // install it on the destination first, then constrain the edge use.
+      if (!layout) {
+        layout = propagator->getRequestedOrCurrentLayout(edge.get());
+      }
+      if (!layout || failed(propagator->installPlanned(destination, layout)) ||
+          failed(propagator->installPlanned(edge, layout))) {
+        structuralEdges = failure();
+      }
+    };
+    module.walk([&](Operation *op) {
+      if (failed(structuralEdges)) {
+        return;
+      }
+      if (auto branch = dyn_cast<cf::BranchOp>(op)) {
+        for (auto [index, operand] : llvm::enumerate(branch.getDestOperands())) {
+          (void)operand;
+          if (index < branch.getDest()->getNumArguments()) {
+            matchEdge(branch->getOpOperand(index + 0),
+                      branch.getDest()->getArgument(index));
+          }
+        }
+      } else if (auto branch = dyn_cast<cf::CondBranchOp>(op)) {
+        unsigned trueOffset = 1;
+        for (auto [index, operand] : llvm::enumerate(branch.getTrueDestOperands())) {
+          (void)operand;
+          if (index < branch.getTrueDest()->getNumArguments()) {
+            matchEdge(branch->getOpOperand(trueOffset + index),
+                      branch.getTrueDest()->getArgument(index));
+          }
+        }
+        unsigned falseOffset = trueOffset + branch.getTrueDestOperands().size();
+        for (auto [index, operand] : llvm::enumerate(branch.getFalseDestOperands())) {
+          (void)operand;
+          if (index < branch.getFalseDest()->getNumArguments()) {
+            matchEdge(branch->getOpOperand(falseOffset + index),
+                      branch.getFalseDest()->getArgument(index));
+          }
+        }
+      } else if (auto execute = dyn_cast<scf::ExecuteRegionOp>(op)) {
+        for (Block &block : execute.getRegion()) {
+          auto yield = dyn_cast<scf::YieldOp>(block.getTerminator());
+          if (!yield) {
+            continue;
+          }
+          for (auto [index, operand] : llvm::enumerate(yield.getOperands())) {
+            (void)operand;
+            if (index < execute.getNumResults()) {
+              matchEdge(yield->getOpOperand(index), execute.getResult(index));
+            }
+          }
+        }
+      } else if (auto switchOp = dyn_cast<scf::IndexSwitchOp>(op)) {
+        SmallVector<Block *> blocks;
+        blocks.push_back(&switchOp.getDefaultBlock());
+        for (unsigned index = 0; index < switchOp.getNumCases(); ++index) {
+          blocks.push_back(&switchOp.getCaseBlock(index));
+        }
+        for (Block *block : blocks) {
+          if (!block) {
+            continue;
+          }
+          auto yield = dyn_cast<scf::YieldOp>(block->getTerminator());
+          if (!yield) {
+            continue;
+          }
+          for (auto [index, operand] : llvm::enumerate(yield.getOperands())) {
+            (void)operand;
+            if (index < switchOp.getNumResults()) {
+              matchEdge(yield->getOpOperand(index), switchOp.getResult(index));
+            }
+          }
+        }
+      }
+    });
+    if (failed(structuralEdges)) {
+      return failure();
+    }
+    LogicalResult structuralLoops = success();
+    module.walk([&](scf::WhileOp whileOp) {
+      if (failed(structuralLoops)) {
+        return;
+      }
+      structuralLoops = VMIControlFlowSupport::addWhileConstraints(
+          whileOp, [&](Value lhs, Value rhs, Operation *) {
+            VMILayoutAttr lhsLayout =
+                propagator->getRequestedOrCurrentLayout(lhs);
+            VMILayoutAttr rhsLayout =
+                propagator->getRequestedOrCurrentLayout(rhs);
+            VMILayoutAttr layout = lhsLayout ? lhsLayout : rhsLayout;
+            if (!layout) {
+              return success();
+            }
+            if (failed(propagator->installPlanned(lhs, layout)) ||
+                failed(propagator->installPlanned(rhs, layout))) {
+              return failure();
+            }
+            return success();
+          });
+    });
+    if (failed(structuralLoops)) {
+      return failure();
+    }
+    // CFG block arguments are structural transport values and are not
+    // selected operation relations.  Give an untyped transport argument the
+    // stable dense primary layout; branch operands remain hard-equal to the
+    // destination argument and are not independently re-selected here.
+    LogicalResult transportArgs = success();
+    module.walk([&](Operation *op) {
+      if (failed(transportArgs)) {
+        return;
+      }
+      for (Region &region : op->getRegions()) {
+        for (Block &block : region) {
+          for (BlockArgument arg : block.getArguments()) {
+            if (!isa<VMIVRegType, VMIMaskType>(arg.getType()) ||
+                getExplicitLayout(arg.getType())) {
+              continue;
+            }
+            if (propagator->getRequestedOrCurrentLayout(arg)) {
+              continue;
+            }
+            if (failed(propagator->installPlanned(
+                    arg, VMILayoutAttr::getContiguous(arg.getContext())))) {
+              transportArgs = failure();
+              return;
+            }
+          }
+        }
+      }
+    });
+    if (failed(transportArgs)) {
+      return failure();
+    }
+    // The cost plan is the sole layout decision.  The propagator has already
+    // performed the read-only constraint propagation required by the plan in
+    // commitVMILayoutPlan; submitting the legacy priority seeds here would
+    // select a second, potentially different layout after the plan was
+    // committed.
     IRRewriter rewriter(ctx);
-    return propagator.apply(rewriter);
+    return propagator->apply(rewriter);
   }
 
   void rewriteFunctionType() {
