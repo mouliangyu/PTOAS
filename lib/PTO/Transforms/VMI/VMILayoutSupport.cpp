@@ -95,8 +95,11 @@ static llvm::cl::opt<bool> preferLaneStrideNarrowing(
 #include "VMILayoutSupportTables.inc"
 #include "VMILayoutSupportGroupBroadcastTables.inc"
 #include "VMILayoutSupportSpineTables.inc"
-#include "VMILayoutSupportMaterialization.inc"
+// The solver-cost unit defines the physical predicate-carrier helpers the
+// vexpdif physical-shape matcher in the materialization unit reads, so it is
+// included first.
 #include "VMILayoutSupportSolverCosts.inc"
+#include "VMILayoutSupportMaterialization.inc"
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -2362,11 +2365,12 @@ VMILayoutSupport::getVchistSupport(VMIVchistOp op, std::string *reason) const {
 
 // Textual include units that keep this file under the source-size gate: the
 // width-changing bitcast queries, the direction-spine-scoped cast layout
-// queries, and the op-qualified relation support queries the layout cost model
-// reads.
+// queries, the op-qualified relation support queries the layout cost model
+// reads, and the vexpdif layout queries.
 #include "VMILayoutSupportBitcast.inc"
 #include "VMILayoutSupportSpineScoped.inc"
 #include "VMILayoutSupportRelationQueries.inc"
+#include "VMILayoutSupportVexpdifQueries.inc"
 
 } // namespace pto
 } // namespace mlir

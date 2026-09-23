@@ -601,6 +601,21 @@ public:
   FailureOr<VMIHistogramLayoutFact>
   getVchistLayoutFact(VMIVchistOp op, std::string *reason = nullptr) const;
 
+  /// Facts for every vexpdif table row whose source (or result) layout is
+  /// p layout.  Every returned fact is a relation the VPTO lowering can
+  /// realize for this operation's shape, so a planner that enumerates only
+  /// these facts cannot select an unlowerable plan.
+  FailureOr<SmallVector<VMIVexpdifLayoutFact, mlir::pto::kValue4>>
+  getVexpdifLayoutFactsForLayout(VMIVexpdifOp op, VMIVexpdifLayoutPort port,
+                                 VMILayoutAttr layout,
+                                 std::string *reason = nullptr) const;
+
+  /// The vexpdif table row this shape prefers.  Plans may pick another row,
+  /// which the planner charges as a layout preference penalty.
+  FailureOr<VMIVexpdifLayoutFact>
+  getPreferredVexpdifLayoutFact(VMIVexpdifOp op,
+                                std::string *reason = nullptr) const;
+
   FailureOr<VMIVselrLayoutFact>
   getPreferredVselrLayoutFact(VMIVselrOp op,
                               std::string *reason = nullptr) const;

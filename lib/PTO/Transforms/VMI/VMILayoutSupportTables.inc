@@ -674,6 +674,39 @@ static constexpr VselrLayoutPattern kVselrLayoutPatterns[] = {
      chunk<1>(), c(), c(), c()},
 };
 
+// Supported pto.vmi.vexpdif relations.  A row describes the layout of x and
+// max (the mask always shares it, because the VPTO lowering requires the mask
+// to keep the data's lane order and to keep matching its element width) and
+// the layout of the result.  See VMIVexpdifLayoutFact for why the supported
+// set is this small.
+struct VexpdifLayoutPattern {
+  ElementBitsPattern sourceBits;
+  ElementBitsPattern resultBits;
+  LayoutPattern sourceLayout;
+  LayoutPattern resultLayout;
+  bool preferred = false;
+};
+
+static constexpr VexpdifLayoutPattern kVexpdifLayoutPatterns[] = {
+    // An f32 source keeps its element width: x/max, the mask, and the result
+    // stay in one lane_stride = 1 layout.
+    {bits<32>(), bits<32>(), c(), c(), /*preferred=*/true},
+    {bits<32>(), bits<32>(), d(2), d(2)},
+    {bits<32>(), bits<32>(), d(4), d(4)},
+    {bits<32>(), bits<32>(), bd(2), bd(2)},
+    {bits<32>(), bits<32>(), bd(4), bd(4)},
+    // An f16 source widens: the two physical results of one source part are
+    // exactly the even and the odd lanes of that part.
+    {bits<16>(), bits<32>(), c(), d(2), /*preferred=*/true},
+};
+
+// A lane-strided source is not in the table on purpose.  The mask shares the
+// source layout, and a mask granularity of b16/b32 with lane_stride = 2/4
+// becomes a b32/b64/b128 physical predicate carrier, which the mask carrier
+// conversion and the pto.vexpdif mask granularity check both reject.  The
+// same lane_stride = 1 rule keeps every result part pair an even/odd lane
+// split of its own source part.
+
 struct HistogramLayoutPattern {
   LayoutPattern accLayout;
   LayoutPattern sourceLayout;
