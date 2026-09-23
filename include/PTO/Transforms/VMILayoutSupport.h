@@ -858,6 +858,24 @@ public:
   getGroupSlotLoadLayoutFact(VMIVRegType resultType, Value sourceGroupStride,
                              int64_t numGroups,
                              std::string *reason = nullptr) const;
+
+  //===--------------------------------------------------------------------===//
+  // Signature reconciliations recorded, deliberately without new code.
+  //
+  // getGroupReduceLayoutFactsForLayout and getPreferredGroupReduceLayoutFact:
+  // upstream's take a leading VMIGroupReduceKind (declared above), the fork's do
+  // not (fork VMILayoutSupport.h:466-472, 494-498).  No kind-less overload is
+  // added, because the kind cannot be guessed at those call sites: it is computed
+  // by getVMIGroupReduceKind(op) and its only effect is to swap the result layout
+  // of a 16-bit integer group sum to the native i16 row
+  // (VMILayoutSupportMaterialization.inc:347-353, upstream 6d744afb5), so a
+  // kind-less shim defaulting to Other would silently drop that row for
+  // pto.vmi.group_reduce.addi.  When the planner is ported (stage 2c) its five
+  // call sites (fork VMILayoutPlanner.cpp:810, 2418, 2444, 2497, 2522) pass
+  // getVMIGroupReduceKind(op) as the first argument; for pto.vmi.vcadd / vcmax /
+  // vcmin that helper returns Other, which is what upstream itself does for those
+  // ops (VMILayoutSupportQueryHelpers.inc:175-225).
+  //===--------------------------------------------------------------------===//
 };
 
 } // namespace mlir::pto
