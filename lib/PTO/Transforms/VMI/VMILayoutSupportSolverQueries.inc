@@ -423,4 +423,38 @@ VMILayoutSupport::getGroupIotaLayoutFacts(VMIVRegType resultType,
       VMIGroupIotaLayoutFact{contiguous}};
 }
 
+template <typename OpTy>
+static FailureOr<VMIHistogramLayoutFact>
+getPreferredHistogramLayoutFactImpl(OpTy op,
+                                    ArrayRef<HistogramLayoutPattern> patterns,
+                                    StringRef opName, std::string *reason) {
+  if (patterns.empty()) {
+    if (reason) {
+      *reason = (opName + " histogram layout table has no row").str();
+    }
+    return failure();
+  }
+  const HistogramLayoutPattern &pattern = patterns.front();
+  MLIRContext *ctx = op.getContext();
+  return VMIHistogramLayoutFact{
+      materializeLayoutPattern(ctx, pattern.accLayout),
+      materializeLayoutPattern(ctx, pattern.sourceLayout),
+      materializeLayoutPattern(ctx, pattern.maskLayout),
+      materializeLayoutPattern(ctx, pattern.resultLayout)};
+}
+
+FailureOr<VMIHistogramLayoutFact>
+VMILayoutSupport::getPreferredVdhistLayoutFact(VMIVdhistOp op,
+                                               std::string *reason) const {
+  return getPreferredHistogramLayoutFactImpl(op, kVdhistLayoutPatterns,
+                                             "vdhist", reason);
+}
+
+FailureOr<VMIHistogramLayoutFact>
+VMILayoutSupport::getPreferredVchistLayoutFact(VMIVchistOp op,
+                                               std::string *reason) const {
+  return getPreferredHistogramLayoutFactImpl(op, kVdhistLayoutPatterns,
+                                             "vchist", reason);
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC

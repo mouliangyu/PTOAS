@@ -827,6 +827,20 @@ public:
   FailureOr<SmallVector<VMIGroupIotaLayoutFact, mlir::pto::kValue4>>
   getGroupIotaLayoutFacts(VMIVRegType resultType,
                           std::string *reason = nullptr) const;
+
+  /// The histogram layout the whole table agrees on, ignoring any assigned
+  /// layout.  Upstream has no counterpart: getVdhistLayoutFact /
+  /// getVchistLayoutFact need the assigned layouts to answer, while the planner
+  /// needs the single admissible relation when nothing is assigned yet
+  /// (fork VMILayoutPlanner.cpp:2160-2163).  Both ops read the same
+  /// kVdhistLayoutPatterns table, as upstream's own singular queries do.  The
+  /// bodies are the fork's (fork VMILayoutSupport.cpp:4142-4172).
+  FailureOr<VMIHistogramLayoutFact>
+  getPreferredVdhistLayoutFact(VMIVdhistOp op,
+                               std::string *reason = nullptr) const;
+  FailureOr<VMIHistogramLayoutFact>
+  getPreferredVchistLayoutFact(VMIVchistOp op,
+                               std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto
