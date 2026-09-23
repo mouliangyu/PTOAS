@@ -905,6 +905,16 @@ LogicalResult checkSupportedFPToIntShape(OpTy op, StringRef conversionName,
                                              conversionName, reason))) {
       return failure();
     }
+    // The shared support model has to know the pair as well.  The fact query is
+    // added BESIDE the existing check rather than replacing it: the lowering
+    // accepted these pairs before (vmi_to_vpto_group_slot_widen passes on the
+    // pre-port base), so the layout planner's stricter relation gate must not
+    // be imported here.
+    VMILayoutSupport layoutSupport;
+    if (failed(layoutSupport.getSameWidthCastLayoutFact(sourceType, resultType,
+                                                        reason))) {
+      return failure();
+    }
   } else {
     // Widen or narrow: use the cast-layout framework (same as extf/truncf).
     VMILayoutSupport layoutSupport;
