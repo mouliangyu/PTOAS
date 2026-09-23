@@ -264,6 +264,7 @@ add_mlir_dialect_library(PTOTransforms
   Passes/PTOMaterializeTileOpSections.cpp
   VPTO/VPTONormalizeContainer.cpp
   VPTO/VPTOSplitCVModule.cpp
+  VPTO/VPTOPack4StoreMaskNormalize.cpp
   InsertSync/PTOIRTranslator.cpp
   InsertSync/SyncMacroModel.cpp
   InsertSync/SyncCommon.cpp

@@ -992,6 +992,7 @@ static void appendVMISemanticPipeline(OpPassManager &pm) {
   // lower the multi-part contiguous E2B form as a single packet per part.
   pm.addPass(pto::createVMIExpandImplicitEnsureLayoutsPass());
   pm.addPass(pto::createVMIToVPTOPass());
+  pm.addPass(pto::createVPTOPack4StoreMaskNormalizePass());
   pm.addPass(pto::createVPTOStatefulStreamFusionPass());
 }
 
