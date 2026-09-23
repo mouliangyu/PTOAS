@@ -804,6 +804,19 @@ public:
   FailureOr<SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4>>
   getVdintlvLayoutFacts(VMIVRegType valueType,
                         std::string *reason = nullptr) const;
+
+  /// Every group_broadcast_load layout table row this operation's shape, group
+  /// count, element width and source_group_stride admit, in table order,
+  /// deduplicated by result layout.  Reconstructed from the table predicates
+  /// upstream's singular getGroupBroadcastLoadLayoutFact already uses
+  /// (matchesGroupBlockPattern / matchesElementCountPattern /
+  /// matchesElementBitsPattern / matchesGroupBroadcastLoadMemoryPattern) without
+  /// that query's assigned-result-layout filter, which is what makes it singular.
+  /// Upstream's 15-row table replaces the fork's 11-row one; the extra rows are
+  /// upstream's, no fork row is injected.
+  FailureOr<SmallVector<VMIGroupBroadcastLoadLayoutFact, mlir::pto::kValue4>>
+  getGroupBroadcastLoadLayoutFacts(VMIGroupBroadcastLoadOp op,
+                                   std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto

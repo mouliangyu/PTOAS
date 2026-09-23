@@ -331,4 +331,72 @@ VMILayoutSupport::getVdintlvLayoutFacts(VMIVRegType valueType,
                                          reason);
 }
 
+FailureOr<SmallVector<VMIGroupBroadcastLoadLayoutFact, mlir::pto::kValue4>>
+VMILayoutSupport::getGroupBroadcastLoadLayoutFacts(
+    VMIGroupBroadcastLoadOp op, std::string *reason) const {
+  auto fail = [&](const Twine &message)
+      -> FailureOr<SmallVector<VMIGroupBroadcastLoadLayoutFact, 4>> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+
+  auto resultType = cast<VMIVRegType>(op.getResult().getType());
+  int64_t numGroups = op.getNumGroupsAttr().getInt();
+  unsigned elementBits =
+      pto::getPTOStorageElemBitWidth(resultType.getElementType());
+  if (elementBits == 0) {
+    return fail("group_broadcast_load requires known element bit width");
+  }
+  std::optional<int64_t> stride =
+      getConstantIndexValue(op.getSourceGroupStride());
+  FailureOr<GroupLayoutKey> key = buildGroupLayoutKey(
+      resultType, numGroups,
+      "group_broadcast_load layout table has no row for this group size",
+      reason);
+  if (failed(key)) {
+    return failure();
+  }
+
+  SmallVector<VMIGroupBroadcastLoadLayoutFact, mlir::pto::kValue4> facts;
+  for (const GroupBroadcastLoadLayoutPattern &pattern :
+       kGroupBroadcastLoadLayoutPatterns) {
+    if (!matchesGroupBlockPattern(pattern.block, *key) ||
+        !matchesElementCountPattern(pattern.numGroups, numGroups) ||
+        !matchesElementBitsPattern(pattern.elementBits, elementBits) ||
+        !matchesGroupBroadcastLoadMemoryPattern(pattern.memory, stride,
+                                                elementBits)) {
+      continue;
+    }
+    VMILayoutAttr resultLayout = materializeLayoutPattern(
+        resultType.getContext(), pattern.resultLayout, numGroups);
+    if (!resultLayout) {
+      continue;
+    }
+    // Rows that differ only in their block spelling can materialize the same
+    // result layout; the fork keeps one fact per layout.
+    bool duplicate =
+        llvm::any_of(facts, [&](const VMIGroupBroadcastLoadLayoutFact &fact) {
+          return fact.resultLayout == resultLayout;
+        });
+    if (duplicate) {
+      continue;
+    }
+    facts.push_back(VMIGroupBroadcastLoadLayoutFact{
+        getGroupBlockClassFromPattern(pattern.block), resultLayout,
+        key->groupSize, key->lanesPerPart, key->vcgBlockElems,
+        static_cast<int64_t>(elementBits)});
+  }
+  if (facts.empty()) {
+    int64_t alignedStrideElems = kLayoutBlockBitWidth / elementBits;
+    return fail(Twine("group_broadcast_load requires a table row for result "
+                      "layout, group size, and either constant unit "
+                      "source_group_stride or constant positive "
+                      "source_group_stride divisible by ") +
+                Twine(alignedStrideElems) + " elements");
+  }
+  return facts;
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC
