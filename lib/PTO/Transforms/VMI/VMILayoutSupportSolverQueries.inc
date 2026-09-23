@@ -287,4 +287,48 @@ FailureOr<VMIReduceLayoutFact> VMILayoutSupport::getReduceLayoutFactForLayouts(
   return VMIReduceLayoutFact{sourceLayout, maskLayout, resultLayout};
 }
 
+static FailureOr<SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4>>
+getAllInterleaveLayoutFactsImpl(ArrayRef<InterleaveLayoutPattern> patterns,
+                                VMIVRegType valueType, std::string *reason) {
+  auto fail = [&](const Twine &message)
+      -> FailureOr<SmallVector<VMIInterleaveLayoutFact, 4>> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+
+  FailureOr<InterleaveLayoutKey> key =
+      buildInterleaveLayoutKey(valueType, reason);
+  if (failed(key)) {
+    return failure();
+  }
+
+  SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4> facts;
+  for (const InterleaveLayoutPattern &pattern : patterns) {
+    if (matchesInterleaveLayoutPattern(pattern, valueType, *key)) {
+      facts.push_back(materializeInterleaveLayoutFact(
+          valueType.getContext(), pattern, *key));
+    }
+  }
+  if (facts.empty()) {
+    return fail("requires a matching interleave layout table row");
+  }
+  return facts;
+}
+
+FailureOr<SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4>>
+VMILayoutSupport::getVintlvLayoutFacts(VMIVRegType valueType,
+                                       std::string *reason) const {
+  return getAllInterleaveLayoutFactsImpl(kVintlvLayoutPatterns, valueType,
+                                         reason);
+}
+
+FailureOr<SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4>>
+VMILayoutSupport::getVdintlvLayoutFacts(VMIVRegType valueType,
+                                        std::string *reason) const {
+  return getAllInterleaveLayoutFactsImpl(kVdintlvLayoutPatterns, valueType,
+                                         reason);
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC

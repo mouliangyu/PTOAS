@@ -786,6 +786,24 @@ public:
   getReduceLayoutFactForLayouts(VMIVRegType sourceType, VMIMaskType maskType,
                                 VMIVRegType resultType,
                                 std::string *reason = nullptr) const;
+
+  /// Every interleave layout table row the vector shape admits, in table order.
+  /// Reconstructed from getVintlvLayoutFactsForLayout / getVdintlvLayoutFactsForLayout
+  /// over upstream's kVintlvLayoutPatterns / kVdintlvLayoutPatterns by dropping
+  /// the port-layout filter, so the rows are upstream's and no fork row is
+  /// injected.
+  ///
+  /// Upstream's rows are wider than the fork's: they carry 64-bit elements
+  /// (bits<8,16,32,64> vs the fork's bits<8,16,32>), and injecting the fork's
+  /// narrower versions ahead of them would silently drop 64-bit support and
+  /// return duplicate facts (this enumeration has no by-layout dedup, exactly as
+  /// in the fork).
+  FailureOr<SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4>>
+  getVintlvLayoutFacts(VMIVRegType valueType,
+                       std::string *reason = nullptr) const;
+  FailureOr<SmallVector<VMIInterleaveLayoutFact, mlir::pto::kValue4>>
+  getVdintlvLayoutFacts(VMIVRegType valueType,
+                        std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto
