@@ -695,6 +695,39 @@ private:
     }
     if (isa<VMIConstantOp, VMIBroadcastOp, VMIIotaOp, VMIGroupIotaOp, VMIVciOp,
             VMIVbrcOp>(op)) {
+      // pto.vmi.broadcast reads one scalar or one 1-lane vector, and only the
+      // second form carries a layout: -vmi-lower-unified-to-legacy produces it
+      // for every vbrc without a group attribute, and the planner states the
+      // source use layout next to the result layout.  Its lowering
+      // (vdup -LOWEST) reads the source part and duplicates it, so the result
+      // parts derive from that source part and the relation pays whatever
+      // materializing the source in its use layout costs.  Treating this
+      // relation as unscoreable would drop a legal row and empty the solver's
+      // frontier.
+      if (isa<VMIBroadcastOp>(op) && relation.ports.size() == 2 &&
+          relation.ports[0].kind == VMILayoutPortKind::Operand &&
+          relation.ports[1].kind == VMILayoutPortKind::Result) {
+        auto source = buildOperand(op->getOpOperand(relation.ports[0].index),
+                                   relation.ports[0].layout);
+        Value result = op->getResult(relation.ports[1].index);
+        auto type = dyn_cast<VMIVRegType>(result.getType());
+        if (failed(source) || source->empty() || !type) {
+          return failure();
+        }
+        FailureOr<int64_t> arity = getArity(type, relation.ports[1].layout);
+        if (failed(arity) || *arity <= 0) {
+          return failure();
+        }
+        SmallVector<PhysicalValue, mlir::pto::kValue4> results;
+        for (int64_t index = 0; index < *arity; ++index) {
+          results.push_back(graph.addAction(PhysicalActionKind::Semantic,
+                                            getDynamicScope(op), {(*source)[0]},
+                                            "broadcast")[0]);
+        }
+        values[result] = std::move(results);
+        layouts[result] = relation.ports[1].layout;
+        return success();
+      }
       if (relation.ports.size() != 1 ||
           relation.ports.front().kind != VMILayoutPortKind::Result) {
         return failure();

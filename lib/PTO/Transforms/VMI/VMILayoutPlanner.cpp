@@ -2044,11 +2044,11 @@ VMILayoutRelationProvider::enumerateRelations(
       candidateLayouts.push_back(
           VMILayoutAttr::getContiguous(op->getContext()));
     }
-    for (VMILayoutAttr layout : candidateLayouts) {
+    auto appendStoreFactsFor = [&](VMILayoutAttr layout) {
       auto facts =
           supports.getGroupStoreLayoutFactsForLayout(store, valueType, layout);
       if (failed(facts)) {
-        continue;
+        return;
       }
       for (const VMIGroupStoreLayoutFact &fact : *facts) {
         appendReachableUniqueRelation(
@@ -2059,6 +2059,24 @@ VMILayoutRelationProvider::enumerateRelations(
                              fact.valueLayout)},
                 false},
             supports);
+      }
+    };
+    for (VMILayoutAttr layout : candidateLayouts) {
+      appendStoreFactsFor(layout);
+    }
+    if (relations.empty()) {
+      // The pool holds the layouts the rest of the component can produce, and
+      // for a small group count the only row left may be the preferred
+      // group-slots one, which no other operation introduces (for example
+      // group_store of a 2x16 value with num_groups = 2 has exactly the
+      // preferred num_groups = 2, slots = 8 row).  A legal row must still be
+      // offered, so ask for the preferred row instead of reporting that this
+      // operation has no relation at all.
+      auto preferred =
+          supports.getPreferredGroupStoreLayoutFact(store, valueType);
+      if (succeeded(preferred) && preferred->valueLayout &&
+          !llvm::is_contained(candidateLayouts, preferred->valueLayout)) {
+        appendStoreFactsFor(preferred->valueLayout);
       }
     }
     return relations.empty()
@@ -2365,6 +2383,39 @@ VMILayoutRelationProvider::enumerateRelations(
     if (producerLayouts.empty()) {
       producerLayouts.push_back(VMILayoutAttr::getContiguous(op->getContext()));
     }
+    // pto.vmi.broadcast reads one scalar or one 1-lane vector, and
+    // -vmi-lower-unified-to-legacy produces the second form for every vbrc
+    // without a group attribute.  Only that second form carries a layout, and a
+    // relation has to state every layout-bearing port the band consumes:
+    // leaving the source out makes the solver reject the whole component,
+    // because a port no relation mentions cannot be validated.
+    bool sourceCarriesLayout =
+        isa<VMIBroadcastOp>(op) && op->getNumOperands() == 1 &&
+        isLayoutType(op->getOperand(0).getType());
+    // Such a broadcast reads the source's physical parts and duplicates them
+    // (vdup -LOWEST), so consuming the source in the layout it already carries
+    // is the conversion-free choice.  A relation cannot state "the source's own
+    // layout", so the source port is enumerated over the layouts the source may
+    // carry; the cost model charges a conversion whenever a pair picks another
+    // source layout, which keeps the conversion-free pair preferred.
+    SmallVector<VMILayoutAttr, mlir::pto::kValue8> sourceCandidates;
+    if (sourceCarriesLayout) {
+      rememberLayout(getExplicitLayout(op->getOperand(0).getType()),
+                     sourceCandidates);
+      for (VMILayoutAttr candidate : polymorphicLayouts) {
+        rememberLayout(candidate, sourceCandidates);
+      }
+    }
+    auto appendProducerRelation = [&](VMILayoutAttr resultLayout,
+                                      VMILayoutAttr sourceLayout) {
+      SmallVector<VMILayoutPortAssignment, mlir::pto::kValue2> ports;
+      if (sourceCarriesLayout) {
+        ports.push_back(operandPort(0, sourceLayout));
+      }
+      ports.push_back(resultPort(0, resultLayout));
+      appendReachableUniqueRelation(
+          relations, VMILayoutOpRelation{op, std::move(ports), true}, supports);
+    };
     for (VMILayoutAttr layout : producerLayouts) {
       // Grouped vci lowering is a contiguous group_iota producer.  A
       // non-contiguous result requires a separate ensure_layout materializer;
@@ -2376,9 +2427,13 @@ VMILayoutRelationProvider::enumerateRelations(
           continue;
         }
       }
-      appendReachableUniqueRelation(
-          relations, VMILayoutOpRelation{op, {resultPort(0, layout)}, true},
-          supports);
+      if (!sourceCarriesLayout) {
+        appendProducerRelation(layout, VMILayoutAttr{});
+        continue;
+      }
+      for (VMILayoutAttr sourceLayout : sourceCandidates) {
+        appendProducerRelation(layout, sourceLayout);
+      }
     }
     return relations;
   }
