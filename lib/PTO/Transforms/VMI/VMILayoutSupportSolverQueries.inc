@@ -180,4 +180,33 @@ VMILayoutSupport::getCastLayoutFacts(VMIVRegType sourceType,
   return facts;
 }
 
+FailureOr<VMICastLayoutFact> VMILayoutSupport::getSameWidthCastLayoutFact(
+    VMIVRegType sourceType, VMIVRegType resultType, std::string *reason) const {
+  auto fail = [&](const Twine &message) -> FailureOr<VMICastLayoutFact> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+  VMILayoutAttr sourceLayout = sourceType.getLayoutAttr();
+  VMILayoutAttr resultLayout = resultType.getLayoutAttr();
+  if (!sourceLayout || !resultLayout) {
+    return fail("same-width cast requires assigned source/result layouts");
+  }
+  auto [sourceBits, resultBits] = getCastElementBits(sourceType, resultType);
+  if (sourceBits == 0 || sourceBits != resultBits) {
+    return fail("same-width cast requires equal known storage widths");
+  }
+  if (sourceLayout != resultLayout) {
+    return fail("same-width cast requires matching source/result layouts");
+  }
+  FailureOr<int64_t> sourceArity = getVMIPhysicalArity(sourceType);
+  FailureOr<int64_t> resultArity = getVMIPhysicalArity(resultType);
+  if (failed(sourceArity) || failed(resultArity) ||
+      *sourceArity != *resultArity) {
+    return fail("same-width cast requires matching computable physical arity");
+  }
+  return makeCastLayoutFact(sourceBits, resultBits, sourceLayout, resultLayout);
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC

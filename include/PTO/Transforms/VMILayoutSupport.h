@@ -750,6 +750,30 @@ public:
   FailureOr<SmallVector<VMICastLayoutFact, mlir::pto::kValue4>>
   getCastLayoutFacts(VMIVRegType sourceType, VMIVRegType resultType,
                      std::string *reason = nullptr) const;
+
+  /// The cast relation of an equal-storage-width numeric cast: an identity
+  /// relation, so it has no row in any cast table.  Upstream has no counterpart;
+  /// the body is the fork's (fork VMILayoutSupport.cpp:2444-2471) and the
+  /// relation is reachable only from the solver, which uses it for
+  /// pto.vmi.fptosi / fptoui / sitofp at equal width.
+  FailureOr<VMICastLayoutFact>
+  getSameWidthCastLayoutFact(VMIVRegType sourceType, VMIVRegType resultType,
+                             std::string *reason = nullptr) const;
+
+  /// Reject a cast relation no lowering implements even though the layout
+  /// relation itself is legal: a group-slot -> group-slot relation for the
+  /// extension/conversion families that have no group-slot physical recipe.
+  ///
+  /// This is a solver correctness dependency, not a diagnostic.  The planner
+  /// filters its candidate list with it (fork VMILayoutPlanner.cpp:1272-1275), so
+  /// without it the solver can select a relation the VPTO lowering cannot emit
+  /// and fail as an unexplained "no complete legal VMI layout plan" instead of
+  /// being limited to the lowerable relations.  Upstream has no counterpart; the
+  /// body is the fork's (fork VMILayoutSupport.cpp:2042-2063).
+  LogicalResult
+  validateCastOperationRelation(Operation *op, VMILayoutAttr sourceLayout,
+                                VMILayoutAttr resultLayout,
+                                std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto
