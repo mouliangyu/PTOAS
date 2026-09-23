@@ -817,6 +817,16 @@ public:
   FailureOr<SmallVector<VMIGroupBroadcastLoadLayoutFact, mlir::pto::kValue4>>
   getGroupBroadcastLoadLayoutFacts(VMIGroupBroadcastLoadOp op,
                                    std::string *reason = nullptr) const;
+
+  /// The one layout a group_iota result can carry.  group_iota is the internal
+  /// lowering of grouped vci and its physical producer is the contiguous vci
+  /// instruction, so the table has a single row; a non-contiguous consumer is
+  /// expressed by an explicit ensure_layout edge, and an already-assigned
+  /// non-contiguous layout is rejected.  Upstream has no counterpart; the body is
+  /// the fork's (fork VMILayoutSupport.cpp:2934-2956).
+  FailureOr<SmallVector<VMIGroupIotaLayoutFact, mlir::pto::kValue4>>
+  getGroupIotaLayoutFacts(VMIVRegType resultType,
+                          std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto

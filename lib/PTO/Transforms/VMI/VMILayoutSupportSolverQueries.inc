@@ -399,4 +399,28 @@ VMILayoutSupport::getGroupBroadcastLoadLayoutFacts(
   return facts;
 }
 
+FailureOr<SmallVector<VMIGroupIotaLayoutFact, mlir::pto::kValue4>>
+VMILayoutSupport::getGroupIotaLayoutFacts(VMIVRegType resultType,
+                                          std::string *reason) const {
+  auto fail = [&](const Twine &message)
+      -> FailureOr<SmallVector<VMIGroupIotaLayoutFact, 4>> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+
+  // group_iota is the internal lowering of grouped vci.  Its physical
+  // producer is the contiguous vci instruction; non-contiguous consumers are
+  // represented by an explicit ensure_layout edge.
+  VMILayoutAttr contiguous =
+      VMILayoutAttr::getContiguous(resultType.getContext());
+  if (VMILayoutAttr explicitLayout = resultType.getLayoutAttr();
+      explicitLayout && explicitLayout != contiguous) {
+    return fail("group_iota directly produces only contiguous layout");
+  }
+  return SmallVector<VMIGroupIotaLayoutFact, 4>{
+      VMIGroupIotaLayoutFact{contiguous}};
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC
