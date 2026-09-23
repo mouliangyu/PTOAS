@@ -714,12 +714,16 @@ static void collectMatchingCastFacts(
     }
     VMICastLayoutFact fact =
         makeCastLayoutFact(sourceBits, resultBits, sourceLayout, resultLayout);
-    FailureOr<int64_t> intrinsicCost = getCastIntrinsicRearrangementCost(
-        sourceType, resultType, sourceLayout, resultLayout);
-    if (failed(intrinsicCost)) {
-      continue;
+    // The intrinsic cost is best effort: this funnel defines which relations are
+    // legal, and a row whose cost cannot be derived is still legal.  Dropping it
+    // here would narrow the candidate set of every caller, including upstream's
+    // own layout decisions, so the row is kept and the cost left at its default
+    // until the fork-side enumeration filters unpriced rows itself.
+    if (auto intrinsicCost = getCastIntrinsicRearrangementCost(
+            sourceType, resultType, sourceLayout, resultLayout);
+        succeeded(intrinsicCost)) {
+      fact.intrinsicRearrangementCost = *intrinsicCost;
     }
-    fact.intrinsicRearrangementCost = *intrinsicCost;
     facts.push_back(fact);
   }
 }
@@ -795,23 +799,24 @@ getHighPriorityCastLayoutFactImpl(VMIVRegType sourceType,
   return *selected;
 }
 
-static FailureOr<VMIMaskGranularityCastLayoutFact>
+static VMIMaskGranularityCastLayoutFact
 makeMaskGranularityCastLayoutFact(VMIMaskType sourceType,
                                   VMIMaskType resultType, int64_t sourceBits,
                                   int64_t resultBits,
                                   VMILayoutAttr sourceLayout,
                                   VMILayoutAttr resultLayout) {
-  auto intrinsicCost = getMaskGranularityIntrinsicCost(
-      sourceType, resultType, sourceLayout, resultLayout);
-  if (failed(intrinsicCost)) {
-    return failure();
-  }
   VMIMaskGranularityCastLayoutFact fact;
   fact.sourceGranularityBits = sourceBits;
   fact.resultGranularityBits = resultBits;
   fact.sourceLayout = sourceLayout;
   fact.resultLayout = resultLayout;
-  fact.intrinsicRearrangementCost = *intrinsicCost;
+  // Best effort for the same reason as in collectMatchingCastFacts: an
+  // underivable cost must not remove a legal granularity relation.
+  if (auto intrinsicCost = getMaskGranularityIntrinsicCost(
+          sourceType, resultType, sourceLayout, resultLayout);
+      succeeded(intrinsicCost)) {
+    fact.intrinsicRearrangementCost = *intrinsicCost;
+  }
   return fact;
 }
 
@@ -1186,12 +1191,9 @@ VMILayoutSupport::getMaskGranularityCastLayoutFactsForLayout(
       continue;
     }
 
-    auto fact = makeMaskGranularityCastLayoutFact(
+    facts.push_back(makeMaskGranularityCastLayoutFact(
         sourceType, resultType, query->sourceBits, query->resultBits,
-        sourceLayout, resultLayout);
-    if (succeeded(fact)) {
-      facts.push_back(*fact);
-    }
+        sourceLayout, resultLayout));
   }
 
   if (facts.empty()) {
