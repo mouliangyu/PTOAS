@@ -75,6 +75,13 @@ struct VMILoadLayoutFact {
   VMILayoutAttr resultLayout;
 };
 
+/// A pto.vmi.group_iota result.  The contiguous vci instruction is the physical
+/// producer, so the only layout the op itself can produce is contiguous;
+/// non-contiguous consumers are expressed by an explicit ensure_layout edge.
+struct VMIGroupIotaLayoutFact {
+  VMILayoutAttr resultLayout;
+};
+
 enum class VMIDeinterleaveLoadLayoutPort {
   Low,
   High,
@@ -146,6 +153,9 @@ struct VMICastLayoutFact {
   int64_t sourceBits = 0;
   int64_t resultBits = 0;
   VMICastLayoutPriority priority = VMICastLayoutPriority::Normal;
+  // Number of layout-rearrangement instructions performed by the cast
+  // lowering itself.  Numeric conversion instructions are not included.
+  int64_t intrinsicRearrangementCost = 0;
 };
 
 struct VMIMaskGranularityCastLayoutFact {
@@ -153,6 +163,8 @@ struct VMIMaskGranularityCastLayoutFact {
   VMILayoutAttr resultLayout;
   int64_t sourceGranularityBits = 0;
   int64_t resultGranularityBits = 0;
+  // Number of predicate-carrier steps the granularity conversion performs.
+  int64_t intrinsicRearrangementCost = 0;
 };
 
 struct VMIInterleaveLayoutFact {
@@ -200,6 +212,16 @@ struct VMIGroupReduceLayoutFact {
   int64_t groupSize = 0;
   int64_t lanesPerPart = 0;
   int64_t vcgBlockElems = 0;
+};
+
+/// A non-grouped reduce (pto.vmi.reduce_*, lowered through the legacy vcadd /
+/// vcmax / vcmin family).  The legacy lowering consumes complete physical
+/// source chunks and produces a contiguous result, so the relation is the
+/// contiguous identity.
+struct VMIReduceLayoutFact {
+  VMILayoutAttr sourceLayout;
+  VMILayoutAttr maskLayout;
+  VMILayoutAttr resultLayout;
 };
 
 struct VMIGroupBroadcastLayoutFact {
@@ -276,6 +298,39 @@ struct VMIVselrLayoutFact {
   VMILayoutAttr sourceLayout;
   VMILayoutAttr indexLayout;
   VMILayoutAttr resultLayout;
+};
+
+enum class VMIVexpdifLayoutPort {
+  Source,
+  Result,
+};
+
+/// A pto.vmi.vexpdif relation the VPTO lowering can realize.  The lowering
+/// reads one 256-bit source register at a time, so a relation is legal only
+/// when the physical parts of x/max, of the predicate, and of the result line
+/// up the way the emitted pto.vexpdif ops produce them:
+///
+///  * An f32 source keeps its element width, so one source part produces one
+///    result part and x, max, the mask, and the result share one layout.  The
+///    layout must stay dense with lane_stride = 1: the mask follows the source
+///    layout, and its physical granularity is granularity * lane_stride, which
+///    the lowering accepts only while it still matches the data element width.
+///  * An f16 source widens to f32.  One source part yields the even and the
+///    odd lanes of that part as two result parts, so the result has to be
+///    deinterleaved = 2 while x, max, and the mask keep their natural lane
+///    order (contiguous).
+///
+/// sourceParts/resultParts are the physical part counts of the source and the
+/// result under this relation.  The lowering also requires the mask to produce
+/// exactly sourceParts parts and the element-width ratio to connect the two
+/// counts, so a row only survives while those part counts agree.
+struct VMIVexpdifLayoutFact {
+  VMILayoutAttr sourceLayout;
+  VMILayoutAttr resultLayout;
+  int64_t sourceParts = 0;
+  int64_t resultParts = 0;
+  int64_t resultPartsPerSourcePart = 1;
+  bool preferred = false;
 };
 
 class VMILayoutSupport {

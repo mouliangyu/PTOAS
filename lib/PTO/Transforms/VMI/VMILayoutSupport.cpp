@@ -43,6 +43,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/CommandLine.h"
 
+#include <limits>
+
 namespace mlir {
 namespace pto {
 
@@ -94,6 +96,7 @@ static llvm::cl::opt<bool> preferLaneStrideNarrowing(
 #include "VMILayoutSupportGroupBroadcastTables.inc"
 #include "VMILayoutSupportSpineTables.inc"
 #include "VMILayoutSupportMaterialization.inc"
+#include "VMILayoutSupportSolverCosts.inc"
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -709,8 +712,15 @@ static void collectMatchingCastFacts(
     if (port == VMICastLayoutPort::Result && resultLayout != layout) {
       continue;
     }
-    facts.push_back(
-        makeCastLayoutFact(sourceBits, resultBits, sourceLayout, resultLayout));
+    VMICastLayoutFact fact =
+        makeCastLayoutFact(sourceBits, resultBits, sourceLayout, resultLayout);
+    FailureOr<int64_t> intrinsicCost = getCastIntrinsicRearrangementCost(
+        sourceType, resultType, sourceLayout, resultLayout);
+    if (failed(intrinsicCost)) {
+      continue;
+    }
+    fact.intrinsicRearrangementCost = *intrinsicCost;
+    facts.push_back(fact);
   }
 }
 
@@ -785,28 +795,23 @@ getHighPriorityCastLayoutFactImpl(VMIVRegType sourceType,
   return *selected;
 }
 
-static int64_t getMaskGranularityBits(StringRef granularity) {
-  if (granularity == "b8") {
-    return mlir::pto::kValue8;
-  }
-  if (granularity == "b16") {
-    return mlir::pto::kValue16;
-  }
-  if (granularity == "b32") {
-    return mlir::pto::kValue32;
-  }
-  return 0;
-}
-
-static VMIMaskGranularityCastLayoutFact
-makeMaskGranularityCastLayoutFact(int64_t sourceBits, int64_t resultBits,
+static FailureOr<VMIMaskGranularityCastLayoutFact>
+makeMaskGranularityCastLayoutFact(VMIMaskType sourceType,
+                                  VMIMaskType resultType, int64_t sourceBits,
+                                  int64_t resultBits,
                                   VMILayoutAttr sourceLayout,
                                   VMILayoutAttr resultLayout) {
+  auto intrinsicCost = getMaskGranularityIntrinsicCost(
+      sourceType, resultType, sourceLayout, resultLayout);
+  if (failed(intrinsicCost)) {
+    return failure();
+  }
   VMIMaskGranularityCastLayoutFact fact;
   fact.sourceGranularityBits = sourceBits;
   fact.resultGranularityBits = resultBits;
   fact.sourceLayout = sourceLayout;
   fact.resultLayout = resultLayout;
+  fact.intrinsicRearrangementCost = *intrinsicCost;
   return fact;
 }
 
@@ -1181,8 +1186,12 @@ VMILayoutSupport::getMaskGranularityCastLayoutFactsForLayout(
       continue;
     }
 
-    facts.push_back(makeMaskGranularityCastLayoutFact(
-        query->sourceBits, query->resultBits, sourceLayout, resultLayout));
+    auto fact = makeMaskGranularityCastLayoutFact(
+        sourceType, resultType, query->sourceBits, query->resultBits,
+        sourceLayout, resultLayout);
+    if (succeeded(fact)) {
+      facts.push_back(*fact);
+    }
   }
 
   if (facts.empty()) {
