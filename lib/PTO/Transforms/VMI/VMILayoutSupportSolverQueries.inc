@@ -209,4 +209,27 @@ FailureOr<VMICastLayoutFact> VMILayoutSupport::getSameWidthCastLayoutFact(
   return makeCastLayoutFact(sourceBits, resultBits, sourceLayout, resultLayout);
 }
 
+LogicalResult VMILayoutSupport::validateCastOperationRelation(
+    Operation *op, VMILayoutAttr sourceLayout, VMILayoutAttr resultLayout,
+    std::string *reason) const {
+  if (!op || !sourceLayout || !resultLayout) {
+    if (reason) {
+      *reason = "cast operation relation requires operation and layouts";
+    }
+    return failure();
+  }
+  // Group-slot carriers are currently defined for integer extension/
+  // truncation and f32 group-slot truncation.  The operation families below
+  // have no group-slot physical recipe; rejecting them here keeps Support and
+  // VMIToVPTO in lockstep.
+  if (sourceLayout.isGroupSlots() && resultLayout.isGroupSlots() &&
+      isa<VMIExtFOp, VMIFPToSIOp, VMIFPToUIOp, VMISIToFPOp>(op)) {
+    if (reason) {
+      *reason = "group-slot cast operation family has no registered lowering";
+    }
+    return failure();
+  }
+  return success();
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC
