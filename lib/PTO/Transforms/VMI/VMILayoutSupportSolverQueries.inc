@@ -359,6 +359,11 @@ VMILayoutSupport::getGroupBroadcastLoadLayoutFacts(
     return failure();
   }
 
+  // Upstream's table is the row set.  The fork's one unique row
+  // {gb(1), 16/32-bit, contiguous, d(4)} is not appended here on purpose:
+  // upstream's getGroupBroadcastLoadSupport -- the lowering's own gate -- is
+  // table-driven off these very rows, so a row added only to this enumeration
+  // would be selectable by the solver and rejected by the lowering.
   SmallVector<VMIGroupBroadcastLoadLayoutFact, mlir::pto::kValue4> facts;
   for (const GroupBroadcastLoadLayoutPattern &pattern :
        kGroupBroadcastLoadLayoutPatterns) {

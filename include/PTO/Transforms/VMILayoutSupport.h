@@ -812,8 +812,24 @@ public:
   /// (matchesGroupBlockPattern / matchesElementCountPattern /
   /// matchesElementBitsPattern / matchesGroupBroadcastLoadMemoryPattern) without
   /// that query's assigned-result-layout filter, which is what makes it singular.
-  /// Upstream's 15-row table replaces the fork's 11-row one; the extra rows are
-  /// upstream's, no fork row is injected.
+  ///
+  /// Row audit (verified by set diff, fork 11 rows vs upstream 15): the fork has
+  /// exactly one unique row, {gb(1), bits<16,32>, memContiguous, d(4)}, and it is
+  /// deliberately NOT injected.  That row is not a candidate this enumeration is
+  /// missing: upstream's shared gate getGroupBroadcastLoadSupport -- the check the
+  /// lowering (VMIToVPTO/VMIToVPTOMemoryInternals.cpp:957) and the IR validator
+  /// (Passes/PTOValidateVMIIR.cpp:640) run -- is defined as
+  /// "succeeded(getGroupBroadcastLoadLayoutFact(op))"
+  /// (VMILayoutSupportQueryHelpers.inc:238-242), i.e. it reads this same table.
+  /// Offering the row from the planner would therefore let the costed solver
+  /// select a group_broadcast_load relation the lowering rejects, which is the
+  /// failure mode this port exists to avoid.  The matching fork-only
+  /// kGroupBroadcastLoadDirectPatterns row (E2B, G<8>, gb(1), bits<16,32>,
+  /// memContiguous, d(4)) is gone upstream for the same reason, and the planner
+  /// pairs this enumeration with that direct fact (fork
+  /// VMILayoutPlanner.cpp:2114-2134) to pick the E2B producer layout, so the two
+  /// rows can only be restored together -- and only with lowering support, which
+  /// belongs to stage 7, not here.
   FailureOr<SmallVector<VMIGroupBroadcastLoadLayoutFact, mlir::pto::kValue4>>
   getGroupBroadcastLoadLayoutFacts(VMIGroupBroadcastLoadOp op,
                                    std::string *reason = nullptr) const;
