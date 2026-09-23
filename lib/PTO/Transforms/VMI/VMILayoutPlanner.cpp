@@ -1011,6 +1011,13 @@ buildPlannerOps(ArrayRef<Operation *> ops) {
     }
     std::string relationReason;
     auto relations = provider.enumerateRelations(op, layouts, &relationReason);
+    if (succeeded(relations) && relations->empty() &&
+        isVMILayoutABIBoundaryOp(op)) {
+      // A function boundary whose result types spell out no layout pins no
+      // layout either, so it contributes no relation to the component: the
+      // value it transports is decided by its producer.
+      continue;
+    }
     if (failed(relations)) {
       auto preferredRelations = provider.enumerateRelations(op, {},
                                                             &relationReason);
@@ -1176,15 +1183,24 @@ VMILayoutRelationProvider::enumerateRelations(
     VMILayoutOpRelation relation;
     relation.op = op;
     for (auto [index, operand] : llvm::enumerate(returnOp.getOperands())) {
-      VMILayoutAttr layout =
-          getABIBoundaryLayout(function.getResultTypes()[index]);
+      // Only a result whose type spells out a layout is an ABI contract the
+      // plan has to materialize.  An unannotated result takes the layout of the
+      // value it returns: rewriteFunctionType adopts that operand type, and a
+      // call site pins the result through getConsistentCallResultTypes.  Pinning
+      // it to the contiguous boundary here instead demands a conversion the
+      // layout tables do not offer - a compact group result has no ensure_layout
+      // row from its group-slots layout to the dense form - which turns a
+      // satisfiable component into "no complete legal VMI layout plan".
+      VMILayoutAttr layout = getExplicitLayout(function.getResultTypes()[index]);
       if (layout) {
         relation.endpoints.push_back(
             {operand, &returnOp->getOpOperand(index), layout});
       }
     }
     if (relation.endpoints.empty()) {
-      return failure();
+      // Nothing is pinned, so the returned value keeps whatever layout its
+      // producer selected.
+      return SmallVector<VMILayoutOpRelation, mlir::pto::kValue4>{};
     }
     relations.push_back(std::move(relation));
     return relations;
