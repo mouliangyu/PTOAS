@@ -1471,8 +1471,17 @@ VMILayoutRelationProvider::enumerateRelations(
     if (op->getNumOperands() < 1 || op->getNumResults() != 0) {
       return failure();
     }
+    // The mask is the last operand: value, destination, offset, block_stride,
+    // mask.  The relation has to constrain the mask, not the block stride, so
+    // the index is taken from this dialect's operand list (an out-of-range port
+    // makes the solver reject the only relation the op has).
+    unsigned maskIndex = op->getNumOperands() - 1;
+    if (!isa<VMIMaskType>(op->getOperand(maskIndex).getType())) {
+      return failure();
+    }
     return makeReachableRelation(
-        {op, {operandPort(0, contiguous), operandPort(5, contiguous)}, false},
+        {op, {operandPort(0, contiguous), operandPort(maskIndex, contiguous)},
+         false},
         supports);
   }
   if (isa<VMIScatterOp>(op)) {
