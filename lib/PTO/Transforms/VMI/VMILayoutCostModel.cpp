@@ -1988,6 +1988,41 @@ private:
       return materialize(sourceValue, *first, contiguous, resultLayout,
                          placement);
     }
+    // A group packet whose groups all fit in one physical part and a dense
+    // carrier of the same arity select the same register: slot g of the packet
+    // holds the group that the dense form keeps at lane g of that part.  The
+    // pair is a real relation, not an unsupported one, and the memory accesses
+    // around it usually realize the repacking through their own distribution
+    // modes (measured for ensure_layout contiguous -> num_groups = 1,
+    // slots = 8 between a dense vload and a unit-stride group_store: the
+    // lowering emits one vlds -BRC and one vsts -1PT and no separate
+    // conversion), so it is realised here as one pack/unpack per physical part
+    // and charged by the ordinary action accounting.  It has to be scored
+    // here: the guard below only exists to stop unbounded recursion through a
+    // contiguous intermediate and would otherwise swallow the pair.
+    bool denseToPacket =
+        sourceLayout.isContiguous() && sourceLayout.getLaneStride() == 1 &&
+        resultLayout.isGroupSlots() && resultLayout.getNumGroups() > 0 &&
+        resultLayout.getNumGroups() <= resultLayout.getSlots();
+    bool packetToDense =
+        sourceLayout.isGroupSlots() && sourceLayout.getNumGroups() > 0 &&
+        sourceLayout.getNumGroups() <= sourceLayout.getSlots() &&
+        resultLayout.isContiguous() && resultLayout.getLaneStride() == 1;
+    if ((denseToPacket || packetToDense) && *sourceArity == *resultArity &&
+        !source.empty()) {
+      SmallVector<PhysicalValue, mlir::pto::kValue4> results;
+      results.reserve(source.size());
+      for (PhysicalValue part : source) {
+        results.push_back(
+            graph.addAction(denseToPacket ? PhysicalActionKind::Pack
+                                          : PhysicalActionKind::Unpack,
+                            scope, {part},
+                            denseToPacket ? "dense-to-packet"
+                                          : "packet-to-dense",
+                            1)[0]);
+      }
+      return results;
+    }
     // Do not recurse through a contiguous intermediate when either side is
     // already contiguous.  Unsupported layout pairs (for example group-slot
     // to deinterleaved) would otherwise revisit the same pair indefinitely.
