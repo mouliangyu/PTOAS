@@ -862,6 +862,25 @@ public:
   //===--------------------------------------------------------------------===//
   // Signature reconciliations recorded, deliberately without new code.
   //
+  // getPreferredCastLayoutFact: upstream's declaration already ends in a
+  // defaulted bool allowLaneStridePreference = true (declared above), so the
+  // fork's three-argument call (fork VMILayoutSupport.h:335-337, called at fork
+  // VMILayoutPlanner.cpp:1244) compiles unchanged and needs no overload, no
+  // default argument and no fork-only variant.  The two implementations also
+  // agree in the default configuration: both trees carry the same
+  // "vmi-prefer-lane-stride-narrowing" command-line flag defaulting to true
+  // (upstream VMILayoutSupport.cpp:87, fork VMILayoutSupport.cpp:54), and with it
+  // set both take the one-chunk high-priority / lane-stride-narrow path before
+  // the preferred table.  Upstream adds one guard the fork does not have --
+  // isDeinterleavedNarrowingFallbackSupported (VMILayoutSupport.cpp:933-999),
+  // which keeps the lane-stride relation for shapes whose deinterleaved fallback
+  // row has no materialization even when the flag is switched off, instead of
+  // switching to a relation the ensure_layout table cannot express.  That is a
+  // safety guard, so upstream's version is adopted as is; the fork's preference
+  // order is not re-derived.  Preference rows are the solver's last tie-break
+  // layer (plan 2.1) and never decide legality, so this changes no candidate set.
+  // If the fork's own preference order is ever needed, it belongs in a fork-only
+  // entry point the planner drives, not in this shared query.
   // getGroupReduceLayoutFactsForLayout and getPreferredGroupReduceLayoutFact:
   // upstream's take a leading VMIGroupReduceKind (declared above), the fork's do
   // not (fork VMILayoutSupport.h:466-472, 494-498).  No kind-less overload is
