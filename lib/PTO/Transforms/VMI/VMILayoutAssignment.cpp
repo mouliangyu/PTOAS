@@ -2275,6 +2275,37 @@ LogicalResult applyLayouts() {
     if (failed(transportArgs)) {
       return failure();
     }
+    // The plan states a relation for every op whose layout it decides.  The
+    // unified spellings that -vmi-lower-unified-to-legacy replaces after layout
+    // assignment state none - upstream's own constraint walk constrains only
+    // their legacy forms, and the lowering decides their layout from the value
+    // it is handed - so an op result the plan did not cover takes the same
+    // stable dense primary layout this pass already gives an untyped transport
+    // argument.  The pass invariant requires the whole result type tree to be
+    // layout-assigned, so leaving such a result bare is not an option.
+    LogicalResult unplannedResults = success();
+    module.walk([&](Operation *op) {
+      if (failed(unplannedResults)) {
+        return;
+      }
+      for (OpResult result : op->getResults()) {
+        if (!isa<VMIVRegType, VMIMaskType>(result.getType()) ||
+            getExplicitLayout(result.getType())) {
+          continue;
+        }
+        if (propagator->getRequestedOrCurrentLayout(result)) {
+          continue;
+        }
+        if (failed(propagator->installPlanned(
+                result, VMILayoutAttr::getContiguous(result.getContext())))) {
+          unplannedResults = failure();
+          return;
+        }
+      }
+    });
+    if (failed(unplannedResults)) {
+      return failure();
+    }
     // The cost plan is the sole layout decision.  The propagator has already
     // performed the read-only constraint propagation required by the plan in
     // commitVMILayoutPlan; submitting the legacy priority seeds here would

@@ -184,6 +184,18 @@ static bool isVMILayoutStructuralOp(Operation *op) {
              scf::IfOp, scf::IndexSwitchOp, scf::YieldOp, scf::WhileOp>(op);
 }
 
+/// Unified-dialect spellings that -vmi-lower-unified-to-legacy replaces with a
+/// legacy op later in the pipeline.  Upstream runs layout assignment before
+/// that lowering, and its own constraint walk (collect() in
+/// VMILayoutAssignment.cpp) states no relation for these spellings: it knows
+/// pto.vmi.load, pto.vmi.store and pto.vmi.extf, not their unified forms.  A
+/// component must therefore not fail merely because the relation provider has
+/// no case for the unified spelling - the lowering decides the layout from the
+/// value it is handed, exactly as it does in upstream's own flow.
+static bool isPreLoweringUnifiedOp(Operation *op) {
+  return isa<VMICvtOp, VMIvLoadOp, VMIvStoreOp, VMIVsstbOp>(op);
+}
+
 static VMILayoutAttr getExplicitLayout(Type type) {
   if (auto vreg = dyn_cast<VMIVRegType>(type)) {
     return vreg.getLayoutAttr();
@@ -845,6 +857,40 @@ buildPlannerOps(ArrayRef<Operation *> ops) {
   SmallVector<VMILayoutSolverOp, mlir::pto::kValue8> plannerOps;
   plannerOps.reserve(ops.size());
 
+  // A component whose every op is either a structural transport or a unified
+  // spelling that -vmi-lower-unified-to-legacy replaces after layout assignment
+  // carries no layout decision at all: upstream's own flow never constrained
+  // those spellings, so the lowering owns them and no plan is emitted.
+  bool needsRelations = false;
+  for (Operation *op : ops) {
+    if (isPreLoweringUnifiedOp(op)) {
+      continue;
+    }
+    if (auto returnOp = dyn_cast<func::ReturnOp>(op)) {
+      // A function boundary contributes a relation only for the results whose
+      // type spells a layout out; every other result is decided by the value
+      // the function returns.
+      auto function = returnOp->getParentOfType<func::FuncOp>();
+      needsRelations |= !function ||
+                        returnOp.getNumOperands() != function.getNumResults();
+      if (!needsRelations) {
+        needsRelations = llvm::any_of(
+            llvm::zip_equal(function.getResultTypes(), returnOp.getOperands()),
+            [](auto pair) {
+              return static_cast<bool>(getExplicitLayout(std::get<0>(pair)));
+            });
+      }
+      continue;
+    }
+    if (isVMILayoutABIBoundaryOp(op) || !isVMILayoutStructuralOp(op)) {
+      needsRelations = true;
+      break;
+    }
+  }
+  if (!needsRelations) {
+    return plannerOps;
+  }
+
   // Collect operation-induced layout candidates before enumerating any
   // relation.  A helper such as ensure_mask_granularity may appear before its
   // consumer in IR order, while the consumer is what introduces the useful
@@ -905,6 +951,9 @@ buildPlannerOps(ArrayRef<Operation *> ops) {
     }
     std::string relationReason;
     auto relations = provider.enumerateRelations(op, layouts, &relationReason);
+    if (failed(relations) && isPreLoweringUnifiedOp(op)) {
+      continue;
+    }
     if (failed(relations) || relations->empty()) {
       VMILayoutSupport supports;
       if (auto groupSlot = dyn_cast<VMIGroupSlotLoadOp>(op)) {
@@ -1018,6 +1067,9 @@ buildPlannerOps(ArrayRef<Operation *> ops) {
       // value it transports is decided by its producer.
       continue;
     }
+    if (failed(relations) && isPreLoweringUnifiedOp(op)) {
+      continue;
+    }
     if (failed(relations)) {
       auto preferredRelations = provider.enumerateRelations(op, {},
                                                             &relationReason);
@@ -1062,6 +1114,12 @@ solveComponent(ArrayRef<Operation *> component,
   if (failed(ops)) {
     LLVM_DEBUG(llvm::dbgs() << "layout planner: unsupported component\n");
     return failure();
+  }
+  if (ops->empty()) {
+    // No op in the component states a relation, so the component has no layout
+    // decision to make and no plan to commit.
+    VMILayoutPlan empty;
+    return empty;
   }
   LLVM_DEBUG({
     llvm::dbgs() << "layout planner: component with " << ops->size()
