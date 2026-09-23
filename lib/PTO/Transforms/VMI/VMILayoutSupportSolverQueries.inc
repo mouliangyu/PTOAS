@@ -232,4 +232,59 @@ LogicalResult VMILayoutSupport::validateCastOperationRelation(
   return success();
 }
 
+/// Returns failure when a contiguous source value does not fill its physical
+/// chunks, so its padding lanes cannot be told apart from real data.  The reason
+/// is a neutral requirement fragment because the caller prefixes its own subject
+/// rather than borrowing another op family's wording.
+static LogicalResult checkSourceFillsPhysicalChunks(VMIVRegType sourceType,
+                                                    std::string *reason) {
+  auto fail = [&](const Twine &message) -> LogicalResult {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+  FailureOr<int64_t> lanesPerPart =
+      getDataLanesPerPart(sourceType.getElementType());
+  if (failed(lanesPerPart) || *lanesPerPart <= 0) {
+    return fail("known physical source chunk width");
+  }
+  if (sourceType.getElementCount() % *lanesPerPart != 0) {
+    return fail("source element count to fill complete physical chunks");
+  }
+  return success();
+}
+
+FailureOr<VMIReduceLayoutFact> VMILayoutSupport::getReduceLayoutFactForLayouts(
+    VMIVRegType sourceType, VMIMaskType maskType, VMIVRegType resultType,
+    std::string *reason) const {
+  auto fail = [&](const Twine &message) -> FailureOr<VMIReduceLayoutFact> {
+    if (reason) {
+      *reason = message.str();
+    }
+    return failure();
+  };
+  VMILayoutAttr sourceLayout = sourceType.getLayoutAttr();
+  VMILayoutAttr maskLayout = maskType.getLayoutAttr();
+  VMILayoutAttr resultLayout = resultType.getLayoutAttr();
+  if (!sourceLayout || !maskLayout || !resultLayout) {
+    return fail("reduce requires assigned source, mask, and result layouts");
+  }
+  if (!sourceLayout.isContiguous() || !maskLayout.isContiguous() ||
+      !resultLayout.isContiguous()) {
+    return fail("reduce requires contiguous source, mask, and result layouts");
+  }
+
+  // The legacy vc* lowering consumes complete physical source chunks, so a
+  // contiguous value whose element count leaves padding lanes cannot be
+  // reduced without folding those padding lanes into the result.  The rule
+  // lives in the shared helper so the planner never advertises a relation that
+  // lowering must reject; only the wording below is reduce-specific.
+  std::string chunkReason;
+  if (failed(checkSourceFillsPhysicalChunks(sourceType, &chunkReason))) {
+    return fail(Twine("reduce requires ") + chunkReason);
+  }
+  return VMIReduceLayoutFact{sourceLayout, maskLayout, resultLayout};
+}
+
 #endif // VMILAYOUTSUPPORTSOLVERQUERIES_INC

@@ -774,6 +774,18 @@ public:
   validateCastOperationRelation(Operation *op, VMILayoutAttr sourceLayout,
                                 VMILayoutAttr resultLayout,
                                 std::string *reason = nullptr) const;
+
+  /// The layout relation of a non-grouped reduce (pto.vmi.reduce_* lowered
+  /// through the legacy vcadd / vcmax / vcmin family): the contiguous identity,
+  /// bounded by "the contiguous source fills complete physical chunks" so the
+  /// planner never advertises a relation the legacy lowering must reject by
+  /// folding padding lanes into the result.  Upstream has no counterpart for the
+  /// non-grouped reduce family; the body is the fork's (fork
+  /// VMILayoutSupport.cpp:1526-1557).
+  FailureOr<VMIReduceLayoutFact>
+  getReduceLayoutFactForLayouts(VMIVRegType sourceType, VMIMaskType maskType,
+                                VMIVRegType resultType,
+                                std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto
