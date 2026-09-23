@@ -129,6 +129,7 @@ add_mlir_dialect_library(PTOTransforms
   VMI/VMILayoutRematerialize.cpp
   VMI/VMILayoutSinkMaterialization.cpp
   VMI/VMILayoutOpClasses.cpp
+  VMI/VMILayoutPlanner.cpp
   VMIToVPTO/VMIToVPTO.cpp
   ${_ptoas_vmi_split_units}
   VPTO/VPTOStatefulStreamFusion.cpp
