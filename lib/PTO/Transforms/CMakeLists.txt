@@ -123,6 +123,7 @@ add_mlir_dialect_library(PTOTransforms
   VMI/VMILayoutFold.cpp
   VMI/VMILayoutPropagation.cpp
   VMI/VMILayoutConflictSolver.cpp
+  VMI/VMILayoutCostModel.cpp
   VMI/VMILayoutSupport.cpp
   VMI/VMILayoutSupportGroupSlots.cpp
   VMI/VMILayoutRematerialize.cpp

@@ -1922,7 +1922,23 @@ FailureOr<VMIEnsureLayoutFact> VMILayoutSupport::getEnsureLayoutFact(
                                       resultLayout, reason))) {
     return failure();
   }
-  return VMIEnsureLayoutFact{sourceLayout, resultLayout};
+  // A conversion that selects the same physical parts on both sides forwards
+  // the register untouched.  Two such families exist: the identity pair, and a
+  // one-element dense value against the single group slot that names the same
+  // sole carrier lane.  Everything else rearranges lanes and is charged as
+  // such by the cost model.
+  bool oneLaneContiguousToGroup =
+      sourceType.getElementCount() == 1 && sourceLayout.isContiguous() &&
+      sourceLayout.getLaneStride() == 1 && resultLayout.isGroupSlots() &&
+      resultLayout.getNumGroups() == 1 && resultLayout.getSlots() == 1;
+  bool oneLaneGroupToContiguous =
+      sourceType.getElementCount() == 1 && sourceLayout.isGroupSlots() &&
+      sourceLayout.getNumGroups() == 1 && sourceLayout.getSlots() == 1 &&
+      resultLayout.isContiguous() && resultLayout.getLaneStride() == 1;
+  return VMIEnsureLayoutFact{sourceLayout, resultLayout,
+                             sourceLayout == resultLayout ||
+                                 oneLaneContiguousToGroup ||
+                                 oneLaneGroupToContiguous};
 }
 
 FailureOr<VMIEnsureMaskLayoutFact> VMILayoutSupport::getEnsureMaskLayoutFact(
@@ -1933,7 +1949,17 @@ FailureOr<VMIEnsureMaskLayoutFact> VMILayoutSupport::getEnsureMaskLayoutFact(
                                           resultLayout, reason))) {
     return failure();
   }
-  return VMIEnsureMaskLayoutFact{sourceLayout, resultLayout};
+  // A b32 predicate re-addressed to or from the block-deinterleaved form keeps
+  // one predicate per data part in the same part order, so the mask register is
+  // forwarded rather than rebuilt.  The identity pair is forwarded as well.
+  bool forwardsPhysicalParts =
+      sourceLayout == resultLayout ||
+      (sourceLayout.isContiguous() && sourceLayout.getLaneStride() == 1 &&
+       resultLayout.isBlockDeinterleaved()) ||
+      (sourceLayout.isBlockDeinterleaved() && resultLayout.isContiguous() &&
+       resultLayout.getLaneStride() == 1);
+  return VMIEnsureMaskLayoutFact{sourceLayout, resultLayout,
+                                 forwardsPhysicalParts};
 }
 
 FailureOr<VMIGroupSlotLayoutFact> VMILayoutSupport::getGroupSlotLoadLayoutFact(
@@ -2061,7 +2087,29 @@ FailureOr<VMIGroupStoreLayoutFact> VMILayoutSupport::getGroupStoreLayoutFact(
     if (failed(getGroupStoreLayoutFact(valueType, numGroups, reason))) {
       return failure();
     }
-    return VMIGroupStoreLayoutFact{layout};
+    // A short packet of four or eight group values whose payload does not fill
+    // one physical chunk cannot be written in its lane-strided form directly:
+    // the store first packs it into unit-stride group slots, and that staging
+    // layout is what the cost model has to charge.
+    VMILayoutAttr stagingLayout;
+    unsigned elementBits =
+        pto::getPTOStorageElemBitWidth(valueType.getElementType());
+    int64_t payloadBits =
+        valueType.getElementCount() * static_cast<int64_t>(elementBits);
+    std::optional<int64_t> rowStride = getConstantIndexValue(op.getRowStride());
+    bool compactSmallStore =
+        layout.getSlots() == 8 && layout.getLaneStride() != 1 &&
+        (layout.getLaneStride() == 2 || layout.getLaneStride() == 4) &&
+        (valueType.getElementCount() == 4 ||
+         valueType.getElementCount() == 8) &&
+        numGroups == valueType.getElementCount() && elementBits > 0 &&
+        payloadBits > 0 && payloadBits < 256 && payloadBits % 32 == 0 &&
+        rowStride && *rowStride == 1;
+    if (compactSmallStore) {
+      stagingLayout = VMILayoutAttr::getGroupSlots(
+          valueType.getContext(), layout.getNumGroups(), layout.getSlots());
+    }
+    return VMIGroupStoreLayoutFact{layout, stagingLayout};
   }
 
   if (pto::getPTOStorageElemBitWidth(valueType.getElementType()) == 0) {
@@ -2302,10 +2350,12 @@ VMILayoutSupport::getVchistSupport(VMIVchistOp op, std::string *reason) const {
 }
 
 // Textual include units that keep this file under the source-size gate: the
-// width-changing bitcast queries and the direction-spine-scoped cast layout
-// queries.
+// width-changing bitcast queries, the direction-spine-scoped cast layout
+// queries, and the op-qualified relation support queries the layout cost model
+// reads.
 #include "VMILayoutSupportBitcast.inc"
 #include "VMILayoutSupportSpineScoped.inc"
+#include "VMILayoutSupportRelationQueries.inc"
 
 } // namespace pto
 } // namespace mlir

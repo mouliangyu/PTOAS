@@ -103,10 +103,21 @@ struct VMIMaskedLoadLayoutFact {
 struct VMIEnsureLayoutFact {
   VMILayoutAttr sourceLayout;
   VMILayoutAttr resultLayout;
+  // True when the conversion selects the same physical parts on both sides.
+  // The register is then forwarded unchanged: no lane rearrangement runs and
+  // the result arity equals the source arity.
+  bool forwardsPhysicalParts = false;
 };
 
 struct VMIEnsureMaskLayoutFact {
   VMILayoutAttr sourceLayout;
+  VMILayoutAttr resultLayout;
+  // As in VMIEnsureLayoutFact: the predicate register itself is forwarded.
+  bool forwardsPhysicalParts = false;
+};
+
+struct VMIGeneratedMaskLayoutFact {
+  VMILayoutAttr generationLayout;
   VMILayoutAttr resultLayout;
 };
 
@@ -171,6 +182,10 @@ enum class VMIGroupBlockClass {
 
 struct VMIGroupStoreLayoutFact {
   VMILayoutAttr valueLayout;
+  // Layout the value has to be materialized into before the store when the
+  // assigned value layout is not one the group_store lowering can write
+  // directly; null when no staging step is needed.
+  VMILayoutAttr stagingLayout;
   VMIGroupBlockClass blockClass = VMIGroupBlockClass::OneBlock;
   int64_t groupSize = 0;
   int64_t lanesPerPart = 0;
@@ -225,6 +240,14 @@ struct VMIGroupSlotLayoutFact {
   VMILayoutAttr layout;
   int64_t numGroups = 0;
   int64_t slots = 0;
+};
+
+// Layout/shape contract shared by the relation provider and VPTO lowering for
+// the two-source interleave store.  Memory-address legality remains in the
+// lowering-specific access-plan checker.
+struct VMIInterleaveStoreSupport {
+  VMILayoutAttr lowLayout;
+  VMILayoutAttr highLayout;
 };
 
 // Integer vcgadd widens its physical sums; other reductions keep their width.
@@ -304,6 +327,10 @@ public:
   FailureOr<VMIEnsureMaskLayoutFact>
   getEnsureMaskLayoutFact(VMIMaskType sourceType, VMIMaskType resultType,
                           std::string *reason = nullptr) const;
+
+  FailureOr<VMIGeneratedMaskLayoutFact>
+  getGeneratedMaskLayoutFact(Operation *op, VMILayoutAttr resultLayout,
+                             std::string *reason = nullptr) const;
 
   // Preferred cast relation.  \p allowLaneStridePreference decides whether the
   // lane-stride *cost* rows may answer ahead of the default preferred table:
@@ -415,6 +442,10 @@ public:
   FailureOr<VMIGroupSlotLayoutFact>
   getGroupSlotLoadLayoutFact(VMIVRegType resultType, int64_t numGroups,
                              std::string *reason = nullptr) const;
+
+  FailureOr<VMIInterleaveStoreSupport>
+  getInterleaveStoreSupport(VMIVRegType lowType, VMIVRegType highType,
+                            std::string *reason = nullptr) const;
 
   FailureOr<VMIGroupLoadLayoutFact>
   getGroupLoadLayoutFact(VMIGroupLoadOp op,
@@ -595,6 +626,13 @@ public:
 
   LogicalResult getVchistSupport(VMIVchistOp op,
                                 std::string *reason = nullptr) const;
+
+  /// Whether the operation realizes the op-qualified same-layout relation for
+  /// \p layout.  Shared by the relation provider and the cost model so a
+  /// layout a lowering rejects is never planned.
+  LogicalResult
+  getSameLayoutRelationSupport(Operation *op, VMILayoutAttr layout,
+                               std::string *reason = nullptr) const;
 };
 
 } // namespace mlir::pto

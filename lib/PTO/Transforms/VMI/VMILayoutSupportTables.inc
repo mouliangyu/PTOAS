@@ -140,6 +140,29 @@ static constexpr EnsureMaskLayoutPattern kEnsureMaskLayoutPatterns[] = {
     {mb32(), N<1, 2, 4, 8>(), ls(4), c()},
 };
 
+// A generated group mask is built by a predicate-generating instruction that
+// writes one predicate per physical part in a fixed layout.  When the assigned
+// result layout differs from that generation layout, the mask has to be
+// rearranged first, so the cost model has to know both layouts.  A row whose
+// two layouts are equal is the identity: the mask is generated in place.
+enum class GeneratedMaskKind {
+  GroupConstant,
+  GroupDynamic,
+};
+
+struct GeneratedMaskStagingPattern {
+  GeneratedMaskKind kind;
+  LayoutPattern resultLayout;
+  LayoutPattern generationLayout;
+};
+
+static constexpr GeneratedMaskStagingPattern kGeneratedMaskStagingPatterns[] = {
+    {GeneratedMaskKind::GroupDynamic, d(2), c()},
+    {GeneratedMaskKind::GroupDynamic, d(4), c()},
+    {GeneratedMaskKind::GroupDynamic, bd(4), bd(4)},
+    {GeneratedMaskKind::GroupConstant, bd(4), bd(4)},
+};
+
 struct GroupBlockClassPattern {
   GroupBlockPattern block;
   VMIGroupBlockClass blockClass;
