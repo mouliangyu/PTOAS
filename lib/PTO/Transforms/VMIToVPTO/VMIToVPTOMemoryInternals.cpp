@@ -444,21 +444,15 @@ LogicalResult checkSupportedInterleaveStoreShape(
     std::string *reason) {
   auto lowType = cast<VMIVRegType>(op.getLow().getType());
   auto highType = cast<VMIVRegType>(op.getHigh().getType());
-  VMILayoutAttr lowLayout = lowType.getLayoutAttr();
-  VMILayoutAttr highLayout = highType.getLayoutAttr();
-  bool nonContiguousInputs =
-      !lowLayout || !highLayout || !lowLayout.isContiguous() ||
-      !highLayout.isContiguous();
-  if (nonContiguousInputs) {
-    return emitLogicalFailure(reason, "requires assigned contiguous low/high input layouts");
-  }
   bool mismatchedInputs = lowType.getElementCount() != highType.getElementCount() ||
-                        lowType.getElementType() != highType.getElementType();
+                          lowType.getElementType() != highType.getElementType();
   if (mismatchedInputs) {
     return emitLogicalFailure(reason, "requires matching low/high input shape and element type");
   }
-  if (!getX2MemoryDistToken(lowType.getElementType(), "INTLV")) {
-    return emitLogicalFailure(reason, "requires 8/16/32-bit element type for vstsx2 INTLV");
+  VMILayoutSupport layoutSupport;
+  if (failed(layoutSupport.getInterleaveStoreSupport(lowType, highType,
+                                                     reason))) {
+    return failure();
   }
 
   VMIMemoryAccessPlan accessPlan =
@@ -1139,8 +1133,16 @@ checkSupportedGroupStoreByLayout(VMIGroupStoreOp op, VMIVRegType valueType,
                                  VMILayoutAttr layout,
                                  std::optional<int64_t> rowStride,
                                  std::string *reason) {
-  bool compactSmallGroup = isCompactSmallGroupStore(
-      layout, valueType, op.getNumGroupsAttr().getInt(), rowStride);
+  // The literal predicate stays first, so every shape it classified compact
+  // keeps that classification by construction; the layout fact is an extra
+  // route, not a replacement (measured: replacing it outright broke
+  // vmi_to_vpto_group_store_compact_small, so the staging path is load-bearing
+  // in this base).
+  auto layoutFact = VMILayoutSupport().getGroupStoreLayoutFact(op, valueType);
+  bool compactSmallGroup =
+      isCompactSmallGroupStore(layout, valueType,
+                               op.getNumGroupsAttr().getInt(), rowStride) ||
+      (succeeded(layoutFact) && layoutFact->stagingLayout);
   if (compactSmallGroup) {
     return checkSupportedCompactSmallGroupStoreShape(op, valueType, reason);
   }
