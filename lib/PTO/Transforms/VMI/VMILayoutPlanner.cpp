@@ -836,12 +836,28 @@ rememberGroupReduceRelationLayouts(VMIGroupReduceKind kind, VMIVRegType sourceTy
   }
 }
 
+/// A legacy group reduction is refused by the support model rather than by this
+/// planner's enumeration: the group size has no row in its layout table.  The
+/// shape checks word that refusal with the table's own reason, so the family is
+/// reported the same way instead of with the generic sentence below.
+static bool isLegacyGroupReduceOp(Operation *op) {
+  return isa<VMIGroupReduceAddFOp, VMIGroupReduceMaxFOp, VMIGroupReduceMinFOp,
+             VMIGroupReduceAddIOp, VMIGroupReduceMaxIOp, VMIGroupReduceMinIOp>(
+      op);
+}
+
 /// Reports an op for which no legal layout relation could be enumerated.  The
 /// support model usually knows exactly why (a shape table row, an alignment
 /// rule, or a lowering capability), so surface that reason when there is one
 /// instead of a generic sentence that hides it.
 static void reportMissingRelation(Operation *op, const std::string &reason) {
   if (!reason.empty()) {
+    if (isLegacyGroupReduceOp(op)) {
+      op->emitError() << kVMIDiagLayoutContractPrefix << op->getName()
+                      << " has no registered group_slots layout support: "
+                      << reason;
+      return;
+    }
     op->emitError() << kVMIDiagUnsupportedPrefix << reason;
     return;
   }
@@ -2647,13 +2663,18 @@ VMILayoutRelationProvider::enumerateRelations(
       return failure();
     }
     int64_t groups = op->getAttrOfType<IntegerAttr>("num_groups").getInt();
+    // The support model words the refusal when the group size has no row, and
+    // that wording is what the shape checks report; keep it so the failure can
+    // name the cause through reportMissingRelation.
+    std::string familyReason;
     for (VMILayoutAttr layout :
          getGroupReduceQueryLayouts(op->getContext(), polymorphicLayouts)) {
       if (!layout) {
         continue;
       }
       auto facts = supports.getGroupReduceLayoutFactsForLayout(getVMIGroupReduceKind(op), 
-          sourceType, groups, VMIGroupReduceLayoutPort::Source, layout);
+          sourceType, groups, VMIGroupReduceLayoutPort::Source, layout,
+          &familyReason);
       if (failed(facts)) {
         continue;
       }
@@ -2689,6 +2710,11 @@ VMILayoutRelationProvider::enumerateRelations(
                                 false},
             supports);
       }
+    }
+    bool refusedBySupportModel =
+        relations.empty() && reason && !familyReason.empty();
+    if (refusedBySupportModel) {
+      *reason = familyReason;
     }
     return relations.empty()
                ? FailureOr<
