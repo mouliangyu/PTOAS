@@ -1401,16 +1401,36 @@ VMILayoutRelationProvider::enumerateRelations(
             &annotatedReason));
       }
       if (annotatedPairIsLive) {
-        SmallVector<VMILayoutOpRelation, mlir::pto::kValue4> annotated;
-        appendReachableUniqueRelation(
-            annotated,
-            VMILayoutOpRelation{op,
-                                {operandPort(0, annotatedSource),
-                                 resultPort(0, annotatedResult)},
-                                /*directProducer=*/false},
-            supports);
-        if (!annotated.empty()) {
-          return annotated;
+        // The pair the IR states is a relation like any other, so it carries the
+        // same facts - in particular the cast's intrinsic rearrangement cost,
+        // which the physical graph can never see because a cast lowers as a
+        // single operation.  Pricing it as free would make a group-slot
+        // extension that unpacks every physical part look cheaper than any
+        // alternative, so the pair is priced through the same enumerating query
+        // the rows below use, and a pair that cannot be priced is not offered.
+        FailureOr<SmallVector<VMICastLayoutFact, mlir::pto::kValue4>> priced =
+            supports.getCastLayoutFactsForLayout(
+                sourceType, resultType, VMICastLayoutPort::Source,
+                annotatedSource);
+        if (succeeded(priced)) {
+          for (const VMICastLayoutFact &fact : *priced) {
+            if (fact.resultLayout != annotatedResult) {
+              continue;
+            }
+            SmallVector<VMILayoutOpRelation, mlir::pto::kValue4> annotated;
+            appendReachableUniqueRelation(
+                annotated,
+                VMILayoutOpRelation{op,
+                                    {operandPort(0, annotatedSource),
+                                     resultPort(0, annotatedResult)},
+                                    /*directProducer=*/false,
+                                    fact.intrinsicRearrangementCost,
+                                    /*preferencePenalty=*/0},
+                supports);
+            if (!annotated.empty()) {
+              return annotated;
+            }
+          }
         }
       }
     }
