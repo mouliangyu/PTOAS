@@ -31,6 +31,8 @@ static constexpr EnsureLayoutPattern kEnsureLayoutPatterns[] = {
     // than as the group counts any one producer happens to emit.
     {bits<8, 16, 32, 64>(), anyN(), gsFit(), c()},
     {bits<8, 16, 32, 64>(), anyN(), c(), gsFit()},
+    {bits<8, 16, 32, 64>(), N<1>(), c(), gs(1)},
+    {bits<8, 16, 32, 64>(), N<1>(), gs(1), c()},
 
     {bits<16>(), N<256>(), c(), d(2)},
     {bits<32>(), N<128, 256>(), c(), d(2)},
@@ -39,9 +41,13 @@ static constexpr EnsureLayoutPattern kEnsureLayoutPatterns[] = {
     {bits<32>(), N<128, 256>(), d(2), c()},
     {bits<64>(), N<64, 128, 256>(), d(2), c()},
 
+    {bits<16>(), N<256, 768>(), c(), d(4)},
     {bits<32>(), N<256>(), c(), d(4)},
+    {bits<32>(), N<512>(), c(), d(4)},
     {bits<64>(), N<128, 256>(), c(), d(4)},
+    {bits<16>(), N<256, 768>(), d(4), c()},
     {bits<32>(), N<256>(), d(4), c()},
+    {bits<32>(), N<512>(), d(4), c()},
     {bits<64>(), N<128, 256>(), d(4), c()},
 
     {bits<32>(), N<256, 512>(), d(2), d(4)},
