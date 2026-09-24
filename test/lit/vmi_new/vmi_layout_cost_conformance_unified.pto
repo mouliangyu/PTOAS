@@ -231,7 +231,7 @@ module {
   }
 }
 
-// COST: vmi-layout-cost-conformance vcmp_zero pto.vmi.vcmp relation=0 cost=0
+// COST: vmi-layout-cost-conformance vcmp_zero pto.vmi.mask_and relation=0 cost=0
 // COST: vmi-layout-cost-conformance vcmps_zeroing pto.vmi.vcmps relation=0 cost=0
 // COST: vmi-layout-cost-conformance vadd_masked pto.vmi.vadd relation=0 cost=0
 // COST: vmi-layout-cost-conformance vneg_zero pto.vmi.vneg relation=0 cost=0

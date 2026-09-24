@@ -26,5 +26,5 @@ module {
   }
 }
 
-// COST: vmi-layout-cost-conformance vsel_zero pto.vmi.vsel relation=0 cost=0
+// COST: vmi-layout-cost-conformance vsel_zero pto.vmi.select relation=0 cost=0
 // COST: vmi-layout-lowering-conformance vsel_zero__vmi_layout_relation_0 cost=0 rearrangements=0
