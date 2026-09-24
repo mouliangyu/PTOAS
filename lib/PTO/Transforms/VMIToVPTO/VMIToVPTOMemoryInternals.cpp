@@ -882,8 +882,13 @@ LogicalResult checkSupportedGroupSlotLoadShape(
     std::string *reason) {
   auto resultType = cast<VMIVRegType>(op.getResult().getType());
   VMILayoutSupport supports;
+  // The stride-aware overload is the fork's signature; it asks the shared
+  // support model about the source group stride as well.  Its extra checks are
+  // guarded by "the stride operand is present", and pto.vmi.group_slot_load
+  // always carries that operand, so this call site sees them.
   FailureOr<VMIGroupSlotLayoutFact> fact = supports.getGroupSlotLoadLayoutFact(
-      resultType, op.getNumGroupsAttr().getInt(), reason);
+      resultType, op.getSourceGroupStride(), op.getNumGroupsAttr().getInt(),
+      reason);
   if (failed(fact)) {
     return failure();
   }
