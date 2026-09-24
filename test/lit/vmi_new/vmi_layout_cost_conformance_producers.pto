@@ -125,7 +125,7 @@ module {
       %b: !pto.vmi.vreg<128xf32, #pto.vmi.layout<deinterleaved = 2>>,
       %c: !pto.vmi.vreg<128xf32, #pto.vmi.layout<deinterleaved = 2>>)
       -> !pto.vmi.vreg<128xf32, #pto.vmi.layout<deinterleaved = 2>> {
-    %v = pto.vmi.fma %a, %b, %c {test.vmi_layout_cost_conformance}
+    %v = pto.vmi.vmula %c, %a, %b {test.vmi_layout_cost_conformance}
       : !pto.vmi.vreg<128xf32, #pto.vmi.layout<deinterleaved = 2>>,
         !pto.vmi.vreg<128xf32, #pto.vmi.layout<deinterleaved = 2>>,
         !pto.vmi.vreg<128xf32, #pto.vmi.layout<deinterleaved = 2>>
