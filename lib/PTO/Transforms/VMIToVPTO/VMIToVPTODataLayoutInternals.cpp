@@ -16,6 +16,16 @@ constexpr int kVMIDataLayoutFactor4 = 4;
 constexpr int kVMIDataLayoutPairSize = 2;
 constexpr int kVMIDataLayoutMaskGranularityRankB32 = 2;
 
+// The grouped staging mask materializers are defined in
+// VMIToVPTOPatternInternals0.cpp; declare them here because the deinterleaved
+// mask layout paths below route an unequal part count into them.
+FailureOr<SmallVector<Value>> materializeStagingDeintToContiguousMaskLayout(
+    Operation *op, ValueRange sourceParts, TypeRange resultTypes,
+    int64_t factor, PatternRewriter &rewriter);
+FailureOr<SmallVector<Value>> materializeStagingContiguousToDeintMaskLayout(
+    Operation *op, ValueRange sourceParts, TypeRange resultTypes,
+    int64_t factor, PatternRewriter &rewriter);
+
 FailureOr<SmallVector<Value>> materializeLaneStrideToContiguous(
     Operation *op, ValueRange sourceParts, TypeRange resultTypes,
     Type elementType, int64_t laneStride, PatternRewriter &rewriter) {
@@ -1008,8 +1018,19 @@ materializeDeinterleaved2MaskLayout(
   if (direction == Deinterleaved2MaskLayoutDirection::Unsupported) {
     return std::optional<SmallVector<Value>>{};
   }
-  bool invalidArity = sourceParts.size() != resultTypes.size() ||
-                      sourceParts.empty() || sourceParts.size() % 2 != 0;
+  // Unequal part counts are not a per-part rearrangement: the grouped staging
+  // materializers consume a grouped source and produce the grouped result
+  // arity, so route there instead of refusing.
+  if (sourceParts.size() != resultTypes.size()) {
+    return direction == Deinterleaved2MaskLayoutDirection::ToContiguous
+               ? materializeStagingDeintToContiguousMaskLayout(
+                     op, sourceParts, resultTypes, kVMIDataLayoutFactor2,
+                     rewriter)
+               : materializeStagingContiguousToDeintMaskLayout(
+                     op, sourceParts, resultTypes, kVMIDataLayoutFactor2,
+                     rewriter);
+  }
+  bool invalidArity = sourceParts.empty() || sourceParts.size() % 2 != 0;
   if (invalidArity) {
     (void)rewriter.notifyMatchFailure(
         op, "deinterleaved=2 mask layout materialization requires 2*N parts");
@@ -1322,13 +1343,6 @@ static bool didHandleMaskLayoutMaterialization(
   return failed(result) || result->has_value();
 }
 
-FailureOr<SmallVector<Value>> materializeStagingDeintToContiguousMaskLayout(
-    Operation *op, ValueRange sourceParts, TypeRange resultTypes,
-    int64_t factor, PatternRewriter &rewriter);
-FailureOr<SmallVector<Value>> materializeStagingContiguousToDeintMaskLayout(
-    Operation *op, ValueRange sourceParts, TypeRange resultTypes,
-    int64_t factor, PatternRewriter &rewriter);
-
 static bool isElementDeinterleavedMaskLayout(VMILayoutAttr layout,
                                              int64_t factor) {
   return layout && layout.isDeinterleaved() && layout.getFactor() == factor &&
@@ -1348,9 +1362,17 @@ static MaskLayoutMaterializationResult materializeDeinterleaved4MaskLayout(
   if (!contiguousToDeint4 && !deint4ToContiguous) {
     return std::optional<SmallVector<Value>>{};
   }
-  bool invalidArity = sourceParts.empty() ||
-                      sourceParts.size() != resultTypes.size() ||
-                      resultTypes.size() % 4 != 0;
+  // As for factor 2: an unequal part count is the grouped staging case.
+  if (sourceParts.size() != resultTypes.size()) {
+    return contiguousToDeint4
+               ? materializeStagingContiguousToDeintMaskLayout(
+                     op, sourceParts, resultTypes, kVMIDataLayoutFactor4,
+                     rewriter)
+               : materializeStagingDeintToContiguousMaskLayout(
+                     op, sourceParts, resultTypes, kVMIDataLayoutFactor4,
+                     rewriter);
+  }
+  bool invalidArity = sourceParts.empty() || resultTypes.size() % 4 != 0;
   if (invalidArity) {
     (void)rewriter.notifyMatchFailure(
         op, "deinterleaved=4 mask layout materialization requires 4*N parts");
