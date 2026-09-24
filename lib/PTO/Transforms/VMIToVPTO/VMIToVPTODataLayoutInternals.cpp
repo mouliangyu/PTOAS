@@ -1683,6 +1683,41 @@ static FailureOr<SmallVector<Value>> materializeMaskGranularityParts(
     Operation *op, VMIMaskType sourceType, VMIMaskType resultType,
     ValueRange sourceParts, const MaskGranularityConversionPlan &plan,
     PatternRewriter &rewriter) {
+  // A group-slot layout indexes its physical carriers by group slot, not by
+  // dense lane chunk, so the chunked path below cannot express a multi-carrier
+  // conversion: its part count comes from the dense layout factor, which is 1
+  // for group slots, and it therefore returns far fewer parts than the physical
+  // arity. Equal-arity group-slot masks convert one carrier at a time instead.
+  // A single-carrier conversion (arity 1) keeps the chunked path, which already
+  // folds it for equal layouts.
+  FailureOr<int64_t> resultArity = getVMIPhysicalArity(resultType);
+  bool perCarrierGroupSlots =
+      sourceType.getLayoutAttr().isGroupSlots() &&
+      resultType.getLayoutAttr().isGroupSlots() && succeeded(resultArity) &&
+      plan.sourceArity == *resultArity && plan.sourceArity > 1;
+  if (perCarrierGroupSlots) {
+    auto partAttr = StringAttr::get(op->getContext(), "LOWER");
+    bool widening = plan.resultRank > plan.sourceRank;
+    SmallVector<Value> carriers;
+    carriers.reserve(sourceParts.size());
+    for (Value source : sourceParts) {
+      if (widening) {
+        carriers.push_back(rewriter
+                               .create<PunpackOp>(op->getLoc(),
+                                                  plan.resultMaskType, source,
+                                                  partAttr)
+                               .getResult());
+      } else {
+        carriers.push_back(rewriter
+                               .create<PpackOp>(op->getLoc(),
+                                                plan.resultMaskType, source,
+                                                partAttr)
+                               .getResult());
+      }
+    }
+    return carriers;
+  }
+
   SmallVector<Value> results;
   int64_t sourceOffset = 0;
   for (int64_t part = 0; part < plan.layoutFactor; ++part) {
