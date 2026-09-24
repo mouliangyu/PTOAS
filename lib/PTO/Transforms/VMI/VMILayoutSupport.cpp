@@ -35,8 +35,10 @@
 #include "PTO/Transforms/VMILayoutSupport.h"
 
 #include "PTO/Support/CodeConstants.h"
+#include "PTO/Analysis/PTOAddressAnalysis.h"
 #include "PTO/IR/PTOTypeUtils.h"
 #include "PTO/IR/VMIUtils.h"
+#include "PTO/IR/VPTOMemoryDist.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/ADT/Twine.h"
@@ -2373,6 +2375,51 @@ VMILayoutSupport::getVchistSupport(VMIVchistOp op, std::string *reason) const {
 #include "VMILayoutSupportRelationQueries.inc"
 #include "VMILayoutSupportVexpdifQueries.inc"
 #include "VMILayoutSupportSolverQueries.inc"
+
+
+//===----------------------------------------------------------------------===//
+// Direct memory-dist address legality
+//
+// Shared by the lowering and the cost model: both must answer "can this access
+// use the family+token directly at this address?" the same way.  The lowering
+// gained the address precondition when the direct forms were introduced; the
+// cost model has to ask this question rather than re-derive the answer from the
+// shape of the value, or the two drift apart.
+//===----------------------------------------------------------------------===//
+
+/// Physical byte size of a register carrier, or nothing when the element width is
+/// unknown or the byte size is not exact.
+static std::optional<int64_t> getPhysicalVectorBytes(VRegType type) {
+  unsigned elementBits = pto::getPTOStorageElemBitWidth(type.getElementType());
+  int64_t totalBits;
+  if (elementBits == 0 ||
+      llvm::MulOverflow(type.getElementCount(),
+                        static_cast<int64_t>(elementBits), totalBits) ||
+      totalBits <= 0 || totalBits % kVMIBitsPerByte != 0) {
+    return std::nullopt;
+  }
+  return totalBits / kVMIBitsPerByte;
+}
+
+bool isDirectMemoryDistAddressLegal(Value base, Value offset,
+                                    Type addressElementType,
+                                    VRegType registerType,
+                                    VPTOMemoryOpFamily family, StringRef dist) {
+  unsigned registerElementBits =
+      pto::getPTOStorageElemBitWidth(registerType.getElementType());
+  const VPTOMemoryDistContract *contract = lookupVPTOMemoryDist(
+      family, dist,
+      registerElementBits == 0 ? std::nullopt
+                               : std::optional<unsigned>(registerElementBits));
+  std::optional<int64_t> vectorBytes = getPhysicalVectorBytes(registerType);
+  std::optional<int64_t> requiredAlignment =
+      contract && vectorBytes
+          ? contract->getRequiredAlignmentBytes(*vectorBytes)
+          : std::nullopt;
+  return requiredAlignment &&
+         isKnownAddressAligned(base, offset, addressElementType,
+                               *requiredAlignment);
+}
 
 } // namespace pto
 } // namespace mlir

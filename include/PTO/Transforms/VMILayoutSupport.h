@@ -14,6 +14,7 @@
 
 #include "PTO/Support/CodeConstants.h"
 #include "PTO/IR/PTO.h"
+#include "PTO/IR/VPTOMemoryDist.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -912,6 +913,22 @@ public:
   // ops (VMILayoutSupportQueryHelpers.inc:175-225).
   //===--------------------------------------------------------------------===//
 };
+
+/// Whether a direct memory-dist access of `family` with token `dist` is legal
+/// at this address: the contract must exist for the register's element width and
+/// the address must be provably aligned to the contract's alignment rule.
+///
+/// The lowering may only emit the direct form when this holds, and the cost model
+/// may only charge a layout as directly realized by such an access when it holds,
+/// so both sides must ask the same question: this declaration is the shared
+/// answer. Sharing it is the point - the model previously mirrored only the
+/// *shape* of the direct load form and stayed silent about the address, which
+/// made deinterleaved loads whose address is not provably aligned look cheaper
+/// than the lowering can make them.
+bool isDirectMemoryDistAddressLegal(Value base, Value offset,
+                                    Type addressElementType,
+                                    VRegType registerType,
+                                    VPTOMemoryOpFamily family, StringRef dist);
 
 } // namespace mlir::pto
 
