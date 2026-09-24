@@ -1314,7 +1314,20 @@ static FailureOr<std::optional<SmallVector<Value>>> materializeIdentityMaskLayou
     Operation *op, ValueRange sourceParts, TypeRange resultTypes,
     VMILayoutAttr sourceLayout, VMILayoutAttr resultLayout,
     PatternRewriter &rewriter) {
-  if (sourceLayout != resultLayout) {
+  // A block-deinterleaved mask and a contiguous one put the same predicate bits
+  // in the same physical carriers: the block factor only reinterprets how the
+  // lanes inside a carrier are grouped, so the conversion forwards the parts
+  // unchanged.  The fork's mask dispatch states exactly this pair
+  // (fork VMIToVPTO.cpp:4775-4787) next to its own identity case.
+  bool contiguousToBlock =
+      sourceLayout.isContiguous() && sourceLayout.getLaneStride() == 1 &&
+      resultLayout.isBlockDeinterleaved();
+  bool blockToContiguous =
+      sourceLayout.isBlockDeinterleaved() && resultLayout.isContiguous() &&
+      resultLayout.getLaneStride() == 1;
+  bool forwardsPartsUnchanged =
+      sourceLayout == resultLayout || contiguousToBlock || blockToContiguous;
+  if (!forwardsPartsUnchanged) {
     return std::optional<SmallVector<Value>>{};
   }
   if (failed(verifyIdentityPartForwarding(op, sourceParts, resultTypes,
