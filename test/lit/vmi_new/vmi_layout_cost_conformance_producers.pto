@@ -163,6 +163,6 @@ module {
 // COST: vmi-layout-cost-conformance mask_logic_deinterleaved2 pto.vmi.mask_or relation=0 cost=0
 // COST: vmi-layout-cost-conformance mask_logic_deinterleaved2 pto.vmi.mask_xor relation=0 cost=0
 // COST: vmi-layout-cost-conformance mask_logic_deinterleaved2 pto.vmi.mask_not relation=0 cost=0
-// COST: vmi-layout-cost-conformance fma_deinterleaved2 pto.vmi.fma relation=0 cost=0
+// COST: vmi-layout-cost-conformance fma_deinterleaved2 pto.vmi.vmula relation=0 cost=0
 // COST: vmi-layout-cost-conformance pge_contiguous pto.vmi.pge relation=0 cost=0
 // COST: vmi-layout-cost-conformance plt_contiguous pto.vmi.plt relation=0 cost=0
