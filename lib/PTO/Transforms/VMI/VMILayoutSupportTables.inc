@@ -127,8 +127,10 @@ static constexpr EnsureMaskLayoutPattern kEnsureMaskLayoutPatterns[] = {
     {mb32(), N<128>(), bd(2), c()},
 
     {mb32(), N<256>(), c(), d(4)},
+    {mb16(), N<256, 768>(), c(), d(4)},
     {mb32(), N<256>(), c(), bd(4)},
     {mb32(), N<256>(), d(4), c()},
+    {mb16(), N<256, 768>(), d(4), c()},
     {mb32(), N<256>(), bd(4), c()},
 
     {mb8(), N<1, 2, 4, 8, 64, 128>(), c(), ls(2)},
