@@ -7,7 +7,7 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // RUN: pto-test-opt %s -vmi-lower-unified-to-legacy -vmi-mask-granularity-assignment -vmi-layout-assignment | FileCheck %s --check-prefix=ASSIGN
-// RUN: not pto-test-opt %s -vmi-lower-unified-to-legacy -vmi-mask-granularity-assignment -vmi-layout-assignment -vmi-to-vpto 2>&1 | FileCheck %s --check-prefix=LOWER
+// RUN: pto-test-opt %s -vmi-lower-unified-to-legacy -vmi-mask-granularity-assignment -vmi-layout-assignment -vmi-to-vpto | FileCheck %s --check-prefix=LOWER
 
 // Strided group loads are only admitted on the 32-byte block granularity the
 // block forms address: one group must be 32, 64, or 128 bytes and the row
@@ -81,4 +81,11 @@ module {
 // lowers (one pto.vsldb per carrier); the 64B/128B block_deinterleaved shapes
 // are still layout-only, so the conversion reports residual VMI ops.
 // LOWER-DAG: pto.vsldb
-// LOWER-DAG: VMI-RESIDUAL-OP
+// LOWER-DAG: pto.pset_b32
+// LOWER-DAG: pto.vsldb
+// LOWER-DAG: pto.vadd
+// LOWER-DAG: pto.vcgadd
+// LOWER-DAG: pto.vstus
+// LOWER-DAG: pto.vstas
+// LOWER-NOT: VMI-RESIDUAL-OP
+// LOWER-NOT: pto.vmi.
