@@ -1071,8 +1071,14 @@ static FailureOr<SmallVector<Value>> materializeMaskLaneStrideUnpack(
     StringAttr firstPart = laneStride == 4
                                ? (part >= 2 ? higher : lower)
                                : (part == 1 ? higher : lower);
+    // A lane_stride=4 source is unpacked twice: the first unpack splits the
+    // register into its two b16 halves, and only the second one produces the
+    // result mask type.
+    MaskType firstResultType = laneStride == kVMIDataLayoutFactor4
+                                   ? MaskType::get(op->getContext(), "b16")
+                                   : *maskType;
     Value current = rewriter
-                        .create<PunpackOp>(op->getLoc(), *maskType, source,
+                        .create<PunpackOp>(op->getLoc(), firstResultType, source,
                                            firstPart)
                         .getResult();
     if (laneStride == kVMIDataLayoutFactor4) {
@@ -1118,14 +1124,14 @@ struct MaskLaneStridePackContext {
   }
 
   FailureOr<Value> packPair(Value lowSource, std::optional<Value> highSource,
-                            MaskType maskType) {
-    Value packed = rewriter.create<PpackOp>(op->getLoc(), maskType, lowSource,
+                            MaskType pairType) {
+    Value packed = rewriter.create<PpackOp>(op->getLoc(), pairType, lowSource,
                                             lower);
     if (!highSource) {
       return packed;
     }
     Value higherPacked = rewriter.create<PpackOp>(
-        op->getLoc(), maskType, *highSource, higher);
+        op->getLoc(), pairType, *highSource, higher);
     return merge(packed, higherPacked);
   }
 };
@@ -1138,8 +1144,13 @@ static FailureOr<Value> materializeMaskLaneStridePackChunk(
   if (base + 1 < sourceParts.size()) {
     source1 = sourceParts[base + 1];
   }
+  // The pair packs of a lane_stride=4 result land in a b16 half; only the outer
+  // packs in this helper produce the result mask type.
+  MaskType pairType = laneStride == kVMIDataLayoutFactor4
+                          ? MaskType::get(op->getContext(), "b16")
+                          : maskType;
   FailureOr<Value> lowHalf =
-      context.packPair(sourceParts[base], source1, maskType);
+      context.packPair(sourceParts[base], source1, pairType);
   if (failed(lowHalf)) {
     return failure();
   }
@@ -1158,7 +1169,7 @@ static FailureOr<Value> materializeMaskLaneStridePackChunk(
   }
   FailureOr<Value> highHalf =
       context.packPair(sourceParts[base + kVMIDataLayoutFactor2], source3,
-                       maskType);
+                       pairType);
   if (failed(highHalf)) {
     return failure();
   }
