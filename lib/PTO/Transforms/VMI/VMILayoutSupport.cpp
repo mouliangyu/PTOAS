@@ -2176,6 +2176,22 @@ VMILayoutSupport::getGroupStoreLayoutFactsForLayout(
     return fail("requires assigned group_store value layout");
   }
 
+  // A group-slot layout on a vreg describes exactly one logical lane per group,
+  // which the type verifier states as num_groups == element count (a two lane
+  // value may carry num_groups = 2, slots = 8; a 128 lane value may not).  The
+  // assigned type built below is constructed directly rather than parsed, so the
+  // verifier never runs on it: without this check the query returns a fact for a
+  // type that cannot exist, the relation is exposed, and no lowering can realize
+  // it.  Measured on vmi_layout_cost_conformance_group_memory.pto, where the
+  // group_store of a 128xf32 value with num_groups = 2 produced exactly that
+  // candidate and the cost model - correctly - refused to price it, which aborts
+  // the whole conformance run at that case.
+  bool groupSlotsLaneMismatch = layout.isGroupSlots() &&
+                                layout.getNumGroups() != valueType.getElementCount();
+  if (groupSlotsLaneMismatch) {
+    return fail("group_store value layout does not describe one lane per group");
+  }
+
   MLIRContext *ctx = valueType.getContext();
   auto sourceType = VMIVRegType::get(ctx, valueType.getElementCount(),
                                     valueType.getElementType(), layout);
