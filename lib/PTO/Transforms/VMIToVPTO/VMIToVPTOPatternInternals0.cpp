@@ -514,8 +514,10 @@ struct OneToNVMIEnsureMaskLayoutOpPattern
     auto resultType = cast<VMIMaskType>(op.getResult().getType());
     VMILayoutSupport supports;
     std::string supportReason;
-    if (failed(supports.getEnsureMaskLayoutFact(sourceType, resultType,
-                                                &supportReason))) {
+    FailureOr<VMIEnsureMaskLayoutFact> ensureFact =
+        supports.getEnsureMaskLayoutFact(sourceType, resultType,
+                                         &supportReason);
+    if (failed(ensureFact)) {
       return rewriter.notifyMatchFailure(
           op, Twine("ensure_mask_layout has no registered materialization "
                     "support: ") +
@@ -536,6 +538,17 @@ struct OneToNVMIEnsureMaskLayoutOpPattern
       return failure();
     }
     SmallVector<Type> resultTypes = std::move(*maybe_resultTypes);
+    // The support fact already reports when the predicate register is forwarded
+    // unchanged, which is what the cost model charges for it.
+    if (ensureFact->forwardsPhysicalParts) {
+      if (failed(verifyIdentityPartForwarding(op, sourceParts, resultTypes,
+                                              rewriter))) {
+        return failure();
+      }
+      SmallVector<Value> forwarded(sourceParts.begin(), sourceParts.end());
+      return replacePhysicalResults(rewriter, op, forwarded,
+                                    *this->getTypeConverter());
+    }
     FailureOr<SmallVector<Value>> results = materializeMaskLayoutConversion(
         op, sourceParts, resultTypes, sourceLayout, resultLayout, rewriter);
     if (failed(results)) {

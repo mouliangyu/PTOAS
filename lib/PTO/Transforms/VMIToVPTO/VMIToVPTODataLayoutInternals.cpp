@@ -836,8 +836,9 @@ FailureOr<SmallVector<Value>> materializeEnsureLayoutConversion(
     PatternRewriter &rewriter) {
   VMILayoutSupport supports;
   std::string supportReason;
-  if (failed(supports.getEnsureLayoutFact(sourceType, resultType,
-                                          &supportReason))) {
+  FailureOr<VMIEnsureLayoutFact> ensureFact =
+      supports.getEnsureLayoutFact(sourceType, resultType, &supportReason);
+  if (failed(ensureFact)) {
     (void)rewriter.notifyMatchFailure(
         op, Twine("ensure_layout has no registered materialization support: ") +
                 supportReason);
@@ -855,6 +856,16 @@ FailureOr<SmallVector<Value>> materializeEnsureLayoutConversion(
   SmallVector<Type> resultTypes;
   if (failed(typeConverter.convertType(resultType, resultTypes))) {
     return failure();
+  }
+  // The support fact already reports when both sides select the same physical
+  // parts, which is the case the cost model charges as a forward.  Forward the
+  // parts instead of rebuilding them through the lane-rearranging path.
+  if (ensureFact->forwardsPhysicalParts) {
+    if (failed(verifyIdentityPartForwarding(op, sourceParts, resultTypes,
+                                            rewriter))) {
+      return failure();
+    }
+    return SmallVector<Value>(sourceParts.begin(), sourceParts.end());
   }
   return materializeDataLayoutConversion(op, sourceParts, resultTypes,
                                          sourceLayout, resultLayout,
