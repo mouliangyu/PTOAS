@@ -8,7 +8,7 @@
 // FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. See LICENSE in the root
 // of the software repository.
 
-// RUN: pto-test-opt %s -test-vmi-layout-cost-conformance -vmi-lower-unified-to-legacy -vmi-to-vpto -test-vmi-layout-lowering-conformance | FileCheck %s --check-prefix=COST
+// RUN: pto-test-opt %s -vmi-lower-unified-to-legacy -test-vmi-layout-cost-conformance -vmi-to-vpto -test-vmi-layout-lowering-conformance | FileCheck %s --check-prefix=COST
 
 module {
   func.func @vcmp_deinterleaved(
