@@ -1417,9 +1417,23 @@ VMILayoutRelationProvider::enumerateRelations(
             if (fact.resultLayout != annotatedResult) {
               continue;
             }
-            SmallVector<VMILayoutOpRelation, mlir::pto::kValue4> annotated;
+            // The pair goes in first - it is the one the IR states - but the
+            // other rows stay candidates: they are what the tables enumerate,
+            // and a relation set that hid them would make the solver's own view
+            // and the conformance view disagree.  A pair that is *live* is not
+            // automatically the cheapest any more either, now that it carries
+            // its intrinsic cost, which is the point of pricing it.
+            // The pair keeps preference penalty 0 even though it now carries its
+            // intrinsic cost: it is the pair the IR states, so it must not be
+            // out-competed on a preference key, and the enumerated rows below
+            // may reach the same pair through the table with penalty 1.  The two
+            // differ only in that key and select the same layouts, so the extra
+            // entry costs nothing but is visible in the relation listing; making
+            // the penalties agree instead (so they collapse) regressed
+            // vmi_layout_assignment_group_slot_load, which needs the stated pair
+            // to keep priority.
             appendReachableUniqueRelation(
-                annotated,
+                relations,
                 VMILayoutOpRelation{op,
                                     {operandPort(0, annotatedSource),
                                      resultPort(0, annotatedResult)},
@@ -1427,9 +1441,6 @@ VMILayoutRelationProvider::enumerateRelations(
                                     fact.intrinsicRearrangementCost,
                                     /*preferencePenalty=*/0},
                 supports);
-            if (!annotated.empty()) {
-              return annotated;
-            }
           }
         }
       }
