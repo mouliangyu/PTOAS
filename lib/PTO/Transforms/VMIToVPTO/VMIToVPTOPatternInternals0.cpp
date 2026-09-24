@@ -1875,7 +1875,7 @@ private:
   FailureOr<SmallVector<Value>> buildFactor4ContiguousParts(
       VMICreateGroupMaskOp op, OpAdaptor adaptor,
       OneToNPatternRewriter &rewriter, VMIMaskType contiguousType,
-      ArrayRef<Type> resultTypes) const {
+      VMIMaskType resultVMIType, ArrayRef<Type> resultTypes) const {
     auto activeConstant =
         op.getActiveElemsPerGroup().getDefiningOp<arith::ConstantOp>();
     if (!activeConstant) {
@@ -1889,9 +1889,18 @@ private:
       return materializeDynamicGroupMaskForType(
           op, *active, contiguousType, resultTypes, rewriter);
     }
+    // A block-deinterleaved factor-4 mask keeps one block per carrier, so its
+    // carrier count is the factor: measured for mask<128xb32>, contiguous and
+    // block_deinterleaved = 2 both have two carriers while
+    // block_deinterleaved = 4 has four.  Chunking for the contiguous
+    // arrangement would therefore produce two materializations for a four
+    // carrier result and fail the arity check below, so the physical chunking
+    // has to follow the layout the result actually uses.  The parts then carry
+    // the target arrangement and the layout conversion that follows the build
+    // is the identity forward the mask chain already models.
     std::string contiguousReason;
     FailureOr<SmallVector<ConstantMaskChunkMaterialization>> materializations =
-        computeGroupMaskMaterializationForType(op, contiguousType,
+        computeGroupMaskMaterializationForType(op, resultVMIType,
                                                &contiguousReason);
     if (failed(materializations)) {
       return rewriter.notifyMatchFailure(
@@ -1912,7 +1921,7 @@ private:
                          resultVMIType.getGranularity(), contiguousLayout);
     FailureOr<SmallVector<Value>> contiguousParts =
         buildFactor4ContiguousParts(op, adaptor, rewriter, contiguousType,
-                                    resultTypes);
+                                    resultVMIType, resultTypes);
     if (failed(contiguousParts)) {
       return failure();
     }
