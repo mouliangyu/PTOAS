@@ -589,6 +589,7 @@ static constexpr GroupBroadcastLoadLayoutPattern
         {gb(1, 4), bits<8, 16, 32>(), memContiguous(), ls(4)},
         {gb(1, 2), bits<8, 16, 32>(), memContiguous(), ls(2)},
         {gb(1), bits<8, 16, 32>(), memContiguous(), c()},
+        {gb(1), bits<16, 32>(), memContiguous(), d(4)},
         {gb(2), bits<8, 16, 32>(), memContiguous(), c()},
         {gb(2), bits<8, 16, 32>(), memContiguous(), d(2)},
         {gb(4), bits<8, 16, 32>(), memContiguous(), c()},
